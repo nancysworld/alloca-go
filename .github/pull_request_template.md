@@ -10,7 +10,9 @@
 
 - [ ] Change is scoped and reviewable.
 - [ ] Tests / measurements included where applicable.
-- [ ] Reviewed for the [public-disclosure policy](../docs/public-disclosure-policy.md):
-      no confidential discussions, private product/organisation details, recruitment
-      activity, or private design-prompt origins in the diff, commit messages, branch
-      name, or PR text. Prior-work figures are reproducible here or labelled as prior.
+- [ ] Reviewed against [`docs/public-disclosure-policy.md`](/docs/public-disclosure-policy.md):
+      no confidential discussions, private product or organisation details,
+      recruitment activity, or private design-prompt origins appear in the diff,
+      commit messages, branch name, or PR text.
+- [ ] Prior-work figures are reproducible here or explicitly labelled as prior and
+      not yet reproduced in this repository.

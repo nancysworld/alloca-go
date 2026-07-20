@@ -1,15 +1,15 @@
 # Alloca-Go Roadmap
 
-**Status:** Draft v0.2  
+**Status:** Draft v0.3  
 **Created:** 20 July 2026  
 **Delivery window:** 20 July–28 August 2026 inclusive  
-**Predecessor:** RuntimeIQ-Alloca experimental work and its archived planning documents
+**Predecessor:** prior RuntimeIQ-Alloca prototype work and archived planning documents
 
 ## 1. Executive intent
 
 Alloca-Go is a production-shaped distributed reservation system in Go.
 
-It is not a line-by-line port of RuntimeIQ-Alloca. RuntimeIQ remains the experimental record and evidence base; Alloca-Go starts a new implementation whose purpose is to answer four connected questions:
+It is not a line-by-line port of the earlier prototype. The prior work remains an experimental record and evidence base; Alloca-Go starts a new implementation whose purpose is to answer four connected questions:
 
 1. How should scarce or conserved state be owned and mutated correctly under concurrency?
 2. What is the sustainable, SLO-compliant throughput of one production capacity unit?
@@ -27,13 +27,13 @@ The 40-day plan prioritises a defensible end-to-end system, measured capacity ec
 
 ## 2. Starting evidence and open hypotheses
 
-RuntimeIQ-Alloca established useful evidence, but it also exposed measurement and architecture boundaries that must not be carried forward as assumptions.
+### 2.1 Prior prototype evidence — not yet reproduced in this repository
 
-### 2.1 Measured evidence
+The following figures are historical inputs to the roadmap. They must not be treated as Alloca-Go results until reproduced from this repository:
 
-- A single-worker RuntimeIQ `/health` path sustained approximately 2,050 requests per second when measured with a corrected Go client.
-- A minimal Go `net/http` service on the same machine completed at least 61 times as many successful responses, but that result was client-limited and represents whole-stack headroom rather than a language-only comparison.
-- RuntimeIQ-Alloca booking work was dominated by database transactions and contention rather than the HTTP framework; an approximate reserve rate near 125 operations per second was inferred, not yet measured as a Go booking-path result.
+- A single-worker prototype `/health` path sustained approximately 2,050 requests per second when measured with a corrected Go client.
+- A minimal Go `net/http` service on the same machine completed at least 61 times as many successful responses. This was a client-limited, stateless, whole-stack comparison—not a language-only or booking-path comparison.
+- Prototype booking work was dominated by database transactions and contention rather than the HTTP framework; an approximate reserve rate near 125 operations per second was inferred, not directly measured as a Go booking-path result.
 - Booking latency grew approximately linearly with concurrency in the measured range, without a clear throughput knee before timeouts became the visible degradation mode.
 - Arrival spread materially changed booking outcomes, showing that concurrency, arrival rate, contention, timeout policy, and load-generator behaviour must be separated experimentally.
 
@@ -45,7 +45,7 @@ The project must not assume that a stateless endpoint improvement will translate
 
 ### 2.3 Hypothesis to test
 
-The RuntimeIQ-Alloca latency curve suggests that overload may manifest as requests waiting until one of several timeouts expires.
+The prior latency curve suggests that overload may manifest as requests waiting until one of several timeouts expires.
 
 Alloca-Go will reproduce or reject that mechanism under controlled conditions, then compare it with bounded alternatives such as admission control, explicit refusal, retry guidance, or queue-position feedback.
 
@@ -114,13 +114,14 @@ external Go load generator
             v
  stateless Go API capacity units
             |
-            +-- request admission and authority routing
+            +-- request admission and per-node ordering
             +-- reservation / shared-resource domain services
             +-- idempotency and outcome classification
             |
             v
- PostgreSQL authority partitions or shards
+ PostgreSQL transactional authority
             |
+            +-- authority rows / partitions / shards
             +-- background expiry / settlement workers
             +-- audit and operational records
 
@@ -133,11 +134,13 @@ Infrastructure: Terraform
 
 - **Go HTTP API:** stateless request handling and domain orchestration.
 - **Domain layer:** slot, reservation, booking, inventory, balance, and idempotency invariants.
-- **PostgreSQL repository:** transactional source of truth and initial concurrency authority.
-- **Authority router:** initially in-process, routing by a stable contention key.
+- **PostgreSQL repository:** transactional source of truth and cross-node serialization authority.
+- **In-process authority router:** a per-node ordering, batching, or admission optimisation only. Until a routing tier guarantees same-key convergence, it cannot serialize an authority across the fleet.
 - **Background worker:** reservation expiry and settlement outside the user request path.
 - **External load generator:** open-loop and closed-loop modes, synchronized release, response validation, and negative controls.
 - **Telemetry:** end-to-end latency, transaction time, lock wait, pool wait, queue depth, timeouts, outcomes, saturation, and cost inputs.
+
+A serialized command lane or actor-like authority becomes a cross-node authority only after routing guarantees that all requests for the same key converge on one owner.
 
 ### 4.2 Candidate authority and shard keys
 
@@ -158,6 +161,20 @@ The first production slice will use:
 - OpenTelemetry-compatible instrumentation and CloudWatch.
 
 Kubernetes, Redis, DynamoDB, Kafka, multi-region writes, and dynamic shard movement are deferred until evidence demonstrates a need.
+
+### 4.4 Go runtime capacity controls
+
+The project will pin the Go toolchain version. For Go 1.25 or later, container-aware `GOMAXPROCS` defaults are expected when no explicit override disables them and the task exposes a CPU limit.
+
+Every capacity run must record:
+
+- Go version;
+- configured task vCPU;
+- observed `runtime.GOMAXPROCS(0)`;
+- whether `GOMAXPROCS` or relevant `GODEBUG` settings were explicitly set;
+- CPU throttling and utilisation.
+
+Explicit `GOMAXPROCS` configuration or an external helper is required only when deliberately overriding the runtime default or testing an older Go version.
 
 ## 5. Measurement vocabulary
 
@@ -190,6 +207,14 @@ scale efficiency at N units =
     N × single-unit goodput
 ```
 
+Scale efficiency must be reported separately for each experiment layer:
+
+- stateless API work;
+- dispersed independent authorities;
+- one indivisible hot authority.
+
+For one hot authority, efficiency approaching `1/N` is the expected serialization ceiling, not evidence that the entire system fails to scale. Dispersed-authority measurements are the primary test of horizontal composition.
+
 ### 5.7 Capacity-unit economics
 
 Each tested configuration will report:
@@ -203,6 +228,15 @@ Each tested configuration will report:
 - p50, p95, and p99 latency;
 - timeout and unknown-outcome rates;
 - failure-domain and deployment implications.
+
+Cost figures are reproducible calculations tied to a dated input block, not timeless prices. The input block must state:
+
+- pricing snapshot date and AWS region;
+- on-demand, Savings Plan, or Spot assumptions;
+- ECS/Fargate task shape, count, and run duration;
+- RDS engine, instance class, deployment mode, storage, and I/O assumptions;
+- ALB, data-transfer, CloudWatch logs, metrics, and trace costs;
+- currency and exchange-rate assumptions where conversion is used.
 
 ## 6. SLO lifecycle
 
@@ -242,7 +276,7 @@ Treat ratified SLOs and correctness rules as hard gates for synchronized release
 - idempotent replay count and result;
 - queue, lock, and connection-pool wait time;
 - database transaction time;
-- API CPU, memory, goroutine count, and garbage-collection pressure;
+- API CPU, memory, goroutine count, garbage-collection pressure, and observed `GOMAXPROCS`;
 - database CPU, connections, I/O, lock activity, and transaction saturation;
 - admission queue depth and age where applicable.
 
@@ -262,6 +296,18 @@ Treat ratified SLOs and correctness rules as hard gates for synchronized release
 | P1 | AG-M5 — Synchronized booking release | 15–20 Aug | Multi-organisation release wave, admission, fairness, noisy-neighbour evidence |
 | P1 | AG-M6 — Shared-resource hot authority | 21–25 Aug | Conserved inventory/balance model and hot-key strategy comparison |
 | P1 | AG-M7 — Faults, recovery, and evidence package | 26–28 Aug | Failure experiments, runbooks, final reports, public technical narrative |
+
+### 7.1 P0 scope-protection order
+
+If the P0 schedule slips, reduce breadth in this order while preserving correctness and measurement validity:
+
+1. use single-AZ development RDS rather than adding production-grade database redundancy;
+2. deploy and validate one API task shape before broadening the machine sweep;
+3. defer autoscaling implementation until after manual one-, two-, and four-task measurements;
+4. reduce the number of machine shapes and repeat counts, but retain negative controls and variance reporting;
+5. defer AG-M5–AG-M7 rather than weakening AG-M0–AG-M4 conclusions.
+
+Do not cut correctness gates, timeout/outcome semantics, separate-host capacity validation, or result reproducibility.
 
 ## 8. Milestone details
 
@@ -284,7 +330,7 @@ Create a minimal, reviewable project foundation and define how future claims wil
 - initial architecture and authority-boundary diagrams;
 - provisional SLO table and timeout budget;
 - decision record for modular monolith first;
-- explicit separation of measured evidence, inference, and open hypotheses.
+- explicit separation of repository-local measurements, prior evidence, inference, and open hypotheses.
 
 ### Exit criteria
 
@@ -313,7 +359,8 @@ Implement the smallest correct authoritative booking system before distributed d
 - explicit aggregate lock strategy;
 - background expiry and settlement;
 - health and readiness endpoints;
-- structured outcome and timing telemetry.
+- structured outcome and timing telemetry;
+- runtime metadata including Go version and observed `GOMAXPROCS`.
 
 ### Required semantics
 
@@ -340,7 +387,7 @@ Build a trustworthy load system and establish the first single-node latency-thro
 
 ### Load-generator requirements
 
-- separate Go process with support for execution on another host;
+- separate Go process;
 - closed-loop concurrency mode;
 - open-loop arrival-rate mode;
 - synchronized release barrier;
@@ -349,6 +396,15 @@ Build a trustworthy load system and establish the first single-node latency-thro
 - negative control proving response validation is active;
 - configurable deadlines, retries, connection counts, and think time;
 - machine-readable raw results and reproducible report generation.
+
+Local correctness and development runs may be co-located. Any published capacity claim must use a load generator on separate compute from the service under test.
+
+The capacity gate requires:
+
+- generator CPU, memory, connection, and network telemetry;
+- a generator-capacity sweep;
+- a deliberately under-provisioned generator negative control;
+- evidence that the selected generator configuration has headroom at the reported server operating point.
 
 ### Experiment layers
 
@@ -380,7 +436,7 @@ Deploy the smallest production-shaped AWS system and prove that it can be reprod
 - database migration procedure;
 - application metrics, traces, logs, dashboards, and alerts;
 - health, readiness, and deployment checks;
-- controlled external load execution;
+- controlled external load execution from separate compute;
 - infrastructure and operating-cost inventory.
 
 ### Timeout-chain validation
@@ -413,7 +469,7 @@ Subject to current platform support and cost, test shapes such as:
 - 2 vCPU / 4 GiB;
 - 4 vCPU / 8 GiB.
 
-Record `GOMAXPROCS`, database pool sizing, request concurrency limits, admission settings, telemetry overhead, connection reuse, CPU headroom, and memory headroom.
+Record Go version, configured vCPU, observed `GOMAXPROCS`, database pool sizing, request concurrency limits, admission settings, telemetry overhead, connection reuse, CPU throttling, CPU headroom, and memory headroom.
 
 ### Experiment layers
 
@@ -422,20 +478,22 @@ Record `GOMAXPROCS`, database pool sizing, request concurrency limits, admission
 - **Layer C:** one hot authority to expose the serialization ceiling.
 - **Layer D:** fleet economics including minimum HA fleet, availability-zone placement, task loss, deployment headroom, traffic variance, autoscaling delay, database, load balancer, telemetry, and network cost.
 
+Scale-efficiency curves and conclusions must be reported per layer; the Layer C hot-key curve must never be presented as a system-wide horizontal-scaling result.
+
 ### Required recommendation
 
 The AG-M4 report must state:
 
 - platform and task shape;
-- `GOMAXPROCS`;
+- Go version and observed `GOMAXPROCS`;
 - database pool size per task;
 - SLO-safe capacity per task;
 - recommended operating cap per task;
-- cost per million successful operations or flows;
+- dated cost-input block and cost per million successful operations or flows;
 - minimum steady fleet;
 - target utilisation range;
 - autoscaling signal and threshold;
-- horizontal scale efficiency curve;
+- horizontal scale efficiency by experiment layer;
 - next scaling boundary;
 - reasons smaller and larger task shapes were rejected.
 
@@ -504,7 +562,7 @@ Model conserved shared inventory and balance under extreme contention, then comp
 
 1. one aggregate group transaction authority;
 2. item-level authority keys with a separate balance authority;
-3. serialized command lane or actor-like processing per hot authority;
+3. serialized command lane or actor-like processing after same-key routing convergence exists;
 4. bounded admission in front of the authority;
 5. batching only where semantics preserve ordering and conservation.
 
@@ -544,7 +602,7 @@ Demonstrate that the measured architecture remains understandable and correct wh
 - capacity-unit recommendation;
 - synchronized-release report;
 - shared-resource contention report;
-- cost model and assumptions;
+- dated cost model and assumptions;
 - concise public project narrative covering problem, evidence, decisions, trade-offs, and open work;
 - updated README linking the most important demonstrations and reports.
 
@@ -554,7 +612,7 @@ Demonstrate that the measured architecture remains understandable and correct wh
 
 - AG-M0 through AG-M4;
 - correct booking core;
-- trustworthy load generation;
+- trustworthy separate-host load generation;
 - AWS deployment and telemetry;
 - SLO-safe capacity per node;
 - horizontal scale and cost frontier;
@@ -607,16 +665,15 @@ docs/
 
 Every report should separate:
 
-- measured results;
+- repository-local measured results;
+- prior evidence not reproduced here;
 - derived calculations;
 - interpretation;
 - limitations;
 - decisions;
 - next experiments.
 
-Repository governance for public release is kept separately from this roadmap in
-[`docs/public-disclosure-policy.md`](../public-disclosure-policy.md), so it
-applies to the whole repository rather than to any single milestone.
+Repository governance for public release is kept separately from this roadmap in [`docs/public-disclosure-policy.md`](../public-disclosure-policy.md), so it applies to the whole repository rather than to any single milestone.
 
 ## 11. Success definition for 28 August 2026
 
@@ -626,10 +683,10 @@ Alloca-Go is successful when it can answer, with reproducible evidence:
 2. What causes latency to grow, and when do timeouts become the visible degradation mode?
 3. What bounded overload behaviour replaces uncontrolled timeout failure?
 4. Which AWS capacity unit should be used, why, and at what recommended operating cap?
-5. How close to linear is horizontal scaling, and which shared dependency limits it next?
+5. How close to linear is horizontal scaling for dispersed authorities, and which shared dependency limits it next?
 6. How should organisation-level release waves be partitioned and admitted?
 7. How should one extremely hot shared resource be serialized, partitioned, or queued?
-8. What does the system cost per useful unit of work, including resilience headroom?
+8. What does the system cost per useful unit of work for a dated pricing snapshot, including resilience headroom?
 9. How does the service recover when a response, task, database connection, or authority path fails?
 
 The intended conclusion is not that Go or distribution makes capacity unlimited. It is that a correct authoritative service can use efficient capacity units, scale independent authorities horizontally, expose the remaining serialization boundaries, and make cost, latency, failure, and user-visible outcomes explicit.

@@ -1,0 +1,53 @@
+# Binaries and test outputs
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/alloca-go
+/bin/
+/dist/
+/coverage/
+coverage.out
+
+# Go workspace and local tooling
+go.work
+go.work.sum
+
+# Local environment
+.env
+.env.*
+!.env.example
+*.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+
+# Logs and generated benchmark data
+*.log
+/tmp/
+/results/raw/
+
+# Terraform local state and plans
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+.terraformrc
+terraform.rc
+
+# Local secrets
+*.pem
+*.key

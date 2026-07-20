@@ -583,6 +583,8 @@ Demonstrate that the measured architecture remains understandable and correct wh
 
 ```text
 docs/
+  public-disclosure-policy.md
+  pre-public-checklist.md
   planning/
     alloca-go-roadmap.md
   design/
@@ -612,17 +614,11 @@ Every report should separate:
 - decisions;
 - next experiments.
 
-## 11. Public-disclosure discipline
+Repository governance for public release is kept separately from this roadmap in
+[`docs/public-disclosure-policy.md`](../public-disclosure-policy.md), so it
+applies to the whole repository rather than to any single milestone.
 
-This repository is intended to be safe for eventual public release.
-
-- Use synthetic, generic workload descriptions.
-- Do not record confidential discussions, private product details, private organisation details, recruitment activity, or the origin of private design prompts.
-- Do not present modelled scale assumptions as observed facts about external systems.
-- Keep references to prior work limited to public technical evidence or repository-local measurements.
-- Review current files, PR text, issue text, branch names, commit messages, generated artifacts, and reachable history before changing repository visibility.
-
-## 12. Success definition for 28 August 2026
+## 11. Success definition for 28 August 2026
 
 Alloca-Go is successful when it can answer, with reproducible evidence:
 

@@ -26,6 +26,13 @@ Both workloads are synthetic engineering models. They are not descriptions of an
 
 The initial 40-day roadmap is documented in [`docs/planning/alloca-go-roadmap.md`](docs/planning/alloca-go-roadmap.md).
 
+## Public-disclosure policy
+
+This repository is intended to be safe for eventual public release. Rules for
+what must never be recorded, and the checks required before changing visibility,
+live in [`docs/public-disclosure-policy.md`](docs/public-disclosure-policy.md)
+and [`docs/pre-public-checklist.md`](docs/pre-public-checklist.md).
+
 ## Core principle
 
 > Optimise for sustainable, SLO-compliant, resilient throughput per unit cost—not peak accepted request rate.

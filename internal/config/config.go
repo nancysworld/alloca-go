@@ -32,6 +32,10 @@ type Config struct {
 	ShutdownGrace time.Duration
 }
 
+// All timeout fields above must be strictly positive; Load rejects zero and
+// negative overrides. See the check in Load for why disabling a bound is not a
+// supported mode.
+
 // Default returns the configuration used when no environment overrides are set.
 func Default() Config {
 	return Config{
@@ -87,8 +91,13 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		if err != nil {
 			return Config{}, fmt.Errorf("config: %s: %w", d.name, err)
 		}
-		if parsed < 0 {
-			return Config{}, fmt.Errorf("config: %s must not be negative", d.name)
+		// Require strictly positive values. net/http treats a zero timeout as
+		// "no timeout", so accepting 0s here would silently remove the very bound
+		// this config exists to guarantee (e.g. ReadHeaderTimeout against
+		// Slowloris). Disabling a bound is therefore not a supported mode; a
+		// deployment that wants a longer bound must state a positive duration.
+		if parsed <= 0 {
+			return Config{}, fmt.Errorf("config: %s must be positive (got %s); a zero or negative timeout disables the bound", d.name, parsed)
 		}
 		*d.dst = parsed
 	}

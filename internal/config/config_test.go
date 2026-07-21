@@ -61,6 +61,22 @@ func TestLoadRejectsNegativeDuration(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsZeroDuration(t *testing.T) {
+	// Zero must be rejected for every timeout field: net/http reads a zero timeout
+	// as "no timeout", which would silently disable the bound.
+	for _, name := range []string{
+		envReadHeaderTimeout,
+		envReadTimeout,
+		envWriteTimeout,
+		envIdleTimeout,
+		envShutdownGrace,
+	} {
+		if _, err := Load(lookupFrom(map[string]string{name: "0s"})); err == nil {
+			t.Errorf("Load accepted %s=0s, want error", name)
+		}
+	}
+}
+
 func TestLoadRejectsEmptyListenAddr(t *testing.T) {
 	_, err := Load(lookupFrom(map[string]string{envListenAddr: ""}))
 	if err == nil {

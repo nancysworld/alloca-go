@@ -5,11 +5,15 @@
 // budget in docs/design/measurement-contract.md; they are hypotheses, not tuned
 // production values, and AG-M3 validates the full deadline chain end to end.
 //
-// These are the connection-level timeouts only. AG-M1 adds the per-request
-// deadline configuration and must validate, at startup, that the two layers
-// compose per the ordering in measurement-contract §8.1 (connection-level bounds
-// strictly above the per-request deadlines they could preempt), failing fast the
-// same way Load rejects a zero timeout here.
+// These are the connection-level timeouts only: coarse transport /
+// resource-protection bounds, each governing a different phase. AG-M1 adds the
+// per-request Go-context deadlines that are the authoritative business-operation
+// deadline, and must validate the budget at startup (failing fast the same way
+// Load rejects a zero timeout here). Only WriteTimeout is nested above the request
+// deadline (so the context fires before a connection-write teardown);
+// ReadHeaderTimeout, ReadTimeout, and IdleTimeout are sized by their own concern
+// and must not be compared mechanically with it — see the phase table in
+// measurement-contract §8.1.
 package config
 
 import (

@@ -295,36 +295,39 @@ explicit error — the same discipline `config.Load` already applies to zero/neg
 connection-level timeouts (`internal/config`). A configuration that violates any
 clause below must be rejected before the service accepts traffic.
 
-The validation must enforce **two coupled orderings**:
+The validation must enforce the **per-request nesting** and the **write-phase
+relationship** — but must *not* mechanically compare every connection-level timeout
+with the business deadline.
 
-1. **Per-request chain** (from §8):
+1. **Per-request chain** (from §8) — the authoritative business-operation deadlines:
 
    ```text
    lock_timeout < statement_timeout <= transaction/context budget
        < server request deadline < client end-to-end deadline
    ```
 
-2. **Connection-level vs per-request boundary.** Each connection-level `http.Server`
-   timeout must be strictly greater than the per-request deadline it could otherwise
-   preempt, so a per-request *context* deadline always fires first and yields a
-   classified `timeout_server` / `timeout_db` (§4) rather than a silent connection
-   teardown:
+2. **Connection-level phases are sized independently.** The per-request Go context is
+   the authoritative business-operation deadline; the `http.Server` timeouts are coarse
+   transport / resource-protection bounds, each governing a different phase. Only
+   `WriteTimeout` has a required relationship to the business deadline; the others are
+   sized by their own concern and must **not** be compared mechanically with it.
 
-   ```text
-   server request deadline < WriteTimeout   (whole-response bound)
-   server request deadline < ReadTimeout    (request-body-bound work)
-   WriteTimeout, ReadTimeout <= IdleTimeout
-   ```
+   | `http.Server` timeout | Governs | Relationship to the per-request deadline |
+   |---|---|---|
+   | `ReadHeaderTimeout` | Receipt of request headers | Independent — protects header receipt; unrelated to request execution time |
+   | `ReadTimeout` | Reading the full request (headers + body) | Sized to the maximum supported request-upload duration / body size; not compared to the business deadline |
+   | `WriteTimeout` | Handler execution + response write | **> server request deadline + explicit response-writing margin**, so the Go context deadline fires first and yields a classified `timeout_server` / `timeout_db` (§4) rather than a connection-write teardown |
+   | `IdleTimeout` | Keep-alive inactivity between requests | Independent — not part of the nested mutation deadline chain |
 
-   The load-balancer idle timeout is out of this chain (a connection-inactivity
-   control) but must likewise sit above the client end-to-end deadline.
+   The load-balancer idle timeout is likewise a connection-inactivity control, outside
+   the per-request chain, and must sit above the client end-to-end deadline.
 
-The intent is a single rule with two homes: the connection layer (already validated in
-AG-M0) and the per-request layer (validated in AG-M1) must compose so that **the
-innermost responsible deadline is always the one that fires**, making every overload a
-classified outcome. AG-M1 should cover this with a unit test over representative valid
-and invalid configurations, and expose the resolved, validated budget so experiments
-can record it alongside `/meta`.
+The single durable principle: the per-request Go context is the business deadline, so
+for the write phase it must fire before `WriteTimeout` (making an overrun a classified
+outcome, not a torn connection); the header, body-read, and idle phases are governed by
+their own transport bounds and are not nested in the mutation chain. AG-M1 should cover
+this with a unit test over representative valid and invalid configurations, and expose
+the resolved, validated budget so experiments can record it alongside `/meta`.
 
 ---
 

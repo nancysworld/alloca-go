@@ -66,11 +66,13 @@ internal/
   config/
   buildinfo/
   httpapi/                 # transport adapter: HTTP <-> domain calls, outcome mapping
+  admission/               # per-node request admission and ordering (AG-M2+)
   domain/                  # core: entities, invariants, and the interfaces it needs
     <e.g. reservation, booking, inventory, balance>
     ports.go               # domain-OWNED interfaces (repositories, clock, id-gen)
   service/                 # application/use-case orchestration over the domain
   idempotency/             # idempotency scope, request hashing, replay resolution
+  worker/                  # background expiry / settlement scheduling (AG-M1+)
   postgres/                # adapter: IMPLEMENTS domain-owned repository interfaces
   telemetry/               # metrics/traces/logging wiring (OpenTelemetry-compatible)
 ```

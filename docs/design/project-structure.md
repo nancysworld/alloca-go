@@ -163,3 +163,109 @@ under `cmd/` over reusable `internal/` code.
 6. **Every package earns its existence.** Prefer extending an existing package over
    adding an empty placeholder; the layout should track real code, not anticipated
    code.
+
+---
+
+## 7. Logical-module to package mapping
+
+The boxes in [`system-context.md`](system-context.md) are logical/runtime
+responsibilities, not a requirement for one directory per box. A logical module may
+span several packages, while a package may support one narrow part of a larger
+logical module. The mapping below is the current design guide; package names marked
+planned remain indicative until code lands.
+
+| Logical module in `system-context.md` | Primary source location | Supporting locations | Status / milestone |
+|---|---|---|---|
+| Service executable and lifecycle | `cmd/alloca-go` | `internal/config` | Implemented, AG-M0 |
+| Operational surface (`/healthz`, `/readyz`, `/meta`) | `internal/httpapi` | `internal/buildinfo`, `internal/config` | Implemented, AG-M0 |
+| Reservation and shared-resource domain services | `internal/domain`, `internal/service` | domain-specific files or subpackages | Planned, AG-M1 |
+| Idempotency and replay resolution | `internal/idempotency` | domain-owned outcome types, `internal/postgres` persistence | Planned, AG-M1 |
+| Outcome classification | `internal/domain` | `internal/httpapi` maps outcomes to transport responses | Planned, AG-M1 |
+| Transactional repository contract | interfaces owned by `internal/domain` | consumed by `internal/service` | Planned, AG-M1 |
+| PostgreSQL transaction and cross-node authority adapter | `internal/postgres` | database migrations and configuration | Planned, AG-M1 |
+| Request admission and per-node ordering | `internal/admission` (indicative) | optional domain/service integration | Planned, AG-M2+ |
+| Background expiry and settlement | domain policy in `internal/domain`/`internal/service`; scheduling in `internal/worker` (indicative) | `internal/postgres` | Planned, AG-M1+ |
+| Telemetry | `internal/telemetry` | instrumentation injected into transport, service, and adapters | Planned, AG-M2+ |
+| External load generation | `cmd/loadgen` | experiment/load-generation packages under `internal/` | Planned, AG-M2 |
+
+The mapping does not weaken the dependency rules in §4. In particular, the fact
+that a logical module spans packages does not permit transport or persistence types
+to leak into the domain. Nor does a package name such as `admission` or `authority`
+make it a fleet-wide correctness authority: PostgreSQL remains the cross-node
+transactional authority unless a later ADR explicitly changes that boundary.
+
+---
+
+## 8. Candidate service-extraction seams `[HYPOTHESIS]`
+
+ADR 0001 chooses a modular monolith first. The purpose of the module boundaries is
+to keep deployment and transactions simple now while preserving evidence-driven
+options later. The entries below are **candidate seams, not a committed microservice
+plan**. They do not assert that extraction will occur, how many services will exist,
+or which transport or deployment technology would be used.
+
+A service boundary should normally align with a clear authority, scaling,
+availability, security, or ownership boundary. Splitting merely by technical layer
+(for example HTTP, business logic, and repository as separate services) is not an
+acceptable extraction rationale because it adds distributed failure modes without
+creating autonomous ownership.
+
+| Candidate seam | Current modular-monolith form | Possible future form | Evidence that could justify extraction |
+|---|---|---|---|
+| Booking authority | `internal/domain` + `internal/service` + booking HTTP handlers + `internal/postgres` adapter | Independently deployed booking service owning reservation/slot invariants | Booking has a distinct scaling or availability profile; a stable transaction/data-ownership boundary exists; independent deployment materially reduces risk |
+| Admission / waiting room | Per-node `internal/admission` package calling booking in process | Fleet-wide admission or waiting-room service owning queue/admission tokens | Per-node admission cannot bound synchronized load across replicas; experiments show a shared queue is required; user-visible queue semantics become product requirements |
+| Expiry / settlement workers | Worker scheduling in the same deployable, invoking domain/application services | Separate worker deployment or service role | Background work interferes with request-path latency, needs different scaling, or requires independent failure isolation |
+| Shard routing | Static/in-process routing based on configuration and authority keys | Independently managed shard-router/control-plane component | Authority count/topology becomes dynamic; routing changes require coordination beyond static deployment configuration |
+| Telemetry pipeline | In-process instrumentation and exporter | Separate collector/ingestion tier | Export or ingestion load measurably affects request latency, reliability, or deployment independence |
+| Idempotency | Domain-local idempotency module and records owned with the mutation | Potential shared capability only if multiple independently deployed mutation owners require it | Several services need one replay authority and centralized ownership is demonstrably safer than service-local idempotency; otherwise idempotency stays with the mutation owner |
+
+### 8.1 Extraction triggers
+
+Extraction requires evidence recorded in an ADR. One or more of the following may
+justify it:
+
+1. **Different scaling profile** — one module saturates while the rest retain useful
+   headroom.
+2. **Different availability or failure-isolation requirement** — one workload must
+   fail, restart, or deploy independently without impairing booking.
+3. **Clear authority and data ownership** — the candidate can own its invariants and
+   data without distributed transactions through the normal request path.
+4. **Deployment autonomy** — independent release cadence materially improves safety
+   or delivery.
+5. **Security/compliance boundary** — materially different access or isolation is
+   required.
+6. **Organisational ownership** — a durable team boundary requires independent
+   operational responsibility.
+
+Absent such evidence, extraction is rejected because it introduces network
+latency, partial failure, retries, API/version compatibility, distributed tracing,
+deployment coordination, and cross-service consistency costs without demonstrated
+benefit.
+
+### 8.2 Preparing seams without simulating a distributed system
+
+Modules communicate through narrow domain/application interfaces and domain types,
+not shared mutable globals, another module's tables, transport-specific DTOs, or
+package cycles. These interfaces are ordinary in-process Go calls today. We do **not**
+add HTTP/RPC, serialization, message brokers, or generic "remote" abstractions merely
+because a package might someday be extracted.
+
+If evidence later justifies extraction, a transport adapter may implement the same
+application capability across a process boundary. The extraction must preserve or
+explicitly redesign authority ownership; replacing a function call with a network
+call is not by itself a valid architecture change.
+
+### 8.3 Decisions deliberately deferred
+
+AG-M0 does not choose:
+
+- the eventual number of services;
+- REST versus gRPC or messaging;
+- a service-per-package or database-per-service policy;
+- Kubernetes or any other deployment topology;
+- a centralized idempotency service;
+- a fleet-wide queue before experiments demonstrate the need.
+
+Every candidate and trigger in this section is revisable as measurements and
+operational evidence accumulate. A future extraction is a new architectural
+decision and requires its own ADR.

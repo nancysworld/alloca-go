@@ -282,9 +282,49 @@ client deadlines.
   rationale is a contract violation.
 
 The service's outer HTTP server timeouts (`internal/config`) are the coarse,
-connection-level layer beneath this budget (and must stay above the per-request
-deadlines); the per-request context deadlines that carry the values above are
-introduced with the transactional core in AG-M1.
+connection-level layer beneath this budget; the per-request context deadlines that
+carry the values above are introduced with the transactional core in AG-M1.
+
+### 8.1 Startup validation (AG-M1 obligation, normative)
+
+The ordering above is a *checked invariant of the running service*, not only a
+documented intention. AG-M1 introduces the per-request deadline configuration
+(client, server, admission, DB-pool, `lock_timeout`, `statement_timeout`,
+transaction/context budget) and **must validate it at startup**, failing fast with an
+explicit error — the same discipline `config.Load` already applies to zero/negative
+connection-level timeouts (`internal/config`). A configuration that violates any
+clause below must be rejected before the service accepts traffic.
+
+The validation must enforce **two coupled orderings**:
+
+1. **Per-request chain** (from §8):
+
+   ```text
+   lock_timeout < statement_timeout <= transaction/context budget
+       < server request deadline < client end-to-end deadline
+   ```
+
+2. **Connection-level vs per-request boundary.** Each connection-level `http.Server`
+   timeout must be strictly greater than the per-request deadline it could otherwise
+   preempt, so a per-request *context* deadline always fires first and yields a
+   classified `timeout_server` / `timeout_db` (§4) rather than a silent connection
+   teardown:
+
+   ```text
+   server request deadline < WriteTimeout   (whole-response bound)
+   server request deadline < ReadTimeout    (request-body-bound work)
+   WriteTimeout, ReadTimeout <= IdleTimeout
+   ```
+
+   The load-balancer idle timeout is out of this chain (a connection-inactivity
+   control) but must likewise sit above the client end-to-end deadline.
+
+The intent is a single rule with two homes: the connection layer (already validated in
+AG-M0) and the per-request layer (validated in AG-M1) must compose so that **the
+innermost responsible deadline is always the one that fires**, making every overload a
+classified outcome. AG-M1 should cover this with a unit test over representative valid
+and invalid configurations, and expose the resolved, validated budget so experiments
+can record it alongside `/meta`.
 
 ---
 

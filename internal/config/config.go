@@ -4,6 +4,12 @@
 // HTTP timeout defaults are deliberately aligned with the provisional timeout
 // budget in docs/design/measurement-contract.md; they are hypotheses, not tuned
 // production values, and AG-M3 validates the full deadline chain end to end.
+//
+// These are the connection-level timeouts only. AG-M1 adds the per-request
+// deadline configuration and must validate, at startup, that the two layers
+// compose per the ordering in measurement-contract §8.1 (connection-level bounds
+// strictly above the per-request deadlines they could preempt), failing fast the
+// same way Load rejects a zero timeout here.
 package config
 
 import (

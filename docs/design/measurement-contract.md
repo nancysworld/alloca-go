@@ -101,9 +101,16 @@ CloudWatch logs/metrics/trace costs; and currency/exchange-rate assumptions.
 
 ## 4. Outcome taxonomy (normative)
 
-Peak accepted request rate is not a capacity result. Every request resolves to
-exactly one of these mutually-exclusive outcomes, and telemetry must count each
-separately. AG-M1 implements this taxonomy; AG-M2+ report against it.
+Peak accepted request rate is not a capacity result. Every request is classified on
+**two orthogonal dimensions**: its *terminal outcome* (what happened) and its
+*disposition* (whether it was a fresh attempt or an idempotent replay). Modelling
+these as one flat enum is a defect — a replay still returns a recorded terminal
+outcome (an `admitted_success`, a `business_refusal`, or an earlier
+`unknown_replayable`), so "replay" cannot be a peer of the very outcome it carries.
+AG-M1 encodes both dimensions in the telemetry/schema contract; AG-M2+ report against
+them.
+
+### 4.1 Terminal outcome (exactly one per request)
 
 | Outcome | Meaning | Counts toward |
 |---|---|---|
@@ -118,7 +125,20 @@ separately. AG-M1 implements this taxonomy; AG-M2+ report against it.
 | `timeout_db` | Database statement/lock timeout. | Timeout accounting |
 | `timeout_lb` | Load-balancer-level timeout. | Timeout accounting |
 | `internal_failure` | Unexpected server fault. | Failure |
-| `idempotent_replay` | A replay that returned the original recorded outcome. | Tracked separately |
+
+### 4.2 Disposition dimension (orthogonal to the outcome above)
+
+| Field | Values | Meaning |
+|---|---|---|
+| `replay` | `false` \| `true` | `false` = first observed attempt for this idempotency key; `true` = a replay that returned the **originally recorded** terminal outcome rather than performing a new mutation. |
+
+A replay is therefore recorded as, e.g., `outcome=admitted_success, replay=true` —
+never as a standalone `idempotent_replay`. This keeps two invariants simultaneously
+measurable: (a) the true distribution of terminal outcomes (replays fold into their
+recorded outcome), and (b) replay accounting itself (how many requests were served
+from the idempotency record, and which original outcome each returned). A replay must
+return exactly the recorded outcome; it must never re-run the mutation or resolve to a
+different terminal outcome.
 
 **Overload objective (acceptance bar, roadmap §6.2):** under overload, requests
 receive explicit bounded outcomes *before* they accumulate into infrastructure or
@@ -179,15 +199,22 @@ Telemetry must expose (roadmap §6.1):
 ## 7. Provisional SLOs `[HYPOTHESIS]`
 
 These are **provisional hypotheses** used to drive experiments — not production
-commitments and not measured results. They apply to the domain mutation path at the
-recommended operating point, and will be retained, revised, or rejected with
-evidence in AG-M2 (local frontier) and AG-M4 (ratification).
+commitments and not measured results. They apply to the domain mutation path and will
+be retained, revised, or rejected with evidence in AG-M2 (local frontier) and AG-M4
+(ratification).
+
+The p50/p95/p99 values are **healthy-operation latency objectives at the recommended
+operating point**. They are distinct from the client end-to-end deadline in §8, which
+is a *degraded-operation safety ceiling* and explicitly **not** an acceptable latency
+SLO: a request completing just under the deadline is not SLO-compliant. The design
+note [`latency-timeouts-and-retries.md`](latency-timeouts-and-retries.md) records the
+evidence basis and diagnostic latency bands.
 
 | SLI | Provisional target | Notes |
 |---|---|---|
-| e2e latency p50 | ≤ 50 ms | at recommended operating point |
-| e2e latency p95 | ≤ 200 ms | |
-| e2e latency p99 | ≤ 500 ms | |
+| e2e latency p50 | ≤ 50 ms | healthy-operation objective at recommended operating point |
+| e2e latency p95 | ≤ 200 ms | healthy-operation objective |
+| e2e latency p99 | ≤ 500 ms | healthy-operation tail objective |
 | Explicit-outcome rate | ≥ 99.9% of admitted requests | every admitted request gets a classified outcome (§4) within its deadline |
 | Server / DB timeout rate | ≤ 0.5% | at or below the recommended cap |
 | Unknown commit outcome | ≤ 0.05% | must be replay-safe |
@@ -200,36 +227,64 @@ not an input we assert here.
 
 ## 8. Timeout budget `[HYPOTHESIS]`
 
-A nested deadline chain. **The ordering invariant is the contract; the specific
-millisecond values are hypotheses** that AG-M3 validates end-to-end against real ALB,
-Go context, and PostgreSQL behaviour.
+A nested deadline chain. **The nesting/ordering, classification, and idempotency rules
+are the contract; the specific millisecond values are hypotheses** that AG-M2 sweeps
+locally and AG-M3 validates end-to-end through the real AWS/client path. The decision
+basis, prior observations, external references, and revision rules live in the design
+note [`latency-timeouts-and-retries.md`](latency-timeouts-and-retries.md); §8 restates
+its normative outcome for this contract.
 
-**Invariant:** each inner deadline is strictly less than its enclosing deadline, with
-margin, so that the *innermost* responsible layer times out first and returns an
-explicit outcome (§4) — never a generic outer timeout.
+**Ordering invariant (normative):**
 
-| Layer | Provisional value | Ordering constraint |
-|---|---|---|
-| Client deadline | 2000 ms | < ALB idle timeout |
-| ALB idle timeout | 3000 ms | > client deadline |
-| Server request context | 1500 ms | < client deadline |
-| Admission wait cap | 200 ms | inside server context |
-| DB connection acquire | 250 ms | inside server context |
-| Lock acquisition (`lock_timeout`) | 500 ms | inside server context |
-| Statement (`statement_timeout`) | 800 ms | ≥ lock timeout, inside server context |
-| Transaction budget | ≤ 1000 ms | inside server context |
+```text
+lock_timeout
+    < statement_timeout
+        <= transaction/context budget
+            < server request deadline
+                < client end-to-end deadline
+```
 
-Rationale for the shape (not the exact numbers): the server context (1500 ms) sits
-below the client deadline (2000 ms) so the server can emit a classified
-`timeout_server` before the client abandons; the DB-side limits (lock 500 ms,
-statement 800 ms, txn ≤ 1000 ms) sit inside the server context so a database stall
-surfaces as `timeout_db` rather than a context cancellation of unknown cause; the ALB
-idle timeout (3000 ms) exceeds the client deadline so the balancer is never the first
-to give up.
+so that the *innermost* responsible layer times out first and returns an explicit,
+classified outcome (§4) — never a generic outer timeout.
+
+| Layer | Provisional value | Role |
+|---|---:|---|
+| Client end-to-end deadline | 6000 ms | degraded-operation safety ceiling (not a latency SLO) |
+| Server request deadline | 5000 ms | leaves response-delivery margin before the client gives up |
+| Admission decision cap | 250 ms | bound before work is accepted or explicitly rejected/deferred |
+| DB connection acquisition cap | 500 ms | bound on waiting for a pooled connection |
+| PostgreSQL `lock_timeout` | 2000 ms | bound on each lock acquisition attempt |
+| PostgreSQL `statement_timeout` | 3000 ms | statement bound, greater than `lock_timeout` |
+| Transaction / context budget | 3500 ms | total DB operation budget inside the server deadline |
+
+**Budget arithmetic.** Admission and pool waits occur *outside* the transaction
+budget. At their provisional maxima, `250 + 500 + 3500 = 4250 ms` `[DERIVED]`, leaving
+approximately `750 ms` `[DERIVED]` inside the 5000 ms server deadline for parsing,
+validation, application work, response encoding, scheduling variance, and cancellation
+propagation, and `1000 ms` `[DERIVED]` of delivery margin between the server and
+client deadlines.
+
+**Explicit distinctions (normative):**
+
+- The **load-balancer idle timeout is not a member of this per-request deadline
+  chain.** It is a connection-inactivity control and must sit comfortably above the
+  application deadline, but the client and server request contexts are the primary
+  request-cancellation mechanisms.
+- A **timeout must not trigger an unconstrained new mutation.** Timeout and
+  `unknown_replayable` outcomes are resolved or replayed using the *same* idempotency
+  key (§4.2), never by issuing a fresh mutation with a new key.
+- **Retries are bounded, jittered, and owned at exactly one layer.** Lower and higher
+  layers must not independently retry the same mutation. The retry policy is specified
+  in [`latency-timeouts-and-retries.md`](latency-timeouts-and-retries.md) §4.
+- **Every numeric value remains revisable** after AG-M2/AG-M3 evidence, while the
+  nesting invariant, outcome classification, idempotency behaviour, and evidence
+  requirements remain normative. Changing a value without recording the evidence and
+  rationale is a contract violation.
 
 The service's outer HTTP server timeouts (`internal/config`) are the coarse,
-connection-level layer of this budget; the per-request context deadlines that carry
-the values above are introduced with the transactional core in AG-M1.
+connection-level layer beneath this budget (and must stay above the per-request
+deadlines); the per-request context deadlines that carry the values above are
+introduced with the transactional core in AG-M1.
 
 ---
 

@@ -358,6 +358,7 @@ Implement the smallest correct authoritative booking system before distributed d
 - transactional repository;
 - explicit aggregate lock strategy;
 - background expiry and settlement;
+- per-request deadline configuration with fail-fast startup validation of the timeout-budget ordering, including the per-phase transport bounds and the write-phase relationship (measurement contract §8.1);
 - health and readiness endpoints;
 - structured outcome and timing telemetry;
 - runtime metadata including Go version and observed `GOMAXPROCS`.

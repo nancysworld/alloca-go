@@ -1,0 +1,76 @@
+name: CI
+
+# Reproducibility is an AG-M0 exit criterion: CI must build and test the minimal
+# service deterministically. go.mod distinguishes the module language version (the
+# `go` directive) from the exact compiler (`toolchain go1.26.5`); actions/setup-go
+# reads go-version-file and honours the toolchain line, so CI and every measurement
+# use the same compiler patch version. The `go` directive alone is NOT the pin —
+# the `toolchain` directive is. golangci-lint is pinned below and mirrored by the
+# Makefile so the local and remote lint gates are identical.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: build, test, race
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt (formatting gate)
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: build
+        run: go build ./...
+
+      - name: test
+        run: go test ./...
+
+      - name: race test
+        run: go test -race ./...
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          # Pinned for lint reproducibility. MUST match GOLANGCI_LINT_VERSION in the
+          # Makefile so `make ci` locally and CI run the identical linter; bump both
+          # together.
+          version: v2.12.2

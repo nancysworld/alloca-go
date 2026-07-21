@@ -1,0 +1,18 @@
+# golangci-lint configuration (schema v2).
+#
+# The linter set is deliberately conservative for a young repository: the standard
+# bundle (errcheck, govet, ineffassign, staticcheck, unused) plus gofmt formatting.
+# Stricter style linters (e.g. revive) can be layered in once a green baseline is
+# observed in CI. Keep additions incremental so a new check never silently blocks
+# unrelated work.
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+
+formatters:
+  enable:
+    - gofmt

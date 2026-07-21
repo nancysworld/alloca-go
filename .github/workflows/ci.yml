@@ -1,8 +1,12 @@
 name: CI
 
 # Reproducibility is an AG-M0 exit criterion: CI must build and test the minimal
-# service deterministically. The Go toolchain is pinned via go.mod (go-version-file),
-# so the build and test gates are reproducible regardless of runner defaults.
+# service deterministically. go.mod distinguishes the module language version (the
+# `go` directive) from the exact compiler (`toolchain go1.26.5`); actions/setup-go
+# reads go-version-file and honours the toolchain line, so CI and every measurement
+# use the same compiler patch version. The `go` directive alone is NOT the pin —
+# the `toolchain` directive is. golangci-lint is pinned below and mirrored by the
+# Makefile so the local and remote lint gates are identical.
 
 on:
   push:
@@ -66,7 +70,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
-          # 'latest' guarantees support for the pinned Go toolchain. Once a green
-          # baseline is established, pin this to an exact version for full lint
-          # reproducibility.
-          version: latest
+          # Pinned for lint reproducibility. MUST match GOLANGCI_LINT_VERSION in the
+          # Makefile so `make ci` locally and CI run the identical linter; bump both
+          # together.
+          version: v2.12.2

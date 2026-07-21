@@ -65,6 +65,9 @@ organisation's systems.
 Decomposition follows measured evidence, not presentation value — see
 [`../decisions/0001-modular-monolith-first.md`](../decisions/0001-modular-monolith-first.md).
 The regions below are logical modules within one deployable, not separate services.
+Their mapping onto Go packages and the dependency rules that keep the modular
+boundary enforceable are specified in
+[`project-structure.md`](project-structure.md).
 
 ```mermaid
 flowchart TB

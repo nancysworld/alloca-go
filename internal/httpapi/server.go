@@ -32,7 +32,7 @@ func New(cfg config.Config, metaSource func() buildinfo.Info, ready ReadinessFun
 		ready = func() error { return nil }
 	}
 	mux := http.NewServeMux()
-	registerRoutes(mux, metaSource, ready)
+	registerRoutes(mux, metaSource, cfg.RequestBudget, ready)
 	return &Server{cfg: cfg, handler: mux}
 }
 

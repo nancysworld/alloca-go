@@ -75,6 +75,35 @@ func TestMetaReportsRuntime(t *testing.T) {
 	}
 }
 
+func TestMetaIncludesRequestBudget(t *testing.T) {
+	rec := do(t, testServer(t, nil), pathMeta)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET %s = %d, want 200", pathMeta, rec.Code)
+	}
+	var body struct {
+		GoVersion     string `json:"go_version"`
+		RequestBudget struct {
+			ServerDeadline string `json:"server_deadline"`
+			LockTimeout    string `json:"lock_timeout"`
+		} `json:"request_budget"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("meta body not JSON: %v", err)
+	}
+	// buildinfo provenance stays inlined at the top level.
+	if body.GoVersion == "" {
+		t.Error("meta go_version is empty")
+	}
+	// The resolved budget is exposed as human-readable duration strings; the defaults
+	// come from config.Default().RequestBudget.
+	if body.RequestBudget.ServerDeadline != "5s" {
+		t.Errorf("request_budget.server_deadline = %q, want 5s", body.RequestBudget.ServerDeadline)
+	}
+	if body.RequestBudget.LockTimeout != "2s" {
+		t.Errorf("request_budget.lock_timeout = %q, want 2s", body.RequestBudget.LockTimeout)
+	}
+}
+
 func TestHTTPServerAppliesTimeouts(t *testing.T) {
 	cfg := config.Default()
 	s := New(cfg, func() buildinfo.Info { return buildinfo.Info{} }, nil)

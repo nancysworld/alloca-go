@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"testing"
 	"time"
 )
@@ -139,6 +140,27 @@ func TestValidateEnforcesWritePhase(t *testing.T) {
 	cfg.WriteTimeout = cfg.RequestBudget.ServerDeadline + cfg.WriteResponseMargin + time.Millisecond
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate rejected WriteTimeout just above the margin, want accepted: %v", err)
+	}
+}
+
+func TestValidateWritePhaseDoesNotOverflow(t *testing.T) {
+	// Regression: time.Duration is an int64. A near-maximum WriteResponseMargin makes
+	// ServerDeadline + WriteResponseMargin overflow to a negative duration. The check
+	// must not compute that sum — with the default 10s WriteTimeout it is NOT actually
+	// greater than server deadline + this margin, so Validate must reject it. An
+	// additive check would overflow negative and wrongly accept.
+	cfg := Default()
+	cfg.WriteResponseMargin = time.Duration(math.MaxInt64) - time.Second
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate accepted a config whose ServerDeadline+WriteResponseMargin overflows int64, want error")
+	}
+
+	// Conversely, a near-maximum WriteTimeout with an ordinary margin is legitimately
+	// valid and must not be rejected by any overflow-avoidance arithmetic.
+	cfg = Default()
+	cfg.WriteTimeout = time.Duration(math.MaxInt64)
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate rejected a near-max WriteTimeout with an ordinary margin: %v", err)
 	}
 }
 

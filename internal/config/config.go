@@ -286,8 +286,13 @@ func (c Config) Validate() error {
 	// Write-phase relationship (§8.1 clause 2): the Go context deadline must fire
 	// before the connection-level write timeout, with margin for encoding and writing
 	// the response, so an overrun is a classified timeout_server/timeout_db rather
-	// than a torn connection.
-	if c.WriteTimeout <= b.ServerDeadline+c.WriteResponseMargin {
+	// than a torn connection. The required relationship is
+	// WriteTimeout > ServerDeadline + WriteResponseMargin, but we must not compute that
+	// sum: time.Duration is an int64, so a large (parseable) override could overflow it
+	// to a negative value and make an unsafe config pass. Instead we establish
+	// WriteTimeout > ServerDeadline first, then compare the (now safely positive)
+	// difference against the margin — no addition, no overflow.
+	if c.WriteTimeout <= b.ServerDeadline || c.WriteTimeout-b.ServerDeadline <= c.WriteResponseMargin {
 		return fmt.Errorf("config: WriteTimeout (%s) must be > server_deadline (%s) + WriteResponseMargin (%s)", c.WriteTimeout, b.ServerDeadline, c.WriteResponseMargin)
 	}
 

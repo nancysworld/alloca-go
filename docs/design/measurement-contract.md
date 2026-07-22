@@ -115,7 +115,8 @@ them.
 | Outcome | Meaning | Counts toward |
 |---|---|---|
 | `admitted_success` | Correct domain mutation completed. | Goodput |
-| `business_refusal` | Sold out / insufficient balance / conflict — a valid domain answer. | Reported separately (not failure) |
+| `business_refusal` | Sold out / insufficient balance / conflict / unknown target — a valid domain answer. | Reported separately (not failure) |
+| `invalid_request` | Rejected **before** domain processing: malformed body, missing required field, or missing idempotency key. Distinct from `business_refusal`, which is a valid *domain* answer to a well-formed request. | Reported separately (client/transport error; neither goodput nor failure) |
 | `retry_after` | Bounded retry requested. | Bounded overload response |
 | `admission_rejected` | Rejected because the admission queue is full. | Bounded overload response |
 | `queue_position` | Admitted to a queue with a position / release token. | Bounded overload response |
@@ -125,6 +126,17 @@ them.
 | `timeout_db` | Database statement/lock timeout. | Timeout accounting |
 | `timeout_lb` | Load-balancer-level timeout. | Timeout accounting |
 | `internal_failure` | Unexpected server fault. | Failure |
+
+`invalid_request` was added in AG-M1 (transaction-semantics §8) so that **every**
+completed request carries exactly one terminal outcome and totals reconcile: a
+request that never becomes a valid domain operation (unparseable, missing a required
+field or idempotency key) must still be classified, but must not inflate
+`business_refusal` — a *valid domain answer to a well-formed request*. The boundary is
+deliberate: a **well-formed** request for a non-existent target, or one that reuses an
+idempotency key for a different payload, is a domain **`business_refusal`** (with a
+specific reason code); only a request the service cannot turn into a domain operation
+at all is `invalid_request`. The fault line is separate again: an internal
+invariant/accounting violation is an `internal_failure`, never a refusal.
 
 ### 4.2 Disposition dimension (orthogonal to the outcome above)
 

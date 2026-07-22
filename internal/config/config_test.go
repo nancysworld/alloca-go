@@ -83,3 +83,112 @@ func TestLoadRejectsEmptyListenAddr(t *testing.T) {
 		t.Fatal("Load accepted an empty listen address, want error")
 	}
 }
+
+func TestDefaultBudgetIsValid(t *testing.T) {
+	// The provisional §8 defaults must themselves satisfy the §8.1 invariants;
+	// otherwise the service could never start with zero configuration.
+	if err := Default().Validate(); err != nil {
+		t.Fatalf("Default() failed Validate: %v", err)
+	}
+}
+
+func TestValidateRejectsBadNesting(t *testing.T) {
+	// Each case starts from a valid Default and violates exactly one clause of the
+	// §8.1 per-request nesting: lock < statement <= txn < server < client.
+	cases := []struct {
+		name   string
+		mutate func(*Config)
+	}{
+		{"lock == statement", func(c *Config) { c.RequestBudget.LockTimeout = c.RequestBudget.StatementTimeout }},
+		{"lock > statement", func(c *Config) { c.RequestBudget.LockTimeout = c.RequestBudget.StatementTimeout + time.Millisecond }},
+		{"statement > txn", func(c *Config) { c.RequestBudget.StatementTimeout = c.RequestBudget.TxnBudget + time.Millisecond }},
+		{"txn == server", func(c *Config) { c.RequestBudget.TxnBudget = c.RequestBudget.ServerDeadline }},
+		{"server == client", func(c *Config) { c.RequestBudget.ServerDeadline = c.RequestBudget.ClientDeadline }},
+		{"server > client", func(c *Config) { c.RequestBudget.ServerDeadline = c.RequestBudget.ClientDeadline + time.Millisecond }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := Default()
+			tc.mutate(&cfg)
+			if err := cfg.Validate(); err == nil {
+				t.Fatalf("Validate accepted invalid nesting (%s), want error", tc.name)
+			}
+		})
+	}
+}
+
+func TestValidateAllowsStatementEqualToTxn(t *testing.T) {
+	// statement_timeout <= txn_budget is a non-strict bound: equality is valid.
+	cfg := Default()
+	cfg.RequestBudget.StatementTimeout = cfg.RequestBudget.TxnBudget
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate rejected statement_timeout == txn_budget, want accepted: %v", err)
+	}
+}
+
+func TestValidateEnforcesWritePhase(t *testing.T) {
+	// WriteTimeout must exceed ServerDeadline + WriteResponseMargin so the Go context
+	// deadline fires before a connection-write teardown.
+	cfg := Default()
+	cfg.WriteTimeout = cfg.RequestBudget.ServerDeadline + cfg.WriteResponseMargin
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate accepted WriteTimeout == ServerDeadline + margin, want error")
+	}
+
+	cfg = Default()
+	cfg.WriteTimeout = cfg.RequestBudget.ServerDeadline + cfg.WriteResponseMargin + time.Millisecond
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate rejected WriteTimeout just above the margin, want accepted: %v", err)
+	}
+}
+
+func TestValidateIgnoresIndependentTransportBounds(t *testing.T) {
+	// §8.1 clause 2: ReadHeaderTimeout, ReadTimeout, and IdleTimeout are independent
+	// transport bounds, NOT mechanically nested under the business deadline. A config
+	// where they are far smaller than the server deadline must still validate.
+	cfg := Default()
+	cfg.ReadHeaderTimeout = time.Millisecond
+	cfg.ReadTimeout = time.Millisecond
+	cfg.IdleTimeout = time.Millisecond
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate rejected small independent transport bounds, want accepted: %v", err)
+	}
+}
+
+func TestValidateRejectsNonPositiveBudget(t *testing.T) {
+	cfg := Default()
+	cfg.RequestBudget.LockTimeout = 0
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate accepted a zero LockTimeout, want error")
+	}
+}
+
+func TestLoadRejectsBudgetOverrideThatBreaksOrdering(t *testing.T) {
+	// An env override that inverts the chain must fail fast at Load, not start.
+	_, err := Load(lookupFrom(map[string]string{
+		envLockTimeout: "4s", // >= default statement_timeout (3s)
+	}))
+	if err == nil {
+		t.Fatal("Load accepted lock_timeout > statement_timeout, want error")
+	}
+}
+
+func TestLoadParsesBudgetOverrides(t *testing.T) {
+	cfg, err := Load(lookupFrom(map[string]string{
+		envServerDeadline:   "4s",
+		envTxnBudget:        "3s",
+		envStatementTimeout: "2500ms",
+	}))
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.RequestBudget.ServerDeadline != 4*time.Second {
+		t.Errorf("ServerDeadline = %v, want 4s", cfg.RequestBudget.ServerDeadline)
+	}
+	if cfg.RequestBudget.TxnBudget != 3*time.Second {
+		t.Errorf("TxnBudget = %v, want 3s", cfg.RequestBudget.TxnBudget)
+	}
+	if cfg.RequestBudget.StatementTimeout != 2500*time.Millisecond {
+		t.Errorf("StatementTimeout = %v, want 2500ms", cfg.RequestBudget.StatementTimeout)
+	}
+}

@@ -12,6 +12,9 @@
 /coverage/
 coverage.out
 
+# Delve debug binaries (e.g. cmd/alloca-go/__debug_bin*)
+__debug_bin*
+
 # Go workspace and local tooling
 go.work
 go.work.sum

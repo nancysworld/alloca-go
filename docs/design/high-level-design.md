@@ -145,8 +145,10 @@ The load-bearing structural facts:
 
 - **The slot row is the aggregate and the write authority.** Every capacity-changing
   operation locks the slot row inside one transaction, giving single-writer
-  serialization per slot within PostgreSQL. Different slots never contend — the basis
-  for dispersed-authority horizontal scaling. An in-process router is a per-node
+  serialization per slot within PostgreSQL. Different slots never contend **on this
+  lock** — the basis for dispersed-authority horizontal scaling — though they still
+  share PostgreSQL resources (connection pool, CPU, I/O, WAL), so this is not a claim of
+  linear independence; AG-M2/AG-M4 measure that. An in-process router is a per-node
   optimisation only; PostgreSQL is the sole cross-node serialization authority.
 - **Correctness does not depend on the background worker.** Elapsed holds are settled
   lazily under the slot lock by any capacity-changing operation; the worker only makes

@@ -330,29 +330,47 @@ The record holds:
 
 ### 5.2 Same-transaction rule
 
-The idempotency record is written **in the same transaction as the mutation it
-describes**, under the same slot lock. Mutation and record therefore commit or abort
-together: **one scoped key ⇒ at most one logical mutation**, with no window where a
-mutation exists without its record or vice versa.
+The idempotency record is written **in the same transaction as the mutation (or
+refusal) it describes** — under the slot's `FOR UPDATE` lock when the request targets a
+slot (reserve/confirm/cancel), or, when there is no slot to lock (an `unknown_target`
+refusal, §5.5), in a transaction guarded only by the record's unique constraint. Record
+and outcome therefore commit or abort together: **one scoped key records exactly one
+terminal outcome** — the first to commit — with no window where a mutation exists
+without its record or vice versa. Every later use of that key either replays the
+recorded outcome or, if the request differs, is refused (§5.3).
 
 ### 5.3 Resolution algorithm
 
-Within the operation's transaction, after locking the slot:
+Within the operation's transaction:
 
-1. Look up the record by scoped key (§5.1).
-2. **Found, `request_hash` matches** → **replay**: return the recorded
+1. Resolve the target and, **if it exists**, lock its slot row (§2) — the slot itself
+   for reserve, or the reservation's/booking's slot for confirm/cancel. If the target
+   does **not** exist, no slot is locked: the request is an `unknown_target` refusal and
+   follows §5.5.
+2. Look up the record by scoped key (§5.1).
+3. **Found, `request_hash` matches** → **replay**: return the recorded
    `terminal_outcome` with `replay=true`. No mutation runs.
-3. **Found, `request_hash` differs** → `business_refusal` (`idempotency_conflict`): a
+4. **Found, `request_hash` differs** → `business_refusal` (`idempotency_conflict`): a
    key must not be silently repurposed for a different request.
-4. **Not found** → settle (§2.1), perform the operation (§4), write the record with the
-   resulting terminal outcome, and commit.
+5. **Not found** → settle elapsed holds (§2.1), perform the operation (§4), write the
+   record with the resulting terminal outcome, and commit.
 
-Duplicates carry the same scoped key and therefore resolve to the same slot, so step 1
-runs under the same `FOR UPDATE` lock as the mutation and two concurrent duplicates
-serialize. The **unique constraint** on the scoped key is the concurrency backstop: if
-two inserts still race, one wins; the loser rolls back its attempted mutation, reads
-the winning record, compares `request_hash`, and either replays the winning result or
-returns `idempotency_conflict`.
+Two concurrency cases must be distinguished, because the scoped key
+`(organisation_id, user_id, operation, idempotency_key)` does **not** include the
+target — `target_id` lives only in `request_hash` (§5.1):
+
+- **Same scoped key, same request** (same target ⇒ same `request_hash`) — the ordinary
+  duplicate/retry. Both requests resolve to the **same** slot and serialize on its
+  `FOR UPDATE` lock: the first commits its mutation and record, the second finds the
+  record under the same lock (step 3) and replays. The slot lock alone orders them.
+- **Same scoped key, different request** (different target and/or `request_hash`) — key
+  reuse. The two requests **may resolve to different slots and hold different locks**, so
+  the slot lock does *not* serialize them and both may attempt work. Here the **unique
+  constraint** on the scoped key is the backstop: one insert wins; the loser **rolls
+  back its attempted mutation in full**, re-reads the winning record, compares
+  `request_hash`, and returns `idempotency_conflict` (hashes differ) or replays (hashes
+  match). No second logical mutation survives. (When such requests happen to resolve to
+  the *same* slot, the slot lock already orders them and step 4 refuses the loser.)
 
 ### 5.4 Lost responses and unknown outcomes
 
@@ -364,6 +382,27 @@ returns `idempotency_conflict`.
   it does not (the mutation never committed → perform it fresh). Exactly one logical
   mutation results. A timeout or unknown outcome must **never** be retried with a *new*
   key (latency-timeouts-and-retries §4).
+
+### 5.5 Idempotency for `unknown_target` (no slot to lock)
+
+A well-formed request for a slot/reservation/booking that does not exist is a
+`business_refusal` (`unknown_target`, §4). It has **no slot to lock and no capacity to
+mutate**, but — like every completed request — it still records its terminal outcome, so
+a retry replays it and the key cannot later be silently repurposed for a valid target.
+The refusal is recorded in a transaction guarded only by the scoped-key **unique
+constraint**:
+
+1. Look up the record by scoped key. **Found, `request_hash` matches** → replay the
+   recorded `unknown_target` refusal (`replay=true`); **found, `request_hash` differs** →
+   `business_refusal` (`idempotency_conflict`).
+2. **Not found** → confirm the target is absent, insert the record with
+   `terminal_outcome = business_refusal(unknown_target)`, and commit. If a concurrent
+   duplicate races the insert, the unique constraint lets one win; the loser re-reads and
+   replays (or returns `idempotency_conflict`).
+
+This keeps the replay contract **total**: every completed request — including a refusal
+that never reached a slot — has a recorded, replayable outcome, so experiment totals
+reconcile ([`measurement-contract.md`](measurement-contract.md) §4).
 
 ---
 

@@ -195,14 +195,19 @@ settle-under-lock form, which is correct at AG-M1 data volumes.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> held: reserve (released, open, capacity available)
-    held --> confirmed: confirm (before expiry and before start)
-    held --> cancelled: cancel (before start)
-    held --> expired: expiry (now >= expires_at) — worker OR any lock-holding op
+    [*] --> held: reserve
+    held --> confirmed: confirm
+    held --> cancelled: cancel
+    held --> expired: expiry
     confirmed --> [*]
     cancelled --> [*]
     expired --> [*]
 ```
+
+The edge labels are the booking operations; each transition's **guard** (release
+window, expiry boundary, capacity, slot-open) is specified normatively in §4. Keeping
+guards off the diagram avoids restating them — and avoids long edge labels, which
+`stateDiagram-v2` does not wrap and renderers clip.
 
 - `held` is the only non-terminal state. `confirmed`, `cancelled`, `expired` are
   terminal.
@@ -217,8 +222,8 @@ stateDiagram-v2
 
 ```mermaid
 stateDiagram-v2
-    [*] --> active: confirm (from a held reservation)
-    active --> cancelled: cancel (before start)
+    [*] --> active: confirm
+    active --> cancelled: cancel
     active --> [*]
     cancelled --> [*]
 ```

@@ -16,16 +16,17 @@ the domain rules, or the package rules: those live once, in their owning documen
 
 ## 1. What Alloca-Go is
 
-Alloca-Go is a production-shaped distributed reservation system in Go, built to study
-how a stateful backend behaves when many clients compete for scarce or conserved state
-at once.
+Alloca-Go is a production-shaped distributed reservation system in Go, exploring
+correctness, contention, scalability, overload behaviour, and capacity economics.
 
-A booking system of this kind is not mainly a CRUD service. It is an **allocation
-system under contention**: many users try to acquire the same small set of units at the
-same moment — amplified by refreshes, retries, stale availability reads, and
-confirmation flows. The interesting failures are not ordinary request volume; they are
-oversell, duplicate bookings, stranded holds, bookings that land after a window has
-closed, availability that "lies", and latency that grows until everything times out.
+Its central lens is that a booking system of this kind is not mainly a CRUD service. It
+is an **allocation system under contention**: many users try to acquire the same small
+set of units at the same moment — amplified by refreshes, retries, stale availability
+reads, and confirmation flows. The interesting failures are not ordinary request
+volume; they are oversell, duplicate bookings, stranded holds, bookings that land after
+a window has closed, availability that "lies", and latency that grows until everything
+times out. From there the project also asks how independent authorities scale, how the
+system should behave under overload, and what it costs per useful operation.
 
 Alloca-Go treats those as first-class engineering questions and measures them. It uses
 two **synthetic** representative workloads — a fitness-club synchronized release across
@@ -35,17 +36,19 @@ engineering models, never as descriptions of any organisation's real system
 [`../public-disclosure-policy.md`](../public-disclosure-policy.md)).
 
 The project's questions, milestone plan, and measurement vocabulary are set out in the
-[roadmap](../planning/alloca-go-roadmap.md); the single sentence they optimise toward
-is:
+[roadmap](../planning/alloca-go-roadmap.md). Its **core principle** — the single
+optimisation objective the whole system serves — is:
 
-> Sustainable, SLO-compliant, resilient throughput per unit cost — not peak accepted
-> request rate.
+> Optimise for sustainable, SLO-compliant, resilient throughput per unit cost — not
+> peak accepted request rate.
 
 ## 2. Design principles
 
-These are the cross-cutting commitments that explain *why* the system is shaped the way
-it is. They sit above any single document; each one is **made concrete** in the doc
-named after it, which is where its normative form lives.
+The core principle above is the *objective*; the principles here are the *means*. They
+are the cross-cutting engineering commitments that serve that objective and the
+correctness it depends on — they explain *why* the system is shaped the way it is. They
+sit above any single document; each one is **made concrete** in the doc named after it,
+which is where its normative form lives.
 
 1. **Correct authority before distribution.** Every scarce or conserved resource has
    exactly one write authority. Adding API nodes never removes the serialization limit

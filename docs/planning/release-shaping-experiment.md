@@ -1,30 +1,29 @@
 # Release shaping — evidence and experiment hypothesis
 
 **Status:** Planned evidence note — to be exercised in AG-M2/AG-M5
-**Scope:** record an external workload-policy observation, connect it to prior
-RuntimeIQ-Alloca evidence, and define the hypotheses Alloca-Go will test. This note does
-not claim access to any organisation's internal architecture, traffic, implementation,
-or measured results.
+**Scope:** connect a generic industry workload-shaping pattern to prior
+RuntimeIQ-Alloca evidence and define the synthetic hypotheses Alloca-Go will test.
+This note makes no claim about any external organisation's timetable, scale, traffic,
+architecture, implementation, bottleneck, or measured results.
 
-## 1. External real-world observation
+## 1. Industry context and synthetic workload model
 
-In July 2026, a consumer fitness-booking service announced a change from one daily
-fixed booking-opening time to **per-class rolling release**: each class opens for
-booking at its own scheduled start time, nine days in advance. The stated purpose was
-to spread booking activity throughout the day and reduce slow-loading periods caused
-by many users entering the app together.
+Reservation products can replace one synchronized booking release with rolling
+per-session releases so demand opens gradually instead of concentrating at one instant.
+This public product-policy pattern motivates an Alloca-Go experiment; it is not evidence
+about any external service's internal system or the size of the effect.
 
-A manual inspection of one representative daily timetable found approximately 40
-classes, with some coincident start times:
+For a representative synthetic timetable, Alloca-Go models:
 
-- one cluster of five classes;
-- one cluster of three classes;
-- approximately five clusters of two classes;
-- the remaining classes opening individually.
+- `[HYPOTHESIS]` approximately 40 sessions in one release horizon;
+- `[HYPOTHESIS]` occasional coincident releases containing two to five sessions;
+- `[HYPOTHESIS]` a largest release cluster of five sessions;
+- `[HYPOTHESIS]` one unusually hot session that can be placed alone or inside a cluster;
+- `[HYPOTHESIS]` equal-demand and demand-skewed variants.
 
-This is an observed product-policy and timetable shape only. It is **not** evidence of
-the service's backend design, actual concurrency, traffic distribution, latency
-improvement, bottleneck, or capacity.
+These are experiment parameters chosen to expose the difference between a global wave,
+dispersed independent authorities, clustered releases, and one hot authority. They are
+synthetic and are not presented as observations about an external timetable.
 
 ## 2. Prior prototype evidence
 
@@ -37,15 +36,15 @@ connection-pool pressure, lock contention, shared-resource saturation, timeout b
 and retry amplification.
 
 These findings remain prior evidence until reproduced in Alloca-Go. They do not imply
-that the external service has the same implementation or bottleneck.
+that any external service has the same implementation or bottleneck.
 
 ## 3. First-order workload model
 
 Let:
 
-- `D` be the total booking demand that previously arrived at one synchronized release;
-- `d_i` be expected competing demand for class `i`;
-- `C_t` be the set of classes released at time `t`.
+- `D` be the total booking demand that arrives at one synchronized release;
+- `d_i` be expected competing demand for session `i`;
+- `C_t` be the set of sessions released at time `t`.
 
 The scheduled release load at time `t` is modelled as:
 
@@ -53,17 +52,18 @@ The scheduled release load at time `t` is modelled as:
 release_load(t) = sum(d_i for i in C_t)
 ```
 
-Under the simplifying assumptions that all classes have equal demand and capacity, the
-largest observed cluster changes the scheduled peak from approximately 40 classes to 5:
+Under the synthetic equal-demand model, changing the scheduled peak from all 40 sessions
+to a largest cluster of five gives:
 
 ```text
 new_scheduled_peak / old_scheduled_peak ~= 5 / 40 = 1 / 8
 ```
 
-This `1/8` value is `[DERIVED]` from the observed timetable counts under an equal-demand
-model. It is **not** a measured latency reduction. Fixed request cost, unequal class
-popularity, clustered user behaviour, retries, and the system's actual saturation point
-can make the realised improvement smaller or larger.
+The `1/8` value is `[DERIVED]` from the explicitly synthetic `[HYPOTHESIS]` parameters
+above. It estimates the ratio of scheduled concurrent demand under equal demand; it is
+**not** a measured latency reduction. Fixed request cost, unequal popularity, clustered
+user behaviour, retries, and the system's saturation point can make the realised
+improvement smaller or larger.
 
 ## 4. Hypotheses to test in Alloca-Go
 
@@ -87,18 +87,19 @@ Near saturation, the improvement may be super-linear if lower initial concurrenc
 prevents queue growth, timeouts, and retry amplification. Below saturation, the
 improvement may be materially less than the concurrency ratio.
 
-### H3 — demand-weighted clustering matters more than class count
+### H3 — demand-weighted clustering matters more than session count
 
-`[HYPOTHESIS]` A cluster of several quiet classes can create less load than one unusually
-popular class. Release planning should therefore be evaluated using expected competing
-demand per release time, not only the number of classes in each cluster.
+`[HYPOTHESIS]` A cluster of several quiet sessions can create less load than one unusually
+popular session. Release planning should therefore be evaluated using expected competing
+demand per release time, not only the number of sessions in each cluster.
 
 ### H4 — isolating a super-hot slot protects shared resources
 
-`[HYPOTHESIS]` Moving an unusually hot slot out of a multi-class release cluster does not
-remove that slot's own authority-serialization ceiling, but it reduces competition with
-unrelated slots for shared API, connection-pool, CPU, I/O, WAL, and telemetry capacity.
-It should improve failure isolation and protect ordinary slots from the hot slot's burst.
+`[HYPOTHESIS]` Moving an unusually hot slot out of a multi-session release cluster does
+not remove that slot's own authority-serialization ceiling, but it reduces competition
+with unrelated slots for shared API, connection-pool, CPU, I/O, WAL, and telemetry
+capacity. It should improve failure isolation and protect ordinary slots from the hot
+slot's burst.
 
 ### H5 — the bottleneck moves rather than disappears
 
@@ -109,13 +110,13 @@ slot-row serialization, database CPU/I/O/WAL, or retry/timeout policy.
 
 ## 5. Experiment design
 
-Alloca-Go should compare at least these arrival shapes with the same total users, slot
-capacities, class-demand distribution, client deadlines, and retry policy:
+Alloca-Go should compare at least these synthetic arrival shapes with the same total
+users, slot capacities, demand distribution, client deadlines, and retry policy:
 
 1. **Global synchronized release** — all slots open at one instant.
 2. **Uniform rolling release** — slots spread evenly across release times.
-3. **Observed-cluster shape** — cluster sizes approximately `5, 3, 2, 2, 2, 2, 2`, with
-   remaining slots released individually.
+3. **Representative clustered release** — synthetic clusters with sizes up to five,
+   including a `5, 3, 2, 2, 2, 2, 2` comparison shape and individually released slots.
 4. **Demand-weighted cluster shape** — quiet slots may cluster; predicted hot slots are
    separated.
 5. **Hot-slot isolation control** — the same hot slot tested alone and inside the largest
@@ -147,7 +148,7 @@ constant and the load generator has verified headroom. A lower peak accepted req
 rate alone is not sufficient: the comparison must use the measurement contract's
 correctness, outcome, SLO, reconciliation, and reproducibility gates.
 
-The external policy change is evidence that synchronized release is a real product-level
-operational concern and that workload shaping is a plausible intervention. Only
+The industry pattern shows that synchronized release is a plausible product-level
+operational concern and workload shaping is a credible intervention to test. Only
 Alloca-Go repository-local experiments can establish the size, mechanism, bottleneck,
 and limits of the effect for this system.

@@ -22,6 +22,12 @@ The project starts as a modular monolith with a stateless Go API, PostgreSQL as 
 
 Both workloads are synthetic engineering models. They are not descriptions of any organisation's internal architecture, traffic, or product implementation.
 
+## Design
+
+The design record starts at [`docs/design/high-level-design.md`](docs/design/high-level-design.md) —
+the entry point that frames the problem, states the design principles, shows the
+architecture at a glance, and maps which document owns each detailed decision.
+
 ## Roadmap
 
 The initial 40-day roadmap is documented in [`docs/planning/alloca-go-roadmap.md`](docs/planning/alloca-go-roadmap.md).

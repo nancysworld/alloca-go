@@ -12,7 +12,7 @@
 This document is the **plan of work** for AG-M1: how the milestone is split into
 reviewable PRs and what each proves. It is not itself a normative contract — where a
 design decision needs to bind later code, it is recorded in the milestone's design
-doc (`transaction-semantics.md`, PR2) or a decision record (ADR-0002, PR3), not here.
+doc (`transaction-semantics.md`, PR2) or a decision record (ADR-0002, PR2), not here.
 
 ---
 
@@ -170,11 +170,11 @@ refusal, conflict, client cancellation, server deadline, DB timeout, lost respon
 after commit, unknown commit outcome, permanent failure, and idempotent replay) are
 realised by the §3.3 taxonomy and validated across PR2–PR4.
 
-## 6. Tooling decisions (ratified — ADR-0002)
+## 6. Tooling decisions (recorded — ADR-0002)
 
-Ratified and recorded in
+Recorded (status **Proposed**) in
 [`../decisions/0002-postgresql-transactional-authority.md`](../decisions/0002-postgresql-transactional-authority.md)
-(landed in PR2):
+(landed as a doc in PR2; Accepted when PR2 merges):
 
 - **Migrations:** `pressly/goose` with embedded plain-SQL migrations, run through a
   dedicated command/step — not automatically by every serving replica.

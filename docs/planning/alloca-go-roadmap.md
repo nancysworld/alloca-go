@@ -647,6 +647,7 @@ docs/
   planning/
     alloca-go-roadmap.md
   design/
+    high-level-design.md
     system-context.md
     measurement-contract.md
     transaction-semantics.md

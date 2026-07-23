@@ -269,7 +269,7 @@ outcome and never re-runs the mutation (§5). Each `business_refusal` carries a 
 | **Cancel**(reservation, key) | a live held unit or active booking exists, `now < starts_at` | `admitted_success` |
 | | nothing live to release | `business_refusal` (`invalid_state`) |
 | | `now >= starts_at` | `business_refusal` (`slot_closed`) |
-| **Any** | well-formed request for an unknown slot/reservation/booking | `business_refusal` (`unknown_target`) |
+| **Any** | well-formed request whose **target** (§5.1) does not exist — the slot for reserve, the reservation for confirm/cancel | `business_refusal` (`unknown_target`) |
 | **Any** | same idempotency key, different `request_hash` | `business_refusal` (`idempotency_conflict`) |
 
 **Fault line (normative).** A *domain refusal* is a valid business "no" to a
@@ -322,6 +322,18 @@ The record holds:
   request_hash, terminal_outcome, result_ref, created_at }
 ```
 
+- **`target_id`** is a generic name for the entity the operation acts on — its
+  *target*. It is used only to compute `request_hash` (below); it is not a stored
+  field. Its concrete meaning depends on the operation:
+
+  ```text
+  reserve  → target_id = slot_id
+  confirm  → target_id = reservation_id
+  cancel   → target_id = reservation_id
+  ```
+
+  The same entity is what an operation resolves and locks (§2), and whose absence
+  yields the `unknown_target` refusal (§4, §5.5).
 - **`request_hash`** is a hash over a canonical representation of the semantically
   significant request fields — `contract_version, operation, organisation_id, user_id,
   target_id, body` — with stable key ordering and separators. It detects a key reused
@@ -390,7 +402,7 @@ target — `target_id` lives only in `request_hash` (§5.1):
 
 ### 5.5 Idempotency for `unknown_target` (no slot to lock)
 
-A well-formed request for a slot/reservation/booking that does not exist is a
+A well-formed request whose target (§5.1) does not exist is a
 `business_refusal` (`unknown_target`, §4). It has **no slot to lock and no capacity to
 mutate**, but — like every completed request — it still records its terminal outcome, so
 a retry replays it and the key cannot later be silently repurposed for a valid target.
@@ -466,8 +478,8 @@ deliberate:
   path. Counted separately (client/transport error), never as goodput or fault, and
   never inflating `business_refusal`.
 - **`business_refusal`** — a valid domain answer to a **well-formed** request. This
-  includes `unknown_target` (a well-formed request for a slot/reservation/booking that
-  does not exist) and `idempotency_conflict` (a well-formed reuse of a key for a
+  includes `unknown_target` (a well-formed request whose target (§5.1) does not
+  exist) and `idempotency_conflict` (a well-formed reuse of a key for a
   different payload), each with a specific reason code, alongside the capacity/window
   refusals of §4.
 - **`internal_failure`** — an internal invariant/accounting violation (the fault line

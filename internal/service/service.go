@@ -15,6 +15,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/nancysworld/alloca-go/internal/domain"
@@ -359,7 +360,18 @@ func (s *Service) settle(ctx context.Context, tx domain.Tx, slotID domain.SlotID
 // record is inserted first so a unique-constraint race is detected before any entity
 // mutation is persisted (transaction-semantics §5.2); on a race it returns errRetry
 // so run re-executes.
+//
+// It first asserts the call-site invariant that ties the two arguments together: a
+// mutation exists exactly when the outcome is admitted_success. Every operation sets
+// result and persist as a pair, but nothing in the type system enforces it. Were the
+// record inserted while its mutation was skipped (admitted_success with persist=nil),
+// a replay would return a success referencing a reservation or booking that was never
+// written — a durable, silent P1. A violation is a programming error on the fault
+// line (§4), never a domain outcome, so it aborts the transaction.
 func (s *Service) commit(ctx context.Context, tx domain.Tx, scope domain.ScopeKey, hash string, result domain.Result, now time.Time, persist func(context.Context, domain.Tx) error) (domain.Result, error) {
+	if mutates := result.Outcome == domain.OutcomeAdmittedSuccess; mutates != (persist != nil) {
+		return domain.Result{}, fmt.Errorf("service: commit invariant violated: outcome %q with persist!=nil==%t", result.Outcome, persist != nil)
+	}
 	rec := domain.IdempotencyRecord{
 		OrganisationID: scope.OrganisationID,
 		UserID:         scope.UserID,

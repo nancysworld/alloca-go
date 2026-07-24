@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -510,5 +511,53 @@ func TestCapacityInvariantUnderRandomOperations(t *testing.T) {
 		if consumed < 0 || consumed > capacity {
 			t.Fatalf("step %d: capacity invariant violated: consumed=%d capacity=%d", step, consumed, capacity)
 		}
+	}
+}
+
+// TestCommitInvariantGuard exercises the commit-time assertion that a mutation
+// exists exactly when the outcome is admitted_success. No legitimate operation can
+// violate it — result and persist are always set as a pair — so it is driven
+// directly to prove the guard turns a would-be silent bad record into an aborting
+// fault (the §4 fault line), and that the record is never inserted when it fires.
+func TestCommitInvariantGuard(t *testing.T) {
+	scope := domain.ScopeKey{OrganisationID: org, UserID: "u", Operation: domain.OpReserve, Key: "k"}
+	noopPersist := func(context.Context, domain.Tx) error { return nil }
+
+	cases := []struct {
+		name    string
+		outcome domain.Outcome
+		persist func(context.Context, domain.Tx) error
+		wantErr bool
+	}{
+		{"success without persist", domain.OutcomeAdmittedSuccess, nil, true},
+		{"refusal with persist", domain.OutcomeBusinessRefusal, noopPersist, true},
+		{"success with persist", domain.OutcomeAdmittedSuccess, noopPersist, false},
+		{"refusal without persist", domain.OutcomeBusinessRefusal, nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, 1)
+			result := domain.Result{Outcome: tc.outcome}
+			err := f.store.WithinTx(context.Background(), func(ctx context.Context, tx domain.Tx) error {
+				_, e := f.svc.commit(ctx, tx, scope, "hash", result, baseNow, tc.persist)
+				return e
+			})
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("commit: expected invariant violation, got nil")
+				}
+				// The guard fires before InsertRecord, so no record is written.
+				_ = f.store.WithinTx(context.Background(), func(ctx context.Context, tx domain.Tx) error {
+					if _, e := tx.FindRecord(ctx, scope); !errors.Is(e, domain.ErrNotFound) {
+						t.Errorf("commit: record present after invariant violation (err=%v), want none", e)
+					}
+					return nil
+				})
+				return
+			}
+			if err != nil {
+				t.Fatalf("commit: unexpected error %v", err)
+			}
+		})
 	}
 }

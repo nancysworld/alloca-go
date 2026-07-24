@@ -9,7 +9,9 @@ changed.
 
 Do not record confidential discussions, private product details, private
 organisation details, recruitment activity, or the private origin of design
-prompts. The single named exception is the predecessor project, below.
+prompts. The predecessor project **RuntimeIQ** may be *named* under the narrow rule
+below; that is an exception to the naming ban only, and permits no private detail about
+it.
 
 ## Named predecessor: RuntimeIQ
 

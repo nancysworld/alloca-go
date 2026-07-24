@@ -25,9 +25,10 @@ Both workloads are synthetic engineering models. They are not descriptions of an
 ## Predecessor
 
 Alloca-Go succeeds **RuntimeIQ-Alloca**, the booking prototype of the author's earlier
-RuntimeIQ project. It is a new implementation rather than a port: domain knowledge and
-open questions carry over, code and results do not. Every prototype figure is labelled
-`[PRIOR-UNREPRODUCED]` until an experiment in this repository reproduces it. See
+RuntimeIQ project. It is a new implementation rather than a port: domain knowledge,
+open questions, and prior evidence carry over; code does not, and no prior result
+becomes an Alloca-Go result without being reproduced here. Every prototype figure is
+labelled `[PRIOR-UNREPRODUCED]` until an experiment in this repository reproduces it. See
 [`docs/design/high-level-design.md`](docs/design/high-level-design.md) §1.1.
 
 ## Design

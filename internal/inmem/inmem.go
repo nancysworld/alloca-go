@@ -4,12 +4,19 @@
 // (docs/planning/ag-m1-implementation-plan.md, PR2). The authoritative PostgreSQL
 // adapter (PR3) implements the same domain interfaces.
 //
-// Concurrency model: a single process-wide mutex is held for the whole of each
+// Concurrency model: a single process-wide lock is held for the whole of each
 // WithinTx, so transactions serialize completely. This is the "one coarse lock as a
 // correctness reference" — deliberately stronger than PostgreSQL's per-slot
 // FOR UPDATE serialization, so the domain/service logic can be proven correct when
 // serialized. Real per-slot concurrency, row locks, and the unique-constraint race
 // are proven against PostgreSQL in PR3.
+//
+// The lock is context-aware: a caller whose context is already done, or which is
+// still waiting for the lock when its deadline expires, gets ctx.Err() and never
+// reaches fn. That mirrors the real adapter, where a lock wait that exceeds
+// lock_timeout fails instead of mutating (transaction-semantics §6), and lets tests
+// above this double exercise the cancellation and lock-wait paths rather than
+// silently committing a mutation the caller has already abandoned.
 //
 // Because transactions never overlap here, WithinTx does not implement partial-
 // failure rollback: the reference double is not a fault injector. The service orders
@@ -20,15 +27,16 @@ package inmem
 
 import (
 	"context"
-	"sync"
 
 	"github.com/nancysworld/alloca-go/internal/domain"
 )
 
 // Store is the in-memory repository. The zero value is not usable; construct with
-// New. It is safe for concurrent use: all access goes through WithinTx under mu.
+// New. It is safe for concurrent use: all access is serialized by sem, a one-slot
+// semaphore standing in for the store lock. It is a channel rather than a
+// sync.Mutex so that a waiter can honour its context deadline while blocked.
 type Store struct {
-	mu           sync.Mutex
+	sem          chan struct{}
 	slots        map[domain.SlotID]domain.Slot
 	reservations map[domain.ReservationID]domain.Reservation
 	bookings     map[domain.BookingID]domain.Booking
@@ -39,6 +47,7 @@ type Store struct {
 // New constructs an empty Store.
 func New() *Store {
 	return &Store{
+		sem:          make(chan struct{}, 1),
 		slots:        make(map[domain.SlotID]domain.Slot),
 		reservations: make(map[domain.ReservationID]domain.Reservation),
 		bookings:     make(map[domain.BookingID]domain.Booking),
@@ -51,8 +60,8 @@ func New() *Store {
 // part of the AG-M1 mutation ports, so it is a concrete helper rather than a Tx
 // method. Tests use it to set up the world before exercising the service.
 func (s *Store) SeedSlot(slot domain.Slot) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.lock()
+	defer s.unlock()
 	s.slots[slot.ID] = slot
 }
 
@@ -63,8 +72,8 @@ func (s *Store) SeedSlot(slot domain.Slot) {
 // elapsed holds, so callers that need settled counts must reconcile at a time before
 // any hold elapses.
 func (s *Store) SlotCounts(slotID domain.SlotID) (held, activeBookings int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.lock()
+	defer s.unlock()
 	for _, r := range s.reservations {
 		if r.SlotID == slotID && r.State == domain.ReservationHeld {
 			held++
@@ -78,11 +87,43 @@ func (s *Store) SlotCounts(slotID domain.SlotID) (held, activeBookings int) {
 	return held, activeBookings
 }
 
+// lock and unlock take and release the store lock without a context, for the
+// control-plane helpers that are not part of a transaction.
+func (s *Store) lock()   { s.sem <- struct{}{} }
+func (s *Store) unlock() { <-s.sem }
+
+// lockCtx takes the store lock, honouring ctx while waiting. It returns ctx.Err()
+// if the context is already done or becomes done before the lock is granted, so an
+// abandoned request never acquires the authority.
+func (s *Store) lockCtx(ctx context.Context) error {
+	// Checked first so an already-done context is deterministic: select would
+	// otherwise choose freely between a free lock and a closed Done channel.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case s.sem <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // WithinTx runs fn under the process-wide lock. The *tx handed to fn operates
-// directly on the store's maps for the duration of the call.
+// directly on the store's maps for the duration of the call. A context that is done
+// on entry, or that expires while waiting for the lock, returns ctx.Err() without
+// running fn: a caller that can no longer receive the outcome must not mutate state
+// (the deadline-expiry error the transport edge classifies as timeout_*).
 func (s *Store) WithinTx(ctx context.Context, fn func(ctx context.Context, tx domain.Tx) error) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if err := s.lockCtx(ctx); err != nil {
+		return err
+	}
+	defer s.unlock()
+	// The deadline can pass during the wait above; re-check so the transaction
+	// either starts within budget or does not start at all.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return fn(ctx, &tx{store: s})
 }
 

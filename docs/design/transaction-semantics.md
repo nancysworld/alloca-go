@@ -101,6 +101,14 @@ never decide release eligibility, closure, expiry, confirmation validity, or
 cancellation capacity effects. Tests inject `now` through the `Clock` port for
 deterministic coverage.
 
+**Provisional in one respect.** *That* `now` is service-observed and resolved once is
+settled. *Which* boundary resolves it is not: with multiple API instances, a
+service-owned clock reintroduces host skew, and a value resolved before the slot lock
+is acquired can be stale by the time the mutation serializes. PR3 is expected to move
+resolution to the transaction itself — see
+[`../design-notes/authoritative-time-in-a-scaled-service.md`](../design-notes/authoritative-time-in-a-scaled-service.md).
+This section remains the normative owner and will be updated there, not forked.
+
 ### 1.6 Reservation TTL is service-owned (normative)
 
 Clients do not choose how long a scarce unit is held. The service owns the hold TTL

@@ -108,3 +108,54 @@ func TestInsertRecordConflict(t *testing.T) {
 		return nil
 	})
 }
+
+func TestWithinTxCancelledContextDoesNotRunFn(t *testing.T) {
+	s := New()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	ran := false
+	err := s.WithinTx(ctx, func(ctx context.Context, tx domain.Tx) error {
+		ran = true
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("WithinTx: err = %v, want context.Canceled", err)
+	}
+	if ran {
+		t.Error("fn ran under a cancelled context; an abandoned request must not mutate")
+	}
+}
+
+// A transaction that cannot acquire the store lock before its deadline must fail
+// rather than block indefinitely — the reference-double stand-in for a PostgreSQL
+// lock wait exceeding lock_timeout (transaction-semantics §6).
+func TestWithinTxDeadlineDuringLockWait(t *testing.T) {
+	s := New()
+	held := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = s.WithinTx(context.Background(), func(ctx context.Context, tx domain.Tx) error {
+			close(held)
+			<-time.After(50 * time.Millisecond)
+			return nil
+		})
+	}()
+	<-held
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+	ran := false
+	err := s.WithinTx(ctx, func(ctx context.Context, tx domain.Tx) error {
+		ran = true
+		return nil
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("WithinTx: err = %v, want context.DeadlineExceeded", err)
+	}
+	if ran {
+		t.Error("fn ran after the deadline expired during the lock wait")
+	}
+	<-done
+}

@@ -55,19 +55,21 @@ What carries over:
 - **Domain knowledge.** The shape of the booking problem — holds and their expiry,
   synchronized release waves, capacity as the contended resource — is inherited, not
   rediscovered.
-- **Questions and failure modes.** The prototype showed *that* latency grew with
-  concurrency until timeouts became the visible failure, without isolating *why*. That
-  unresolved "why" is a large part of what Alloca-Go is built to answer.
+- **Questions and failure modes.** `[PRIOR-UNREPRODUCED]` The prototype found that
+  latency grew with concurrency until timeouts became the visible failure, without
+  isolating *why*. That unresolved "why" is a large part of what Alloca-Go is built to
+  answer.
 - **Design lessons**, restated synthetically for this repository.
 
 What does **not** carry over:
 
 - **Code.** Alloca-Go is a new implementation in Go, not a port
   ([roadmap](../planning/alloca-go-roadmap.md) §1).
-- **Results.** Every prototype figure is `[PRIOR-UNREPRODUCED]`
-  ([`measurement-contract.md`](measurement-contract.md) §2) until an experiment here
-  reproduces it; the reproduction, not the prior figure, becomes the `[MEASURED]`
-  result. Prior evidence sets a starting hypothesis and never settles a question.
+- **Results — as results.** Prototype figures *do* enter this repository, but only as
+  `[PRIOR-UNREPRODUCED]` evidence ([`measurement-contract.md`](measurement-contract.md)
+  §2). Such a figure sets a starting hypothesis and never settles a question; when an
+  experiment here reproduces it, the reproduction — not the prior figure — becomes the
+  `[MEASURED]` result.
 - **Private material.** Nothing private about RuntimeIQ — source, paths, hosts, plans —
   enters this repository. The naming rule is owned by
   [`../public-disclosure-policy.md`](../public-disclosure-policy.md); RuntimeIQ's own

@@ -124,17 +124,24 @@ The value should be used for:
 transaction-start time. A transaction may wait on the slot lock after that instant, making
 the value stale when the decision is eventually serialized.
 
-The adapter should instead obtain one PostgreSQL wall-clock value at the post-lock
-decision point. `clock_timestamp()` is the likely source, but the precise SQL shape is a
-PR3 implementation decision that must be verified. In particular, this note does not yet
-assume that placing `clock_timestamp()` in the target list of the same
-`SELECT ... FOR UPDATE` necessarily evaluates it after any lock wait. PR3 should choose a
-query or adapter sequence whose post-lock timing is demonstrated by integration tests.
+The preferred PR3 PostgreSQL shape is a `pgx.Batch` on the same transaction containing,
+in order:
 
-Avoiding an additional database round trip is a valid optimisation target. A combined
-statement, CTE, batch, or server-side form may provide the timestamp without another
-client/server exchange, but correctness of the evaluation point comes first and must be
-proven before adopting that shape.
+```text
+1. SELECT ... FROM slots WHERE slot_id = $1 FOR UPDATE
+2. SELECT clock_timestamp()
+```
+
+The server executes the statements in order, so the second statement is evaluated only
+after the lock statement completes, including any row-lock wait. Sending both statements
+as one batch avoids an additional client/server round trip while keeping the ordering
+contract at the statement level rather than relying on target-list or planner evaluation
+order. PR3 must still prove the post-lock property with an integration test; the test is
+the acceptance gate, not the implementation assumption.
+
+A single-statement form, such as a deliberately materialised CTE, is an acceptable fallback
+only if the adapter cannot use a batch and the same post-lock evaluation property is
+verified. The batch is preferred because its sequencing is easier to explain and review.
 
 This choice gives one coherent wall-clock source, not a monotonic clock. PostgreSQL's wall
 clock can still step backwards. Mutation order therefore continues to come from the slot
@@ -154,29 +161,39 @@ type Tx interface {
 }
 ```
 
-`Tx.Now()` should return the single timestamp associated with the transaction attempt's
-post-lock decision point. The PostgreSQL adapter may memoise that value once resolved so
-all subsequent domain decisions in the attempt observe the same `now`.
+A successful `LockSlot` establishes the attempt's authoritative timestamp as part of the
+adapter operation: it acquires the slot lock, resolves the post-lock PostgreSQL timestamp,
+and memoises that value. `Tx.Now()` returns the memoised value and must not lazily resolve
+its own time source. Calling `Now()` before a successful `LockSlot` is an adapter/programming
+error rather than an invitation to obtain pre-lock time accidentally.
 
 A repository shape that passes `now` into the `WithinTx` closure is not suitable: it must
 resolve the value before the closure can acquire the slot lock and therefore structurally
 encodes the wrong decision point.
 
+Failure to resolve or decode authoritative time is a system fault, never a business
+refusal. The edge maps an underlying lock, statement, or deadline expiry to the applicable
+`timeout_*` outcome; other authoritative-time failures map to `internal_failure`.
+
 The service-level `Clock` dependency should be retired from the production mutation path
 when PR3 adopts transaction-owned time. Leaving both `Service.clock.Now()` and `Tx.Now()`
 visible in the same operation would create two competing sources of semantic time.
 Deterministic tests should instead inject a manual clock into the in-memory transaction
-adapter, which implements the same `Tx.Now()` contract.
+adapter, which implements the same lock-establishes-time contract.
 
-Two paths need explicit adapter treatment:
+Three paths need explicit adapter treatment:
 
 - `confirm` and `cancel` currently resolve `slot_id` from the reservation before locking
-  the slot. The timestamp must be associated with `LockSlot`, not with the earlier lookup.
+  the slot. The timestamp must be established by `LockSlot`, not by the earlier lookup.
 - The `unknown_target` path may complete without locking a slot. It still needs one
   PostgreSQL-sourced attempt timestamp where a persisted outcome requires time; PR3 must
-  define where that value is resolved without pretending a slot lock occurred.
+  define an explicit no-slot resolution path rather than pretending a slot lock occurred.
+- The PR4 expiry/settlement worker performs the same `held -> expired` semantic transition
+  outside an incoming request. Its `now` must come from its own PostgreSQL transaction by
+  the same authority rule; it must not retain an API-host `Clock` as a second semantic time
+  source.
 
-## 5. Attempt semantics and clock corrections
+## 5. Attempt semantics, TTL, and clock corrections
 
 Authoritative `now` becomes **per transaction attempt**, not per incoming request. If the
 service retries the whole operation after the idempotency-record insert-race backstop, the
@@ -191,6 +208,14 @@ request
 Only the committed attempt's timestamp becomes durable. This is a semantic change from
 the current implementation, where one service-clock value is captured outside the retry
 loop and shared by both attempts.
+
+For reserve, `expires_at = now + reservation_ttl` now measures the full TTL from the
+post-lock decision point, not from request arrival. Time spent waiting for the slot lock
+does not erode a successful hold's duration. Near `starts_at`, however, the later decision
+time can make the full TTL no longer fit inside the slot window; that request must be
+refused as `outside_window` rather than granted a shortened hold. Under contention,
+lock-wait duration can therefore change the outcome mix as well as latency, which AG-M2
+must account for when reading release-wave results.
 
 Centralising wall time in PostgreSQL provides coherent decisions across API nodes; it does
 not make the clock infallible. A PostgreSQL host clock correction can still move future
@@ -211,19 +236,26 @@ PR3 and later tests should verify:
 
 1. the PostgreSQL adapter resolves one timestamp per transaction attempt after acquiring
    the relevant slot lock;
-2. a transaction that waits while a hold expires settles that hold using the post-wait
+2. `LockSlot` establishes and memoises that timestamp, and `Now()` cannot resolve time
+   independently or succeed before the lock contract is satisfied;
+3. a transaction that waits while a hold expires settles that hold using the post-wait
    timestamp;
-3. a transaction that waits while the slot crosses `starts_at` cannot reserve after the
+4. a transaction that waits while the slot crosses `starts_at` cannot reserve after the
    booking window has closed;
-4. the same attempt timestamp is used for settlement, boundary decisions, expiry
+5. a request whose TTL fit at arrival but no longer fits after lock wait is refused as
+   `outside_window` and creates no reservation;
+6. the same attempt timestamp is used for settlement, boundary decisions, expiry
    calculation, transaction-owned timestamps, and its idempotency record;
-5. the in-memory adapter can inject the equivalent timestamp deterministically;
-6. concurrent requests routed through API instances with deliberately skewed host clocks
+7. authoritative-time resolution errors map to `timeout_*` or `internal_failure`, never
+   `business_refusal`;
+8. the in-memory adapter can inject the equivalent timestamp deterministically;
+9. concurrent requests routed through API instances with deliberately skewed host clocks
    cannot disagree because of API-host time;
-7. reports do not claim commit or mutation order from timestamp ordering;
-8. elapsed-time telemetry continues to use monotonic process-local duration measurement;
-9. the chosen SQL shape demonstrably evaluates the decision timestamp after the row-lock
-   wait rather than before it.
+10. the expiry/settlement worker uses PostgreSQL-owned time rather than an API-host clock;
+11. reports do not claim commit or mutation order from timestamp ordering;
+12. elapsed-time telemetry continues to use monotonic process-local duration measurement;
+13. the `pgx.Batch` lock-then-time sequence demonstrably evaluates the decision timestamp
+    after the row-lock wait rather than before it.
 
 Useful negative controls include:
 
@@ -243,7 +275,8 @@ PostgreSQL adapter.
 
 If this recommendation is accepted, PR3 should update `transaction-semantics.md` §1.5,
 `internal/domain/ports.go`, the service, and both repository adapters together, then prove
-the choice with PostgreSQL integration tests.
+the choice with PostgreSQL integration tests. PR4 should apply the same authority rule to
+the expiry/settlement worker.
 
 At that point, `transaction-semantics.md` §1.5 becomes the normative owner. This note is
 retained as historical rationale and is considered superseded rather than maintained as a

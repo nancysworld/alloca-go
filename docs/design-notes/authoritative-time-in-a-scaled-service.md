@@ -1,19 +1,24 @@
 # Authoritative time in a horizontally scaled service
 
-**Status:** Design note — recommendation for review before AG-M1 PR3
+**Status:** Design note — revised recommendation for review before AG-M1 PR3  
 **Scope:** clarify how Alloca-Go should use wall-clock time once multiple API instances
 can execute transactions against the same PostgreSQL authority.
 
 This note was prompted while reviewing the `Clock` port in
 `internal/domain/ports.go`. The current AG-M1 service resolves `now` once from an
-application-owned clock and threads that value through reserve, confirm, cancel, expiry,
-and idempotency decisions. That shape is deterministic and easy to test, but a production
-fleet introduces a second concern: each API instance has its own wall clock, and those
-clocks can differ or be corrected independently.
+application-owned clock before entering the transaction and threads that value through
+reserve, confirm, cancel, expiry, and idempotency decisions. That shape is deterministic
+and easy to test, but a production fleet introduces two correctness concerns:
 
-This is not primarily a timestamp-sorting problem. The correctness-sensitive question is
-which clock decides release, expiry, and slot-close boundaries when requests for the same
-slot can arrive through different API instances.
+1. each API instance has its own wall clock, and those clocks can differ or be corrected
+   independently;
+2. a transaction may wait to acquire the slot lock, so a timestamp resolved before that
+   wait can be stale at the point where the mutation is actually serialized.
+
+This is not primarily a timestamp-sorting problem. The correctness-sensitive question is:
+which clock, and which instant from that clock, decides release, expiry, and slot-close
+boundaries when requests for the same slot can arrive through different API instances and
+wait behind the same PostgreSQL row lock?
 
 ## 1. Problem
 
@@ -37,10 +42,21 @@ expires_at <= now
 then two requests near the same boundary can receive different decisions solely because
 they reached different API nodes.
 
+Resolving `now` at transaction start is also insufficient. A transaction can begin and
+then wait on `SELECT ... FOR UPDATE` until `lock_timeout`. During that wait:
+
+- a held reservation may expire;
+- a slot may cross `starts_at` and close;
+- another serialized transaction may change the slot's state.
+
+The authoritative timestamp must therefore describe the decision point after the relevant
+slot lock is acquired, not merely the start of the request or transaction.
+
 Wall-clock timestamps also do not provide a reliable global operation or commit order.
 A transaction with an earlier `created_at` can commit after a transaction with a later
-one. Exact ordering should therefore come from transactional serialization, versions,
-identifiers, and explicit causal references rather than timestamp sorting.
+one, and a host-clock correction can move wall time backwards. Exact ordering must come
+from transactional serialization, persisted state, versions, identifiers, and explicit
+causal references rather than timestamp sorting.
 
 ## 2. Separate the uses of time
 
@@ -59,8 +75,9 @@ Alloca-Go should use different mechanisms for different jobs:
 
 The practical rule is:
 
-> Versions and transactional authority determine correctness and ordering; timestamps
-> describe approximately when events happened.
+> Transactional authority and persisted state determine correctness; versions and
+> explicit relationships determine ordering and causality; timestamps describe
+> approximately when events happened.
 
 ## 3. Recommendation for Alloca-Go
 
@@ -72,107 +89,162 @@ Application monotonic clock
     local timeout accounting
     retry delays
 
-PostgreSQL transaction timestamp
+PostgreSQL decision timestamp
+    resolved after the relevant slot lock is acquired
     release eligibility
     slot closure
     hold expiry
-    created_at / expires_at values owned by the transaction
+    created_at / expires_at values owned by the attempt
 
 Versions / IDs / relationships
     mutation ordering
     causal reconstruction
 ```
 
-Because PostgreSQL is already the cross-node transactional authority, it should also be
-the authoritative wall-clock source for correctness-sensitive mutation decisions. This
-removes API-node clock skew from release, expiry, and close-window semantics.
+Because PostgreSQL is already the cross-node transactional and serialization authority,
+it should also be the authoritative wall-clock source for correctness-sensitive mutation
+decisions. This removes API-node clock skew from release, expiry, and close-window
+semantics without introducing another distributed authority.
 
-The production PostgreSQL adapter should resolve one timestamp inside the transaction,
-using PostgreSQL's transaction-stable time (`transaction_timestamp()`, equivalent to
-`now()`), and supply that value to the domain operation. The same value should be used
-throughout that transaction for:
+The normative semantic requirement proposed for PR3 is:
 
-- settling elapsed holds;
-- deciding whether the slot is released or closed;
+> Each transaction attempt resolves exactly one authoritative decision timestamp from
+> PostgreSQL after acquiring the relevant slot lock, and uses that value consistently for
+> the remainder of the attempt.
+
+The value should be used for:
+
+- settling holds that elapsed before or while the transaction waited for the lock;
+- deciding whether the slot is released or closed at the serialization point;
 - computing and validating `expires_at`;
 - recording transaction-owned creation timestamps;
-- constructing the idempotency record.
+- constructing the idempotency record for the committed attempt.
 
-`transaction_timestamp()` is preferred over repeatedly reading `clock_timestamp()`
-because Alloca-Go's semantic contract already says that `now` is resolved once and
-threaded through the decision path. A stable transaction timestamp matches that model.
+`transaction_timestamp()` / `now()` is not suitable for this purpose because it returns
+transaction-start time. A transaction may wait on the slot lock after that instant, making
+the value stale when the decision is eventually serialized.
 
-This does **not** imply that transaction timestamps define commit order. A transaction
-can begin earlier and commit later. Where an exact order is required, use the slot lock
-and an explicit version or sequence associated with the relevant authority.
+The adapter should instead obtain one PostgreSQL wall-clock value at the post-lock
+decision point. `clock_timestamp()` is the likely source, but the precise SQL shape is a
+PR3 implementation decision that must be verified. In particular, this note does not yet
+assume that placing `clock_timestamp()` in the target list of the same
+`SELECT ... FOR UPDATE` necessarily evaluates it after any lock wait. PR3 should choose a
+query or adapter sequence whose post-lock timing is demonstrated by integration tests.
+
+Avoiding an additional database round trip is a valid optimisation target. A combined
+statement, CTE, batch, or server-side form may provide the timestamp without another
+client/server exchange, but correctness of the evaluation point comes first and must be
+proven before adopting that shape.
+
+This choice gives one coherent wall-clock source, not a monotonic clock. PostgreSQL's wall
+clock can still step backwards. Mutation order therefore continues to come from the slot
+lock and persisted state; if an explicit per-slot order becomes necessary, use a version
+or sequence rather than assuming decision timestamps are non-decreasing.
 
 ## 4. Port-shape implication
 
-The current domain-owned `Clock` port remains useful for deterministic tests, but the
-production source of authoritative mutation time should not be the API process wall
-clock.
-
-Before PR3 fixes the PostgreSQL adapter contract, consider moving authoritative time into
-the transaction boundary. Two possible shapes are:
+Authoritative time belongs to the transaction port because it is meaningful only after
+the transaction has acquired the relevant authority lock:
 
 ```go
 type Tx interface {
+    LockSlot(ctx context.Context, id SlotID) (Slot, error)
     Now(ctx context.Context) (time.Time, error)
     // existing transactional methods...
 }
 ```
 
-or:
+`Tx.Now()` should return the single timestamp associated with the transaction attempt's
+post-lock decision point. The PostgreSQL adapter may memoise that value once resolved so
+all subsequent domain decisions in the attempt observe the same `now`.
 
-```go
-type Repository interface {
-    WithinTx(
-        ctx context.Context,
-        fn func(ctx context.Context, tx Tx, now time.Time) error,
-    ) error
-}
+A repository shape that passes `now` into the `WithinTx` closure is not suitable: it must
+resolve the value before the closure can acquire the slot lock and therefore structurally
+encodes the wrong decision point.
+
+The service-level `Clock` dependency should be retired from the production mutation path
+when PR3 adopts transaction-owned time. Leaving both `Service.clock.Now()` and `Tx.Now()`
+visible in the same operation would create two competing sources of semantic time.
+Deterministic tests should instead inject a manual clock into the in-memory transaction
+adapter, which implements the same `Tx.Now()` contract.
+
+Two paths need explicit adapter treatment:
+
+- `confirm` and `cancel` currently resolve `slot_id` from the reservation before locking
+  the slot. The timestamp must be associated with `LockSlot`, not with the earlier lookup.
+- The `unknown_target` path may complete without locking a slot. It still needs one
+  PostgreSQL-sourced attempt timestamp where a persisted outcome requires time; PR3 must
+  define where that value is resolved without pretending a slot lock occurred.
+
+## 5. Attempt semantics and clock corrections
+
+Authoritative `now` becomes **per transaction attempt**, not per incoming request. If the
+service retries the whole operation after the idempotency-record insert-race backstop, the
+new transaction obtains a new decision timestamp:
+
+```text
+request
+  attempt 1 -> timestamp T1 -> rolls back
+  attempt 2 -> timestamp T2 -> commits
 ```
 
-The PostgreSQL adapter would obtain `now` from `transaction_timestamp()`. The in-memory
-reference adapter would obtain it from an injected manual clock, preserving deterministic
-unit and race tests.
+Only the committed attempt's timestamp becomes durable. This is a semantic change from
+the current implementation, where one service-clock value is captured outside the retry
+loop and shared by both attempts.
 
-The exact interface is still a design choice for PR3. The normative requirement is:
+Centralising wall time in PostgreSQL provides coherent decisions across API nodes; it does
+not make the clock infallible. A PostgreSQL host clock correction can still move future
+decision timestamps backwards. The state machine must therefore remain irreversible:
+for example, an `expired` reservation must never become `held` again merely because wall
+time moved backwards.
 
-> One transaction uses one authoritative timestamp, and all horizontally scaled API
-> instances obtain that timestamp from the same transactional authority for
-> correctness-sensitive decisions.
+If stronger ordering is ever required, add an explicit version or sequence. Do not turn a
+wall-clock assumption into a correctness invariant.
 
-## 5. Operational assumptions and validation
+## 6. Operational assumptions and validation
 
 Host clock synchronisation is still required for logs, metrics, tracing, TLS, and normal
-operations, but correctness must not depend on clocks being perfectly aligned. All
+operations, but correctness must not depend on API clocks being perfectly aligned. All
 persisted and externally reported timestamps should use UTC.
 
 PR3 and later tests should verify:
 
-1. the PostgreSQL adapter resolves one stable timestamp per transaction;
-2. release, expiry, and close-window decisions use that timestamp rather than an API-node
-   wall clock;
-3. the in-memory adapter can inject the equivalent timestamp deterministically;
-4. concurrent requests routed through different API instances cannot disagree because
-   of host-clock skew;
-5. reports do not claim commit order from `created_at` ordering;
-6. elapsed-time telemetry continues to use monotonic process-local duration measurement.
+1. the PostgreSQL adapter resolves one timestamp per transaction attempt after acquiring
+   the relevant slot lock;
+2. a transaction that waits while a hold expires settles that hold using the post-wait
+   timestamp;
+3. a transaction that waits while the slot crosses `starts_at` cannot reserve after the
+   booking window has closed;
+4. the same attempt timestamp is used for settlement, boundary decisions, expiry
+   calculation, transaction-owned timestamps, and its idempotency record;
+5. the in-memory adapter can inject the equivalent timestamp deterministically;
+6. concurrent requests routed through API instances with deliberately skewed host clocks
+   cannot disagree because of API-host time;
+7. reports do not claim commit or mutation order from timestamp ordering;
+8. elapsed-time telemetry continues to use monotonic process-local duration measurement;
+9. the chosen SQL shape demonstrably evaluates the decision timestamp after the row-lock
+   wait rather than before it.
 
-A useful fault/negative-control test is to run two API instances with deliberately skewed
-host clocks while both use PostgreSQL transaction time. Domain outcomes near release and
-expiry boundaries should remain consistent.
+Useful negative controls include:
 
-## 6. Relationship to current AG-M1 documents
+- run two API instances with deliberately skewed host clocks while PostgreSQL remains the
+  semantic time source;
+- force one transaction to wait on a slot lock while a hold expires or the slot closes;
+- step the database wall clock backwards and verify that terminal state does not reverse,
+  consumed-capacity reconciliation remains valid, and no expired reservation becomes
+  live again.
 
-This note does not change the existing semantic rule in
-`docs/design/transaction-semantics.md` that `now` is resolved once at a trusted service
-boundary and is never supplied by the client. It sharpens what that trusted boundary
-should be in a horizontally scaled production deployment: the PostgreSQL transaction,
-not an individual API host.
+## 7. Relationship to current AG-M1 documents
 
-If accepted, PR3 should update the normative transaction semantics and the domain port
-shape together, then prove the choice with PostgreSQL integration tests. Until that
-change is accepted, this remains a design recommendation rather than an implemented
-claim.
+This note refines the current rule in `docs/design/transaction-semantics.md` §1.5. PR2's
+reference implementation resolves `now` through the service-owned `Clock` port before
+entering the transaction; that port shape is intentionally provisional for the production
+PostgreSQL adapter.
+
+If this recommendation is accepted, PR3 should update `transaction-semantics.md` §1.5,
+`internal/domain/ports.go`, the service, and both repository adapters together, then prove
+the choice with PostgreSQL integration tests.
+
+At that point, `transaction-semantics.md` §1.5 becomes the normative owner. This note is
+retained as historical rationale and is considered superseded rather than maintained as a
+parallel normative specification.

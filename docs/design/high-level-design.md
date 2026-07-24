@@ -42,6 +42,37 @@ optimisation objective the whole system serves — is:
 > Optimise for sustainable, SLO-compliant, resilient throughput per unit cost — not
 > peak accepted request rate.
 
+### 1.1 Relationship to RuntimeIQ, the predecessor prototype
+
+Alloca-Go did not start from a blank page. **RuntimeIQ** is a personal project by the
+same author, and its booking prototype **RuntimeIQ-Alloca** is the direct predecessor
+of this system — the reason several questions here are already sharp rather than
+exploratory. The lineage is stated openly so that prior evidence can be cited honestly
+instead of appearing as an unsourced assumption.
+
+What carries over:
+
+- **Domain knowledge.** The shape of the booking problem — holds and their expiry,
+  synchronized release waves, capacity as the contended resource — is inherited, not
+  rediscovered.
+- **Questions and failure modes.** The prototype showed *that* latency grew with
+  concurrency until timeouts became the visible failure, without isolating *why*. That
+  unresolved "why" is a large part of what Alloca-Go is built to answer.
+- **Design lessons**, restated synthetically for this repository.
+
+What does **not** carry over:
+
+- **Code.** Alloca-Go is a new implementation in Go, not a port
+  ([roadmap](../planning/alloca-go-roadmap.md) §1).
+- **Results.** Every prototype figure is `[PRIOR-UNREPRODUCED]`
+  ([`measurement-contract.md`](measurement-contract.md) §2) until an experiment here
+  reproduces it; the reproduction, not the prior figure, becomes the `[MEASURED]`
+  result. Prior evidence sets a starting hypothesis and never settles a question.
+- **Private material.** Nothing private about RuntimeIQ — source, paths, hosts, plans —
+  enters this repository. The naming rule is owned by
+  [`../public-disclosure-policy.md`](../public-disclosure-policy.md); RuntimeIQ's own
+  release status is independent of this repository's.
+
 ## 2. Design principles
 
 The core principle above is the *objective*; the principles here are the *means*. They
@@ -196,7 +227,8 @@ them all; the entries below **own** their subject and are the authority for it.
 | Latency bands, deadline-budget rationale, retry policy | [`latency-timeouts-and-retries.md`](latency-timeouts-and-retries.md) |
 | Modular monolith first | [`../decisions/0001-modular-monolith-first.md`](../decisions/0001-modular-monolith-first.md) |
 | PostgreSQL as transactional authority | [`../decisions/0002-postgresql-transactional-authority.md`](../decisions/0002-postgresql-transactional-authority.md) |
-| Public-release disclosure rules and pre-release checks | [`../public-disclosure-policy.md`](../public-disclosure-policy.md), [`../pre-public-checklist.md`](../pre-public-checklist.md) |
+| Predecessor lineage — what Alloca-Go inherits from RuntimeIQ and what it does not | this document §1.1 |
+| Public-release disclosure rules, predecessor naming rule, pre-release checks | [`../public-disclosure-policy.md`](../public-disclosure-policy.md), [`../pre-public-checklist.md`](../pre-public-checklist.md) |
 
 If a design fact you need is not owned by one of these, it is either high-level enough
 to belong in §1–§3 above, or it has no home yet — which is a signal to give it one,

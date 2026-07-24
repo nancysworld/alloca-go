@@ -22,6 +22,14 @@ The project starts as a modular monolith with a stateless Go API, PostgreSQL as 
 
 Both workloads are synthetic engineering models. They are not descriptions of any organisation's internal architecture, traffic, or product implementation.
 
+## Predecessor
+
+Alloca-Go succeeds **RuntimeIQ-Alloca**, the booking prototype of the author's earlier
+RuntimeIQ project. It is a new implementation rather than a port: domain knowledge and
+open questions carry over, code and results do not. Every prototype figure is labelled
+`[PRIOR-UNREPRODUCED]` until an experiment in this repository reproduces it. See
+[`docs/design/high-level-design.md`](docs/design/high-level-design.md) §1.1.
+
 ## Design
 
 The design record starts at [`docs/design/high-level-design.md`](docs/design/high-level-design.md) —

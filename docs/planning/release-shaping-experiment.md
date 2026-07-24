@@ -27,6 +27,9 @@ synthetic and are not presented as observations about an external timetable.
 
 ## 2. Prior prototype evidence
 
+RuntimeIQ-Alloca is the predecessor prototype
+([high-level design](../design/high-level-design.md) §1.1).
+
 `[PRIOR-UNREPRODUCED]` RuntimeIQ-Alloca experiments found that booking latency grew
 approximately linearly with concurrent users over the measured range, and that arrival
 spread materially changed outcomes. Those experiments established a coarse relationship

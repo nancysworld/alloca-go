@@ -45,9 +45,11 @@ The decisions that shape every PR. The authoritative form of §3.2–§3.4 lands
 split is built on.
 
 Several of these decisions were sharpened by reusing the design lessons (not code —
-it is Python) of the predecessor prototype: the domain model, invariants, schema
-shape, expiry-settlement strategy, and fault-vs-refusal error taxonomy. All are
-reframed synthetically; see [`../public-disclosure-policy.md`](../public-disclosure-policy.md).
+it is Python) of the RuntimeIQ-Alloca predecessor prototype
+([high-level design](../design/high-level-design.md) §1.1): the domain model,
+invariants, schema shape, expiry-settlement strategy, and fault-vs-refusal error
+taxonomy. All are reframed synthetically; see
+[`../public-disclosure-policy.md`](../public-disclosure-policy.md).
 
 ### 3.1 Domain-model decisions (decided)
 

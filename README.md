@@ -13,7 +13,7 @@ Alloca-Go investigates how a stateful backend should:
 - degrade through bounded admission or queueing rather than uncontrolled timeout growth;
 - measure cost per useful operation, including resilience headroom.
 
-The project starts as a modular monolith with a stateless Go API, PostgreSQL as the transactional source of truth, an external Go load generator, background settlement workers, and production-oriented telemetry. Service decomposition and additional infrastructure will follow measured evidence rather than presentation value.
+The project starts as a modular monolith with a stateless Go API, PostgreSQL as the transactional authority, an external Go load generator, background settlement workers, and production-oriented telemetry. Service decomposition and additional infrastructure will follow measured evidence rather than presentation value.
 
 ## Representative workloads
 
@@ -21,6 +21,21 @@ The project starts as a modular monolith with a stateless Go API, PostgreSQL as 
 - **Shared-resource contention:** thousands of users mutate shared inventory quantities and a conserved balance, including extreme contention on one authority key.
 
 Both workloads are synthetic engineering models. They are not descriptions of any organisation's internal architecture, traffic, or product implementation.
+
+## Predecessor
+
+Alloca-Go succeeds **RuntimeIQ-Alloca**, the booking prototype of the author's earlier
+RuntimeIQ project. It is a new implementation rather than a port: domain knowledge,
+open questions, and prior evidence carry over; code does not, and no prior result
+becomes an Alloca-Go result without being reproduced here. Every prototype figure is
+labelled `[PRIOR-UNREPRODUCED]` until an experiment in this repository reproduces it. See
+[`docs/design/high-level-design.md`](docs/design/high-level-design.md) §1.1.
+
+## Design
+
+The design record starts at [`docs/design/high-level-design.md`](docs/design/high-level-design.md) —
+the entry point that frames the problem, states the design principles, shows the
+architecture at a glance, and maps which document owns each detailed decision.
 
 ## Roadmap
 
@@ -35,8 +50,10 @@ and [`docs/pre-public-checklist.md`](docs/pre-public-checklist.md).
 
 ## Core principle
 
-> Optimise for sustainable, SLO-compliant, resilient throughput per unit cost—not peak accepted request rate.
+> Optimise for sustainable, SLO-compliant, resilient throughput per unit cost — not peak accepted request rate.
 
 ## Status
 
-Foundation planning is in progress. Implementation begins with AG-M0: project structure, measurement contract, provisional SLOs, and CI.
+AG-M0 (foundation and measurement contract) is complete; AG-M1 (the correct
+transactional core) is in progress. See the [roadmap](docs/planning/alloca-go-roadmap.md)
+for the milestone plan and current status.

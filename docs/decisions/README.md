@@ -21,10 +21,10 @@ one rather than rewriting history. Numbers are assigned in order.
 | ADR | Title | Status | Milestone |
 |---|---|---|---|
 | [0001](0001-modular-monolith-first.md) | Modular monolith first | Accepted | AG-M0 |
+| [0002](0002-postgresql-transactional-authority.md) | PostgreSQL as transactional authority | Proposed | AG-M1 |
 
-Planned (not yet written): `0002` PostgreSQL as transactional authority (AG-M1),
-`0003` capacity-unit selection (AG-M4) — see the roadmap's planned evidence
-structure.
+Planned (not yet written): `0003` capacity-unit selection (AG-M4) — see the
+roadmap's planned evidence structure.
 
 ## Disclosure
 

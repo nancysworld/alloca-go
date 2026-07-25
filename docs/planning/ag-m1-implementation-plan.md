@@ -142,8 +142,8 @@ questions and is independently reviewable.
 | PR | Title | Delivers | DB? | Status |
 |---|---|---|---|---|
 | 1 | Timeout budget + §8.1 startup validation | `config.RequestBudget`, `config.Validate()`, `/meta` exposure, `.gitignore __debug_bin*` | no | **Merged #3** |
-| 2 | Domain core + services + idempotency | `internal/domain` (entities, invariants, ports, outcome types), `internal/idempotency`, `internal/service`, in-memory repository, `transaction-semantics.md`, ADR-0002, measurement-contract §4 `invalid_request` amendment; full unit + race tests | no | **Draft #4** |
-| 3 | PostgreSQL adapter | `internal/postgres` (transactional repo, `SELECT … FOR UPDATE`, per-txn `lock_timeout`/`statement_timeout`, error→outcome mapping), schema + migrations, CI Postgres integration tests | yes | planned |
+| 2 | Domain core + services + idempotency | `internal/domain` (entities, invariants, ports, outcome types), `internal/idempotency`, `internal/service`, in-memory repository, `transaction-semantics.md`, ADR-0002, measurement-contract §4 `invalid_request` amendment; full unit + race tests | no | **Merged #4** |
+| 3 | PostgreSQL adapter | `internal/postgres` (transactional repo, `SELECT … FOR UPDATE`, per-txn `lock_timeout`/`statement_timeout`, error→outcome mapping), schema + migrations, transaction-owned authoritative time (`Tx.Now`, retiring the service `Clock`), `cmd/alloca-migrate`, CI Postgres integration tests | yes | **In review #5** |
 | 4 | Expiry worker + HTTP API + telemetry | `internal/worker` (expiry that cannot release confirmed capacity), `internal/httpapi` booking endpoints (idempotency-key handling, outcome→HTTP mapping), structured outcome/timing telemetry, `cmd` wiring, readiness gated on DB, e2e tests | yes | planned |
 
 **Why this order.** PR1 is DB-free and discharges the §8.1 obligation, giving later
@@ -174,9 +174,8 @@ realised by the §3.3 taxonomy and validated across PR2–PR4.
 
 ## 6. Tooling decisions (recorded — ADR-0002)
 
-Recorded (status **Proposed**) in
-[`../decisions/0002-postgresql-transactional-authority.md`](../decisions/0002-postgresql-transactional-authority.md)
-(landed as a doc in PR2; Accepted when PR2 merges):
+Recorded (status **Accepted** on PR2's merge, 2026-07-25) in
+[`../decisions/0002-postgresql-transactional-authority.md`](../decisions/0002-postgresql-transactional-authority.md):
 
 - **Migrations:** `pressly/goose` with embedded plain-SQL migrations, run through a
   dedicated command/step — not automatically by every serving replica.
@@ -184,8 +183,9 @@ Recorded (status **Proposed**) in
   context-aware cancellation, observable pool stats; no ORM in the authoritative
   adapter).
 
-Both are exercised at PR3 (the adapter and migrations); the decision itself is
-recorded now alongside the transaction semantics it implements.
+Both are exercised at PR3 (the adapter and migrations). Migrations run through
+`cmd/alloca-migrate`, a separate binary: serving replicas never migrate on startup, so
+a rollout cannot have several replicas racing the same DDL.
 
 ## 7. Evidence and disclosure discipline
 

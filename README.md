@@ -37,6 +37,29 @@ The design record starts at [`docs/design/high-level-design.md`](docs/design/hig
 the entry point that frames the problem, states the design principles, shows the
 architecture at a glance, and maps which document owns each detailed decision.
 
+## Building and testing
+
+`make ci` is the full local gate and mirrors CI exactly: formatting, `go vet`,
+`golangci-lint` at a pinned version, build, tests, and tests under the race detector.
+
+Tests come in two tiers. The default gate is hermetic and needs no services. The
+**integration** tier proves the properties that only exist against a real PostgreSQL —
+capacity safety under genuinely concurrent transactions, the post-lock decision
+timestamp, and the idempotency-key race — so it is behind the `integration` build tag
+and requires a database:
+
+```sh
+make db-up             # start a local PostgreSQL in Docker
+make test-integration  # run the integration tier under -race
+make db-down
+```
+
+Migrations are applied by a separate binary, never by a serving replica:
+
+```sh
+DATABASE_URL=... go run ./cmd/alloca-migrate
+```
+
 ## Roadmap
 
 The initial 40-day roadmap is documented in [`docs/planning/alloca-go-roadmap.md`](docs/planning/alloca-go-roadmap.md).

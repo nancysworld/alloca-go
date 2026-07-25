@@ -16,8 +16,13 @@ import (
 
 // --- test doubles -----------------------------------------------------------
 
-// manualClock is a controllable Clock. It is safe for concurrent use so race tests
-// can read the time from many goroutines.
+// manualClock is a controllable inmem.Clock. It is safe for concurrent use so race
+// tests can read the time from many goroutines.
+//
+// It is injected into the store, not the service: authoritative time now belongs to
+// the transaction, so the double's clock is read at the point the transaction
+// establishes its timestamp. Advancing it between operations therefore moves the
+// timeline exactly where the real adapter would resolve clock_timestamp().
 type manualClock struct {
 	mu sync.Mutex
 	t  time.Time
@@ -78,14 +83,14 @@ type fixture struct {
 
 func newFixture(t *testing.T, capacity int) *fixture {
 	t.Helper()
-	store := inmem.New()
+	clock := &manualClock{t: baseNow}
+	store := inmem.New(clock)
 	store.SeedSlot(domain.Slot{
 		ID: slot, OrganisationID: org, Capacity: capacity,
 		ReleaseAt: baseRelease, StartsAt: baseStart, EndsAt: baseStart.Add(time.Hour),
 	})
-	clock := &manualClock{t: baseNow}
 	ids := &seqIDGen{}
-	return &fixture{svc: New(store, clock, ids, testTTL), store: store, clock: clock, ids: ids}
+	return &fixture{svc: New(store, ids, testTTL), store: store, clock: clock, ids: ids}
 }
 
 func (f *fixture) reserve(t *testing.T, user, key string) domain.Result {
@@ -443,9 +448,9 @@ func (t *conflictOnceTx) InsertRecord(ctx context.Context, rec domain.Idempotenc
 }
 
 func TestReserveIdempotencyInsertRaceReplaysWinner(t *testing.T) {
-	store := inmem.New()
+	store := inmem.New(&manualClock{t: baseNow})
 	store.SeedSlot(domain.Slot{ID: slot, OrganisationID: org, Capacity: 5, ReleaseAt: baseRelease, StartsAt: baseStart})
-	svc := New(&conflictOnceRepo{inner: store}, &manualClock{t: baseNow}, &seqIDGen{}, testTTL)
+	svc := New(&conflictOnceRepo{inner: store}, &seqIDGen{}, testTTL)
 
 	r, err := svc.Reserve(context.Background(), ReserveCommand{OrganisationID: org, UserID: "user-1", SlotID: slot, IdempotencyKey: "k1"})
 	if err != nil {

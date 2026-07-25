@@ -1,6 +1,6 @@
 # 0002 — PostgreSQL as transactional authority
 
-**Status:** Proposed
+**Status:** Accepted (AG-M1 PR2 merged 2026-07-25; implemented in PR3)
 **Date:** 2026-07-22
 **Milestone:** AG-M1
 

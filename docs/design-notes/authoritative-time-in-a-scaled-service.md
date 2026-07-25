@@ -1,8 +1,19 @@
 # Authoritative time in a horizontally scaled service
 
-**Status:** Design note — revised recommendation for review before AG-M1 PR3  
+**Status:** **Superseded by
+[`../design/transaction-semantics.md`](../design/transaction-semantics.md) §1.5** (AG-M1
+PR3). Retained as historical rationale, not maintained as a parallel specification —
+where this note and §1.5 differ, §1.5 is authoritative.  
 **Scope:** clarify how Alloca-Go should use wall-clock time once multiple API instances
 can execute transactions against the same PostgreSQL authority.
+
+> **Outcome (PR3).** The recommendation was adopted essentially as written: the
+> `pgx.Batch` lock-then-`clock_timestamp()` shape, `LockSlot` establishing and memoising
+> the attempt timestamp, an explicit no-slot resolution path, and retirement of the
+> service-level `Clock`. The §6 acceptance gate was met — the post-lock property is
+> proven by integration test, and the tests were verified to *fail* when the adapter is
+> switched to `transaction_timestamp()`, so they discriminate rather than describe.
+> Items 9–12 remain unproven; see §1.5 and the PR3 description for what is still open.
 
 This note was prompted while reviewing the `Clock` port in
 `internal/domain/ports.go`. The current AG-M1 service resolves `now` once from an

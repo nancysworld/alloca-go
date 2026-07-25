@@ -1,0 +1,412 @@
+// Package service is the application/use-case layer over the booking domain. It
+// orchestrates the reserve, confirm, and cancel operations against the domain ports:
+// resolving authoritative service time once per request, taking the slot lock,
+// settling elapsed holds, evaluating preconditions, mutating, and recording the
+// idempotency outcome — all within one transaction. It implements
+// docs/design/transaction-semantics.md §4–§5 and §7.
+//
+// Contract: each operation returns (domain.Result, error). The Result is the
+// classified *domain* answer (admitted_success, business_refusal, invalid_request).
+// A non-nil error is an infrastructure fault or deadline expiry; the transport edge
+// (PR4) classifies it as internal_failure or timeout_* (measurement-contract §6).
+// Faults are never returned as a business_refusal — the fault line of §4.
+package service
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/nancysworld/alloca-go/internal/domain"
+	"github.com/nancysworld/alloca-go/internal/idempotency"
+)
+
+// errRetry signals that an idempotency-record insert lost the unique-constraint race
+// (domain.ErrConflict). The transaction is rolled back and the whole operation is
+// re-run once; the re-run observes the winning record and replays or conflicts
+// (transaction-semantics §5.3). It never escapes the package.
+var errRetry = errors.New("service: idempotency race, retry")
+
+// Service performs the booking operations.
+type Service struct {
+	repo  domain.Repository
+	clock domain.Clock
+	ids   domain.IDGen
+	ttl   time.Duration
+}
+
+// New constructs a Service. ttl is the service-owned reservation hold duration
+// (transaction-semantics §1.6) and must be positive.
+func New(repo domain.Repository, clock domain.Clock, ids domain.IDGen, ttl time.Duration) *Service {
+	if ttl <= 0 {
+		panic("service: reservation ttl must be positive")
+	}
+	return &Service{repo: repo, clock: clock, ids: ids, ttl: ttl}
+}
+
+// ReserveCommand asks to hold one unit of a slot's capacity.
+type ReserveCommand struct {
+	OrganisationID domain.OrganisationID
+	UserID         domain.UserID
+	SlotID         domain.SlotID
+	IdempotencyKey string
+	Body           []byte
+}
+
+// ConfirmCommand turns a held reservation into a booking.
+type ConfirmCommand struct {
+	OrganisationID domain.OrganisationID
+	UserID         domain.UserID
+	ReservationID  domain.ReservationID
+	IdempotencyKey string
+	Body           []byte
+}
+
+// CancelCommand releases a held reservation or an active booking.
+type CancelCommand struct {
+	OrganisationID domain.OrganisationID
+	UserID         domain.UserID
+	ReservationID  domain.ReservationID
+	IdempotencyKey string
+	Body           []byte
+}
+
+// Reserve holds one unit of the slot for the caller (transaction-semantics §4).
+func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Result, error) {
+	if cmd.OrganisationID == "" || cmd.UserID == "" || cmd.SlotID == "" || cmd.IdempotencyKey == "" {
+		return domain.Result{Outcome: domain.OutcomeInvalidRequest}, nil
+	}
+	now := s.clock.Now()
+	scope := idempotency.Scope(cmd.OrganisationID, cmd.UserID, domain.OpReserve, cmd.IdempotencyKey)
+	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpReserve, cmd.OrganisationID, cmd.UserID, string(cmd.SlotID), cmd.Body)
+
+	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
+		slot, err := tx.LockSlot(ctx, cmd.SlotID)
+		if errors.Is(err, domain.ErrNotFound) {
+			return s.unknownTarget(ctx, tx, scope, hash, now)
+		}
+		if err != nil {
+			return domain.Result{}, err
+		}
+		if r, done, err := s.lookup(ctx, tx, scope, hash); done || err != nil {
+			return r, err
+		}
+
+		consumed, err := s.settle(ctx, tx, slot.ID, now)
+		if err != nil {
+			return domain.Result{}, err
+		}
+
+		var result domain.Result
+		var persist func(context.Context, domain.Tx) error
+		switch {
+		case !slot.Released(now):
+			result = domain.Refusal(domain.ReasonSlotNotReleased)
+		case slot.Closed(now):
+			result = domain.Refusal(domain.ReasonSlotClosed)
+		default:
+			expiresAt := now.Add(s.ttl)
+			switch {
+			case expiresAt.After(slot.StartsAt):
+				// The computed hold would outlive the slot start; refuse rather than
+				// grant a silently shortened hold (transaction-semantics §1.6).
+				result = domain.Refusal(domain.ReasonOutsideWindow)
+			case consumed >= slot.Capacity:
+				result = domain.Refusal(domain.ReasonNoCapacity)
+			default:
+				resID := s.ids.NewReservationID()
+				res := domain.Reservation{
+					ID:             resID,
+					SlotID:         slot.ID,
+					OrganisationID: cmd.OrganisationID,
+					UserID:         cmd.UserID,
+					State:          domain.ReservationHeld,
+					CreatedAt:      now,
+					ExpiresAt:      expiresAt,
+				}
+				result = domain.Result{Outcome: domain.OutcomeAdmittedSuccess, ReservationID: resID}
+				persist = func(ctx context.Context, tx domain.Tx) error { return tx.PutReservation(ctx, res) }
+			}
+		}
+		return s.commit(ctx, tx, scope, hash, result, now, persist)
+	})
+}
+
+// Confirm turns a held, unexpired reservation on an open slot into a booking
+// (transaction-semantics §4). It changes no capacity: a held unit becomes a
+// confirmed unit.
+func (s *Service) Confirm(ctx context.Context, cmd ConfirmCommand) (domain.Result, error) {
+	if cmd.OrganisationID == "" || cmd.UserID == "" || cmd.ReservationID == "" || cmd.IdempotencyKey == "" {
+		return domain.Result{Outcome: domain.OutcomeInvalidRequest}, nil
+	}
+	now := s.clock.Now()
+	scope := idempotency.Scope(cmd.OrganisationID, cmd.UserID, domain.OpConfirm, cmd.IdempotencyKey)
+	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpConfirm, cmd.OrganisationID, cmd.UserID, string(cmd.ReservationID), cmd.Body)
+
+	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
+		slot, res, done, r, err := s.lockByReservation(ctx, tx, cmd.ReservationID, scope, hash, now)
+		if done || err != nil {
+			return r, err
+		}
+
+		var result domain.Result
+		var persist func(context.Context, domain.Tx) error
+		switch res.State {
+		case domain.ReservationHeld:
+			if slot.Closed(now) {
+				// Normally unreachable: a held hold has expires_at <= starts_at, so at
+				// or after the start it is settled to expired above and handled below.
+				// Kept as a defensive, explicit branch.
+				result = domain.Refusal(domain.ReasonSlotClosed)
+			} else {
+				res.State = domain.ReservationConfirmed
+				bkID := s.ids.NewBookingID()
+				bk := domain.Booking{
+					ID:             bkID,
+					ReservationID:  res.ID,
+					SlotID:         slot.ID,
+					OrganisationID: res.OrganisationID,
+					UserID:         res.UserID,
+					State:          domain.BookingActive,
+					CreatedAt:      now,
+				}
+				result = domain.Result{Outcome: domain.OutcomeAdmittedSuccess, BookingID: bkID}
+				persist = func(ctx context.Context, tx domain.Tx) error {
+					if err := tx.PutReservation(ctx, res); err != nil {
+						return err
+					}
+					return tx.PutBooking(ctx, bk)
+				}
+			}
+		case domain.ReservationExpired:
+			result = domain.Refusal(domain.ReasonReservationExpired)
+		default: // confirmed or cancelled
+			result = domain.Refusal(domain.ReasonInvalidState)
+		}
+		return s.commit(ctx, tx, scope, hash, result, now, persist)
+	})
+}
+
+// Cancel releases the live unit for a reservation — the held reservation itself or
+// its active booking — but only while the slot is open (transaction-semantics §3.3,
+// §4).
+func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (domain.Result, error) {
+	if cmd.OrganisationID == "" || cmd.UserID == "" || cmd.ReservationID == "" || cmd.IdempotencyKey == "" {
+		return domain.Result{Outcome: domain.OutcomeInvalidRequest}, nil
+	}
+	now := s.clock.Now()
+	scope := idempotency.Scope(cmd.OrganisationID, cmd.UserID, domain.OpCancel, cmd.IdempotencyKey)
+	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpCancel, cmd.OrganisationID, cmd.UserID, string(cmd.ReservationID), cmd.Body)
+
+	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
+		slot, res, done, r, err := s.lockByReservation(ctx, tx, cmd.ReservationID, scope, hash, now)
+		if done || err != nil {
+			return r, err
+		}
+
+		var result domain.Result
+		var persist func(context.Context, domain.Tx) error
+		switch res.State {
+		case domain.ReservationHeld:
+			if slot.Closed(now) {
+				result = domain.Refusal(domain.ReasonSlotClosed)
+			} else {
+				res.State = domain.ReservationCancelled
+				result = domain.Result{Outcome: domain.OutcomeAdmittedSuccess, ReservationID: res.ID}
+				persist = func(ctx context.Context, tx domain.Tx) error { return tx.PutReservation(ctx, res) }
+			}
+		case domain.ReservationConfirmed:
+			bk, err := tx.BookingForReservation(ctx, res.ID)
+			if err != nil {
+				// A confirmed reservation without a booking is an invariant violation,
+				// not a domain refusal (the fault line, §4).
+				return domain.Result{}, err
+			}
+			switch {
+			case bk.State != domain.BookingActive:
+				result = domain.Refusal(domain.ReasonInvalidState)
+			case slot.Closed(now):
+				result = domain.Refusal(domain.ReasonSlotClosed)
+			default:
+				bk.State = domain.BookingCancelled
+				result = domain.Result{Outcome: domain.OutcomeAdmittedSuccess, ReservationID: res.ID}
+				persist = func(ctx context.Context, tx domain.Tx) error { return tx.PutBooking(ctx, bk) }
+			}
+		default: // expired or cancelled: nothing live to release
+			result = domain.Refusal(domain.ReasonInvalidState)
+		}
+		return s.commit(ctx, tx, scope, hash, result, now, persist)
+	})
+}
+
+// lockByReservation resolves a reservation's slot, locks it, applies idempotency
+// resolution, and settles elapsed holds, returning the locked slot and the
+// post-settlement reservation. The (done, result) pair short-circuits the operation
+// on an unknown target, replay, or conflict.
+func (s *Service) lockByReservation(ctx context.Context, tx domain.Tx, id domain.ReservationID, scope domain.ScopeKey, hash string, now time.Time) (slot domain.Slot, res domain.Reservation, done bool, result domain.Result, err error) {
+	slotID, err := tx.SlotIDForReservation(ctx, id)
+	if errors.Is(err, domain.ErrNotFound) {
+		result, err = s.unknownTarget(ctx, tx, scope, hash, now)
+		return domain.Slot{}, domain.Reservation{}, true, result, err
+	}
+	if err != nil {
+		return domain.Slot{}, domain.Reservation{}, true, domain.Result{}, err
+	}
+	slot, err = tx.LockSlot(ctx, slotID)
+	if err != nil {
+		// A reservation pointing at a missing slot is an invariant violation.
+		return domain.Slot{}, domain.Reservation{}, true, domain.Result{}, err
+	}
+	if r, resolved, lerr := s.lookup(ctx, tx, scope, hash); resolved || lerr != nil {
+		return domain.Slot{}, domain.Reservation{}, true, r, lerr
+	}
+	if _, err = s.settle(ctx, tx, slot.ID, now); err != nil {
+		return domain.Slot{}, domain.Reservation{}, true, domain.Result{}, err
+	}
+	res, err = tx.Reservation(ctx, id)
+	if err != nil {
+		return domain.Slot{}, domain.Reservation{}, true, domain.Result{}, err
+	}
+	return slot, res, false, domain.Result{}, nil
+}
+
+// run executes fn inside a transaction, retrying once on the idempotency-insert race
+// (transaction-semantics §5.3).
+func (s *Service) run(ctx context.Context, fn func(ctx context.Context, tx domain.Tx) (domain.Result, error)) (domain.Result, error) {
+	const maxAttempts = 2
+	var last error
+	for range maxAttempts {
+		var result domain.Result
+		err := s.repo.WithinTx(ctx, func(ctx context.Context, tx domain.Tx) error {
+			r, e := fn(ctx, tx)
+			if e != nil {
+				return e
+			}
+			result = r
+			return nil
+		})
+		if errors.Is(err, errRetry) {
+			last = err
+			continue
+		}
+		if err != nil {
+			return domain.Result{}, err
+		}
+		return result, nil
+	}
+	// Both attempts lost the race: the record exists but could not be read as a
+	// resolution. This is not expected; surface it as a fault for the edge to classify.
+	return domain.Result{}, last
+}
+
+// lookup applies the resolution algorithm's replay/conflict steps against an existing
+// record (transaction-semantics §5.3 steps 2–3). done=false means no record was
+// found and the operation should proceed.
+func (s *Service) lookup(ctx context.Context, tx domain.Tx, scope domain.ScopeKey, hash string) (result domain.Result, done bool, err error) {
+	rec, err := tx.FindRecord(ctx, scope)
+	if errors.Is(err, domain.ErrNotFound) {
+		return domain.Result{}, false, nil
+	}
+	if err != nil {
+		return domain.Result{}, false, err
+	}
+	switch idempotency.Resolve(rec, hash) {
+	case idempotency.Replay:
+		return replayResult(rec), true, nil
+	default:
+		return domain.Refusal(domain.ReasonIdempotencyConflict), true, nil
+	}
+}
+
+// unknownTarget handles a well-formed request for a target that does not exist
+// (transaction-semantics §5.5): no slot is locked; the refusal is recorded, guarded
+// only by the unique constraint, so a retry replays it and the key cannot later be
+// repurposed for a valid target.
+func (s *Service) unknownTarget(ctx context.Context, tx domain.Tx, scope domain.ScopeKey, hash string, now time.Time) (domain.Result, error) {
+	if r, done, err := s.lookup(ctx, tx, scope, hash); done || err != nil {
+		return r, err
+	}
+	return s.commit(ctx, tx, scope, hash, domain.Refusal(domain.ReasonUnknownTarget), now, nil)
+}
+
+// settle transitions every elapsed held reservation on the slot to expired, then
+// returns the slot's consumed capacity derived from settled state: held reservations
+// plus active bookings (transaction-semantics §1.7, §2.1).
+func (s *Service) settle(ctx context.Context, tx domain.Tx, slotID domain.SlotID, now time.Time) (consumed int, err error) {
+	held, err := tx.HeldReservations(ctx, slotID)
+	if err != nil {
+		return 0, err
+	}
+	stillHeld := 0
+	for _, r := range held {
+		if r.Elapsed(now) {
+			r.State = domain.ReservationExpired
+			if err := tx.PutReservation(ctx, r); err != nil {
+				return 0, err
+			}
+			continue
+		}
+		stillHeld++
+	}
+	active, err := tx.ActiveBookingCount(ctx, slotID)
+	if err != nil {
+		return 0, err
+	}
+	return stillHeld + active, nil
+}
+
+// commit records the terminal outcome and then persists the mutation (if any). The
+// record is inserted first so a unique-constraint race is detected before any entity
+// mutation is persisted (transaction-semantics §5.2); on a race it returns errRetry
+// so run re-executes.
+//
+// It first asserts the call-site invariant that ties the two arguments together: a
+// mutation exists exactly when the outcome is admitted_success. Every operation sets
+// result and persist as a pair, but nothing in the type system enforces it. Were the
+// record inserted while its mutation was skipped (admitted_success with persist=nil),
+// a replay would return a success referencing a reservation or booking that was never
+// written — a durable, silent P1. A violation is a programming error on the fault
+// line (§4), never a domain outcome, so it aborts the transaction.
+func (s *Service) commit(ctx context.Context, tx domain.Tx, scope domain.ScopeKey, hash string, result domain.Result, now time.Time, persist func(context.Context, domain.Tx) error) (domain.Result, error) {
+	if mutates := result.Outcome == domain.OutcomeAdmittedSuccess; mutates != (persist != nil) {
+		return domain.Result{}, fmt.Errorf("service: commit invariant violated: outcome %q with persist!=nil==%t", result.Outcome, persist != nil)
+	}
+	rec := domain.IdempotencyRecord{
+		OrganisationID: scope.OrganisationID,
+		UserID:         scope.UserID,
+		Operation:      scope.Operation,
+		Key:            scope.Key,
+		RequestHash:    hash,
+		Outcome:        result.Outcome,
+		Reason:         result.Reason,
+		ReservationID:  result.ReservationID,
+		BookingID:      result.BookingID,
+		CreatedAt:      now,
+	}
+	err := tx.InsertRecord(ctx, rec)
+	if errors.Is(err, domain.ErrConflict) {
+		return domain.Result{}, errRetry
+	}
+	if err != nil {
+		return domain.Result{}, err
+	}
+	if persist != nil {
+		if err := persist(ctx, tx); err != nil {
+			return domain.Result{}, err
+		}
+	}
+	return result, nil
+}
+
+// replayResult reconstructs the recorded terminal outcome for a replay, with
+// Replay=true (transaction-semantics §5.3).
+func replayResult(rec domain.IdempotencyRecord) domain.Result {
+	return domain.Result{
+		Outcome:       rec.Outcome,
+		Reason:        rec.Reason,
+		Replay:        true,
+		ReservationID: rec.ReservationID,
+		BookingID:     rec.BookingID,
+	}
+}

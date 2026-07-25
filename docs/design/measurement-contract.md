@@ -21,6 +21,8 @@ governs measurement practice.
 - §5 is the checklist every experiment must satisfy before its numbers are quotable.
 - §7 and §8 are **provisional hypotheses**, not commitments. They exist to drive
   experiments and will be retained, revised, or rejected with evidence in AG-M2/M4.
+- §9 defines the project-level final validation bar and the evidence artifact that
+  assembles the milestone results into one auditable conclusion.
 
 ---
 
@@ -115,7 +117,8 @@ them.
 | Outcome | Meaning | Counts toward |
 |---|---|---|
 | `admitted_success` | Correct domain mutation completed. | Goodput |
-| `business_refusal` | Sold out / insufficient balance / conflict — a valid domain answer. | Reported separately (not failure) |
+| `business_refusal` | Sold out / insufficient balance / conflict / unknown target — a valid domain answer. | Reported separately (not failure) |
+| `invalid_request` | Rejected **before** domain processing: malformed body, missing required field, or missing idempotency key. Distinct from `business_refusal`, which is a valid *domain* answer to a well-formed request. | Reported separately (client/transport error; neither goodput nor failure) |
 | `retry_after` | Bounded retry requested. | Bounded overload response |
 | `admission_rejected` | Rejected because the admission queue is full. | Bounded overload response |
 | `queue_position` | Admitted to a queue with a position / release token. | Bounded overload response |
@@ -125,6 +128,17 @@ them.
 | `timeout_db` | Database statement/lock timeout. | Timeout accounting |
 | `timeout_lb` | Load-balancer-level timeout. | Timeout accounting |
 | `internal_failure` | Unexpected server fault. | Failure |
+
+`invalid_request` was added in AG-M1 (transaction-semantics §8) so that **every**
+completed request carries exactly one terminal outcome and totals reconcile: a
+request that never becomes a valid domain operation (unparseable, missing a required
+field or idempotency key) must still be classified, but must not inflate
+`business_refusal` — a *valid domain answer to a well-formed request*. The boundary is
+deliberate: a **well-formed** request for a non-existent target, or one that reuses an
+idempotency key for a different payload, is a domain **`business_refusal`** (with a
+specific reason code); only a request the service cannot turn into a domain operation
+at all is `invalid_request`. The fault line is separate again: an internal
+invariant/accounting violation is an `internal_failure`, never a refusal.
 
 ### 4.2 Disposition dimension (orthogonal to the outcome above)
 
@@ -331,10 +345,66 @@ the resolved, validated budget so experiments can record it alongside `/meta`.
 
 ---
 
-## 9. What AG-M0 does and does not establish
+## 9. Final system validation and evidence artifact (normative)
+
+The project is not validated by compilation, passing unit tests, peak accepted request
+rate, or agreement between reviewers and AI agents. Its final claims are credible only
+when the implemented system, persisted state, telemetry, and reproducible experiment
+artifacts agree under concurrency, faults, load, and independent inspection.
+
+The final validation artifact assembles the milestone reports into one auditable
+conclusion. It must establish all of the following, or state explicitly which item
+remains unproven:
+
+1. **Semantic correctness.** The domain state machines and every named correctness
+   gate are covered by deterministic unit, race, and property-style tests where
+   applicable.
+2. **Transactional correctness.** The same invariants are exercised against real
+   PostgreSQL concurrency, including capacity-edge reserves, duplicate requests,
+   confirm/cancel races, confirm/expiry races, rollback, timeout, and commit-ambiguity
+   paths.
+3. **Independent reconciliation.** After correctness and stress runs, database queries
+   independently verify capacity, state-machine, booking/reservation, and idempotency
+   invariants rather than trusting HTTP responses or application telemetry alone.
+4. **Fault and recovery behaviour.** Client cancellation, server deadline, pool and DB
+   timeout, worker delay, process interruption, dependency unavailability, lost
+   response, and unknown commit cases are exercised; each test records persisted state,
+   client-visible outcome, replay/recovery behaviour, and telemetry classification.
+5. **SLO and overload frontier.** Increasing offered load establishes the healthy,
+   SLO-safe, saturated, and overloaded regions. The report names the measured SLO-safe
+   capacity and a conservative recommended operating cap, and shows that overload
+   produces bounded explicit outcomes rather than uncontrolled timeout growth.
+6. **Scale-shape separation.** Stateless API capacity, dispersed independent
+   authorities, one hot authority, and fleet economics are reported as separate
+   experiment layers. A hot-authority serialization ceiling is never presented as a
+   system-wide scaling result.
+7. **Production-shaped validation.** The relevant conclusions are repeated through the
+   deployed network path with multiple API instances, PostgreSQL, load balancer,
+   external load generation, migrations, and production-oriented telemetry.
+8. **Reproducibility and provenance.** Every material claim identifies the commit SHA,
+   commands, raw artifact paths, environment and `/meta` capture, configuration,
+   database settings, load profile, run duration, and random seeds required to reproduce
+   it. Reports retain the evidence labels of §2.
+9. **Adversarial review and limitations.** The conclusion records independent attempts
+   to falsify the design, implementation, generator validity, reconciliation, and
+   interpretation. Known limits, negative results, unresolved risks, and deferred work
+   are part of the artifact, not omitted from it.
+
+The expected final report lives at
+`docs/reports/alloca-go-final-validation.md`. Milestone reports may establish parts of
+this contract progressively; the final report cites those reports and their raw
+artifacts rather than duplicating or relabelling their evidence. Passing this gate does
+not mean the system has no limits. It means its correctness, operating frontier,
+failure behaviour, scale boundaries, and remaining uncertainty are stated with
+repository-local evidence that can survive independent attempts at falsification.
+
+---
+
+## 10. What AG-M0 does and does not establish
 
 - **Establishes:** the labelling convention, vocabulary, outcome taxonomy, experiment
-  template with negative controls, the SLI list, and the provisional SLO/timeout
-  hypotheses — i.e. the rules future evidence must satisfy.
+  template with negative controls, the SLI list, the provisional SLO/timeout
+  hypotheses, and the final validation contract — i.e. the rules future evidence must
+  satisfy.
 - **Does not establish:** any `[MEASURED]` capacity, latency, throughput, or cost
   result. Every number in §7 and §8 is `[HYPOTHESIS]`; no measurement has been taken.

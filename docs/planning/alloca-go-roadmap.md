@@ -4,6 +4,7 @@
 **Created:** 20 July 2026  
 **Delivery window:** 20 July–28 August 2026 inclusive  
 **Predecessor:** prior RuntimeIQ-Alloca prototype work and archived planning documents
+(lineage: [high-level design](../design/high-level-design.md) §1.1)
 
 ## 1. Executive intent
 
@@ -29,7 +30,7 @@ The 40-day plan prioritises a defensible end-to-end system, measured capacity ec
 
 ### 2.1 Prior prototype evidence — not yet reproduced in this repository
 
-The following figures are historical inputs to the roadmap. They must not be treated as Alloca-Go results until reproduced from this repository:
+The following figures are `[PRIOR-UNREPRODUCED]` inputs from the RuntimeIQ-Alloca prototype ([high-level design](../design/high-level-design.md) §1.1). They must not be treated as Alloca-Go results until reproduced from this repository:
 
 - A single-worker prototype `/health` path sustained approximately 2,050 requests per second when measured with a corrected Go client.
 - A minimal Go `net/http` service on the same machine completed at least 61 times as many successful responses. This was a client-limited, stateless, whole-stack comparison—not a language-only or booking-path comparison.
@@ -647,6 +648,7 @@ docs/
   planning/
     alloca-go-roadmap.md
   design/
+    high-level-design.md
     system-context.md
     measurement-contract.md
     transaction-semantics.md

@@ -6,14 +6,20 @@ moment it really has to hold. Nothing here should surface a violation if the
 policy has been followed per-commit; this is the final sweep.
 
 Keyword scans are review aids, not zero-hit gates. The policy and checklist may
-legitimately contain words such as `confidential`, `recruitment`, or `interview`;
-every hit must be inspected in context.
+legitimately contain words such as `confidential`, `recruitment`, or `interview`,
+and `RuntimeIQ` is an explicitly permitted predecessor reference; every hit must be
+inspected in context.
 
 ## 1. Scan the working tree
 
 - [ ] Grep for the predecessor name and any private codenames:
       `git grep -in -e 'RuntimeIQ' -e '<other private codenames>'`
-      — confirm every hit is a safe public technical reference, not private detail.
+      — RuntimeIQ **may** be named as the predecessor project
+      ([policy](public-disclosure-policy.md#named-predecessor-runtimeiq)); this is not
+      a zero-hit gate. Confirm each hit is either lineage framing or a finding labelled
+      `[PRIOR-UNREPRODUCED]`, and never source, private paths, hosts, or private
+      product/organisation detail. Private codenames other than RuntimeIQ have no such
+      exemption and must not appear at all.
 - [ ] Grep for likely leak markers:
       `git grep -in -e 'confidential' -e 'internal only' -e 'do not share' -e 'recruit' -e 'interview'`
       — inspect all hits; policy text itself may match.
@@ -29,7 +35,8 @@ every hit must be inspected in context.
 
 - [ ] Reachable git history:
       `git log --all -p | grep -in -e 'RuntimeIQ' -e 'confidential' -e '<private codenames>'`
-      — remember deleted-then-committed content still lives in history.
+      — remember deleted-then-committed content still lives in history. Apply the same
+      predecessor rule as above: the name is allowed, the private detail is not.
 - [ ] Branch names, tags, and commit messages.
 - [ ] PR titles, descriptions, reviews, comments, and issue text.
 - [ ] Generated artifacts such as reports, diagrams, exported data, raw benchmark

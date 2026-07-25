@@ -98,7 +98,7 @@ contains no `[MEASURED]` timeout value.
 The following observations inform the initial hypothesis but are not reproducible
 from this repository:
 
-- `[PRIOR-UNREPRODUCED]` In the predecessor RuntimeIQ/Alloca prototype, removing
+- `[PRIOR-UNREPRODUCED]` In the predecessor RuntimeIQ-Alloca prototype, removing
   effective timeout bounds allowed latency to exceed 10 seconds under load.
 - `[PRIOR-UNREPRODUCED]` A prior mobile booking workload was observed to wait roughly
   5–6 seconds at peak release time before returning an error, while ordinary requests

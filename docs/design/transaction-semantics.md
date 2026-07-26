@@ -489,6 +489,15 @@ first** and returns an explicit classified outcome:
 - Client disconnect cancels the request context → `timeout_client`.
 - Pool acquisition is bounded by its cap **outside** the transaction budget; for AG-M1
   an over-budget acquisition is `timeout_server` (see §4 note).
+- `statement_timeout` covers **`COMMIT`** like any other statement, so a commit that
+  outruns it is `timeout_db` — a *definite* failure to commit, not an ambiguous one
+  (§5.4): the server answered, so nothing was applied.
+- **Cleanup is bounded too.** A transaction's rollback runs on a context detached from
+  the caller's cancellation — a transaction abandoned because the caller went away
+  still has to be closed — but on its own bound, not none. Detached *and* unbounded, a
+  rollback that cannot reach PostgreSQL would pin its connection indefinitely and,
+  repeated, drain the pool: a single database stall escalated into a service-wide
+  outage, which is the failure this whole ordering exists to prevent.
 
 Each layer's expiry has a distinct, recorded outcome rather than a generic outer
 timeout. The concrete session wiring is a PR3 responsibility; this section fixes what

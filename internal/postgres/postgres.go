@@ -82,8 +82,12 @@ func (r *Repo) WithinTx(ctx context.Context, fn func(ctx context.Context, tx dom
 	}
 	// Rollback is idempotent after a successful commit (pgx returns ErrTxClosed), so
 	// this is safe on every path and guarantees no transaction is left open by a panic
-	// or an early return.
-	defer func() { _ = pgxTx.Rollback(context.WithoutCancel(txCtx)) }()
+	// or an early return. It runs on its own cleanup bound (see cleanupContext).
+	defer func() {
+		cleanupCtx, cancelCleanup := r.cleanupContext(txCtx)
+		defer cancelCleanup()
+		_ = pgxTx.Rollback(cleanupCtx)
+	}()
 
 	if err := r.applyTimeouts(txCtx, pgxTx); err != nil {
 		return r.classify(ctx, txCtx, err)
@@ -98,6 +102,28 @@ func (r *Repo) WithinTx(ctx context.Context, fn func(ctx context.Context, tx dom
 		return r.classifyCommit(ctx, txCtx, err)
 	}
 	return nil
+}
+
+// cleanupContext derives the context used for a transaction's rollback. Cleanup has to
+// outlive the reason the transaction is being abandoned — a transaction the caller
+// cancelled or that blew its budget still has to be closed, and a rollback issued on
+// the expired context would be refused before it reached PostgreSQL, leaving the
+// transaction open until the connection is destroyed.
+//
+// But detaching from cancellation removes the *deadline* along with it, and an
+// unbounded rollback is its own failure: if the connection is stalled, the deferred
+// Rollback blocks forever, the connection is never released, and the timed-out request
+// never returns. Repeat that under load and the pool drains — a per-request database
+// stall escalates into a whole-service outage, which is precisely the failure the
+// layered budget (§6) exists to prevent.
+//
+// So cleanup is detached from the caller *and* independently bounded, by
+// StatementTimeout: a rollback is a statement, and it is the same bound the session
+// applies to every other statement in the transaction. When it expires, pgx marks the
+// connection unusable and Release discards it rather than returning a connection with
+// an open transaction to the pool.
+func (r *Repo) cleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), r.budget.StatementTimeout)
 }
 
 // applyTimeouts sets the per-transaction database bounds. SET LOCAL cannot be
@@ -162,9 +188,29 @@ func (r *Repo) classify(ctx context.Context, txCtx context.Context, err error) e
 // Reporting an ambiguous commit as a definite failure would be the more dangerous
 // error of the two: a client told "failed" may reasonably reissue with a new key, and
 // a new key is exactly what breaks the one-key-one-mutation gate.
+//
+// Within the definite branch, a timeout SQLSTATE is still a timeout: COMMIT is subject
+// to the session's statement_timeout like any other statement, and when it trips the
+// database layer was the binding bound. Returning that raw would classify the request
+// as internal_failure and lose a timeout_db from the outcome mix exactly when commit
+// processing exceeded its database bound (§6).
 func (r *Repo) classifyCommit(ctx context.Context, txCtx context.Context, err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case sqlstateLockNotAvailable:
+			return fmt.Errorf("postgres: commit exceeded lock_timeout: %w", domain.ErrDBTimeout)
+		case sqlstateQueryCanceled:
+			// The server answered, so the transaction definitely did not commit — this is
+			// not the ambiguous case below. As in mapError, 57014 covers both
+			// statement_timeout expiry and a cancellation the server honoured, and only
+			// the former is timeout_db; a caller who cancelled keeps timeout_client /
+			// timeout_server.
+			if ctx.Err() != nil {
+				return fmt.Errorf("postgres: commit cancelled: %w", ctx.Err())
+			}
+			return fmt.Errorf("postgres: commit exceeded statement_timeout: %w", domain.ErrDBTimeout)
+		}
 		return fmt.Errorf("postgres: commit rejected (%s): %w", pgErr.Code, err)
 	}
 	if ctx.Err() != nil || txCtx.Err() != nil || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {

@@ -185,6 +185,31 @@ func TestValidateRejectsNonPositiveBudget(t *testing.T) {
 	}
 }
 
+// TestBudgetValidateIsUsableStandalone pins that the §8.1 clause 1 checks are reachable
+// from a RequestBudget alone, not only through Config.Validate. Consumers are handed a
+// bare budget — the PostgreSQL pool renders LockTimeout and StatementTimeout into
+// session settings, where a zero disables the bound entirely — and they cannot check the
+// precondition they depend on unless it lives at this level.
+func TestBudgetValidateIsUsableStandalone(t *testing.T) {
+	if err := Default().RequestBudget.Validate(); err != nil {
+		t.Fatalf("Validate rejected the default budget, want accepted: %v", err)
+	}
+
+	// The zero value must be rejected: it is what a caller who never populated the budget
+	// holds, and every bound in it is the "no bound" value.
+	if err := (RequestBudget{}).Validate(); err == nil {
+		t.Fatal("Validate accepted the zero budget, want error")
+	}
+
+	// Ordering is enforced here too, not just positivity — otherwise Config.Validate
+	// would still have to duplicate the nesting checks for its own callers.
+	inverted := Default().RequestBudget
+	inverted.LockTimeout = inverted.StatementTimeout + time.Second
+	if err := inverted.Validate(); err == nil {
+		t.Fatal("Validate accepted lock_timeout > statement_timeout, want error")
+	}
+}
+
 func TestLoadRejectsBudgetOverrideThatBreaksOrdering(t *testing.T) {
 	// An env override that inverts the chain must fail fast at Load, not start.
 	_, err := Load(lookupFrom(map[string]string{

@@ -17,7 +17,17 @@ GOLANGCI_LINT         := $(TOOLBIN)/golangci-lint
 # forces a reinstall of the correct version rather than silently reusing an old one.
 GOLANGCI_LINT_STAMP   := $(TOOLBIN)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 
-.PHONY: all ci fmt fmt-check vet lint build test test-race run tidy tools clean
+.PHONY: all ci fmt fmt-check vet lint build test test-race test-integration \
+        db-up db-down migrate run tidy tools clean
+
+# Integration tests need a real PostgreSQL: the properties they prove (capacity safety
+# under concurrent transactions, post-lock decision time, the scoped-key race) do not
+# exist without one. They are behind the `integration` build tag so the default gate
+# stays hermetic and fast.
+DATABASE_URL ?= postgres://alloca:alloca@localhost:55432/alloca?sslmode=disable
+PGCONTAINER  ?= alloca-pg
+PGIMAGE      ?= postgres:16-alpine
+PGPORT       ?= 55432
 
 all: ci
 
@@ -64,6 +74,28 @@ test:
 ## test-race: run unit tests under the race detector
 test-race:
 	$(GO) test -race $(PKGS)
+
+## test-integration: run the PostgreSQL integration tests (needs DATABASE_URL)
+test-integration:
+	DATABASE_URL="$(DATABASE_URL)" $(GO) test -tags=integration -race -count=1 ./...
+
+## db-up: start a local PostgreSQL for integration tests
+db-up:
+	@docker rm -f $(PGCONTAINER) >/dev/null 2>&1 || true
+	docker run -d --name $(PGCONTAINER) \
+		-e POSTGRES_USER=alloca -e POSTGRES_PASSWORD=alloca -e POSTGRES_DB=alloca \
+		-p $(PGPORT):5432 $(PGIMAGE)
+	@echo "waiting for postgres..."
+	@until docker exec $(PGCONTAINER) pg_isready -U alloca -q; do sleep 0.5; done
+	@echo "postgres ready on port $(PGPORT)"
+
+## db-down: stop and remove the local PostgreSQL
+db-down:
+	@docker rm -f $(PGCONTAINER) >/dev/null 2>&1 || true
+
+## migrate: apply database migrations (needs DATABASE_URL)
+migrate:
+	DATABASE_URL="$(DATABASE_URL)" $(GO) run ./cmd/alloca-migrate
 
 ## run: build and run the service
 run:

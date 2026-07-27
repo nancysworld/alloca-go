@@ -17,20 +17,13 @@ var (
 	// concurrency backstop of transaction-semantics §5.3; the caller rolls back and
 	// re-runs so the winning record is observed.
 	ErrConflict = errors.New("domain: idempotency scope conflict")
+	// ErrTimeNotEstablished reports that Tx.Now was called before the attempt's
+	// authoritative timestamp existed — that is, before a successful LockSlot or
+	// ResolveTimeWithoutSlot. It is a programming error on the fault line
+	// (transaction-semantics §4), never a domain answer: returning a pre-lock time
+	// here is exactly the staleness the authoritative-time contract exists to prevent.
+	ErrTimeNotEstablished = errors.New("domain: authoritative time not established")
 )
-
-// Clock is the source of authoritative service time (transaction-semantics §1.5).
-// Booking decisions resolve now once at the trusted boundary through this port;
-// tests inject a controllable clock for deterministic coverage.
-type Clock interface {
-	Now() time.Time
-}
-
-// SystemClock is the production Clock backed by time.Now.
-type SystemClock struct{}
-
-// Now returns the current wall-clock time.
-func (SystemClock) Now() time.Time { return time.Now() }
 
 // IDGen mints server-assigned identifiers. Identity is server-owned; clients never
 // supply reservation or booking IDs.
@@ -47,6 +40,10 @@ type Repository interface {
 	// operations on the same slot are serialized (PostgreSQL: SELECT … FOR UPDATE;
 	// the in-memory reference: a process-wide lock). The Tx handed to fn is the only
 	// means of reading or mutating state for the duration of the transaction.
+	//
+	// No now is passed in: doing so would force the value to be resolved before the
+	// closure could acquire the slot lock, structurally encoding the wrong decision
+	// point. Authoritative time is established inside the transaction, by Tx.
 	WithinTx(ctx context.Context, fn func(ctx context.Context, tx Tx) error) error
 }
 
@@ -54,13 +51,43 @@ type Repository interface {
 // read/lock methods take the slot's write lock where required so the capacity
 // invariant is evaluated under single-writer serialization (transaction-semantics
 // §2). Read methods return ErrNotFound when the entity is absent.
+//
+// # Authoritative time (transaction-semantics §1.5)
+//
+// Each transaction attempt has exactly one decision timestamp, and it describes the
+// point at which the mutation actually serializes — not when the request arrived or
+// when the transaction began. A transaction may wait on the slot lock until
+// lock_timeout; during that wait a hold can expire or the slot can cross starts_at,
+// so a timestamp resolved before the wait is stale precisely when it matters.
+//
+// The contract is therefore: a successful LockSlot establishes and memoises the
+// attempt's timestamp, resolved after the row-lock wait completes. Now returns that
+// memoised value and never resolves a time source of its own. Calling Now first is
+// ErrTimeNotEstablished, not an invitation to obtain pre-lock time by accident.
+// Because it is per attempt rather than per request, a re-run after the §5.3
+// insert-race backstop resolves a new timestamp; only the committed attempt's value
+// becomes durable.
 type Tx interface {
 	// LockSlot loads a slot and takes its write lock for the remainder of the
-	// transaction. Returns ErrNotFound if the slot does not exist.
+	// transaction, then establishes the attempt's authoritative timestamp (readable
+	// via Now) from the post-lock instant. Returns ErrNotFound if the slot does not
+	// exist, in which case no timestamp is established — the caller is on the
+	// unknown-target path and must use ResolveTimeWithoutSlot.
 	LockSlot(ctx context.Context, id SlotID) (Slot, error)
+	// Now returns the attempt's authoritative timestamp. It returns
+	// ErrTimeNotEstablished if neither LockSlot nor ResolveTimeWithoutSlot has
+	// succeeded in this attempt.
+	Now(ctx context.Context) (time.Time, error)
+	// ResolveTimeWithoutSlot establishes the attempt's authoritative timestamp on the
+	// one path that legitimately has no slot to lock: recording the unknown_target
+	// refusal for a target that does not exist (transaction-semantics §5.5). It is a
+	// separate method rather than a fallback inside Now so that the no-slot path is
+	// explicit at the call site and cannot be reached by forgetting to lock.
+	ResolveTimeWithoutSlot(ctx context.Context) (time.Time, error)
 	// SlotIDForReservation resolves the slot a reservation belongs to, without
 	// locking, so the caller can then LockSlot that slot (transaction-semantics §2).
-	// Returns ErrNotFound if the reservation does not exist.
+	// Returns ErrNotFound if the reservation does not exist. It establishes no
+	// timestamp: only the subsequent LockSlot does.
 	SlotIDForReservation(ctx context.Context, id ReservationID) (SlotID, error)
 	// Reservation loads a reservation by ID. Returns ErrNotFound if absent.
 	Reservation(ctx context.Context, id ReservationID) (Reservation, error)

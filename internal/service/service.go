@@ -1,9 +1,15 @@
 // Package service is the application/use-case layer over the booking domain. It
 // orchestrates the reserve, confirm, and cancel operations against the domain ports:
-// resolving authoritative service time once per request, taking the slot lock,
+// taking the slot lock, reading the authoritative timestamp that lock established,
 // settling elapsed holds, evaluating preconditions, mutating, and recording the
 // idempotency outcome — all within one transaction. It implements
 // docs/design/transaction-semantics.md §4–§5 and §7.
+//
+// The service owns no clock. Authoritative time belongs to the transaction and is
+// established by domain.Tx.LockSlot after the row-lock wait, so a decision is made
+// against the instant it actually serializes (transaction-semantics §1.5). Keeping a
+// service-level clock alongside Tx.Now would put two competing sources of semantic
+// time in one operation.
 //
 // Contract: each operation returns (domain.Result, error). The Result is the
 // classified *domain* answer (admitted_success, business_refusal, invalid_request).
@@ -30,19 +36,18 @@ var errRetry = errors.New("service: idempotency race, retry")
 
 // Service performs the booking operations.
 type Service struct {
-	repo  domain.Repository
-	clock domain.Clock
-	ids   domain.IDGen
-	ttl   time.Duration
+	repo domain.Repository
+	ids  domain.IDGen
+	ttl  time.Duration
 }
 
 // New constructs a Service. ttl is the service-owned reservation hold duration
 // (transaction-semantics §1.6) and must be positive.
-func New(repo domain.Repository, clock domain.Clock, ids domain.IDGen, ttl time.Duration) *Service {
+func New(repo domain.Repository, ids domain.IDGen, ttl time.Duration) *Service {
 	if ttl <= 0 {
 		panic("service: reservation ttl must be positive")
 	}
-	return &Service{repo: repo, clock: clock, ids: ids, ttl: ttl}
+	return &Service{repo: repo, ids: ids, ttl: ttl}
 }
 
 // ReserveCommand asks to hold one unit of a slot's capacity.
@@ -77,15 +82,20 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 	if cmd.OrganisationID == "" || cmd.UserID == "" || cmd.SlotID == "" || cmd.IdempotencyKey == "" {
 		return domain.Result{Outcome: domain.OutcomeInvalidRequest}, nil
 	}
-	now := s.clock.Now()
 	scope := idempotency.Scope(cmd.OrganisationID, cmd.UserID, domain.OpReserve, cmd.IdempotencyKey)
 	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpReserve, cmd.OrganisationID, cmd.UserID, string(cmd.SlotID), cmd.Body)
 
 	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
 		slot, err := tx.LockSlot(ctx, cmd.SlotID)
 		if errors.Is(err, domain.ErrNotFound) {
-			return s.unknownTarget(ctx, tx, scope, hash, now)
+			return s.unknownTarget(ctx, tx, scope, hash)
 		}
+		if err != nil {
+			return domain.Result{}, err
+		}
+		// Established by the LockSlot above, so it describes the instant this attempt
+		// serialized rather than when the request arrived (transaction-semantics §1.5).
+		now, err := tx.Now(ctx)
 		if err != nil {
 			return domain.Result{}, err
 		}
@@ -140,12 +150,11 @@ func (s *Service) Confirm(ctx context.Context, cmd ConfirmCommand) (domain.Resul
 	if cmd.OrganisationID == "" || cmd.UserID == "" || cmd.ReservationID == "" || cmd.IdempotencyKey == "" {
 		return domain.Result{Outcome: domain.OutcomeInvalidRequest}, nil
 	}
-	now := s.clock.Now()
 	scope := idempotency.Scope(cmd.OrganisationID, cmd.UserID, domain.OpConfirm, cmd.IdempotencyKey)
 	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpConfirm, cmd.OrganisationID, cmd.UserID, string(cmd.ReservationID), cmd.Body)
 
 	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
-		slot, res, done, r, err := s.lockByReservation(ctx, tx, cmd.ReservationID, scope, hash, now)
+		slot, res, now, done, r, err := s.lockByReservation(ctx, tx, cmd.ReservationID, scope, hash)
 		if done || err != nil {
 			return r, err
 		}
@@ -195,12 +204,11 @@ func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (domain.Result,
 	if cmd.OrganisationID == "" || cmd.UserID == "" || cmd.ReservationID == "" || cmd.IdempotencyKey == "" {
 		return domain.Result{Outcome: domain.OutcomeInvalidRequest}, nil
 	}
-	now := s.clock.Now()
 	scope := idempotency.Scope(cmd.OrganisationID, cmd.UserID, domain.OpCancel, cmd.IdempotencyKey)
 	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpCancel, cmd.OrganisationID, cmd.UserID, string(cmd.ReservationID), cmd.Body)
 
 	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
-		slot, res, done, r, err := s.lockByReservation(ctx, tx, cmd.ReservationID, scope, hash, now)
+		slot, res, now, done, r, err := s.lockByReservation(ctx, tx, cmd.ReservationID, scope, hash)
 		if done || err != nil {
 			return r, err
 		}
@@ -241,38 +249,49 @@ func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (domain.Result,
 }
 
 // lockByReservation resolves a reservation's slot, locks it, applies idempotency
-// resolution, and settles elapsed holds, returning the locked slot and the
-// post-settlement reservation. The (done, result) pair short-circuits the operation
-// on an unknown target, replay, or conflict.
-func (s *Service) lockByReservation(ctx context.Context, tx domain.Tx, id domain.ReservationID, scope domain.ScopeKey, hash string, now time.Time) (slot domain.Slot, res domain.Reservation, done bool, result domain.Result, err error) {
+// resolution, and settles elapsed holds, returning the locked slot, the attempt's
+// authoritative timestamp, and the post-settlement reservation. The (done, result)
+// pair short-circuits the operation on an unknown target, replay, or conflict.
+//
+// The reservation → slot lookup deliberately establishes no timestamp: it runs
+// before the lock, so its instant is exactly the stale one the authoritative-time
+// contract rejects. Only the LockSlot below fixes the attempt's now.
+func (s *Service) lockByReservation(ctx context.Context, tx domain.Tx, id domain.ReservationID, scope domain.ScopeKey, hash string) (slot domain.Slot, res domain.Reservation, now time.Time, done bool, result domain.Result, err error) {
 	slotID, err := tx.SlotIDForReservation(ctx, id)
 	if errors.Is(err, domain.ErrNotFound) {
-		result, err = s.unknownTarget(ctx, tx, scope, hash, now)
-		return domain.Slot{}, domain.Reservation{}, true, result, err
+		result, err = s.unknownTarget(ctx, tx, scope, hash)
+		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, result, err
 	}
 	if err != nil {
-		return domain.Slot{}, domain.Reservation{}, true, domain.Result{}, err
+		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, domain.Result{}, err
 	}
 	slot, err = tx.LockSlot(ctx, slotID)
 	if err != nil {
 		// A reservation pointing at a missing slot is an invariant violation.
-		return domain.Slot{}, domain.Reservation{}, true, domain.Result{}, err
+		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, domain.Result{}, err
+	}
+	now, err = tx.Now(ctx)
+	if err != nil {
+		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, domain.Result{}, err
 	}
 	if r, resolved, lerr := s.lookup(ctx, tx, scope, hash); resolved || lerr != nil {
-		return domain.Slot{}, domain.Reservation{}, true, r, lerr
+		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, r, lerr
 	}
 	if _, err = s.settle(ctx, tx, slot.ID, now); err != nil {
-		return domain.Slot{}, domain.Reservation{}, true, domain.Result{}, err
+		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, domain.Result{}, err
 	}
 	res, err = tx.Reservation(ctx, id)
 	if err != nil {
-		return domain.Slot{}, domain.Reservation{}, true, domain.Result{}, err
+		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, domain.Result{}, err
 	}
-	return slot, res, false, domain.Result{}, nil
+	return slot, res, now, false, domain.Result{}, nil
 }
 
 // run executes fn inside a transaction, retrying once on the idempotency-insert race
-// (transaction-semantics §5.3).
+// (transaction-semantics §5.3). Each attempt is a fresh transaction and therefore
+// resolves its own authoritative timestamp; only the committed attempt's value
+// becomes durable. Time is per attempt, not per request, precisely because the
+// second attempt serializes later than the first.
 func (s *Service) run(ctx context.Context, fn func(ctx context.Context, tx domain.Tx) (domain.Result, error)) (domain.Result, error) {
 	const maxAttempts = 2
 	var last error
@@ -323,9 +342,17 @@ func (s *Service) lookup(ctx context.Context, tx domain.Tx, scope domain.ScopeKe
 // (transaction-semantics §5.5): no slot is locked; the refusal is recorded, guarded
 // only by the unique constraint, so a retry replays it and the key cannot later be
 // repurposed for a valid target.
-func (s *Service) unknownTarget(ctx context.Context, tx domain.Tx, scope domain.ScopeKey, hash string, now time.Time) (domain.Result, error) {
+//
+// This is the one path with no lock to establish the attempt's timestamp, so it asks
+// for one explicitly. Naming the no-slot case at the call site is the point: it
+// cannot be reached by forgetting to lock a slot that does exist.
+func (s *Service) unknownTarget(ctx context.Context, tx domain.Tx, scope domain.ScopeKey, hash string) (domain.Result, error) {
 	if r, done, err := s.lookup(ctx, tx, scope, hash); done || err != nil {
 		return r, err
+	}
+	now, err := tx.ResolveTimeWithoutSlot(ctx)
+	if err != nil {
+		return domain.Result{}, err
 	}
 	return s.commit(ctx, tx, scope, hash, domain.Refusal(domain.ReasonUnknownTarget), now, nil)
 }

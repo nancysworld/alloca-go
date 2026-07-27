@@ -100,6 +100,56 @@ type RequestBudget struct {
 	TxnBudget time.Duration
 }
 
+// Validate enforces the §8.1 clause 1 invariants that are properties of the budget
+// alone: every bound strictly positive, and the per-request nesting
+//
+//	LockTimeout < StatementTimeout <= TxnBudget < ServerDeadline < ClientDeadline.
+//
+// It is a method on RequestBudget, not just a step inside Config.Validate, because a
+// budget travels away from the Config it came from: OpenPool turns LockTimeout and
+// StatementTimeout into PostgreSQL session settings, where a zero does not mean "zero"
+// but "no bound at all" — the one value that silently removes the protection the whole
+// deadline chain exists to provide. A consumer holding only a budget can therefore
+// check the precondition itself instead of trusting that Load ran first.
+func (b RequestBudget) Validate() error {
+	// Load already guarantees positivity for env-overridden values, but this is the
+	// startup gate and must also reject a directly-constructed budget, so a non-positive
+	// value cannot slip through the ordering checks below (e.g. a negative LockTimeout).
+	positives := []struct {
+		name string
+		v    time.Duration
+	}{
+		{"RequestBudget.ClientDeadline", b.ClientDeadline},
+		{"RequestBudget.ServerDeadline", b.ServerDeadline},
+		{"RequestBudget.AdmissionCap", b.AdmissionCap},
+		{"RequestBudget.DBAcquireCap", b.DBAcquireCap},
+		{"RequestBudget.LockTimeout", b.LockTimeout},
+		{"RequestBudget.StatementTimeout", b.StatementTimeout},
+		{"RequestBudget.TxnBudget", b.TxnBudget},
+	}
+	for _, p := range positives {
+		if p.v <= 0 {
+			return fmt.Errorf("config: %s must be positive (got %s)", p.name, p.v)
+		}
+	}
+
+	// Per-request nesting (§8.1 clause 1). The innermost responsible layer must time
+	// out first, so each bound is strictly smaller than the one that contains it —
+	// except statement_timeout, which may equal the transaction budget.
+	switch {
+	case b.LockTimeout >= b.StatementTimeout:
+		return fmt.Errorf("config: lock_timeout (%s) must be < statement_timeout (%s)", b.LockTimeout, b.StatementTimeout)
+	case b.StatementTimeout > b.TxnBudget:
+		return fmt.Errorf("config: statement_timeout (%s) must be <= txn_budget (%s)", b.StatementTimeout, b.TxnBudget)
+	case b.TxnBudget >= b.ServerDeadline:
+		return fmt.Errorf("config: txn_budget (%s) must be < server_deadline (%s)", b.TxnBudget, b.ServerDeadline)
+	case b.ServerDeadline >= b.ClientDeadline:
+		return fmt.Errorf("config: server_deadline (%s) must be < client_deadline (%s)", b.ServerDeadline, b.ClientDeadline)
+	}
+
+	return nil
+}
+
 // MarshalJSON renders the budget with human-readable duration strings (e.g. "5s")
 // rather than raw nanoseconds, so /meta provenance is legible to reviewers while
 // remaining machine-parseable.
@@ -246,41 +296,14 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 func (c Config) Validate() error {
 	b := c.RequestBudget
 
-	// Positivity of the budget fields and the write margin. Load already guarantees
-	// this for env-overridden values, but Validate is the startup gate and must also
-	// reject a directly-constructed unsafe Config, so a non-positive value cannot slip
-	// through the ordering checks below (e.g. a negative LockTimeout).
-	positives := []struct {
-		name string
-		v    time.Duration
-	}{
-		{"WriteResponseMargin", c.WriteResponseMargin},
-		{"RequestBudget.ClientDeadline", b.ClientDeadline},
-		{"RequestBudget.ServerDeadline", b.ServerDeadline},
-		{"RequestBudget.AdmissionCap", b.AdmissionCap},
-		{"RequestBudget.DBAcquireCap", b.DBAcquireCap},
-		{"RequestBudget.LockTimeout", b.LockTimeout},
-		{"RequestBudget.StatementTimeout", b.StatementTimeout},
-		{"RequestBudget.TxnBudget", b.TxnBudget},
-	}
-	for _, p := range positives {
-		if p.v <= 0 {
-			return fmt.Errorf("config: %s must be positive (got %s)", p.name, p.v)
-		}
+	if err := b.Validate(); err != nil {
+		return err
 	}
 
-	// Per-request nesting (§8.1 clause 1). The innermost responsible layer must time
-	// out first, so each bound is strictly smaller than the one that contains it —
-	// except statement_timeout, which may equal the transaction budget.
-	switch {
-	case b.LockTimeout >= b.StatementTimeout:
-		return fmt.Errorf("config: lock_timeout (%s) must be < statement_timeout (%s)", b.LockTimeout, b.StatementTimeout)
-	case b.StatementTimeout > b.TxnBudget:
-		return fmt.Errorf("config: statement_timeout (%s) must be <= txn_budget (%s)", b.StatementTimeout, b.TxnBudget)
-	case b.TxnBudget >= b.ServerDeadline:
-		return fmt.Errorf("config: txn_budget (%s) must be < server_deadline (%s)", b.TxnBudget, b.ServerDeadline)
-	case b.ServerDeadline >= b.ClientDeadline:
-		return fmt.Errorf("config: server_deadline (%s) must be < client_deadline (%s)", b.ServerDeadline, b.ClientDeadline)
+	// WriteResponseMargin is a Config field rather than a budget field, so its
+	// positivity is checked here — before the write-phase comparison it feeds.
+	if c.WriteResponseMargin <= 0 {
+		return fmt.Errorf("config: WriteResponseMargin must be positive (got %s)", c.WriteResponseMargin)
 	}
 
 	// Write-phase relationship (§8.1 clause 2): the Go context deadline must fire

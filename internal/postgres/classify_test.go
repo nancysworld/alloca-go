@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/nancysworld/alloca-go/internal/config"
@@ -99,14 +100,14 @@ func TestClassifyCommitTimeoutSQLSTATEs(t *testing.T) {
 		{
 			name:    "statement_timeout on commit",
 			ctx:     live,
-			err:     &pgconn.PgError{Code: sqlstateQueryCanceled, Message: "canceling statement due to statement timeout"},
+			err:     &pgconn.PgError{Code: pgerrcode.QueryCanceled, Message: "canceling statement due to statement timeout"},
 			wantIs:  domain.ErrDBTimeout,
 			wantOut: domain.OutcomeTimeoutDB,
 		},
 		{
 			name:    "lock_timeout on commit",
 			ctx:     live,
-			err:     &pgconn.PgError{Code: sqlstateLockNotAvailable, Message: "canceling statement due to lock timeout"},
+			err:     &pgconn.PgError{Code: pgerrcode.LockNotAvailable, Message: "canceling statement due to lock timeout"},
 			wantIs:  domain.ErrDBTimeout,
 			wantOut: domain.OutcomeTimeoutDB,
 		},
@@ -116,7 +117,7 @@ func TestClassifyCommitTimeoutSQLSTATEs(t *testing.T) {
 			// client line — the same distinction mapError draws for statements.
 			name:    "caller cancellation the server honoured",
 			ctx:     cancelled,
-			err:     &pgconn.PgError{Code: sqlstateQueryCanceled, Message: "canceling statement due to user request"},
+			err:     &pgconn.PgError{Code: pgerrcode.QueryCanceled, Message: "canceling statement due to user request"},
 			wantIs:  context.Canceled,
 			wantOut: domain.OutcomeTimeoutClient,
 		},
@@ -126,7 +127,7 @@ func TestClassifyCommitTimeoutSQLSTATEs(t *testing.T) {
 			// commit that provably never happened.
 			name:    "server rejected the commit",
 			ctx:     live,
-			err:     &pgconn.PgError{Code: "23505", Message: "duplicate key value violates unique constraint"},
+			err:     &pgconn.PgError{Code: pgerrcode.UniqueViolation, Message: "duplicate key value violates unique constraint"},
 			wantOut: domain.OutcomeInternalFailure,
 		},
 		{

@@ -20,7 +20,19 @@ import (
 //
 // It verifies connectivity before returning, so a bad DSN or an unreachable database
 // fails at startup rather than on the first request.
+//
+// The budget is validated here rather than assumed valid because OpenPool is exported
+// and the failure mode of an unvalidated one is silent: LockTimeout and
+// StatementTimeout are rendered into session settings, and PostgreSQL reads a 0ms
+// timeout as "no timeout", so a zero-valued budget would produce a pool with the
+// database bounds disabled — every lock wait unbounded, in the exact configuration the
+// deadline chain is meant to rule out. A missing bound cannot be detected later from
+// the outcome mix either: it looks like a request that simply took a long time.
 func OpenPool(ctx context.Context, dsn string, budget config.RequestBudget) (*pgxpool.Pool, error) {
+	if err := budget.Validate(); err != nil {
+		return nil, fmt.Errorf("postgres: invalid request budget: %w", err)
+	}
+
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: parse dsn: %w", err)

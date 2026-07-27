@@ -9,6 +9,7 @@ go 1.26.0
 toolchain go1.26.5
 
 require (
+	github.com/jackc/pgerrcode v0.0.0-20250907135507-afb5586c32a6
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/pressly/goose/v3 v3.27.3
 )

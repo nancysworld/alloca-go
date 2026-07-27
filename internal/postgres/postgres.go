@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -198,9 +199,9 @@ func (r *Repo) classifyCommit(ctx context.Context, txCtx context.Context, err er
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
-		case sqlstateLockNotAvailable:
+		case pgerrcode.LockNotAvailable:
 			return fmt.Errorf("postgres: commit exceeded lock_timeout: %w", domain.ErrDBTimeout)
-		case sqlstateQueryCanceled:
+		case pgerrcode.QueryCanceled:
 			// The server answered, so the transaction definitely did not commit — this is
 			// not the ambiguous case below. As in mapError, 57014 covers both
 			// statement_timeout expiry and a cancellation the server honoured, and only

@@ -6,23 +6,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/nancysworld/alloca-go/internal/domain"
-)
-
-// PostgreSQL SQLSTATE codes this adapter distinguishes.
-const (
-	// sqlstateLockNotAvailable (55P03) is raised when lock_timeout expires while
-	// waiting for a row lock — the innermost bound of the deadline chain.
-	sqlstateLockNotAvailable = "55P03"
-	// sqlstateQueryCanceled (57014) covers both statement_timeout expiry and a
-	// client-initiated cancel, so the two are told apart by inspecting the context.
-	sqlstateQueryCanceled = "57014"
-	// sqlstateUniqueViolation (23505) on the idempotency table is the scoped-key race
-	// backstop, not a fault.
-	sqlstateUniqueViolation = "23505"
 )
 
 // tx is the transactional view over one pgx transaction. It is valid only for the
@@ -278,7 +266,7 @@ func (t *tx) InsertRecord(ctx context.Context, rec domain.IdempotencyRecord) err
 // isUniqueViolation reports whether err is a PostgreSQL unique-constraint violation.
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == sqlstateUniqueViolation
+	return errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation
 }
 
 // nullableID renders an unset identifier as SQL NULL rather than an empty string, so
@@ -336,9 +324,10 @@ func mapError(ctx context.Context, err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
-		case sqlstateLockNotAvailable:
+		case pgerrcode.LockNotAvailable:
+			// lock_timeout expired waiting for a row lock: the innermost bound of the chain.
 			return fmt.Errorf("postgres: lock wait exceeded lock_timeout: %w", domain.ErrDBTimeout)
-		case sqlstateQueryCanceled:
+		case pgerrcode.QueryCanceled:
 			if ctx.Err() != nil {
 				return fmt.Errorf("postgres: query cancelled: %w", ctx.Err())
 			}

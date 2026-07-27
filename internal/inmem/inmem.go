@@ -23,13 +23,37 @@
 // its writes so the idempotency record is inserted before any entity mutation is
 // persisted, so the only rollback-relevant path (a unique-constraint conflict)
 // leaves the store consistent; real transactional rollback is a PR3 property.
+//
+// Authoritative time: this adapter honours the same contract as the PostgreSQL one
+// (domain.Tx) — a successful LockSlot establishes and memoises the attempt's
+// timestamp, and Now returns only that memoised value. Where PostgreSQL reads
+// clock_timestamp() after the row-lock wait, the double reads its injected Clock at
+// the same point in the sequence. That is what makes deterministic time available to
+// tests without a second semantic time source living in the service
+// (docs/design-notes/authoritative-time-in-a-scaled-service.md §4).
 package inmem
 
 import (
 	"context"
+	"time"
 
 	"github.com/nancysworld/alloca-go/internal/domain"
 )
+
+// Clock is the double's time source. It exists here, rather than as a domain port,
+// because transaction-owned time retired the service-level clock from the production
+// mutation path: the authoritative adapter reads PostgreSQL, so an injectable clock
+// is now purely a property of this test double.
+type Clock interface {
+	Now() time.Time
+}
+
+// SystemClock is a Clock backed by time.Now, for callers that want the double to
+// track real time.
+type SystemClock struct{}
+
+// Now returns the current wall-clock time.
+func (SystemClock) Now() time.Time { return time.Now() }
 
 // Store is the in-memory repository. The zero value is not usable; construct with
 // New. It is safe for concurrent use: all access is serialized by sem, a one-slot
@@ -37,6 +61,7 @@ import (
 // sync.Mutex so that a waiter can honour its context deadline while blocked.
 type Store struct {
 	sem          chan struct{}
+	clock        Clock
 	slots        map[domain.SlotID]domain.Slot
 	reservations map[domain.ReservationID]domain.Reservation
 	bookings     map[domain.BookingID]domain.Booking
@@ -44,10 +69,17 @@ type Store struct {
 	records      map[domain.ScopeKey]domain.IdempotencyRecord
 }
 
-// New constructs an empty Store.
-func New() *Store {
+// New constructs an empty Store whose transactions take their authoritative time
+// from clock. A nil clock panics rather than defaulting to real time: silently
+// substituting a wall clock would make a test's timeline non-deterministic in
+// exactly the boundary cases this double exists to pin down.
+func New(clock Clock) *Store {
+	if clock == nil {
+		panic("inmem: clock must not be nil")
+	}
 	return &Store{
 		sem:          make(chan struct{}, 1),
+		clock:        clock,
 		slots:        make(map[domain.SlotID]domain.Slot),
 		reservations: make(map[domain.ReservationID]domain.Reservation),
 		bookings:     make(map[domain.BookingID]domain.Booking),
@@ -128,17 +160,47 @@ func (s *Store) WithinTx(ctx context.Context, fn func(ctx context.Context, tx do
 }
 
 // tx is the transactional view. It is valid only for the duration of one WithinTx
-// call, while the store lock is held.
+// call, while the store lock is held. now/established hold the attempt's
+// authoritative timestamp; they are per-tx, so a re-run after the idempotency
+// insert-race backstop gets a fresh value, matching the per-attempt rule.
 type tx struct {
-	store *Store
+	store       *Store
+	now         time.Time
+	established bool
+}
+
+// establish records the attempt's authoritative timestamp. It reads the clock only
+// once: a second call keeps the first value, so every decision in the attempt is
+// made against one instant even if a caller locks more than once.
+func (t *tx) establish() time.Time {
+	if !t.established {
+		t.now = t.store.clock.Now()
+		t.established = true
+	}
+	return t.now
 }
 
 func (t *tx) LockSlot(_ context.Context, id domain.SlotID) (domain.Slot, error) {
 	slot, ok := t.store.slots[id]
 	if !ok {
+		// No timestamp is established on the not-found path: the caller is heading for
+		// the unknown-target refusal and must say so explicitly via
+		// ResolveTimeWithoutSlot.
 		return domain.Slot{}, domain.ErrNotFound
 	}
+	t.establish()
 	return slot, nil
+}
+
+func (t *tx) Now(_ context.Context) (time.Time, error) {
+	if !t.established {
+		return time.Time{}, domain.ErrTimeNotEstablished
+	}
+	return t.now, nil
+}
+
+func (t *tx) ResolveTimeWithoutSlot(_ context.Context) (time.Time, error) {
+	return t.establish(), nil
 }
 
 func (t *tx) SlotIDForReservation(_ context.Context, id domain.ReservationID) (domain.SlotID, error) {

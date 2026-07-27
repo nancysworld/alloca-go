@@ -9,6 +9,11 @@ version: "2"
 
 run:
   timeout: 5m
+  # Lint the build-tagged integration tests too. Without this they are invisible to
+  # the linter, and test code that never gets linted is exactly where dead helpers and
+  # unchecked errors accumulate.
+  build-tags:
+    - integration
 
 linters:
   default: standard

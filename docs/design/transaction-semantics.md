@@ -93,21 +93,64 @@ Created **only** by confirming a held reservation.
 
 ### 1.5 Authoritative service time (normative)
 
-Booking decisions use **service-observed time**, never a client-supplied timestamp.
-`now` is resolved once at the trusted service boundary (the domain's `Clock` port) and
-threaded through the decision path, so competing requests are ordered by service
-decision time. A client timestamp may be recorded as a telemetry dimension but must
-never decide release eligibility, closure, expiry, confirmation validity, or
-cancellation capacity effects. Tests inject `now` through the `Clock` port for
-deterministic coverage.
+Booking decisions use **database-observed time**, never a client-supplied timestamp and
+never an API host's clock. A client timestamp may be recorded as a telemetry dimension
+but must never decide release eligibility, closure, expiry, confirmation validity, or
+cancellation capacity effects.
 
-**Provisional in one respect.** *That* `now` is service-observed and resolved once is
-settled. *Which* boundary resolves it is not: with multiple API instances, a
-service-owned clock reintroduces host skew, and a value resolved before the slot lock
-is acquired can be stale by the time the mutation serializes. PR3 is expected to move
-resolution to the transaction itself — see
-[`../design-notes/authoritative-time-in-a-scaled-service.md`](../design-notes/authoritative-time-in-a-scaled-service.md).
-This section remains the normative owner and will be updated there, not forked.
+**The rule.** Each transaction attempt resolves exactly **one** authoritative decision
+timestamp from PostgreSQL, **after acquiring the relevant slot lock**, and uses that
+value for the remainder of the attempt: settling elapsed holds, deciding release and
+closure, computing and validating `expires_at`, stamping entity `created_at`, and
+constructing the idempotency record.
+
+Two properties make this the right instant, and both are load-bearing:
+
+- **Post-lock, not transaction-start.** A transaction may wait on the slot's
+  `FOR UPDATE` until `lock_timeout`. During that wait a hold can elapse or the slot can
+  cross `starts_at`. A timestamp resolved before the wait is stale exactly when it
+  matters, so `transaction_timestamp()`/`now()` — which return transaction-start time —
+  are **not** acceptable sources.
+- **One clock, not one per API node.** PostgreSQL is already the cross-node
+  serialization authority, so making it the wall-clock source removes API-host skew
+  from the decision without introducing a second distributed authority.
+
+**Port shape.** Authoritative time belongs to the transaction port: `Tx.LockSlot`
+establishes and memoises the attempt's timestamp, and `Tx.Now` returns only that
+memoised value — calling it first is a programming error (`ErrTimeNotEstablished`),
+not an invitation to obtain pre-lock time. A repository that passed `now` *into* its
+transaction closure would have to resolve it before the closure could lock, structurally
+encoding the wrong decision point, so it is deliberately not offered. The one path with
+no slot to lock — recording an `unknown_target` refusal (§5.5) — resolves its timestamp
+through an explicit `Tx.ResolveTimeWithoutSlot`, so a no-slot attempt has to declare
+itself rather than inherit a value.
+
+**Per attempt, not per request.** A re-run after the §5.3 insert-race backstop is a new
+transaction and resolves a new timestamp; only the committed attempt's value becomes
+durable. A consequence worth naming: `expires_at = now + ttl` is measured from the
+post-lock decision point, so lock-wait time never erodes a granted hold — but near
+`starts_at` a long wait can make the full TTL no longer fit, turning a reserve into an
+`outside_window` refusal. Lock-wait duration therefore affects the outcome mix and not
+only latency, which AG-M2 must account for when reading release-wave results.
+
+**Coherent, not monotonic.** A PostgreSQL host clock correction can still move decision
+timestamps backwards. Ordering therefore comes from the slot lock and persisted state,
+never from comparing timestamps, and the state machine stays irreversible: an `expired`
+reservation must never become live again because wall time moved. If an explicit order
+is ever needed, add a version or sequence rather than promoting a wall-clock assumption
+to an invariant.
+
+Failure to resolve authoritative time is a **fault**, never a refusal: an underlying
+lock or statement expiry maps to the applicable `timeout_*` outcome (§6), and any other
+resolution failure to `internal_failure`.
+
+Deterministic tests inject time through the in-memory adapter, which implements the same
+lock-establishes-time contract; there is no service-level clock to disagree with the
+database.
+
+> Decided in PR3 and proven by integration test — see
+> [`../design-notes/authoritative-time-in-a-scaled-service.md`](../design-notes/authoritative-time-in-a-scaled-service.md),
+> which is the historical rationale for this section and is superseded by it.
 
 ### 1.6 Reservation TTL is service-owned (normative)
 
@@ -446,6 +489,15 @@ first** and returns an explicit classified outcome:
 - Client disconnect cancels the request context → `timeout_client`.
 - Pool acquisition is bounded by its cap **outside** the transaction budget; for AG-M1
   an over-budget acquisition is `timeout_server` (see §4 note).
+- `statement_timeout` covers **`COMMIT`** like any other statement, so a commit that
+  outruns it is `timeout_db` — a *definite* failure to commit, not an ambiguous one
+  (§5.4): the server answered, so nothing was applied.
+- **Cleanup is bounded too.** A transaction's rollback runs on a context detached from
+  the caller's cancellation — a transaction abandoned because the caller went away
+  still has to be closed — but on its own bound, not none. Detached *and* unbounded, a
+  rollback that cannot reach PostgreSQL would pin its connection indefinitely and,
+  repeated, drain the pool: a single database stall escalated into a service-wide
+  outage, which is the failure this whole ordering exists to prevent.
 
 Each layer's expiry has a distinct, recorded outcome rather than a generic outer
 timeout. The concrete session wiring is a PR3 responsibility; this section fixes what

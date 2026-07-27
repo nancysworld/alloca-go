@@ -343,6 +343,17 @@ their own transport bounds and are not nested in the mutation chain. AG-M1 shoul
 this with a unit test over representative valid and invalid configurations, and expose
 the resolved, validated budget so experiments can record it alongside `/meta`.
 
+**Clause 1 is enforced wherever a budget is consumed, not only at the startup gate.**
+The startup check is the primary gate, but a budget is a value that travels away from
+the `Config` it was resolved from, and a component that renders it into another system's
+settings cannot tell whether validation ran. `lock_timeout` and `statement_timeout` are
+the sharpest case: PostgreSQL reads `0ms` as *no bound*, so an unvalidated budget does
+not fail — it produces a working session with the database bounds silently disabled, and
+the resulting unbounded lock wait is indistinguishable in the outcome mix (§4) from a
+request that merely took a long time. Clause 1 therefore lives on the budget type itself
+(`config.RequestBudget.Validate`), and each consumer that turns a budget into enforced
+timeouts re-checks it — the connection pool does so before constructing the pool.
+
 ---
 
 ## 9. Final system validation and evidence artifact (normative)

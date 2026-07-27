@@ -55,6 +55,45 @@ jobs:
       - name: race test
         run: go test -race ./...
 
+  integration:
+    name: postgres integration
+    runs-on: ubuntu-latest
+
+    # The AG-M1 gates that need real concurrent SQL — capacity safety under contention,
+    # the post-lock decision timestamp, the scoped-key race — cannot be established
+    # against a double. They run here, against a real PostgreSQL, under the race
+    # detector.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: alloca
+          POSTGRES_PASSWORD: alloca
+          POSTGRES_DB: alloca
+        ports:
+          - 5432:5432
+        # Without a health check the job can start querying before the server accepts
+        # connections, which fails as a confusing connection error rather than a wait.
+        options: >-
+          --health-cmd "pg_isready -U alloca"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: integration tests
+        env:
+          DATABASE_URL: postgres://alloca:alloca@localhost:5432/alloca?sslmode=disable
+        run: go test -tags=integration -race -count=1 ./...
+
   lint:
     name: golangci-lint
     runs-on: ubuntu-latest

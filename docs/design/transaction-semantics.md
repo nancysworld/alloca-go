@@ -671,6 +671,12 @@ against the in-memory repository with a controllable `Clock`.
   AG-M2+.
 - Organisation-level routing and fairness that *use* `organisation_id`/`user_id` — AG-M5.
 - Administrative early-close / cancellation of a slot; late no-show transitions — later.
+- Whether a slot's identity is globally unique `slot_id` or the pair
+  `(organisation_id, slot_id)`. AG-M1 assumes the former — `slots` is keyed by `slot_id`
+  and `LockSlot` resolves by it alone — which is correct while slot identifiers are
+  server-assigned and globally unique. A composite key would change the aggregate lock's
+  resolution path, so it is recorded rather than assumed away — AG-M5, alongside
+  organisation-based routing.
 - Reservation **quantities** and conserved **balances** — AG-M6.
 
 ---

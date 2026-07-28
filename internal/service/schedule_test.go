@@ -43,24 +43,26 @@ func scheduleFixture(t *testing.T) *fixture {
 	return &fixture{svc: New(store, ids, testTTL), store: store, clock: clock, ids: ids}
 }
 
-func (f *fixture) reserveSlot(t *testing.T, user, key string, slotID domain.SlotID) domain.Result {
+func (f *fixture) reserveSlot(t *testing.T, name, key string, slotID domain.SlotID) domain.Result {
 	t.Helper()
 	r, err := f.svc.Reserve(context.Background(), ReserveCommand{
-		UserRef: domain.UserRef{OrganisationID: org, UserID: domain.UserID(user)}, SlotRef: ref(slotID), IdempotencyKey: key,
+		UserRef: user(name), SlotRef: ref(slotID), IdempotencyKey: key,
 	})
 	if err != nil {
-		t.Fatalf("Reserve(%s,%s,%s): unexpected error %v", user, key, slotID, err)
+		t.Fatalf("Reserve(%s,%s,%s): unexpected error %v", name, key, slotID, err)
 	}
 	return r
 }
 
-func (f *fixture) reserveAs(t *testing.T, orgID domain.OrganisationID, user, key string, slotID domain.SlotID) domain.Result {
+func (f *fixture) reserveAs(t *testing.T, orgID domain.OrganisationID, name, key string, slotID domain.SlotID) domain.Result {
 	t.Helper()
 	r, err := f.svc.Reserve(context.Background(), ReserveCommand{
-		UserRef: domain.UserRef{OrganisationID: orgID, UserID: domain.UserID(user)}, SlotRef: ref(slotID), IdempotencyKey: key,
+		UserRef:        domain.UserRef{OrganisationID: orgID, UserID: domain.UserID(name)},
+		SlotRef:        ref(slotID),
+		IdempotencyKey: key,
 	})
 	if err != nil {
-		t.Fatalf("Reserve(%s/%s): unexpected error %v", orgID, user, err)
+		t.Fatalf("Reserve(%s/%s): unexpected error %v", orgID, name, err)
 	}
 	return r
 }

@@ -196,14 +196,14 @@ func TestFailedTransactionPersistsNothing(t *testing.T) {
 			return err
 		}
 		if err := tx.InsertRecord(ctx, domain.IdempotencyRecord{
-			UserRef: domain.UserRef{OrganisationID: testOrg, UserID: "user-1"}, Operation: domain.OpReserve,
+			UserRef: userRef("user-1"), Operation: domain.OpReserve,
 			Key: "doomed", RequestHash: "hash", Outcome: domain.OutcomeAdmittedSuccess,
 			ReservationID: "res-doomed", CreatedAt: now,
 		}); err != nil {
 			return err
 		}
 		if err := tx.PutReservation(ctx, domain.Reservation{
-			ID: "res-doomed", SlotRef: slotRef(testSlot), UserRef: domain.UserRef{OrganisationID: testOrg, UserID: "user-1"},
+			ID: "res-doomed", SlotRef: slotRef(testSlot), UserRef: userRef("user-1"),
 			State: domain.ReservationHeld, CreatedAt: now, ExpiresAt: now.Add(time.Minute),
 		}); err != nil {
 			return err

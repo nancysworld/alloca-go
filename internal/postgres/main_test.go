@@ -199,6 +199,12 @@ const (
 // slotRef pairs a slot identifier with testOrg, which owns every slot the helpers seed.
 // A slot's identity is the pair (slot_organisation_id, slot_id) (transaction-semantics §1.2),
 // so the two halves are joined here rather than at each call site.
+// userRef pairs a user identifier with testOrg, which issues every identity these
+// helpers use. Symmetrical with slotRef: both identities are pairs (§1.1, §1.2).
+func userRef(id string) domain.UserRef {
+	return domain.UserRef{OrganisationID: testOrg, UserID: domain.UserID(id)}
+}
+
 func slotRef(id domain.SlotID) domain.SlotRef {
 	return domain.SlotRef{OrganisationID: testOrg, SlotID: id}
 }
@@ -239,7 +245,9 @@ func (h *harness) reserve(ctx context.Context, user, key string, slotID domain.S
 // issued (transaction-semantics §1.1), while the slot is (slot_organisation_id,
 // slot_id), scoped to its *owner* (§1.2). A member of one organisation booking another's slot is
 // still protected against overlapping their own schedule.
-func (h *harness) reserveAs(ctx context.Context, org domain.OrganisationID, user, key string, ref domain.SlotRef) (domain.Result, error) {
+func (h *harness) reserveAs(
+	ctx context.Context, org domain.OrganisationID, user, key string, ref domain.SlotRef,
+) (domain.Result, error) {
 	return h.svc.Reserve(ctx, service.ReserveCommand{
 		UserRef: domain.UserRef{OrganisationID: org, UserID: domain.UserID(user)},
 		SlotRef: ref, IdempotencyKey: key,
@@ -251,7 +259,10 @@ func (h *harness) reserveAs(ctx context.Context, org domain.OrganisationID, user
 // seedSlot it reads no clock of its own: schedule tests turn on exact interval
 // relationships — adjacent, identical, containing — and a per-call clock read would put
 // microseconds of drift exactly where the boundary is being tested.
-func (h *harness) seedWindow(t *testing.T, org domain.OrganisationID, id domain.SlotID, capacity int, base time.Time, startsIn, endsIn time.Duration) domain.Slot {
+func (h *harness) seedWindow(
+	t *testing.T, org domain.OrganisationID, id domain.SlotID, capacity int,
+	base time.Time, startsIn, endsIn time.Duration,
+) domain.Slot {
 	t.Helper()
 	slot := domain.Slot{
 		ID:             id,
@@ -293,14 +304,14 @@ func assertClaimCount(t *testing.T, h *harness, want int) {
 
 func (h *harness) confirm(ctx context.Context, user, key string, res domain.ReservationID) (domain.Result, error) {
 	return h.svc.Confirm(ctx, service.ConfirmCommand{
-		UserRef:       domain.UserRef{OrganisationID: testOrg, UserID: domain.UserID(user)},
+		UserRef:       userRef(user),
 		ReservationID: res, IdempotencyKey: key,
 	})
 }
 
 func (h *harness) cancel(ctx context.Context, user, key string, res domain.ReservationID) (domain.Result, error) {
 	return h.svc.Cancel(ctx, service.CancelCommand{
-		UserRef:       domain.UserRef{OrganisationID: testOrg, UserID: domain.UserID(user)},
+		UserRef:       userRef(user),
 		ReservationID: res, IdempotencyKey: key,
 	})
 }

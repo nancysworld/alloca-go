@@ -38,17 +38,17 @@ const (
 // Reason is the stable reason code carried by a business_refusal so the
 // separate-reporting requirement stays legible (transaction-semantics §4). It is
 // empty for non-refusal outcomes.
+//
+// ReasonScheduleConflict means the user already holds an active claim overlapping the
+// requested interval (§2.2). It is deliberately distinct from ReasonNoCapacity — the
+// slot may still have room; it is the *user's* schedule that is full — and from
+// timeout_db, which is what a wait on a conflicting uncommitted transaction maps to.
 type Reason string
 
 const (
-	ReasonSlotNotReleased Reason = "slot_not_released"
-	ReasonSlotClosed      Reason = "slot_closed"
-	ReasonNoCapacity      Reason = "no_capacity"
-	// ReasonScheduleConflict: the identity already holds an active claim overlapping
-	// the requested interval (transaction-semantics §2.2). Deliberately distinct from
-	// no_capacity — the slot may still have room; it is the *identity's* schedule that
-	// is full — and from timeout_db, which is what a wait on a conflicting uncommitted
-	// transaction maps to.
+	ReasonSlotNotReleased     Reason = "slot_not_released"
+	ReasonSlotClosed          Reason = "slot_closed"
+	ReasonNoCapacity          Reason = "no_capacity"
 	ReasonScheduleConflict    Reason = "schedule_conflict"
 	ReasonOutsideWindow       Reason = "outside_window"
 	ReasonReservationExpired  Reason = "reservation_expired"

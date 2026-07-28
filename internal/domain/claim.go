@@ -2,40 +2,41 @@ package domain
 
 import "time"
 
-// ScheduleClaim is one identity's active claim on an interval of its own time
+// ScheduleClaim is one user's active claim on an interval of their own time
 // (transaction-semantics §2.2). It is the unit the user schedule non-overlap invariant
 // is expressed over:
 //
-//	for one identity, no two active claims may overlap in time
+//	for one user, no two active claims may overlap in time
 //
 // One claim exists per logical booking, from hold through confirmation: confirming
 // updates the claim rather than creating a second one, so a booking can never conflict
-// with the hold it was created from.
+// with the hold it was created from. ReservationID is therefore the claim's identity for
+// its whole lifetime.
 //
 // The claim is deliberately *not* derived from reservation and booking rows. Confirming
 // leaves the reservation at confirmed and inserts an active booking, so one logical
-// claim is two lifecycle rows; a union over them would report an identity as conflicting
-// with itself the moment it confirmed.
+// claim is two lifecycle rows; a union over them would report a user as conflicting with
+// themselves the moment they confirmed.
+//
+// UserRef is the conflict key — whose schedule the claim occupies — and its organisation
+// is the user's, never the slot's (§1.1), so a user booking into another organisation is
+// still protected against overlapping themselves. SlotRef is carried for settlement and
+// telemetry only; keeping it out of the key is exactly why claims on *different* slots
+// still conflict.
+//
+// StartsAt/EndsAt are the claimed interval, taken from the slot, and are half-open:
+// [StartsAt, EndsAt), so adjacent bookings do not overlap. ExpiresAt is the backing
+// hold's expiry: a claim whose hold has elapsed is no longer active and is settled away
+// before any conflict decision, so an abandoned hold cannot block the schedule.
+// Confirming clears it — a confirmed claim is permanent, and only cancellation removes
+// it.
 type ScheduleClaim struct {
-	// ReservationID identifies the claim: one reservation, one claim, for its whole
-	// lifetime.
 	ReservationID ReservationID
-	// UserRef is the conflict key: whose schedule this claim occupies. Its organisation
-	// is the user's, never the slot's (§1.1), so a user booking into another
-	// organisation is still protected against overlapping themselves.
-	UserRef UserRef
-	// SlotRef is carried for settlement and telemetry; it is not part of the conflict
-	// key, which is exactly why claims on *different* slots still conflict.
-	SlotRef SlotRef
-	// StartsAt/EndsAt are the claimed interval, taken from the slot, and are half-open:
-	// [StartsAt, EndsAt). Adjacent bookings therefore do not overlap.
-	StartsAt time.Time
-	EndsAt   time.Time
-	// ExpiresAt is the backing hold's expiry. A claim whose hold has elapsed is no
-	// longer active and is settled away before any conflict decision, so an abandoned
-	// hold cannot block the identity's schedule (§2.2). Confirming clears it: a
-	// confirmed claim is permanent and only cancellation removes it.
-	ExpiresAt time.Time
+	UserRef       UserRef
+	SlotRef       SlotRef
+	StartsAt      time.Time
+	EndsAt        time.Time
+	ExpiresAt     time.Time
 }
 
 // Overlaps reports whether two intervals overlap under half-open semantics. It is the

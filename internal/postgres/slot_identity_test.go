@@ -20,9 +20,10 @@ import (
 // the same identifier would either serialize unrelated slots against each other or
 // resolve to the wrong organisation's slot.
 //
-// The discriminating property is simple: under the old single-column key, none of these
-// tests can even set up. Seeding two slots that share an identifier fails on the primary
-// key, so a rollback of 00002 turns these into setup failures rather than silent passes.
+// The discriminating property is simple: with a single-column key none of these tests can
+// even set up. Seeding two slots that share an identifier fails on the primary key, so
+// weakening `slots` to key on slot_id alone turns these into setup failures rather than
+// silent passes — verified by doing exactly that.
 
 // sharedID is deliberately the same identifier in both organisations — the case the old
 // schema could not represent.

@@ -147,7 +147,7 @@ questions and is independently reviewable.
 | 1 | Timeout budget + §8.1 startup validation | `config.RequestBudget`, `config.Validate()`, `/meta` exposure, `.gitignore __debug_bin*` | no | **Merged #3** |
 | 2 | Domain core + services + idempotency | `internal/domain` (entities, invariants, ports, outcome types), `internal/idempotency`, `internal/service`, in-memory repository, `transaction-semantics.md`, ADR-0002, measurement-contract §4 `invalid_request` amendment; full unit + race tests | no | **Merged #4** |
 | 3 | PostgreSQL adapter | `internal/postgres` (transactional repo, `SELECT … FOR UPDATE`, per-txn `lock_timeout`/`statement_timeout`, error→outcome mapping), schema + migrations, transaction-owned authoritative time (`Tx.Now`, retiring the service `Clock`), `cmd/alloca-migrate`, CI Postgres integration tests | yes | **In review #5** |
-| 4 | User schedule non-overlap invariant + composite slot identity | `user_time_claims` relation (`btree_gist`, exclusion constraint), identity-scoped claim settlement, `ReasonScheduleConflict`, claim lifecycle across reserve/confirm/cancel/expiry; slot identity becomes `(slot_organisation_id, slot_id)` with `domain.SlotRef`/`domain.UserRef` and `contract_version` v2; transaction-semantics §1.1/§1.2/§2.2/§4; PostgreSQL gates + negative controls | yes | in progress |
+| 4 | User schedule non-overlap invariant + composite slot identity | `user_time_claims` relation (`btree_gist`, exclusion constraint), identity-scoped claim settlement, `ReasonScheduleConflict`, claim lifecycle across reserve/confirm/cancel/expiry; slot identity becomes `(slot_organisation_id, slot_id)` with `domain.SlotRef`/`domain.UserRef` and `contract_version` v2; schema consolidated into the `00001_init.sql` baseline; transaction-semantics §1.1/§1.2/§2.2/§4; PostgreSQL gates + negative controls | yes | in progress |
 | 5 | Expiry worker + HTTP API + telemetry | `internal/worker` (expiry that cannot release confirmed capacity), `internal/httpapi` booking endpoints (idempotency-key handling, outcome→HTTP mapping), structured outcome/timing telemetry, `cmd` wiring, readiness gated on DB, e2e tests | yes | planned |
 
 **Why this order.** PR1 is DB-free and discharges the §8.1 obligation, giving later
@@ -177,10 +177,18 @@ Doing it here rather than at AG-M5 is deliberate: it changes the aggregate lock'
 resolution path, which is exactly what AG-M2 measures the frontier of and AG-M4 builds
 the capacity-unit economics on. Changing it later would invalidate those measurements.
 
+Because both corrections change the schema and AG-M1 has no deployed database, PR4 also
+**consolidates the schema into the `00001_init.sql` baseline** rather than layering
+transitional migrations on top of it. Migration compatibility begins at that merged
+baseline; every change after it is forward-only and numbered. The first public schema
+therefore states the model the project believes rather than preserving the record of
+correcting it during review — and the transitional machinery it would otherwise carry
+(a composite-key rewrite, a column backfill) disappears with it.
+
 Three consequences are accepted deliberately: AG-M1 extends beyond its original 28 July
 date; `contract_version` moves to `v2`, invalidating any stored idempotency record
 (there is no production data); and **AG-M2's frontier baseline must be measured after
-PR4**, since PR4 adds an identity-keyed contention domain to the write path.
+PR4**, since PR4 adds a user-keyed contention domain to the write path.
 
 ## 5. Correctness gates → where proven
 

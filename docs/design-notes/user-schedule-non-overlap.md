@@ -241,6 +241,12 @@ on RDS means `rds.allowed_extensions`. The rollback deliberately leaves it insta
 `CREATE EXTENSION IF NOT EXISTS` cannot establish that this migration created it, and
 dropping a possibly-shared extension is worse than leaving an unused one.
 
+The claim relation is part of the `00001_init.sql` baseline rather than a transitional
+migration. AG-M1 has no deployed database and no persisted data, so there was nothing to
+migrate; the first public schema states the model the project believes rather than
+preserving the record of correcting it during review. Migration compatibility begins at
+that baseline, and every change after it is forward-only and numbered.
+
 Strengths:
 
 - the invariant is declared at the authoritative storage boundary;
@@ -483,15 +489,19 @@ instead of updating it" — that was executed and **passed**, because the delete
 the insert within the same transaction, so there is nothing to conflict with. It was not
 a discriminating control, and the version above is what actually models the risk.
 
-**4. Remove the migration's backfill.** Added after review (Codex, P1). A claim table
-that starts empty exempts every pre-existing reservation: existing bookings never
-participate in the constraint, and confirming an existing hold finds no claim to update.
-Deleting the backfill `INSERT` makes `TestClaimBackfillCoversPreExistingReservations`
-fail with an empty claim set. `TestClaimBackfillRefusesPreExistingOverlaps` is its
-counterpart, and stays in the suite: a database that already contains overlapping
-bookings must abort the migration rather than have those rows silently skipped.
+**4. Weaken `slots` to a single-column key.** Keying by `slot_id` alone makes the
+slot-identity gates fail at *setup* — two organisations can no longer own a slot with the
+same identifier — and on a database that already holds such a pair, PostgreSQL refuses to
+create the key at all. The old schema cannot represent the state the gates require.
 
-Controls 1 and 4 remain in the suite; 2 and 3 were executed and reverted.
+Control 1 remains in the suite; 2, 3 and 4 were executed and reverted.
+
+A fifth control was written and then removed with the thing it guarded. Review raised
+(Codex, P1) that a claim table added to a database holding live reservations would exempt
+every one of them, and the migration gained a backfill plus two tests. Consolidating the
+schema into a single baseline (below) dissolved the problem rather than fixing it: the
+claim table and the reservations table are now created by the same migration, so a
+reservation without a claim is not a reachable state.
 
 ## 12. Performance and scaling
 
@@ -542,7 +552,7 @@ constraint and does not attempt the distributed-transaction design.
 | 8 | Distinguishing a violation from faults | exclusion violation → refusal; lock/statement timeout → `timeout_db` (§8, §10.4) |
 | 9 | Concurrency acceptance gate | §10.3 gate 16 |
 | 10 | Discriminating negative control | §11 |
-| 11 | Migration and extension | new forward migration; `btree_gist` required (§5.1) |
+| 11 | Migration and extension | folded into the `00001_init.sql` baseline; `btree_gist` required (§5.1) |
 | 12 | Owning milestone | AG-M1 PR4; original worker/API/telemetry PR becomes PR5 |
 
 Remaining open, deliberately deferred:

@@ -65,17 +65,27 @@ against a slot owned by `org_b` is legitimate: the entities it writes carry `org
 not `org_b`. `(org_a, user_1)` and `(org_b, user_1)` are **distinct identities** with
 independent idempotency scopes and independent schedules.
 
-This is what `Service.Reserve` already does — it writes the reservation's
-`OrganisationID` from the command, and `LockSlot` resolves a slot by `slot_id` alone —
-but it is stated here because the user schedule invariant (§2.2) depends on it: keying
+`Service.Reserve` therefore writes the reservation's `OrganisationID` from the command,
+never from the slot it locked. The user schedule invariant (§2.2) depends on it: keying
 a claim by the slot's organisation instead of the caller's would silently stop
-protecting an identity that books across organisations.
+protecting a user who books across organisations.
 
 AG-M1 introduces **no authentication**: identity values are supplied by the caller
 (and by the load system in AG-M2). They exist for correct idempotency scoping and for
-future routing/fairness, not access control. It follows that the schedule invariant
-protects an *identity*, not a *human*: one person holding two identities can hold
-overlapping claims, and Alloca has no concept that links them.
+future routing/fairness, not access control.
+
+**A `user_id` identifies whoever or whatever the booked time belongs to**, which need not
+be a person: a pet whose grooming slot is reserved, or a child booked in by a parent, is
+the user, because it is their time the slot consumes. The account that arranges or pays
+for a booking is a separate concern AG-M1 does not model. The rule matters for the
+schedule invariant (§2.2): a member booking two pets into overlapping slots is legitimate
+*because the pets are different users*, and would be wrongly refused if both bookings
+carried the member's own `user_id`.
+
+It follows that the invariant protects a *user's* schedule and nothing wider. Alloca
+cannot tell that two `user_id`s share an owner, a household, or a real individual —
+including `(org_a, user_1)` and `(org_b, user_1)`, which are distinct users with
+independent schedules.
 
 ### 1.2 Slot
 

@@ -106,14 +106,29 @@ This note does not define:
 
 One limit is deliberate and worth stating plainly, because it follows directly from §3.3:
 
-> The invariant protects an **identity's** schedule, not a **human's**.
+> The invariant protects a **user's** schedule, and the user is whoever or whatever the
+> booked time belongs to — not whoever arranged it.
 
-If one person holds two Alloca identities — `(org_a, user_1)` and `(org_b, user_1)` — those
-are distinct identities and may hold overlapping claims. Alloca has no concept that links
-them, and inventing one would require a person or identity service that AG-M1 deliberately
-does not have (`transaction-semantics.md` §1.1: AG-M1 introduces no authentication).
-Collapsing them would also require `user_id` to be globally unique, which is exactly the
-property the composite key avoids depending on.
+A user need not be a person. If a member books grooming appointments for two pets, each
+pet is the thing whose time is being reserved, so each is its own user: overlapping
+appointments for two different pets are perfectly legitimate, and refusing the second
+would be a bug. If instead both were booked under the member's own `user_id`, the second
+would be refused as a schedule conflict — correctly, by this invariant's rules, but
+wrongly for the product. The same reasoning covers a member booking on behalf of a child,
+a team, or a guest.
+
+**So the modelling rule is: whoever's time is consumed gets a `user_id`.** The account
+that arranges or pays for a booking is a separate concern, and AG-M1 does not model it.
+
+Two consequences follow, and neither is a gap this milestone should close:
+
+- Alloca cannot tell that two `user_id`s belong to the same household, owner, or human.
+  Linking them would require an account or identity service that AG-M1 deliberately does
+  not have (`transaction-semantics.md` §1.1: AG-M1 introduces no authentication).
+- Likewise `(org_a, user_1)` and `(org_b, user_1)` are distinct users with independent
+  schedules, even if the same real-world individual is behind both. Collapsing them would
+  require `user_id` to be globally unique — exactly the property the composite key exists
+  to avoid depending on.
 
 ### 3.3 Identity scope key
 
@@ -141,7 +156,7 @@ Two properties follow, and both are reasons to prefer this key over a bare globa
   reuses the tuple that already scopes idempotency (`transaction-semantics.md` §5.1), so
   identity means one thing throughout the system.
 - All of one identity's claims carry a single `organisation_id`, so they shard together
-  under the organisation-based routing AG-M5 plans. A person-keyed alternative would
+  under the organisation-based routing AG-M5 plans. A globally-keyed alternative would
   scatter them.
 
 The current code already behaves this way, but by construction rather than by contract:
@@ -154,7 +169,7 @@ PR4 also corrected the other half of the picture. A slot's identity is the pair
 `(organisation_id, slot_id)` — the slot's *owner* — and it was previously keyed by
 `slot_id` alone (`transaction-semantics.md` §1.2). The two changes are the same
 correction seen from opposite ends: identity is a pair scoped to an organisation, and
-which organisation depends on whether the thing is a *person* or a *slot*. A claim
+which organisation depends on whether the thing is a *user* or a *slot*. A claim
 therefore carries both, in separate columns, because a cross-organisation booking has
 different values in each.
 

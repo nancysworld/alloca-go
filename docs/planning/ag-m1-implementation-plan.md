@@ -164,8 +164,8 @@ milestone proved, so it lands before the worker/API/telemetry PR rather than aft
 
 PR4 also corrects the **slot's** identity to `(organisation_id, slot_id)`. The two
 belong together: both are the same correction — an identity is a pair scoped to an
-organisation — and which organisation applies depends on whether the thing is a person
-or a slot. A cross-organisation booking has different values in each, so the schedule
+organisation — and which organisation applies depends on whether the thing is a user or
+a slot. A cross-organisation booking has different values in each, so the schedule
 claim carries both. Keying slots by `slot_id` alone assumed identifiers are unique
 across organisations, which nothing establishes; since the slot row *is* the aggregate
 lock, that assumption was a correctness one.

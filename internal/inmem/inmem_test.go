@@ -9,18 +9,28 @@ import (
 	"github.com/nancysworld/alloca-go/internal/domain"
 )
 
+// testSlotOrg owns every slot these tests seed. A slot's identity is the pair
+// (organisation_id, slot_id) (domain.SlotRef), so seeding with an empty organisation
+// would let the double's map lookups pass without ever exercising the pair.
+const testSlotOrg = domain.OrganisationID("org-1")
+
+// ref builds the SlotRef for a slot owned by testSlotOrg.
+func ref(id domain.SlotID) domain.SlotRef {
+	return domain.SlotRef{OrganisationID: testSlotOrg, SlotID: id}
+}
+
 func TestLockSlotFound(t *testing.T) {
 	s := New(SystemClock{})
-	s.SeedSlot(domain.Slot{ID: "slot-1", Capacity: 3})
+	s.SeedSlot(domain.Slot{ID: "slot-1", OrganisationID: testSlotOrg, Capacity: 3})
 	err := s.WithinTx(context.Background(), func(ctx context.Context, tx domain.Tx) error {
-		slot, err := tx.LockSlot(ctx, "slot-1")
+		slot, err := tx.LockSlot(ctx, ref("slot-1"))
 		if err != nil {
 			return err
 		}
 		if slot.Capacity != 3 {
 			t.Errorf("Capacity = %d, want 3", slot.Capacity)
 		}
-		if _, err := tx.LockSlot(ctx, "missing"); !errors.Is(err, domain.ErrNotFound) {
+		if _, err := tx.LockSlot(ctx, ref("missing")); !errors.Is(err, domain.ErrNotFound) {
 			t.Errorf("missing slot: err = %v, want ErrNotFound", err)
 		}
 		return nil
@@ -34,14 +44,14 @@ func TestReservationAndBookingRoundTrip(t *testing.T) {
 	s := New(SystemClock{})
 	ctx := context.Background()
 	err := s.WithinTx(ctx, func(ctx context.Context, tx domain.Tx) error {
-		res := domain.Reservation{ID: "res-1", SlotID: "slot-1", State: domain.ReservationHeld, ExpiresAt: time.Unix(100, 0)}
+		res := domain.Reservation{ID: "res-1", SlotRef: ref("slot-1"), State: domain.ReservationHeld, ExpiresAt: time.Unix(100, 0)}
 		if err := tx.PutReservation(ctx, res); err != nil {
 			return err
 		}
-		if _, err := tx.SlotIDForReservation(ctx, "res-1"); err != nil {
+		if _, err := tx.SlotRefForReservation(ctx, "res-1"); err != nil {
 			return err
 		}
-		held, err := tx.HeldReservations(ctx, "slot-1")
+		held, err := tx.HeldReservations(ctx, ref("slot-1"))
 		if err != nil {
 			return err
 		}
@@ -49,7 +59,7 @@ func TestReservationAndBookingRoundTrip(t *testing.T) {
 			t.Errorf("held = %d, want 1", len(held))
 		}
 
-		bk := domain.Booking{ID: "bk-1", ReservationID: "res-1", SlotID: "slot-1", State: domain.BookingActive}
+		bk := domain.Booking{ID: "bk-1", ReservationID: "res-1", SlotRef: ref("slot-1"), State: domain.BookingActive}
 		if err := tx.PutBooking(ctx, bk); err != nil {
 			return err
 		}
@@ -60,7 +70,7 @@ func TestReservationAndBookingRoundTrip(t *testing.T) {
 		if got.ID != "bk-1" {
 			t.Errorf("booking ID = %s, want bk-1", got.ID)
 		}
-		n, err := tx.ActiveBookingCount(ctx, "slot-1")
+		n, err := tx.ActiveBookingCount(ctx, ref("slot-1"))
 		if err != nil {
 			return err
 		}
@@ -81,7 +91,7 @@ func TestNotFoundErrors(t *testing.T) {
 		if _, err := tx.Reservation(ctx, "nope"); !errors.Is(err, domain.ErrNotFound) {
 			t.Errorf("Reservation: %v, want ErrNotFound", err)
 		}
-		if _, err := tx.SlotIDForReservation(ctx, "nope"); !errors.Is(err, domain.ErrNotFound) {
+		if _, err := tx.SlotRefForReservation(ctx, "nope"); !errors.Is(err, domain.ErrNotFound) {
 			t.Errorf("SlotIDForReservation: %v, want ErrNotFound", err)
 		}
 		if _, err := tx.BookingForReservation(ctx, "nope"); !errors.Is(err, domain.ErrNotFound) {
@@ -200,7 +210,7 @@ func TestNowBeforeLockIsAnError(t *testing.T) {
 func TestLockSlotNotFoundEstablishesNoTime(t *testing.T) {
 	s := New(SystemClock{})
 	err := s.WithinTx(context.Background(), func(ctx context.Context, tx domain.Tx) error {
-		if _, err := tx.LockSlot(ctx, "missing"); !errors.Is(err, domain.ErrNotFound) {
+		if _, err := tx.LockSlot(ctx, ref("missing")); !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("LockSlot(missing): err = %v, want ErrNotFound", err)
 		}
 		if _, err := tx.Now(ctx); !errors.Is(err, domain.ErrTimeNotEstablished) {
@@ -218,10 +228,10 @@ func TestLockSlotNotFoundEstablishesNoTime(t *testing.T) {
 func TestAttemptTimeIsResolvedOnceAndMemoised(t *testing.T) {
 	clock := &stepClock{base: time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC), step: time.Second}
 	s := New(clock)
-	s.SeedSlot(domain.Slot{ID: "slot-1", Capacity: 1})
+	s.SeedSlot(domain.Slot{ID: "slot-1", OrganisationID: testSlotOrg, Capacity: 1})
 
 	err := s.WithinTx(context.Background(), func(ctx context.Context, tx domain.Tx) error {
-		if _, err := tx.LockSlot(ctx, "slot-1"); err != nil {
+		if _, err := tx.LockSlot(ctx, ref("slot-1")); err != nil {
 			return err
 		}
 		first, err := tx.Now(ctx)
@@ -229,7 +239,7 @@ func TestAttemptTimeIsResolvedOnceAndMemoised(t *testing.T) {
 			return err
 		}
 		// A second lock, a second read, and the no-slot resolver must all agree.
-		if _, err := tx.LockSlot(ctx, "slot-1"); err != nil {
+		if _, err := tx.LockSlot(ctx, ref("slot-1")); err != nil {
 			return err
 		}
 		second, err := tx.Now(ctx)
@@ -259,12 +269,12 @@ func TestAttemptTimeIsResolvedOnceAndMemoised(t *testing.T) {
 func TestEachAttemptResolvesItsOwnTime(t *testing.T) {
 	clock := &stepClock{base: time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC), step: time.Second}
 	s := New(clock)
-	s.SeedSlot(domain.Slot{ID: "slot-1", Capacity: 1})
+	s.SeedSlot(domain.Slot{ID: "slot-1", OrganisationID: testSlotOrg, Capacity: 1})
 
 	read := func() time.Time {
 		var got time.Time
 		if err := s.WithinTx(context.Background(), func(ctx context.Context, tx domain.Tx) error {
-			if _, err := tx.LockSlot(ctx, "slot-1"); err != nil {
+			if _, err := tx.LockSlot(ctx, ref("slot-1")); err != nil {
 				return err
 			}
 			var err error
@@ -336,13 +346,13 @@ func TestBackwardsClockDoesNotReviveExpiredHold(t *testing.T) {
 	clock := &rewindClock{base: base.Add(time.Hour), rewind: 2 * time.Hour}
 	s := New(clock)
 	s.SeedSlot(domain.Slot{
-		ID: "slot-1", Capacity: 1,
+		ID: "slot-1", OrganisationID: testSlotOrg, Capacity: 1,
 		ReleaseAt: base.Add(-time.Hour), StartsAt: base.Add(4 * time.Hour),
 	})
 
 	// An elapsed hold, settled on the first attempt while the clock reads +1h.
 	expired := domain.Reservation{
-		ID: "res-1", SlotID: "slot-1", State: domain.ReservationHeld,
+		ID: "res-1", SlotRef: ref("slot-1"), State: domain.ReservationHeld,
 		CreatedAt: base.Add(-time.Minute), ExpiresAt: base,
 	}
 	if err := s.WithinTx(context.Background(), func(ctx context.Context, tx domain.Tx) error {
@@ -354,14 +364,14 @@ func TestBackwardsClockDoesNotReviveExpiredHold(t *testing.T) {
 	settle := func() {
 		t.Helper()
 		err := s.WithinTx(context.Background(), func(ctx context.Context, tx domain.Tx) error {
-			if _, err := tx.LockSlot(ctx, "slot-1"); err != nil {
+			if _, err := tx.LockSlot(ctx, ref("slot-1")); err != nil {
 				return err
 			}
 			now, err := tx.Now(ctx)
 			if err != nil {
 				return err
 			}
-			held, err := tx.HeldReservations(ctx, "slot-1")
+			held, err := tx.HeldReservations(ctx, ref("slot-1"))
 			if err != nil {
 				return err
 			}
@@ -400,7 +410,7 @@ func TestBackwardsClockDoesNotReviveExpiredHold(t *testing.T) {
 		t.Errorf("state = %q after the clock stepped backwards, want %q to remain terminal",
 			got.State, domain.ReservationExpired)
 	}
-	held, active := s.SlotCounts("slot-1")
+	held, active := s.SlotCounts(ref("slot-1"))
 	if held != 0 || active != 0 {
 		t.Errorf("consumed capacity held=%d active=%d after a backwards clock step, want 0/0: "+
 			"an expired unit must not become live again", held, active)

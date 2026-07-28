@@ -136,7 +136,7 @@ func (h *harness) holdSlotLock(t *testing.T, id domain.SlotID, d time.Duration) 
 	go func() {
 		defer close(releasedAt)
 		err := h.repo.WithinTx(context.Background(), func(ctx context.Context, tx domain.Tx) error {
-			if _, err := tx.LockSlot(ctx, id); err != nil {
+			if _, err := tx.LockSlot(ctx, slotRef(id)); err != nil {
 				return err
 			}
 			close(locked)
@@ -196,6 +196,13 @@ const (
 	testSlot = domain.SlotID("slot-1")
 )
 
+// slotRef pairs a slot identifier with testOrg, which owns every slot the helpers seed.
+// A slot's identity is the pair (organisation_id, slot_id) (transaction-semantics §1.2),
+// so the two halves are joined here rather than at each call site.
+func slotRef(id domain.SlotID) domain.SlotRef {
+	return domain.SlotRef{OrganisationID: testOrg, SlotID: id}
+}
+
 // --- assertions -------------------------------------------------------------
 
 func assertOutcome(t *testing.T, r domain.Result, want domain.Outcome, reason domain.Reason) {
@@ -212,7 +219,7 @@ func assertOutcome(t *testing.T, r domain.Result, want domain.Outcome, reason do
 // against what the service reported.
 func assertConsumed(t *testing.T, h *harness, slotID domain.SlotID, wantHeld, wantBookings int) {
 	t.Helper()
-	held, active, err := h.repo.SlotCounts(context.Background(), slotID)
+	held, active, err := h.repo.SlotCounts(context.Background(), slotRef(slotID))
 	if err != nil {
 		t.Fatalf("slot counts: %v", err)
 	}
@@ -223,18 +230,19 @@ func assertConsumed(t *testing.T, h *harness, slotID domain.SlotID, wantHeld, wa
 }
 
 func (h *harness) reserve(ctx context.Context, user, key string, slotID domain.SlotID) (domain.Result, error) {
-	return h.reserveAs(ctx, testOrg, user, key, slotID)
+	return h.reserveAs(ctx, testOrg, user, key, slotRef(slotID))
 }
 
-// reserveAs reserves for an explicit identity organisation, which need not be the
-// organisation that owns the slot. That is the cross-organisation case
-// (transaction-semantics §1.1): the identity is (organisation_id, user_id), and it is
-// the *caller's* organisation, so a member of one organisation booking another's slot
-// is still protected against overlapping their own schedule.
-func (h *harness) reserveAs(ctx context.Context, org domain.OrganisationID, user, key string, slotID domain.SlotID) (domain.Result, error) {
+// reserveAs reserves for an explicit identity organisation against an explicit slot,
+// and the two organisations need not match. That is the cross-organisation case: the
+// identity is (organisation_id, user_id), scoped to where the *caller's* identity is
+// issued (transaction-semantics §1.1), while the slot is (organisation_id, slot_id),
+// scoped to its *owner* (§1.2). A member of one organisation booking another's slot is
+// still protected against overlapping their own schedule.
+func (h *harness) reserveAs(ctx context.Context, org domain.OrganisationID, user, key string, ref domain.SlotRef) (domain.Result, error) {
 	return h.svc.Reserve(ctx, service.ReserveCommand{
 		OrganisationID: org, UserID: domain.UserID(user),
-		SlotID: slotID, IdempotencyKey: key,
+		SlotRef: ref, IdempotencyKey: key,
 	})
 }
 

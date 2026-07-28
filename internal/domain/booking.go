@@ -16,9 +16,11 @@ const (
 // slot capacity until cancelled. It is created only by confirm, atomically with the
 // reservation's held → confirmed transition, under the slot lock.
 type Booking struct {
-	ID             BookingID
-	ReservationID  ReservationID
-	SlotID         SlotID
+	ID            BookingID
+	ReservationID ReservationID
+	// SlotRef is the slot's identity, owning organisation included (§1.2).
+	SlotRef SlotRef
+	// OrganisationID and UserID are the caller's identity, not the slot's owner (§1.1).
 	OrganisationID OrganisationID
 	UserID         UserID
 	State          BookingState

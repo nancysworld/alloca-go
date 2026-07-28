@@ -144,7 +144,7 @@ questions and is independently reviewable.
 | 1 | Timeout budget + §8.1 startup validation | `config.RequestBudget`, `config.Validate()`, `/meta` exposure, `.gitignore __debug_bin*` | no | **Merged #3** |
 | 2 | Domain core + services + idempotency | `internal/domain` (entities, invariants, ports, outcome types), `internal/idempotency`, `internal/service`, in-memory repository, `transaction-semantics.md`, ADR-0002, measurement-contract §4 `invalid_request` amendment; full unit + race tests | no | **Merged #4** |
 | 3 | PostgreSQL adapter | `internal/postgres` (transactional repo, `SELECT … FOR UPDATE`, per-txn `lock_timeout`/`statement_timeout`, error→outcome mapping), schema + migrations, transaction-owned authoritative time (`Tx.Now`, retiring the service `Clock`), `cmd/alloca-migrate`, CI Postgres integration tests | yes | **In review #5** |
-| 4 | User schedule non-overlap invariant | `user_time_claims` relation + forward migration (`btree_gist`, exclusion constraint), identity-scoped claim settlement, `ReasonScheduleConflict`, claim lifecycle across reserve/confirm/cancel/expiry, transaction-semantics §1.1/§2.2/§4, PostgreSQL concurrency gates + negative controls | yes | in progress |
+| 4 | User schedule non-overlap invariant + composite slot identity | `user_time_claims` relation (`btree_gist`, exclusion constraint), identity-scoped claim settlement, `ReasonScheduleConflict`, claim lifecycle across reserve/confirm/cancel/expiry; slot identity becomes `(organisation_id, slot_id)` with `domain.SlotRef` and `contract_version` v2; transaction-semantics §1.1/§1.2/§2.2/§4; PostgreSQL gates + negative controls | yes | in progress |
 | 5 | Expiry worker + HTTP API + telemetry | `internal/worker` (expiry that cannot release confirmed capacity), `internal/httpapi` booking endpoints (idempotency-key handling, outcome→HTTP mapping), structured outcome/timing telemetry, `cmd` wiring, readiness gated on DB, e2e tests | yes | planned |
 
 **Why this order.** PR1 is DB-free and discharges the §8.1 obligation, giving later
@@ -162,9 +162,22 @@ transactions lock different slot rows and never contend. Shipping AG-M1 — the 
 whose name is "correct transactional core" — with that gap would overstate what the
 milestone proved, so it lands before the worker/API/telemetry PR rather than after.
 
-Two consequences are accepted deliberately: AG-M1 extends beyond its original 28 July
-date, and **AG-M2's frontier baseline must be measured after PR4**, since PR4 adds an
-identity-keyed contention domain to the write path.
+PR4 also corrects the **slot's** identity to `(organisation_id, slot_id)`. The two
+belong together: both are the same correction — an identity is a pair scoped to an
+organisation — and which organisation applies depends on whether the thing is a person
+or a slot. A cross-organisation booking has different values in each, so the schedule
+claim carries both. Keying slots by `slot_id` alone assumed identifiers are unique
+across organisations, which nothing establishes; since the slot row *is* the aggregate
+lock, that assumption was a correctness one.
+
+Doing it here rather than at AG-M5 is deliberate: it changes the aggregate lock's
+resolution path, which is exactly what AG-M2 measures the frontier of and AG-M4 builds
+the capacity-unit economics on. Changing it later would invalidate those measurements.
+
+Three consequences are accepted deliberately: AG-M1 extends beyond its original 28 July
+date; `contract_version` moves to `v2`, invalidating any stored idempotency record
+(there is no production data); and **AG-M2's frontier baseline must be measured after
+PR4**, since PR4 adds an identity-keyed contention domain to the write path.
 
 ## 5. Correctness gates → where proven
 
@@ -179,6 +192,7 @@ The roadmap's AG-M1 gates and the layer that establishes each:
 | Expiry cannot release confirmed capacity | PR2 (expiry policy) + PR5 (worker) |
 | Cancellation/confirmation races have one valid winner | PR3 (serialized under the slot lock) |
 | One identity cannot hold two overlapping active claims | PR4 (exclusion constraint under real concurrent transactions, with negative controls) |
+| Two organisations may own same-named slots without sharing capacity or a lock | PR4 (composite slot key; the gates cannot even set up under the old single-column key) |
 | Timed-out and unknown-outcome transactions accounted for explicitly | PR3 (DB error→outcome mapping) + PR5 (telemetry) |
 
 The **required semantics** (roadmap: distinguish successful mutation, business

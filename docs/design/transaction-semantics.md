@@ -36,7 +36,7 @@ and are deliberately absent here.
 
 | Entity | Role | Identity |
 |---|---|---|
-| **Slot** | The scarce resource and its **write authority** (the aggregate root). A time-windowed unit with a capacity. | server-assigned `slot_id` |
+| **Slot** | The scarce resource and its **write authority** (the aggregate root). A time-windowed unit with a capacity. | `(organisation_id, slot_id)` — §1.2 |
 | **Reservation** | A temporary, expiring hold on one unit of a slot. | server-assigned `reservation_id` |
 | **Booking** | The durable confirmed commitment created when a reservation is confirmed. | server-assigned `booking_id` |
 | **Idempotency record** | A durable record of one logical mutation request and its recorded outcome (§5). | scoped key (§5.1) |
@@ -81,6 +81,26 @@ overlapping claims, and Alloca has no concept that links them.
 
 `{ slot_id, organisation_id, resource_id, capacity, release_at, starts_at, ends_at }`.
 
+**A slot's identity is the pair `(organisation_id, slot_id)` (normative).** Slot
+identifiers are unique *within* the organisation that owns the slot; nothing makes them
+unique across organisations, so `slot_id` alone does not identify a slot.
+
+This is a correctness property, not a modelling preference, because the slot row is the
+aggregate lock (§2). Resolving a slot by `slot_id` alone would — as soon as two
+organisations minted the same identifier — either serialize two unrelated slots against
+each other or take the lock on the wrong organisation's slot and mutate its capacity.
+Every read, lock, and foreign key therefore carries both halves.
+
+The `organisation_id` here is the slot's **owner**, and it is a different dimension from
+the caller-identity `organisation_id` on a reservation, booking, or claim (§1.1). They
+differ whenever an identity books into another organisation, so `reservations`,
+`bookings`, and `user_time_claims` carry `slot_organisation_id` as a column distinct from
+their own `organisation_id`. Collapsing the two would make a cross-organisation booking
+unrepresentable.
+
+Reservation and booking identifiers are, by contrast, server-assigned and globally
+unique, so they are single-column keys.
+
 - `capacity` is a fixed positive integer for AG-M1.
 - `resource_id` groups slots that belong to the same underlying resource (e.g. a
   recurring class); it is an attribute for grouping/telemetry, **not** part of the
@@ -98,7 +118,9 @@ overlapping claims, and Alloca has no concept that links them.
 
 ### 1.3 Reservation
 
-`{ reservation_id, slot_id, organisation_id, user_id, state, created_at, expires_at }`.
+`{ reservation_id, slot_organisation_id, slot_id, organisation_id, user_id, state,
+created_at, expires_at }`, where `(slot_organisation_id, slot_id)` is the slot it holds
+(§1.2) and `organisation_id` is the caller identity's (§1.1).
 State machine in §3. Exactly one unit. A held reservation is valid only when
 
 ```text
@@ -109,7 +131,8 @@ so a hold is never created already-expired and never outlives the slot start (§
 
 ### 1.4 Booking
 
-`{ booking_id, reservation_id, slot_id, organisation_id, user_id, state, created_at }`.
+`{ booking_id, reservation_id, slot_organisation_id, slot_id, organisation_id, user_id,
+state, created_at }`, with the same two-organisation split as §1.3.
 Created **only** by confirming a held reservation.
 
 ### 1.5 Authoritative service time (normative)
@@ -192,8 +215,9 @@ A slot's consumed capacity is **derived from rows**, never from a denormalised
 counter, and always evaluated against **settled** state (§2.1):
 
 ```text
-consumed(slot) = |{ reservations : slot_id = S, state = held }|   (post-settlement)
-               + |{ bookings     : slot_id = S, state = active }|
+consumed(slot) = |{ reservations : (slot_organisation_id, slot_id) = S, state = held }|
+               + |{ bookings     : (slot_organisation_id, slot_id) = S, state = active }|
+                                                                     (post-settlement)
 ```
 
 **Capacity invariant:** `consumed(slot) ≤ slot.capacity`, checked inside every
@@ -214,7 +238,8 @@ lock on the slot**:
 
 ```text
 BEGIN
-  SELECT ... FROM slots WHERE slot_id = $1 FOR UPDATE   -- the per-slot mutex
+  SELECT ... FROM slots
+   WHERE organisation_id = $1 AND slot_id = $2 FOR UPDATE   -- the per-slot mutex
   -- settle elapsed holds (§2.1), evaluate preconditions, mutate
 COMMIT
 ```
@@ -228,8 +253,10 @@ COMMIT
   optimisation only; PostgreSQL remains the cross-node authority
   ([`system-context.md`](system-context.md) §3).
 - Every operation that resolves a `reservation_id`/`booking_id` first resolves its
-  `slot_id` and locks **that** slot, so duplicates and races on the same logical
-  target always converge on the same lock.
+  **`(organisation_id, slot_id)` pair** and locks **that** slot, so duplicates and races
+  on the same logical target always converge on the same lock. Resolving only the
+  identifier would not name a slot (§1.2), and the reservation's own `organisation_id`
+  cannot supply the other half — it is the caller identity's, not the slot's.
 
 ### 2.1 Expiry settlement (normative)
 
@@ -466,7 +493,7 @@ The record holds:
   field. Its concrete meaning depends on the operation:
 
   ```text
-  reserve  → target_id = slot_id
+  reserve  → target_id = (organisation_id, slot_id) of the slot, encoded unambiguously
   confirm  → target_id = reservation_id
   cancel   → target_id = reservation_id
   ```
@@ -476,7 +503,14 @@ The record holds:
 - **`request_hash`** is a hash over a canonical representation of the semantically
   significant request fields — `contract_version, operation, organisation_id, user_id,
   target_id, body` — with stable key ordering and separators. It detects a key reused
-  for a *different* request. It **excludes** server-generated values such as `now` and
+  for a *different* request. For reserve, `target_id` must encode **both** halves of the
+  slot's identity unambiguously (length-prefixed, not delimiter-joined: organisation and
+  slot identifiers are arbitrary caller-supplied strings, so any separator could occur
+  inside one of them). Hashing `slot_id` alone would let a request for one
+  organisation's slot hash identically to a request for another's.
+  **`contract_version` is `v2`**: v1 hashed the bare `slot_id`, so a v1 hash for the
+  same logical request will not match a v2 one — which is intended, because under v1 the
+  target was ambiguous. It **excludes** server-generated values such as `now` and
   the computed `expires_at`, so ordinary retries of the same logical request (processed
   at slightly different service times) hash identically. AG-M1 mutation bodies are
   empty, but `body` stays in the contract so fields can be added later without changing
@@ -671,12 +705,6 @@ against the in-memory repository with a controllable `Clock`.
   AG-M2+.
 - Organisation-level routing and fairness that *use* `organisation_id`/`user_id` — AG-M5.
 - Administrative early-close / cancellation of a slot; late no-show transitions — later.
-- Whether a slot's identity is globally unique `slot_id` or the pair
-  `(organisation_id, slot_id)`. AG-M1 assumes the former — `slots` is keyed by `slot_id`
-  and `LockSlot` resolves by it alone — which is correct while slot identifiers are
-  server-assigned and globally unique. A composite key would change the aggregate lock's
-  resolution path, so it is recorded rather than assumed away — AG-M5, alongside
-  organisation-based routing.
 - Reservation **quantities** and conserved **balances** — AG-M6.
 
 ---

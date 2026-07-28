@@ -146,10 +146,17 @@ Two properties follow, and both are reasons to prefer this key over a bare globa
 
 The current code already behaves this way, but by construction rather than by contract:
 `internal/service/service.go` writes the reservation's `OrganisationID` from the command,
-not from the locked slot, and `LockSlot` resolves a slot by `slot_id` alone with no
-organisation filter. PR4 makes that explicit in `transaction-semantics.md` §1.1 and pins
-it with a cross-organisation test (§10.1 gate 8), so a later change cannot "tidy" the
-field to the slot's organisation and silently disable the invariant.
+not from the locked slot. PR4 makes that explicit in `transaction-semantics.md` §1.1 and
+pins it with a cross-organisation test (§10.1 gate 8), so a later change cannot "tidy"
+the field to the slot's organisation and silently disable the invariant.
+
+PR4 also corrected the other half of the picture. A slot's identity is the pair
+`(organisation_id, slot_id)` — the slot's *owner* — and it was previously keyed by
+`slot_id` alone (`transaction-semantics.md` §1.2). The two changes are the same
+correction seen from opposite ends: identity is a pair scoped to an organisation, and
+which organisation depends on whether the thing is a *person* or a *slot*. A claim
+therefore carries both, in separate columns, because a cross-organisation booking has
+different values in each.
 
 ## 4. Lifecycle semantics
 
@@ -259,7 +266,9 @@ user_time_claims
     reservation_id    primary key, references reservations
     organisation_id   identity scope (§3.3), not the slot's organisation
     user_id           identity scope (§3.3)
-    slot_id           references slots; telemetry and settlement, not part of the key
+    slot_organisation_id, slot_id
+                      the slot's identity (§1.2), its *owner's* organisation — not the
+                      identity's above; telemetry and settlement, never part of the key
     claim_range       tstzrange over [slot.starts_at, slot.ends_at)
     expires_at        the backing hold's expiry; NULL once confirmed
     EXCLUDE USING gist (organisation_id =, user_id =, claim_range &&)

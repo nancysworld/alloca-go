@@ -28,6 +28,18 @@ import (
 	"github.com/nancysworld/alloca-go/internal/idempotency"
 )
 
+// slotTarget renders a slot's identity as the request hash's target field
+// (transaction-semantics §5.1). A bare slot_id is no longer a target: two organisations
+// may each mint "slot-1", and hashing only that would let a request for one hash
+// identically to a request for the other.
+//
+// Length-prefixed rather than delimiter-joined, because organisation and slot
+// identifiers are arbitrary caller-supplied strings: any separator could occur inside
+// one of them, so ("a/b", "c") and ("a", "b/c") would otherwise collide.
+func slotTarget(ref domain.SlotRef) string {
+	return fmt.Sprintf("%d:%s/%s", len(ref.OrganisationID), ref.OrganisationID, ref.SlotID)
+}
+
 // errRetry signals that an idempotency-record insert lost the unique-constraint race
 // (domain.ErrConflict). The transaction is rolled back and the whole operation is
 // re-run once; the re-run observes the winning record and replays or conflicts
@@ -51,10 +63,16 @@ func New(repo domain.Repository, ids domain.IDGen, ttl time.Duration) *Service {
 }
 
 // ReserveCommand asks to hold one unit of a slot's capacity.
+//
+// It carries two organisations and they are not interchangeable
+// (transaction-semantics §1.1, §1.2): OrganisationID is the organisation the *caller's
+// identity* is issued under, while SlotRef.OrganisationID is the organisation that
+// *owns the slot*. They differ whenever an identity books into another organisation,
+// which is exactly the case the schedule invariant exists to cover.
 type ReserveCommand struct {
 	OrganisationID domain.OrganisationID
 	UserID         domain.UserID
-	SlotID         domain.SlotID
+	SlotRef        domain.SlotRef
 	IdempotencyKey string
 	Body           []byte
 }
@@ -79,14 +97,15 @@ type CancelCommand struct {
 
 // Reserve holds one unit of the slot for the caller (transaction-semantics §4).
 func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Result, error) {
-	if cmd.OrganisationID == "" || cmd.UserID == "" || cmd.SlotID == "" || cmd.IdempotencyKey == "" {
+	if cmd.OrganisationID == "" || cmd.UserID == "" || cmd.SlotRef.SlotID == "" ||
+		cmd.SlotRef.OrganisationID == "" || cmd.IdempotencyKey == "" {
 		return domain.Result{Outcome: domain.OutcomeInvalidRequest}, nil
 	}
 	scope := idempotency.Scope(cmd.OrganisationID, cmd.UserID, domain.OpReserve, cmd.IdempotencyKey)
-	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpReserve, cmd.OrganisationID, cmd.UserID, string(cmd.SlotID), cmd.Body)
+	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpReserve, cmd.OrganisationID, cmd.UserID, slotTarget(cmd.SlotRef), cmd.Body)
 
 	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
-		slot, err := tx.LockSlot(ctx, cmd.SlotID)
+		slot, err := tx.LockSlot(ctx, cmd.SlotRef)
 		if errors.Is(err, domain.ErrNotFound) {
 			return s.unknownTarget(ctx, tx, scope, hash)
 		}
@@ -103,7 +122,7 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 			return r, err
 		}
 
-		consumed, err := s.settle(ctx, tx, slot.ID, now)
+		consumed, err := s.settle(ctx, tx, slot.Ref(), now)
 		if err != nil {
 			return domain.Result{}, err
 		}
@@ -137,7 +156,7 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 				resID := s.ids.NewReservationID()
 				res := domain.Reservation{
 					ID:             resID,
-					SlotID:         slot.ID,
+					SlotRef:        slot.Ref(),
 					OrganisationID: cmd.OrganisationID,
 					UserID:         cmd.UserID,
 					State:          domain.ReservationHeld,
@@ -157,7 +176,7 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 					ReservationID:  resID,
 					OrganisationID: cmd.OrganisationID,
 					UserID:         cmd.UserID,
-					SlotID:         slot.ID,
+					SlotRef:        slot.Ref(),
 					StartsAt:       slot.StartsAt,
 					EndsAt:         slot.EndsAt,
 					ExpiresAt:      expiresAt,
@@ -210,7 +229,7 @@ func (s *Service) Confirm(ctx context.Context, cmd ConfirmCommand) (domain.Resul
 				bk := domain.Booking{
 					ID:             bkID,
 					ReservationID:  res.ID,
-					SlotID:         slot.ID,
+					SlotRef:        slot.Ref(),
 					OrganisationID: res.OrganisationID,
 					UserID:         res.UserID,
 					State:          domain.BookingActive,
@@ -312,7 +331,7 @@ func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (domain.Result,
 // before the lock, so its instant is exactly the stale one the authoritative-time
 // contract rejects. Only the LockSlot below fixes the attempt's now.
 func (s *Service) lockByReservation(ctx context.Context, tx domain.Tx, id domain.ReservationID, scope domain.ScopeKey, hash string) (slot domain.Slot, res domain.Reservation, now time.Time, done bool, result domain.Result, err error) {
-	slotID, err := tx.SlotIDForReservation(ctx, id)
+	ref, err := tx.SlotRefForReservation(ctx, id)
 	if errors.Is(err, domain.ErrNotFound) {
 		result, err = s.unknownTarget(ctx, tx, scope, hash)
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, result, err
@@ -320,7 +339,7 @@ func (s *Service) lockByReservation(ctx context.Context, tx domain.Tx, id domain
 	if err != nil {
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, domain.Result{}, err
 	}
-	slot, err = tx.LockSlot(ctx, slotID)
+	slot, err = tx.LockSlot(ctx, ref)
 	if err != nil {
 		// A reservation pointing at a missing slot is an invariant violation.
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, domain.Result{}, err
@@ -332,7 +351,7 @@ func (s *Service) lockByReservation(ctx context.Context, tx domain.Tx, id domain
 	if r, resolved, lerr := s.lookup(ctx, tx, scope, hash); resolved || lerr != nil {
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, r, lerr
 	}
-	if _, err = s.settle(ctx, tx, slot.ID, now); err != nil {
+	if _, err = s.settle(ctx, tx, slot.Ref(), now); err != nil {
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, domain.Result{}, err
 	}
 	res, err = tx.Reservation(ctx, id)
@@ -415,8 +434,8 @@ func (s *Service) unknownTarget(ctx context.Context, tx domain.Tx, scope domain.
 // settle transitions every elapsed held reservation on the slot to expired, then
 // returns the slot's consumed capacity derived from settled state: held reservations
 // plus active bookings (transaction-semantics §1.7, §2.1).
-func (s *Service) settle(ctx context.Context, tx domain.Tx, slotID domain.SlotID, now time.Time) (consumed int, err error) {
-	held, err := tx.HeldReservations(ctx, slotID)
+func (s *Service) settle(ctx context.Context, tx domain.Tx, ref domain.SlotRef, now time.Time) (consumed int, err error) {
+	held, err := tx.HeldReservations(ctx, ref)
 	if err != nil {
 		return 0, err
 	}
@@ -439,7 +458,7 @@ func (s *Service) settle(ctx context.Context, tx domain.Tx, slotID domain.SlotID
 		}
 		stillHeld++
 	}
-	active, err := tx.ActiveBookingCount(ctx, slotID)
+	active, err := tx.ActiveBookingCount(ctx, ref)
 	if err != nil {
 		return 0, err
 	}

@@ -46,7 +46,7 @@ func scheduleFixture(t *testing.T) *fixture {
 func (f *fixture) reserveSlot(t *testing.T, user, key string, slotID domain.SlotID) domain.Result {
 	t.Helper()
 	r, err := f.svc.Reserve(context.Background(), ReserveCommand{
-		OrganisationID: org, UserID: domain.UserID(user), SlotID: slotID, IdempotencyKey: key,
+		OrganisationID: org, UserID: domain.UserID(user), SlotRef: ref(slotID), IdempotencyKey: key,
 	})
 	if err != nil {
 		t.Fatalf("Reserve(%s,%s,%s): unexpected error %v", user, key, slotID, err)
@@ -57,7 +57,7 @@ func (f *fixture) reserveSlot(t *testing.T, user, key string, slotID domain.Slot
 func (f *fixture) reserveAs(t *testing.T, orgID domain.OrganisationID, user, key string, slotID domain.SlotID) domain.Result {
 	t.Helper()
 	r, err := f.svc.Reserve(context.Background(), ReserveCommand{
-		OrganisationID: orgID, UserID: domain.UserID(user), SlotID: slotID, IdempotencyKey: key,
+		OrganisationID: orgID, UserID: domain.UserID(user), SlotRef: ref(slotID), IdempotencyKey: key,
 	})
 	if err != nil {
 		t.Fatalf("Reserve(%s/%s): unexpected error %v", orgID, user, err)

@@ -25,9 +25,9 @@ type ScheduleClaim struct {
 	// still protected against overlapping itself.
 	OrganisationID OrganisationID
 	UserID         UserID
-	// SlotID is carried for settlement and telemetry; it is not part of the conflict
+	// SlotRef is carried for settlement and telemetry; it is not part of the conflict
 	// key, which is exactly why claims on *different* slots still conflict.
-	SlotID SlotID
+	SlotRef SlotRef
 	// StartsAt/EndsAt are the claimed interval, taken from the slot, and are half-open:
 	// [StartsAt, EndsAt). Adjacent bookings therefore do not overlap.
 	StartsAt time.Time

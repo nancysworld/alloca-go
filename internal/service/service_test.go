@@ -74,6 +74,13 @@ const (
 	slot = domain.SlotID("slot-1")
 )
 
+// ref builds the SlotRef for a slot owned by org. The fixtures seed every slot under
+// org, so this pairs the identifier with its owner in one place rather than at each
+// call site — where a mismatched pair would silently look up nothing.
+func ref(id domain.SlotID) domain.SlotRef {
+	return domain.SlotRef{OrganisationID: org, SlotID: id}
+}
+
 type fixture struct {
 	svc   *Service
 	store *inmem.Store
@@ -95,7 +102,7 @@ func newFixture(t *testing.T, capacity int) *fixture {
 
 func (f *fixture) reserve(t *testing.T, user, key string) domain.Result {
 	t.Helper()
-	r, err := f.svc.Reserve(context.Background(), ReserveCommand{OrganisationID: org, UserID: domain.UserID(user), SlotID: slot, IdempotencyKey: key})
+	r, err := f.svc.Reserve(context.Background(), ReserveCommand{OrganisationID: org, UserID: domain.UserID(user), SlotRef: ref(slot), IdempotencyKey: key})
 	if err != nil {
 		t.Fatalf("Reserve(%s,%s): unexpected error %v", user, key, err)
 	}
@@ -162,14 +169,14 @@ func TestReserveTTLOutsideWindow(t *testing.T) {
 
 func TestReserveUnknownSlot(t *testing.T) {
 	f := newFixture(t, 1)
-	r, err := f.svc.Reserve(context.Background(), ReserveCommand{OrganisationID: org, UserID: "user-1", SlotID: "ghost", IdempotencyKey: "k1"})
+	r, err := f.svc.Reserve(context.Background(), ReserveCommand{OrganisationID: org, UserID: "user-1", SlotRef: ref("ghost"), IdempotencyKey: "k1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	assertOutcome(t, r, domain.OutcomeBusinessRefusal, domain.ReasonUnknownTarget)
 
 	// The refusal is recorded: replaying the same key returns it with Replay=true.
-	replay, err := f.svc.Reserve(context.Background(), ReserveCommand{OrganisationID: org, UserID: "user-1", SlotID: "ghost", IdempotencyKey: "k1"})
+	replay, err := f.svc.Reserve(context.Background(), ReserveCommand{OrganisationID: org, UserID: "user-1", SlotRef: ref("ghost"), IdempotencyKey: "k1"})
 	if err != nil {
 		t.Fatalf("unexpected error on replay: %v", err)
 	}
@@ -181,7 +188,7 @@ func TestReserveUnknownSlot(t *testing.T) {
 
 func TestReserveMissingFieldsInvalidRequest(t *testing.T) {
 	f := newFixture(t, 1)
-	r, err := f.svc.Reserve(context.Background(), ReserveCommand{OrganisationID: org, UserID: "user-1", SlotID: slot}) // no key
+	r, err := f.svc.Reserve(context.Background(), ReserveCommand{OrganisationID: org, UserID: "user-1", SlotRef: ref(slot)}) // no key
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -206,7 +213,7 @@ func TestReserveReplaySameKey(t *testing.T) {
 		t.Errorf("replay reservation ID = %s, want %s", second.ReservationID, first.ReservationID)
 	}
 	// Only one hold exists despite two calls.
-	if held, _ := f.store.SlotCounts(slot); held != 1 {
+	if held, _ := f.store.SlotCounts(ref(slot)); held != 1 {
 		t.Errorf("held = %d, want 1 (replay must not mutate)", held)
 	}
 }
@@ -218,7 +225,7 @@ func TestReserveKeyReuseDifferentTargetConflicts(t *testing.T) {
 	assertOutcome(t, f.reserve(t, "user-1", "shared"), domain.OutcomeAdmittedSuccess, "")
 
 	// Same scope (org/user/op/key) but a different slot => different request hash.
-	r, err := f.svc.Reserve(context.Background(), ReserveCommand{OrganisationID: org, UserID: "user-1", SlotID: "slot-2", IdempotencyKey: "shared"})
+	r, err := f.svc.Reserve(context.Background(), ReserveCommand{OrganisationID: org, UserID: "user-1", SlotRef: ref("slot-2"), IdempotencyKey: "shared"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -250,7 +257,7 @@ func TestConfirmSuccessKeepsCapacityConsumed(t *testing.T) {
 	}
 	// held -> confirmed keeps one unit consumed: a new reserve is refused.
 	assertOutcome(t, f.reserve(t, "user-2", "r2"), domain.OutcomeBusinessRefusal, domain.ReasonNoCapacity)
-	if held, active := f.store.SlotCounts(slot); held != 0 || active != 1 {
+	if held, active := f.store.SlotCounts(ref(slot)); held != 0 || active != 1 {
 		t.Errorf("counts after confirm = held %d active %d, want held 0 active 1", held, active)
 	}
 }
@@ -290,7 +297,7 @@ func TestCancelConfirmedReleasesCapacity(t *testing.T) {
 	res := f.reserve(t, "user-1", "r1")
 	f.confirm(t, "user-1", "c1", res.ReservationID)
 	assertOutcome(t, f.cancel(t, "user-1", "x1", res.ReservationID), domain.OutcomeAdmittedSuccess, "")
-	if held, active := f.store.SlotCounts(slot); held != 0 || active != 0 {
+	if held, active := f.store.SlotCounts(ref(slot)); held != 0 || active != 0 {
 		t.Errorf("counts after cancel = held %d active %d, want 0/0", held, active)
 	}
 	assertOutcome(t, f.reserve(t, "user-2", "r2"), domain.OutcomeAdmittedSuccess, "")
@@ -334,7 +341,7 @@ func TestReserveConcurrentCapacityNeverExceeded(t *testing.T) {
 			defer wg.Done()
 			r, err := f.svc.Reserve(context.Background(), ReserveCommand{
 				OrganisationID: org, UserID: domain.UserID(fmt.Sprintf("user-%d", i)),
-				SlotID: slot, IdempotencyKey: fmt.Sprintf("key-%d", i),
+				SlotRef: ref(slot), IdempotencyKey: fmt.Sprintf("key-%d", i),
 			})
 			if err != nil {
 				t.Errorf("goroutine %d: unexpected error %v", i, err)
@@ -358,7 +365,7 @@ func TestReserveConcurrentCapacityNeverExceeded(t *testing.T) {
 	if soldOut != n-capacity {
 		t.Errorf("sold-out = %d, want %d", soldOut, n-capacity)
 	}
-	if held, active := f.store.SlotCounts(slot); held+active != capacity {
+	if held, active := f.store.SlotCounts(ref(slot)); held+active != capacity {
 		t.Errorf("reconciled consumed = %d, want %d", held+active, capacity)
 	}
 }
@@ -375,7 +382,7 @@ func TestReserveConcurrentSameKeyOneMutation(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			r, err := f.svc.Reserve(context.Background(), ReserveCommand{OrganisationID: org, UserID: "user-1", SlotID: slot, IdempotencyKey: "same"})
+			r, err := f.svc.Reserve(context.Background(), ReserveCommand{OrganisationID: org, UserID: "user-1", SlotRef: ref(slot), IdempotencyKey: "same"})
 			if err != nil {
 				t.Errorf("goroutine %d: %v", i, err)
 				return
@@ -404,7 +411,7 @@ func TestReserveConcurrentSameKeyOneMutation(t *testing.T) {
 	if fresh != 1 {
 		t.Errorf("fresh (non-replay) mutations = %d, want 1", fresh)
 	}
-	if held, _ := f.store.SlotCounts(slot); held != 1 {
+	if held, _ := f.store.SlotCounts(ref(slot)); held != 1 {
 		t.Errorf("held = %d, want 1", held)
 	}
 }
@@ -452,7 +459,7 @@ func TestReserveIdempotencyInsertRaceReplaysWinner(t *testing.T) {
 	store.SeedSlot(domain.Slot{ID: slot, OrganisationID: org, Capacity: 5, ReleaseAt: baseRelease, StartsAt: baseStart})
 	svc := New(&conflictOnceRepo{inner: store}, &seqIDGen{}, testTTL)
 
-	r, err := svc.Reserve(context.Background(), ReserveCommand{OrganisationID: org, UserID: "user-1", SlotID: slot, IdempotencyKey: "k1"})
+	r, err := svc.Reserve(context.Background(), ReserveCommand{OrganisationID: org, UserID: "user-1", SlotRef: ref(slot), IdempotencyKey: "k1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -486,7 +493,7 @@ func TestCapacityInvariantUnderRandomOperations(t *testing.T) {
 	for step := range 400 {
 		switch rng.Intn(3) {
 		case 0: // reserve
-			r, err := f.svc.Reserve(ctx, ReserveCommand{OrganisationID: org, UserID: domain.UserID(fmt.Sprintf("u%d", step)), SlotID: slot, IdempotencyKey: nextKey()})
+			r, err := f.svc.Reserve(ctx, ReserveCommand{OrganisationID: org, UserID: domain.UserID(fmt.Sprintf("u%d", step)), SlotRef: ref(slot), IdempotencyKey: nextKey()})
 			if err != nil {
 				t.Fatalf("step %d reserve: %v", step, err)
 			}
@@ -511,7 +518,7 @@ func TestCapacityInvariantUnderRandomOperations(t *testing.T) {
 			}
 		}
 
-		held, active := f.store.SlotCounts(slot)
+		held, active := f.store.SlotCounts(ref(slot))
 		consumed := held + active
 		if consumed < 0 || consumed > capacity {
 			t.Fatalf("step %d: capacity invariant violated: consumed=%d capacity=%d", step, consumed, capacity)

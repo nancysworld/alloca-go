@@ -27,6 +27,11 @@ import (
 
 const otherOrg = domain.OrganisationID("org-2")
 
+// guestSlot is owned by otherOrg, so booking it from a testOrg identity is the
+// cross-organisation case: the caller's identity organisation and the slot's owning
+// organisation differ.
+var guestSlot = domain.SlotRef{OrganisationID: otherOrg, SlotID: "guest-slot"}
+
 // scheduleHarness sets up three slots on one shared time base so interval
 // relationships are exact:
 //
@@ -126,14 +131,14 @@ func TestScheduleIdentityIsTheCallersOrganisationNotTheSlots(t *testing.T) {
 	h.seedWindow(t, testOrg, "home-slot", 5, base, time.Hour, 2*time.Hour)
 	h.seedWindow(t, otherOrg, "guest-slot", 5, base, 90*time.Minute, 150*time.Minute)
 
-	home, err := h.reserveAs(context.Background(), testOrg, "user-1", "key-1", "home-slot")
+	home, err := h.reserveAs(context.Background(), testOrg, "user-1", "key-1", slotRef("home-slot"))
 	if err != nil {
 		t.Fatalf("home reserve: %v", err)
 	}
 	assertOutcome(t, home, domain.OutcomeAdmittedSuccess, "")
 
 	// Same identity, a slot owned by another organisation, overlapping time.
-	guest, err := h.reserveAs(context.Background(), testOrg, "user-1", "key-2", "guest-slot")
+	guest, err := h.reserveAs(context.Background(), testOrg, "user-1", "key-2", guestSlot)
 	if err != nil {
 		t.Fatalf("guest reserve: %v", err)
 	}
@@ -141,7 +146,7 @@ func TestScheduleIdentityIsTheCallersOrganisationNotTheSlots(t *testing.T) {
 
 	// A different identity that merely shares the user_id: unaffected. This is what makes
 	// user_id not need to be globally unique.
-	other, err := h.reserveAs(context.Background(), otherOrg, "user-1", "key-3", "guest-slot")
+	other, err := h.reserveAs(context.Background(), otherOrg, "user-1", "key-3", guestSlot)
 	if err != nil {
 		t.Fatalf("other-identity reserve: %v", err)
 	}

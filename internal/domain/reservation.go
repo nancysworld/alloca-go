@@ -23,8 +23,12 @@ func (s ReservationState) Terminal() bool {
 // capacity (transaction-semantics §1.3). A held reservation is valid only when
 // created_at < expires_at <= slot.starts_at.
 type Reservation struct {
-	ID             ReservationID
-	SlotID         SlotID
+	ID ReservationID
+	// SlotRef is the slot's identity — including the organisation that owns the slot,
+	// which is not necessarily the OrganisationID below (§1.1, §1.2).
+	SlotRef SlotRef
+	// OrganisationID and UserID are the *caller's* identity: the organisation the
+	// identity is issued under, never the slot's owner.
 	OrganisationID OrganisationID
 	UserID         UserID
 	State          ReservationState

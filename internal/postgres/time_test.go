@@ -34,7 +34,7 @@ func TestDecisionTimestampResolvedAfterLockWait(t *testing.T) {
 
 	var attemptNow time.Time
 	err := h.repo.WithinTx(context.Background(), func(ctx context.Context, tx domain.Tx) error {
-		if _, err := tx.LockSlot(ctx, testSlot); err != nil {
+		if _, err := tx.LockSlot(ctx, slotRef(testSlot)); err != nil {
 			return err
 		}
 		var err error
@@ -81,7 +81,7 @@ func TestLockSlotNotFoundEstablishesNoTime(t *testing.T) {
 	h := newHarness(t, testBudget(), 30*time.Second)
 
 	err := h.repo.WithinTx(context.Background(), func(ctx context.Context, tx domain.Tx) error {
-		if _, err := tx.LockSlot(ctx, "no-such-slot"); !errors.Is(err, domain.ErrNotFound) {
+		if _, err := tx.LockSlot(ctx, slotRef("no-such-slot")); !errors.Is(err, domain.ErrNotFound) {
 			t.Fatalf("LockSlot: err = %v, want ErrNotFound", err)
 		}
 		if _, err := tx.Now(ctx); !errors.Is(err, domain.ErrTimeNotEstablished) {
@@ -132,7 +132,7 @@ func TestHoldExpiringDuringLockWaitIsSettled(t *testing.T) {
 	assertOutcome(t, second, domain.OutcomeAdmittedSuccess, "")
 
 	// The first hold was settled to expired, not left to consume capacity forever.
-	states, err := h.repo.ReservationStates(context.Background(), testSlot)
+	states, err := h.repo.ReservationStates(context.Background(), slotRef(testSlot))
 	if err != nil {
 		t.Fatalf("reservation states: %v", err)
 	}

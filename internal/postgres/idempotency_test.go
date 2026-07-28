@@ -188,7 +188,7 @@ func TestFailedTransactionPersistsNothing(t *testing.T) {
 
 	sentinel := errors.New("deliberate failure after the record insert")
 	err := h.repo.WithinTx(context.Background(), func(ctx context.Context, tx domain.Tx) error {
-		if _, err := tx.LockSlot(ctx, testSlot); err != nil {
+		if _, err := tx.LockSlot(ctx, slotRef(testSlot)); err != nil {
 			return err
 		}
 		now, err := tx.Now(ctx)
@@ -203,7 +203,7 @@ func TestFailedTransactionPersistsNothing(t *testing.T) {
 			return err
 		}
 		if err := tx.PutReservation(ctx, domain.Reservation{
-			ID: "res-doomed", SlotID: testSlot, OrganisationID: testOrg, UserID: "user-1",
+			ID: "res-doomed", SlotRef: slotRef(testSlot), OrganisationID: testOrg, UserID: "user-1",
 			State: domain.ReservationHeld, CreatedAt: now, ExpiresAt: now.Add(time.Minute),
 		}); err != nil {
 			return err
@@ -244,7 +244,7 @@ func TestTransactionTimeoutsDoNotLeakAcrossTransactions(t *testing.T) {
 	h.seedSlot(t, testSlot, 5, -time.Hour, time.Hour)
 
 	if err := h.repo.WithinTx(context.Background(), func(ctx context.Context, tx domain.Tx) error {
-		_, err := tx.LockSlot(ctx, testSlot)
+		_, err := tx.LockSlot(ctx, slotRef(testSlot))
 		return err
 	}); err != nil {
 		t.Fatalf("first transaction: %v", err)

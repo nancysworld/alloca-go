@@ -20,7 +20,7 @@ func (r *Repo) SeedSlot(ctx context.Context, slot domain.Slot) error {
 		INSERT INTO slots
 			(slot_id, organisation_id, resource_id, capacity, release_at, starts_at, ends_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT (slot_id) DO UPDATE SET
+		ON CONFLICT (organisation_id, slot_id) DO UPDATE SET
 			organisation_id = EXCLUDED.organisation_id,
 			resource_id     = EXCLUDED.resource_id,
 			capacity        = EXCLUDED.capacity,
@@ -45,12 +45,14 @@ func (r *Repo) SeedSlot(ctx context.Context, slot domain.Slot) error {
 //
 // It performs no settlement, so a caller reconciling a slot with live holds must do
 // so before those holds elapse.
-func (r *Repo) SlotCounts(ctx context.Context, slotID domain.SlotID) (held, activeBookings int, err error) {
+func (r *Repo) SlotCounts(ctx context.Context, ref domain.SlotRef) (held, activeBookings int, err error) {
 	err = r.pool.QueryRow(ctx, `
 		SELECT
-			(SELECT count(*) FROM reservations WHERE slot_id = $1 AND state = 'held'),
-			(SELECT count(*) FROM bookings     WHERE slot_id = $1 AND state = 'active')`,
-		string(slotID)).Scan(&held, &activeBookings)
+			(SELECT count(*) FROM reservations
+			  WHERE slot_organisation_id = $1 AND slot_id = $2 AND state = 'held'),
+			(SELECT count(*) FROM bookings
+			  WHERE slot_organisation_id = $1 AND slot_id = $2 AND state = 'active')`,
+		string(ref.OrganisationID), string(ref.SlotID)).Scan(&held, &activeBookings)
 	if err != nil {
 		return 0, 0, fmt.Errorf("postgres: slot counts: %w", err)
 	}
@@ -59,10 +61,11 @@ func (r *Repo) SlotCounts(ctx context.Context, slotID domain.SlotID) (held, acti
 
 // ReservationStates returns a census of reservation states for a slot, so a test can
 // assert on the shape of the whole state machine rather than one row at a time.
-func (r *Repo) ReservationStates(ctx context.Context, slotID domain.SlotID) (map[domain.ReservationState]int, error) {
+func (r *Repo) ReservationStates(ctx context.Context, ref domain.SlotRef) (map[domain.ReservationState]int, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT state, count(*) FROM reservations WHERE slot_id = $1 GROUP BY state`,
-		string(slotID))
+		`SELECT state, count(*) FROM reservations
+		 WHERE slot_organisation_id = $1 AND slot_id = $2 GROUP BY state`,
+		string(ref.OrganisationID), string(ref.SlotID))
 	if err != nil {
 		return nil, fmt.Errorf("postgres: reservation states: %w", err)
 	}

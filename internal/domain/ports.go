@@ -82,7 +82,7 @@ type Tx interface {
 	// via Now) from the post-lock instant. Returns ErrNotFound if the slot does not
 	// exist, in which case no timestamp is established — the caller is on the
 	// unknown-target path and must use ResolveTimeWithoutSlot.
-	LockSlot(ctx context.Context, id SlotID) (Slot, error)
+	LockSlot(ctx context.Context, ref SlotRef) (Slot, error)
 	// Now returns the attempt's authoritative timestamp. It returns
 	// ErrTimeNotEstablished if neither LockSlot nor ResolveTimeWithoutSlot has
 	// succeeded in this attempt.
@@ -93,18 +93,23 @@ type Tx interface {
 	// separate method rather than a fallback inside Now so that the no-slot path is
 	// explicit at the call site and cannot be reached by forgetting to lock.
 	ResolveTimeWithoutSlot(ctx context.Context) (time.Time, error)
-	// SlotIDForReservation resolves the slot a reservation belongs to, without
+	// SlotRefForReservation resolves the slot a reservation belongs to, without
 	// locking, so the caller can then LockSlot that slot (transaction-semantics §2).
 	// Returns ErrNotFound if the reservation does not exist. It establishes no
 	// timestamp: only the subsequent LockSlot does.
-	SlotIDForReservation(ctx context.Context, id ReservationID) (SlotID, error)
+	//
+	// It returns the whole SlotRef rather than a bare identifier because the caller
+	// cannot reconstruct the owning organisation: for a booking made into another
+	// organisation it is neither the caller's nor derivable from the reservation's own
+	// identity columns.
+	SlotRefForReservation(ctx context.Context, id ReservationID) (SlotRef, error)
 	// Reservation loads a reservation by ID. Returns ErrNotFound if absent.
 	Reservation(ctx context.Context, id ReservationID) (Reservation, error)
 	// HeldReservations returns every reservation on the slot currently in the held
 	// state, for settlement and consumed-capacity derivation.
-	HeldReservations(ctx context.Context, slotID SlotID) ([]Reservation, error)
+	HeldReservations(ctx context.Context, ref SlotRef) ([]Reservation, error)
 	// ActiveBookingCount returns the number of active bookings on the slot.
-	ActiveBookingCount(ctx context.Context, slotID SlotID) (int, error)
+	ActiveBookingCount(ctx context.Context, ref SlotRef) (int, error)
 	// BookingForReservation loads the booking created from a reservation. Returns
 	// ErrNotFound if none exists.
 	BookingForReservation(ctx context.Context, id ReservationID) (Booking, error)

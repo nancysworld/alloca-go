@@ -62,7 +62,7 @@ func (SystemClock) Now() time.Time { return time.Now() }
 type Store struct {
 	sem          chan struct{}
 	clock        Clock
-	slots        map[domain.SlotID]domain.Slot
+	slots        map[domain.SlotRef]domain.Slot
 	reservations map[domain.ReservationID]domain.Reservation
 	bookings     map[domain.BookingID]domain.Booking
 	bookingByRes map[domain.ReservationID]domain.BookingID
@@ -81,7 +81,7 @@ func New(clock Clock) *Store {
 	return &Store{
 		sem:          make(chan struct{}, 1),
 		clock:        clock,
-		slots:        make(map[domain.SlotID]domain.Slot),
+		slots:        make(map[domain.SlotRef]domain.Slot),
 		reservations: make(map[domain.ReservationID]domain.Reservation),
 		bookings:     make(map[domain.BookingID]domain.Booking),
 		bookingByRes: make(map[domain.ReservationID]domain.BookingID),
@@ -110,7 +110,7 @@ func (s *Store) Claims() []domain.ScheduleClaim {
 func (s *Store) SeedSlot(slot domain.Slot) {
 	s.lock()
 	defer s.unlock()
-	s.slots[slot.ID] = slot
+	s.slots[slot.Ref()] = slot
 }
 
 // SlotCounts reports the slot's held reservations and active bookings by direct
@@ -119,16 +119,16 @@ func (s *Store) SeedSlot(slot domain.Slot) {
 // (measurement-contract §9, scaled to the reference store). It does not settle
 // elapsed holds, so callers that need settled counts must reconcile at a time before
 // any hold elapses.
-func (s *Store) SlotCounts(slotID domain.SlotID) (held, activeBookings int) {
+func (s *Store) SlotCounts(ref domain.SlotRef) (held, activeBookings int) {
 	s.lock()
 	defer s.unlock()
 	for _, r := range s.reservations {
-		if r.SlotID == slotID && r.State == domain.ReservationHeld {
+		if r.SlotRef == ref && r.State == domain.ReservationHeld {
 			held++
 		}
 	}
 	for _, b := range s.bookings {
-		if b.SlotID == slotID && b.State == domain.BookingActive {
+		if b.SlotRef == ref && b.State == domain.BookingActive {
 			activeBookings++
 		}
 	}
@@ -196,8 +196,8 @@ func (t *tx) establish() time.Time {
 	return t.now
 }
 
-func (t *tx) LockSlot(_ context.Context, id domain.SlotID) (domain.Slot, error) {
-	slot, ok := t.store.slots[id]
+func (t *tx) LockSlot(_ context.Context, ref domain.SlotRef) (domain.Slot, error) {
+	slot, ok := t.store.slots[ref]
 	if !ok {
 		// No timestamp is established on the not-found path: the caller is heading for
 		// the unknown-target refusal and must say so explicitly via
@@ -219,12 +219,12 @@ func (t *tx) ResolveTimeWithoutSlot(_ context.Context) (time.Time, error) {
 	return t.establish(), nil
 }
 
-func (t *tx) SlotIDForReservation(_ context.Context, id domain.ReservationID) (domain.SlotID, error) {
+func (t *tx) SlotRefForReservation(_ context.Context, id domain.ReservationID) (domain.SlotRef, error) {
 	r, ok := t.store.reservations[id]
 	if !ok {
-		return "", domain.ErrNotFound
+		return domain.SlotRef{}, domain.ErrNotFound
 	}
-	return r.SlotID, nil
+	return r.SlotRef, nil
 }
 
 func (t *tx) Reservation(_ context.Context, id domain.ReservationID) (domain.Reservation, error) {
@@ -235,20 +235,20 @@ func (t *tx) Reservation(_ context.Context, id domain.ReservationID) (domain.Res
 	return r, nil
 }
 
-func (t *tx) HeldReservations(_ context.Context, slotID domain.SlotID) ([]domain.Reservation, error) {
+func (t *tx) HeldReservations(_ context.Context, ref domain.SlotRef) ([]domain.Reservation, error) {
 	var held []domain.Reservation
 	for _, r := range t.store.reservations {
-		if r.SlotID == slotID && r.State == domain.ReservationHeld {
+		if r.SlotRef == ref && r.State == domain.ReservationHeld {
 			held = append(held, r)
 		}
 	}
 	return held, nil
 }
 
-func (t *tx) ActiveBookingCount(_ context.Context, slotID domain.SlotID) (int, error) {
+func (t *tx) ActiveBookingCount(_ context.Context, ref domain.SlotRef) (int, error) {
 	count := 0
 	for _, b := range t.store.bookings {
-		if b.SlotID == slotID && b.State == domain.BookingActive {
+		if b.SlotRef == ref && b.State == domain.BookingActive {
 			count++
 		}
 	}

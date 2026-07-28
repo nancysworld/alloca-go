@@ -34,8 +34,13 @@ CREATE TABLE user_time_claims (
     -- organisations, which is the only case the slot lock does not already cover.
     organisation_id text        NOT NULL,
     user_id         text        NOT NULL,
-    -- Grouping/telemetry and settlement only: never part of the conflict key.
-    slot_id         text        NOT NULL REFERENCES slots (slot_id),
+    -- Grouping/telemetry and settlement only: never part of the conflict key. The
+    -- slot's identity is the pair (organisation_id, slot_id) (§1.2), and its
+    -- organisation is the slot's owner — not the identity's above, which is why this is
+    -- a separate column rather than a reuse of organisation_id.
+    slot_organisation_id text   NOT NULL,
+    slot_id         text        NOT NULL,
+    FOREIGN KEY (slot_organisation_id, slot_id) REFERENCES slots (organisation_id, slot_id),
     -- Half-open [starts_at, ends_at): adjacent bookings do not overlap.
     claim_range     tstzrange   NOT NULL,
     -- The backing hold's expiry; NULL once confirmed, which is what makes a confirmed

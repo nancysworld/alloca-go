@@ -19,7 +19,11 @@ package domain
 // hash is computed against (transaction-semantics §5.1). Bumping it means a stored
 // request hash from an older contract will not match a new one, which is the
 // intended behaviour when the semantically significant request shape changes.
-const ContractVersion = "v1"
+// v2 (2026-07-28): a slot is identified by the pair (organisation_id, slot_id) rather
+// than by slot_id alone, so reserve carries the slot's owning organisation and the
+// request hash covers both halves. A v1 hash for the same logical request will not
+// match a v2 one — which is the point: under v1 the target was ambiguous.
+const ContractVersion = "v2"
 
 // Identity dimensions and entity identifiers. They are distinct string types so the
 // compiler rejects passing, say, a UserID where a SlotID is expected.
@@ -36,7 +40,10 @@ type (
 	// dimension for later milestones.
 	UserID string
 
-	// SlotID identifies a slot (the aggregate root).
+	// SlotID identifies a slot *within its owning organisation*. It is not globally
+	// unique on its own: a slot's identity is the SlotRef pair
+	// (OrganisationID, SlotID). Reservation and booking identifiers, by contrast, are
+	// server-assigned and global.
 	SlotID string
 	// ReservationID identifies a reservation.
 	ReservationID string

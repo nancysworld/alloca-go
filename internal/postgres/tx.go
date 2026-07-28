@@ -27,7 +27,7 @@ type tx struct {
 
 // slotColumns is the projection shared by every slot read, kept in one place so the
 // lock query and any later reader cannot drift apart in column order.
-const slotColumns = `slot_id, organisation_id, resource_id, capacity, release_at, starts_at, ends_at`
+const slotColumns = `slot_id, slot_organisation_id, resource_id, capacity, release_at, starts_at, ends_at`
 
 // LockSlot takes the slot's row lock and establishes the attempt's authoritative
 // timestamp from the instant *after* that lock is granted.
@@ -46,7 +46,7 @@ func (t *tx) LockSlot(ctx context.Context, ref domain.SlotRef) (domain.Slot, err
 	batch := &pgx.Batch{}
 	// Both halves of the slot's identity (§1.2): slot_id alone is unique only within an
 	// organisation, so locking by it could resolve to another organisation's slot.
-	batch.Queue(`SELECT `+slotColumns+` FROM slots WHERE organisation_id = $1 AND slot_id = $2 FOR UPDATE`,
+	batch.Queue(`SELECT `+slotColumns+` FROM slots WHERE slot_organisation_id = $1 AND slot_id = $2 FOR UPDATE`,
 		string(ref.OrganisationID), string(ref.SlotID))
 	batch.Queue(`SELECT clock_timestamp()`)
 
@@ -122,8 +122,8 @@ func (t *tx) SlotRefForReservation(ctx context.Context, id domain.ReservationID)
 
 func (t *tx) Reservation(ctx context.Context, id domain.ReservationID) (domain.Reservation, error) {
 	row := t.conn.QueryRow(ctx, `
-		SELECT reservation_id, slot_organisation_id, slot_id, organisation_id, user_id,
-		       state, created_at, expires_at
+		SELECT reservation_id, slot_organisation_id, slot_id, user_organisation_id,
+		       user_id, state, created_at, expires_at
 		FROM reservations WHERE reservation_id = $1`, string(id))
 	res, err := scanReservation(row)
 	if err != nil {
@@ -137,8 +137,8 @@ func (t *tx) Reservation(ctx context.Context, id domain.ReservationID) (domain.R
 // by a concurrent transaction before it is used.
 func (t *tx) HeldReservations(ctx context.Context, ref domain.SlotRef) ([]domain.Reservation, error) {
 	rows, err := t.conn.Query(ctx, `
-		SELECT reservation_id, slot_organisation_id, slot_id, organisation_id, user_id,
-		       state, created_at, expires_at
+		SELECT reservation_id, slot_organisation_id, slot_id, user_organisation_id,
+		       user_id, state, created_at, expires_at
 		FROM reservations
 		WHERE slot_organisation_id = $1 AND slot_id = $2 AND state = 'held'`,
 		string(ref.OrganisationID), string(ref.SlotID))
@@ -175,12 +175,12 @@ func (t *tx) ActiveBookingCount(ctx context.Context, ref domain.SlotRef) (int, e
 
 func (t *tx) BookingForReservation(ctx context.Context, id domain.ReservationID) (domain.Booking, error) {
 	row := t.conn.QueryRow(ctx, `
-		SELECT booking_id, reservation_id, slot_organisation_id, slot_id, organisation_id,
-		       user_id, state, created_at
+		SELECT booking_id, reservation_id, slot_organisation_id, slot_id,
+		       user_organisation_id, user_id, state, created_at
 		FROM bookings WHERE reservation_id = $1`, string(id))
 	var b domain.Booking
 	err := row.Scan(&b.ID, &b.ReservationID, &b.SlotRef.OrganisationID, &b.SlotRef.SlotID,
-		&b.OrganisationID, &b.UserID, &b.State, &b.CreatedAt)
+		&b.UserRef.OrganisationID, &b.UserRef.UserID, &b.State, &b.CreatedAt)
 	if err != nil {
 		return domain.Booking{}, mapError(ctx, err)
 	}
@@ -194,13 +194,14 @@ func (t *tx) BookingForReservation(ctx context.Context, id domain.ReservationID)
 func (t *tx) PutReservation(ctx context.Context, r domain.Reservation) error {
 	_, err := t.conn.Exec(ctx, `
 		INSERT INTO reservations
-			(reservation_id, slot_organisation_id, slot_id, organisation_id, user_id,
+			(reservation_id, slot_organisation_id, slot_id, user_organisation_id, user_id,
 			 state, created_at, expires_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (reservation_id) DO UPDATE
 			SET state = EXCLUDED.state, expires_at = EXCLUDED.expires_at`,
 		string(r.ID), string(r.SlotRef.OrganisationID), string(r.SlotRef.SlotID),
-		string(r.OrganisationID), string(r.UserID), string(r.State), r.CreatedAt, r.ExpiresAt)
+		string(r.UserRef.OrganisationID), string(r.UserRef.UserID), string(r.State),
+		r.CreatedAt, r.ExpiresAt)
 	if err != nil {
 		return mapError(ctx, err)
 	}
@@ -210,13 +211,13 @@ func (t *tx) PutReservation(ctx context.Context, r domain.Reservation) error {
 func (t *tx) PutBooking(ctx context.Context, b domain.Booking) error {
 	_, err := t.conn.Exec(ctx, `
 		INSERT INTO bookings
-			(booking_id, reservation_id, slot_organisation_id, slot_id, organisation_id,
-			 user_id, state, created_at)
+			(booking_id, reservation_id, slot_organisation_id, slot_id,
+			 user_organisation_id, user_id, state, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (booking_id) DO UPDATE
 			SET state = EXCLUDED.state`,
 		string(b.ID), string(b.ReservationID), string(b.SlotRef.OrganisationID),
-		string(b.SlotRef.SlotID), string(b.OrganisationID), string(b.UserID),
+		string(b.SlotRef.SlotID), string(b.UserRef.OrganisationID), string(b.UserRef.UserID),
 		string(b.State), b.CreatedAt)
 	if err != nil {
 		return mapError(ctx, err)
@@ -244,10 +245,10 @@ func (t *tx) InsertClaim(ctx context.Context, c domain.ScheduleClaim) error {
 	}
 	_, err = sp.Exec(ctx, `
 		INSERT INTO user_time_claims
-			(reservation_id, organisation_id, user_id, slot_organisation_id, slot_id,
+			(reservation_id, user_organisation_id, user_id, slot_organisation_id, slot_id,
 			 claim_range, expires_at)
 		VALUES ($1, $2, $3, $4, $5, tstzrange($6, $7, '[)'), $8)`,
-		string(c.ReservationID), string(c.OrganisationID), string(c.UserID),
+		string(c.ReservationID), string(c.UserRef.OrganisationID), string(c.UserRef.UserID),
 		string(c.SlotRef.OrganisationID), string(c.SlotRef.SlotID),
 		c.StartsAt, c.EndsAt, c.ExpiresAt)
 	if err != nil {
@@ -295,18 +296,18 @@ func (t *tx) DeleteClaim(ctx context.Context, id domain.ReservationID) error {
 	return nil
 }
 
-// SettleClaims deletes the identity's elapsed claims. The boundary is expires_at <= now,
+// SettleClaims deletes the user's elapsed claims. The boundary is expires_at <= now,
 // matching Reservation.Elapsed, and now is the attempt's authoritative PostgreSQL
 // timestamp — never an API host clock, which must not decide whether a claim is live.
 //
 // Confirmed claims have expires_at IS NULL and are excluded by the predicate rather than
 // by a state check, so a permanent claim cannot be settled away by a boundary mistake.
-func (t *tx) SettleClaims(ctx context.Context, org domain.OrganisationID, user domain.UserID, now time.Time) error {
+func (t *tx) SettleClaims(ctx context.Context, user domain.UserRef, now time.Time) error {
 	_, err := t.conn.Exec(ctx, `
 		DELETE FROM user_time_claims
-		WHERE organisation_id = $1 AND user_id = $2
+		WHERE user_organisation_id = $1 AND user_id = $2
 		  AND expires_at IS NOT NULL AND expires_at <= $3`,
-		string(org), string(user), now)
+		string(user.OrganisationID), string(user.UserID), now)
 	if err != nil {
 		return mapError(ctx, err)
 	}
@@ -323,17 +324,18 @@ func isExclusionViolation(err error) bool {
 
 func (t *tx) FindRecord(ctx context.Context, key domain.ScopeKey) (domain.IdempotencyRecord, error) {
 	row := t.conn.QueryRow(ctx, `
-		SELECT organisation_id, user_id, operation, key, request_hash, outcome, reason,
+		SELECT user_organisation_id, user_id, operation, key, request_hash, outcome, reason,
 		       reservation_id, booking_id, created_at
 		FROM idempotency_records
-		WHERE organisation_id = $1 AND user_id = $2 AND operation = $3 AND key = $4`,
-		string(key.OrganisationID), string(key.UserID), string(key.Operation), key.Key)
+		WHERE user_organisation_id = $1 AND user_id = $2 AND operation = $3 AND key = $4`,
+		string(key.UserRef.OrganisationID), string(key.UserRef.UserID),
+		string(key.Operation), key.Key)
 
 	var rec domain.IdempotencyRecord
 	// result_ref is nullable — a refusal creates no entity — so these scan through
 	// pointers and stay empty when NULL.
 	var resID, bkID *string
-	err := row.Scan(&rec.OrganisationID, &rec.UserID, &rec.Operation, &rec.Key,
+	err := row.Scan(&rec.UserRef.OrganisationID, &rec.UserRef.UserID, &rec.Operation, &rec.Key,
 		&rec.RequestHash, &rec.Outcome, &rec.Reason, &resID, &bkID, &rec.CreatedAt)
 	if err != nil {
 		return domain.IdempotencyRecord{}, mapError(ctx, err)
@@ -355,10 +357,10 @@ func (t *tx) FindRecord(ctx context.Context, key domain.ScopeKey) (domain.Idempo
 func (t *tx) InsertRecord(ctx context.Context, rec domain.IdempotencyRecord) error {
 	_, err := t.conn.Exec(ctx, `
 		INSERT INTO idempotency_records
-			(organisation_id, user_id, operation, key, request_hash, outcome, reason,
+			(user_organisation_id, user_id, operation, key, request_hash, outcome, reason,
 			 reservation_id, booking_id, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		string(rec.OrganisationID), string(rec.UserID), string(rec.Operation), rec.Key,
+		string(rec.UserRef.OrganisationID), string(rec.UserRef.UserID), string(rec.Operation), rec.Key,
 		rec.RequestHash, string(rec.Outcome), string(rec.Reason),
 		nullableID(string(rec.ReservationID)), nullableID(string(rec.BookingID)), rec.CreatedAt)
 	if err != nil {
@@ -409,8 +411,8 @@ func scanSlot(row rowScanner) (domain.Slot, error) {
 
 func scanReservation(row rowScanner) (domain.Reservation, error) {
 	var r domain.Reservation
-	err := row.Scan(&r.ID, &r.SlotRef.OrganisationID, &r.SlotRef.SlotID, &r.OrganisationID,
-		&r.UserID, &r.State, &r.CreatedAt, &r.ExpiresAt)
+	err := row.Scan(&r.ID, &r.SlotRef.OrganisationID, &r.SlotRef.SlotID,
+		&r.UserRef.OrganisationID, &r.UserRef.UserID, &r.State, &r.CreatedAt, &r.ExpiresAt)
 	if err != nil {
 		return domain.Reservation{}, err
 	}

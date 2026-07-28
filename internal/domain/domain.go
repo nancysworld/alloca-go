@@ -19,7 +19,7 @@ package domain
 // hash is computed against (transaction-semantics §5.1). Bumping it means a stored
 // request hash from an older contract will not match a new one, which is the
 // intended behaviour when the semantically significant request shape changes.
-// v2 (2026-07-28): a slot is identified by the pair (organisation_id, slot_id) rather
+// v2 (2026-07-28): a slot is identified by the pair (slot_organisation_id, slot_id) rather
 // than by slot_id alone, so reserve carries the slot's owning organisation and the
 // request hash covers both halves. A v1 hash for the same logical request will not
 // match a v2 one — which is the point: under v1 the target was ambiguous.
@@ -28,16 +28,18 @@ const ContractVersion = "v2"
 // Identity dimensions and entity identifiers. They are distinct string types so the
 // compiler rejects passing, say, a UserID where a SlotID is expected.
 type (
-	// OrganisationID is the coarse authority / routing dimension (AG-M5) and part of
-	// the idempotency scope. It means two different things and they must not be
-	// conflated (transaction-semantics §1.1): on a Slot it is the organisation that
-	// owns the slot; on a Reservation, Booking, or ScheduleClaim it is the
-	// organisation the caller's identity is issued under, never the target slot's.
-	// The pair (OrganisationID, UserID) is therefore the identity, and it is globally
-	// unique without UserID having to be.
+	// OrganisationID is the coarse authority / routing dimension (AG-M5). It appears in
+	// two different roles that must not be conflated (transaction-semantics §1.1): a
+	// UserRef's is where a user's identity is issued; a SlotRef's is who owns the slot.
+	// Neither is derivable from the other, so every stored column names its role —
+	// user_organisation_id or slot_organisation_id — and this type is never used bare
+	// where both are in scope.
 	OrganisationID string
-	// UserID is the booking participant; it scopes idempotency and is a fairness
-	// dimension for later milestones.
+	// UserID identifies whoever or whatever the booked time belongs to, within its
+	// organisation. It need not be a person: a pet whose grooming slot is reserved, or
+	// a child booked in by a parent, is the user, because it is their time the slot
+	// consumes. The account that arranges or pays for a booking is a separate concern
+	// AG-M1 does not model. It scopes idempotency and is a fairness dimension later.
 	UserID string
 
 	// SlotID identifies a slot *within its owning organisation*. It is not globally
@@ -61,3 +63,20 @@ const (
 	OpConfirm Operation = "confirm"
 	OpCancel  Operation = "cancel"
 )
+
+// UserRef identifies a user: the pair (user_organisation_id, user_id), scoped to the
+// organisation the user's identity is issued under (transaction-semantics §1.1).
+//
+// It is the twin of SlotRef, and the pairing is the same idea both times — an identity
+// is a pair scoped to an organisation — but the organisations are different dimensions.
+// A user's is where their identity is issued; a slot's is who owns the slot. They differ
+// whenever a user books into another organisation, which is exactly the case the user
+// schedule invariant exists to protect, so the two are never interchangeable. Every
+// column that stores one says which it is: user_organisation_id or slot_organisation_id.
+//
+// The pair is globally unique without user_id having to be, which is why the schedule
+// invariant needs no separate global identifier.
+type UserRef struct {
+	OrganisationID OrganisationID
+	UserID         UserID
+}

@@ -7,7 +7,7 @@ import (
 )
 
 func hash(op domain.Operation, org domain.OrganisationID, user domain.UserID, target string, body []byte) string {
-	return RequestHash(domain.ContractVersion, op, org, user, target, body)
+	return RequestHash(domain.ContractVersion, op, domain.UserRef{OrganisationID: org, UserID: user}, target, body)
 }
 
 func TestRequestHashDeterministic(t *testing.T) {
@@ -52,8 +52,8 @@ func TestResolve(t *testing.T) {
 }
 
 func TestScopeExcludesTarget(t *testing.T) {
-	got := Scope("org-1", "user-1", domain.OpReserve, "key-1")
-	want := domain.ScopeKey{OrganisationID: "org-1", UserID: "user-1", Operation: domain.OpReserve, Key: "key-1"}
+	got := Scope(domain.UserRef{OrganisationID: "org-1", UserID: "user-1"}, domain.OpReserve, "key-1")
+	want := domain.ScopeKey{UserRef: domain.UserRef{OrganisationID: "org-1", UserID: "user-1"}, Operation: domain.OpReserve, Key: "key-1"}
 	if got != want {
 		t.Errorf("Scope = %+v, want %+v", got, want)
 	}

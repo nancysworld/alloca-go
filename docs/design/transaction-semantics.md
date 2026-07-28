@@ -36,39 +36,42 @@ and are deliberately absent here.
 
 | Entity | Role | Identity |
 |---|---|---|
-| **Slot** | The scarce resource and its **write authority** (the aggregate root). A time-windowed unit with a capacity. | `(organisation_id, slot_id)` — §1.2 |
+| **Slot** | The scarce resource and its **write authority** (the aggregate root). A time-windowed unit with a capacity. | `(slot_organisation_id, slot_id)` — §1.2 |
 | **Reservation** | A temporary, expiring hold on one unit of a slot. | server-assigned `reservation_id` |
 | **Booking** | The durable confirmed commitment created when a reservation is confirmed. | server-assigned `booking_id` |
 | **Idempotency record** | A durable record of one logical mutation request and its recorded outcome (§5). | scoped key (§5.1) |
 
 ### 1.1 Identity dimensions
 
-Every entity and mutation carries two identity dimensions:
+**Every identity in this schema is a pair scoped to an organisation, and the two pairs
+use different organisations (normative):**
 
-- **`organisation_id`** — the coarse authority / routing dimension. AG-M1 does not
-  route on it, but it is the key AG-M5 uses to scale independent organisations, and it
-  scopes idempotency (§5.1). Modelling it now avoids a later repaint.
-- **`user_id`** — the booking participant. It scopes idempotency and is a fairness
-  dimension for later milestones.
+```text
+(user_organisation_id, user_id)   the user  — where the user's identity is issued
+(slot_organisation_id, slot_id)   the slot  — who owns the slot
+```
 
-**`organisation_id` means two different things and they must not be conflated
-(normative):**
+Neither organisation is derivable from the other, so **every stored column names its
+role**: `user_organisation_id` or `slot_organisation_id`, never a bare
+`organisation_id`. A `reservations` row carries both, and they differ whenever a user
+books into another organisation. Conflating them is the mistake that silently stops
+protecting a user who books across organisations (§2.2), so the naming is chosen to make
+it unreadable rather than merely wrong.
 
-- on a **slot**, it is the organisation that *owns the slot*;
-- on a **reservation, booking, or schedule claim**, it is the organisation under which
-  the *caller's identity is issued and scoped*. It is never derived from the target
-  slot.
+`organisation_id` remains the coarse authority / routing dimension. AG-M1 does not route
+on it, but it is the key AG-M5 uses to scale independent organisations, and the user half
+of it scopes idempotency (§5.1).
 
-The pair `(organisation_id, user_id)` is therefore the identity, and it is globally
-unique without requiring `user_id` to be. A command issued for `(org_a, user_1)`
-against a slot owned by `org_b` is legitimate: the entities it writes carry `org_a`,
-not `org_b`. `(org_a, user_1)` and `(org_b, user_1)` are **distinct identities** with
-independent idempotency scopes and independent schedules.
+The user pair is globally unique without requiring `user_id` to be. A command issued for
+`(org_a, user_1)` against a slot owned by `org_b` is legitimate: the entities it writes
+carry `org_a` as `user_organisation_id` and `org_b` as `slot_organisation_id`.
+`(org_a, user_1)` and `(org_b, user_1)` are **distinct users** with independent
+idempotency scopes and independent schedules.
 
-`Service.Reserve` therefore writes the reservation's `OrganisationID` from the command,
-never from the slot it locked. The user schedule invariant (§2.2) depends on it: keying
-a claim by the slot's organisation instead of the caller's would silently stop
-protecting a user who books across organisations.
+`Service.Reserve` therefore writes the reservation's `user_organisation_id` from the
+command, never from the slot it locked. The user schedule invariant (§2.2) depends on
+it: keying a claim by the slot's organisation would silently stop protecting a user who
+books across organisations.
 
 AG-M1 introduces **no authentication**: identity values are supplied by the caller
 (and by the load system in AG-M2). They exist for correct idempotency scoping and for
@@ -89,9 +92,9 @@ independent schedules.
 
 ### 1.2 Slot
 
-`{ slot_id, organisation_id, resource_id, capacity, release_at, starts_at, ends_at }`.
+`{ slot_organisation_id, slot_id, resource_id, capacity, release_at, starts_at, ends_at }`.
 
-**A slot's identity is the pair `(organisation_id, slot_id)` (normative).** Slot
+**A slot's identity is the pair `(slot_organisation_id, slot_id)` (normative).** Slot
 identifiers are unique *within* the organisation that owns the slot; nothing makes them
 unique across organisations, so `slot_id` alone does not identify a slot.
 
@@ -101,12 +104,10 @@ organisations minted the same identifier — either serialize two unrelated slot
 each other or take the lock on the wrong organisation's slot and mutate its capacity.
 Every read, lock, and foreign key therefore carries both halves.
 
-The `organisation_id` here is the slot's **owner**, and it is a different dimension from
-the caller-identity `organisation_id` on a reservation, booking, or claim (§1.1). They
-differ whenever an identity books into another organisation, so `reservations`,
-`bookings`, and `user_time_claims` carry `slot_organisation_id` as a column distinct from
-their own `organisation_id`. Collapsing the two would make a cross-organisation booking
-unrepresentable.
+`slot_organisation_id` is the slot's **owner** — a different dimension from the
+`user_organisation_id` on a reservation, booking, or claim (§1.1). They differ whenever a
+user books into another organisation, which is why those tables carry both columns.
+Collapsing them would make a cross-organisation booking unrepresentable.
 
 Reservation and booking identifiers are, by contrast, server-assigned and globally
 unique, so they are single-column keys.
@@ -128,9 +129,8 @@ unique, so they are single-column keys.
 
 ### 1.3 Reservation
 
-`{ reservation_id, slot_organisation_id, slot_id, organisation_id, user_id, state,
-created_at, expires_at }`, where `(slot_organisation_id, slot_id)` is the slot it holds
-(§1.2) and `organisation_id` is the caller identity's (§1.1).
+`{ reservation_id, slot_organisation_id, slot_id, user_organisation_id, user_id, state,
+created_at, expires_at }` — the slot it holds (§1.2) and whose time is held (§1.1).
 State machine in §3. Exactly one unit. A held reservation is valid only when
 
 ```text
@@ -141,8 +141,8 @@ so a hold is never created already-expired and never outlives the slot start (§
 
 ### 1.4 Booking
 
-`{ booking_id, reservation_id, slot_organisation_id, slot_id, organisation_id, user_id,
-state, created_at }`, with the same two-organisation split as §1.3.
+`{ booking_id, reservation_id, slot_organisation_id, slot_id, user_organisation_id,
+user_id, state, created_at }`, with the same two-organisation split as §1.3.
 Created **only** by confirming a held reservation.
 
 ### 1.5 Authoritative service time (normative)
@@ -249,7 +249,7 @@ lock on the slot**:
 ```text
 BEGIN
   SELECT ... FROM slots
-   WHERE organisation_id = $1 AND slot_id = $2 FOR UPDATE   -- the per-slot mutex
+   WHERE slot_organisation_id = $1 AND slot_id = $2 FOR UPDATE   -- the per-slot mutex
   -- settle elapsed holds (§2.1), evaluate preconditions, mutate
 COMMIT
 ```
@@ -263,10 +263,10 @@ COMMIT
   optimisation only; PostgreSQL remains the cross-node authority
   ([`system-context.md`](system-context.md) §3).
 - Every operation that resolves a `reservation_id`/`booking_id` first resolves its
-  **`(organisation_id, slot_id)` pair** and locks **that** slot, so duplicates and races
-  on the same logical target always converge on the same lock. Resolving only the
-  identifier would not name a slot (§1.2), and the reservation's own `organisation_id`
-  cannot supply the other half — it is the caller identity's, not the slot's.
+  **`(slot_organisation_id, slot_id)` pair** and locks **that** slot, so duplicates and
+  races on the same logical target always converge on the same lock. Resolving only the
+  identifier would not name a slot (§1.2), and the row's `user_organisation_id` cannot
+  supply the other half — it is the user's, not the slot's.
 
 ### 2.1 Expiry settlement (normative)
 
@@ -304,7 +304,7 @@ overlapping slots: those transactions lock **different** slot rows and never con
 [`../design-notes/user-schedule-non-overlap.md`](../design-notes/user-schedule-non-overlap.md)).
 A second authority is therefore required:
 
-> For one identity `(organisation_id, user_id)`, no two active booking claims may
+> For one user `(user_organisation_id, user_id)`, no two active booking claims may
 > overlap in time.
 
 Intervals are **half-open**, `[starts_at, ends_at)`, so `10:00–11:00` and `11:00–12:00`
@@ -312,13 +312,13 @@ are adjacent, not overlapping.
 
 **Authority.** Active claims live in their own relation, `user_time_claims`, one row per
 logical claim, keyed by `reservation_id`. Non-overlap is enforced by a PostgreSQL
-exclusion constraint over `(organisation_id =, user_id =, claim_range &&)`, which
+exclusion constraint over `(user_organisation_id =, user_id =, claim_range &&)`, which
 requires the `btree_gist` extension. The constraint is the correctness mechanism: a
 service-level pre-check may produce a clearer message but can always lose to a
 concurrent commit.
 
-`organisation_id` on a claim is the **caller identity's** organisation (§1.1), never the
-slot's, so an identity is protected across every organisation it books into.
+A claim's `user_organisation_id` is the **user's** (§1.1), never the slot's, so a user is
+protected across every organisation they book into.
 
 **Lifecycle.** One claim exists per logical booking, from hold through confirmation:
 
@@ -338,7 +338,7 @@ preconditions, `reserve` settles the *requesting identity's* elapsed claims:
 
 ```sql
 DELETE FROM user_time_claims
- WHERE organisation_id = $1 AND user_id = $2
+ WHERE user_organisation_id = $1 AND user_id = $2
    AND expires_at IS NOT NULL AND expires_at <= $3   -- authoritative tx time
 ```
 
@@ -488,13 +488,13 @@ or one caller could replay another's result. The scope, and the database unique
 constraint, is:
 
 ```text
-(organisation_id, user_id, operation, idempotency_key)
+(user_organisation_id, user_id, operation, idempotency_key)
 ```
 
 The record holds:
 
 ```text
-{ organisation_id, user_id, operation, idempotency_key,
+{ user_organisation_id, user_id, operation, idempotency_key,
   request_hash, terminal_outcome, result_ref, created_at }
 ```
 
@@ -503,7 +503,7 @@ The record holds:
   field. Its concrete meaning depends on the operation:
 
   ```text
-  reserve  → target_id = (organisation_id, slot_id) of the slot, encoded unambiguously
+  reserve  → target_id = (slot_organisation_id, slot_id), encoded unambiguously
   confirm  → target_id = reservation_id
   cancel   → target_id = reservation_id
   ```
@@ -511,7 +511,7 @@ The record holds:
   The same entity is what an operation resolves and locks (§2), and whose absence
   yields the `unknown_target` refusal (§4, §5.5).
 - **`request_hash`** is a hash over a canonical representation of the semantically
-  significant request fields — `contract_version, operation, organisation_id, user_id,
+  significant request fields — `contract_version, operation, user_organisation_id, user_id,
   target_id, body` — with stable key ordering and separators. It detects a key reused
   for a *different* request. For reserve, `target_id` must encode **both** halves of the
   slot's identity unambiguously (length-prefixed, not delimiter-joined: organisation and
@@ -556,7 +556,7 @@ Within the operation's transaction:
    record with the resulting terminal outcome, and commit.
 
 Two concurrency cases must be distinguished, because the scoped key
-`(organisation_id, user_id, operation, idempotency_key)` does **not** include the
+`(user_organisation_id, user_id, operation, idempotency_key)` does **not** include the
 target — `target_id` lives only in `request_hash` (§5.1):
 
 - **Same scoped key, same request** (same target ⇒ same `request_hash`) — the ordinary
@@ -713,7 +713,7 @@ against the in-memory repository with a controllable `Clock`.
   expiry queue / time-buckets, materialised counters + reconciliation ledger — AG-M2+.
 - Denormalised capacity counters (only with a reconciliation check and evidence) —
   AG-M2+.
-- Organisation-level routing and fairness that *use* `organisation_id`/`user_id` — AG-M5.
+- Organisation-level routing and fairness that *use* the organisation dimension — AG-M5.
 - Administrative early-close / cancellation of a slot; late no-show transitions — later.
 - Reservation **quantities** and conserved **balances** — AG-M6.
 

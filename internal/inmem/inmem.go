@@ -274,10 +274,10 @@ func (t *tx) PutBooking(_ context.Context, b domain.Booking) error {
 	return nil
 }
 
-// InsertClaim inserts a claim unless it overlaps an existing claim of the same identity.
+// InsertClaim inserts a claim unless it overlaps an existing claim of the same user.
 //
 // The scan is the reference statement of the rule the PostgreSQL exclusion constraint
-// enforces: same identity, overlapping half-open intervals. Note what it deliberately
+// enforces: same user, overlapping half-open intervals. Note what it deliberately
 // does *not* consider — whether the existing claim has elapsed. The constraint cannot
 // know: its index predicate would have to depend on the wall clock, which PostgreSQL
 // does not allow. Any stored row conflicts, elapsed or not.
@@ -291,7 +291,7 @@ func (t *tx) InsertClaim(_ context.Context, c domain.ScheduleClaim) error {
 		if existing.ReservationID == c.ReservationID {
 			continue
 		}
-		if existing.SameIdentity(c) && existing.Overlaps(c) {
+		if existing.SameUser(c) && existing.Overlaps(c) {
 			return domain.ErrScheduleConflict
 		}
 	}
@@ -316,9 +316,9 @@ func (t *tx) DeleteClaim(_ context.Context, id domain.ReservationID) error {
 	return nil
 }
 
-func (t *tx) SettleClaims(_ context.Context, org domain.OrganisationID, user domain.UserID, now time.Time) error {
+func (t *tx) SettleClaims(_ context.Context, user domain.UserRef, now time.Time) error {
 	for id, c := range t.store.claims {
-		if c.OrganisationID == org && c.UserID == user && c.Elapsed(now) {
+		if c.UserRef == user && c.Elapsed(now) {
 			delete(t.store.claims, id)
 		}
 	}

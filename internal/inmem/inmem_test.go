@@ -10,7 +10,7 @@ import (
 )
 
 // testSlotOrg owns every slot these tests seed. A slot's identity is the pair
-// (organisation_id, slot_id) (domain.SlotRef), so seeding with an empty organisation
+// (slot_organisation_id, slot_id) (domain.SlotRef), so seeding with an empty organisation
 // would let the double's map lookups pass without ever exercising the pair.
 const testSlotOrg = domain.OrganisationID("org-1")
 
@@ -107,7 +107,7 @@ func TestNotFoundErrors(t *testing.T) {
 func TestInsertRecordConflict(t *testing.T) {
 	s := New(SystemClock{})
 	ctx := context.Background()
-	rec := domain.IdempotencyRecord{OrganisationID: "org-1", UserID: "user-1", Operation: domain.OpReserve, Key: "k", RequestHash: "h"}
+	rec := domain.IdempotencyRecord{UserRef: domain.UserRef{OrganisationID: "org-1", UserID: "user-1"}, Operation: domain.OpReserve, Key: "k", RequestHash: "h"}
 	_ = s.WithinTx(ctx, func(ctx context.Context, tx domain.Tx) error {
 		if err := tx.InsertRecord(ctx, rec); err != nil {
 			t.Fatalf("first insert: %v", err)

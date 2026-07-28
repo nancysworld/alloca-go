@@ -18,10 +18,9 @@ import (
 func (r *Repo) SeedSlot(ctx context.Context, slot domain.Slot) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO slots
-			(slot_id, organisation_id, resource_id, capacity, release_at, starts_at, ends_at)
+			(slot_id, slot_organisation_id, resource_id, capacity, release_at, starts_at, ends_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT (organisation_id, slot_id) DO UPDATE SET
-			organisation_id = EXCLUDED.organisation_id,
+		ON CONFLICT (slot_organisation_id, slot_id) DO UPDATE SET
 			resource_id     = EXCLUDED.resource_id,
 			capacity        = EXCLUDED.capacity,
 			release_at      = EXCLUDED.release_at,
@@ -87,10 +86,10 @@ func (r *Repo) ReservationStates(ctx context.Context, ref domain.SlotRef) (map[d
 }
 
 // OverlappingClaims counts the pairs of persisted claims that violate the user schedule
-// non-overlap invariant (transaction-semantics §2.2): same identity, overlapping
+// non-overlap invariant (transaction-semantics §2.2): same user, overlapping
 // intervals. It is the direct expression of the decisive assertion —
 //
-//	at every committed state, for any identity and instant, at most one active claim
+//	at every committed state, for any user and instant, at most one active claim
 //	contains that instant
 //
 // — evaluated against stored rows rather than against what the service reported, so an
@@ -102,10 +101,10 @@ func (r *Repo) OverlappingClaims(ctx context.Context) (int, error) {
 		SELECT count(*)
 		FROM user_time_claims a
 		JOIN user_time_claims b
-		  ON a.organisation_id = b.organisation_id
-		 AND a.user_id         = b.user_id
-		 AND a.reservation_id  < b.reservation_id
-		 AND a.claim_range     && b.claim_range`).Scan(&count)
+		  ON a.user_organisation_id = b.user_organisation_id
+		 AND a.user_id              = b.user_id
+		 AND a.reservation_id       < b.reservation_id
+		 AND a.claim_range          && b.claim_range`).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("postgres: overlapping claims: %w", err)
 	}

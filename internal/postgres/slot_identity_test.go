@@ -10,7 +10,7 @@ import (
 	"github.com/nancysworld/alloca-go/internal/domain"
 )
 
-// A slot's identity is the pair (organisation_id, slot_id), not slot_id alone
+// A slot's identity is the pair (slot_organisation_id, slot_id), not slot_id alone
 // (transaction-semantics §1.2).
 //
 // These tests exist because the previous schema keyed slots by slot_id, which quietly

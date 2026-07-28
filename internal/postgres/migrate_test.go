@@ -136,7 +136,7 @@ func TestIdempotencyScopeIsTheTableIdentity(t *testing.T) {
 		t.Fatalf("read primary key: %v", err)
 	}
 
-	want := []string{"key", "operation", "organisation_id", "user_id"}
+	want := []string{"key", "operation", "user_id", "user_organisation_id"}
 	if len(columns) != len(want) {
 		t.Fatalf("primary key columns = %v, want %v", columns, want)
 	}

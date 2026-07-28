@@ -18,7 +18,7 @@ var (
 	// re-runs so the winning record is observed.
 	ErrConflict = errors.New("domain: idempotency scope conflict")
 	// ErrScheduleConflict reports that inserting a schedule claim overlapped an
-	// existing active claim for the same identity — the user schedule non-overlap
+	// existing active claim for the same user — the user schedule non-overlap
 	// invariant (transaction-semantics §2.2). Unlike ErrConflict it is not a retry
 	// signal: it is the authoritative answer that this identity's time is already
 	// claimed, which the service turns into a business_refusal with
@@ -100,8 +100,7 @@ type Tx interface {
 	//
 	// It returns the whole SlotRef rather than a bare identifier because the caller
 	// cannot reconstruct the owning organisation: for a booking made into another
-	// organisation it is neither the caller's nor derivable from the reservation's own
-	// identity columns.
+	// organisation it is neither the user's own organisation nor derivable from it.
 	SlotRefForReservation(ctx context.Context, id ReservationID) (SlotRef, error)
 	// Reservation loads a reservation by ID. Returns ErrNotFound if absent.
 	Reservation(ctx context.Context, id ReservationID) (Reservation, error)
@@ -118,7 +117,7 @@ type Tx interface {
 	// PutBooking inserts or updates a booking.
 	PutBooking(ctx context.Context, b Booking) error
 	// InsertClaim inserts an active schedule claim, returning ErrScheduleConflict if it
-	// overlaps an existing active claim for the same identity (transaction-semantics
+	// overlaps an existing active claim for the same user (transaction-semantics
 	// §2.2). The insert *is* the conflict check: a prior read cannot be authoritative,
 	// because a concurrent transaction may commit an overlapping claim between the read
 	// and the write. Implementations must leave the transaction usable after a
@@ -136,13 +135,13 @@ type Tx interface {
 	// reservations whose claims a previous identity-scoped settlement may already have
 	// removed.
 	DeleteClaim(ctx context.Context, id ReservationID) error
-	// SettleClaims removes the identity's elapsed claims — those whose backing hold has
-	// lapsed at now. It is the identity-scoped analogue of slot-scoped expiry
-	// settlement, and carries the same guarantee: an abandoned hold stops blocking the
-	// identity's schedule whether or not the expiry worker has run
+	// SettleClaims removes the user's elapsed claims — those whose backing hold has
+	// lapsed at now. It is the user-scoped analogue of slot-scoped expiry settlement,
+	// and carries the same guarantee: an abandoned hold stops blocking the user's
+	// schedule whether or not the expiry worker has run
 	// (transaction-semantics §2.1, §2.2). Confirmed claims have no expiry and are never
 	// settled.
-	SettleClaims(ctx context.Context, org OrganisationID, user UserID, now time.Time) error
+	SettleClaims(ctx context.Context, user UserRef, now time.Time) error
 	// FindRecord loads an idempotency record by scoped key. Returns ErrNotFound if
 	// absent.
 	FindRecord(ctx context.Context, key ScopeKey) (IdempotencyRecord, error)

@@ -56,8 +56,11 @@ taxonomy. All are reframed synthetically; see
 - **Single-unit holds.** A reservation holds **one** unit of a slot's capacity;
   capacity is an integer count, no per-reservation quantity field. Shared-resource
   **quantities and conserved balances are explicitly AG-M6**.
-- **Minimal identity now.** Entities and mutations carry `organisation_id` (coarse
-  authority / AG-M5 routing key) and `user_id` (participant / fairness). AG-M1 adds
+- **Minimal identity now.** Entities and mutations carry the organisation dimension
+  (coarse authority / AG-M5 routing key) and `user_id` (participant / fairness). Both
+  identities are pairs and each names its organisation's role —
+  `(user_organisation_id, user_id)` and `(slot_organisation_id, slot_id)` — because the
+  two differ whenever a user books into another organisation. AG-M1 adds
   **no authentication** — identity exists to scope idempotency correctly (a client key
   must not be global across organisations/users) and to seed AG-M5, avoiding a later
   repaint.
@@ -144,7 +147,7 @@ questions and is independently reviewable.
 | 1 | Timeout budget + §8.1 startup validation | `config.RequestBudget`, `config.Validate()`, `/meta` exposure, `.gitignore __debug_bin*` | no | **Merged #3** |
 | 2 | Domain core + services + idempotency | `internal/domain` (entities, invariants, ports, outcome types), `internal/idempotency`, `internal/service`, in-memory repository, `transaction-semantics.md`, ADR-0002, measurement-contract §4 `invalid_request` amendment; full unit + race tests | no | **Merged #4** |
 | 3 | PostgreSQL adapter | `internal/postgres` (transactional repo, `SELECT … FOR UPDATE`, per-txn `lock_timeout`/`statement_timeout`, error→outcome mapping), schema + migrations, transaction-owned authoritative time (`Tx.Now`, retiring the service `Clock`), `cmd/alloca-migrate`, CI Postgres integration tests | yes | **In review #5** |
-| 4 | User schedule non-overlap invariant + composite slot identity | `user_time_claims` relation (`btree_gist`, exclusion constraint), identity-scoped claim settlement, `ReasonScheduleConflict`, claim lifecycle across reserve/confirm/cancel/expiry; slot identity becomes `(organisation_id, slot_id)` with `domain.SlotRef` and `contract_version` v2; transaction-semantics §1.1/§1.2/§2.2/§4; PostgreSQL gates + negative controls | yes | in progress |
+| 4 | User schedule non-overlap invariant + composite slot identity | `user_time_claims` relation (`btree_gist`, exclusion constraint), identity-scoped claim settlement, `ReasonScheduleConflict`, claim lifecycle across reserve/confirm/cancel/expiry; slot identity becomes `(slot_organisation_id, slot_id)` with `domain.SlotRef`/`domain.UserRef` and `contract_version` v2; transaction-semantics §1.1/§1.2/§2.2/§4; PostgreSQL gates + negative controls | yes | in progress |
 | 5 | Expiry worker + HTTP API + telemetry | `internal/worker` (expiry that cannot release confirmed capacity), `internal/httpapi` booking endpoints (idempotency-key handling, outcome→HTTP mapping), structured outcome/timing telemetry, `cmd` wiring, readiness gated on DB, e2e tests | yes | planned |
 
 **Why this order.** PR1 is DB-free and discharges the §8.1 obligation, giving later
@@ -162,7 +165,7 @@ transactions lock different slot rows and never contend. Shipping AG-M1 — the 
 whose name is "correct transactional core" — with that gap would overstate what the
 milestone proved, so it lands before the worker/API/telemetry PR rather than after.
 
-PR4 also corrects the **slot's** identity to `(organisation_id, slot_id)`. The two
+PR4 also corrects the **slot's** identity to `(slot_organisation_id, slot_id)`. The two
 belong together: both are the same correction — an identity is a pair scoped to an
 organisation — and which organisation applies depends on whether the thing is a user or
 a slot. A cross-organisation booking has different values in each, so the schedule

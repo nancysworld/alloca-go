@@ -28,26 +28,26 @@ CREATE TABLE user_time_claims (
         -- ordering) — which places the insert before the reservation row it refers
         -- to. Checked at COMMIT, when both rows exist.
         REFERENCES reservations (reservation_id) DEFERRABLE INITIALLY DEFERRED,
-    -- The identity's organisation (§1.1), NOT the slot's. A member of org_a booking a
-    -- slot owned by org_b produces a claim keyed (org_a, user): keying by the slot's
-    -- organisation would silently stop protecting an identity that books across
+    -- The user's organisation (§1.1), never the slot's. A user of org_a booking a slot
+    -- owned by org_b produces a claim keyed (org_a, user): keying by the slot's
+    -- organisation would silently stop protecting a user who books across
     -- organisations, which is the only case the slot lock does not already cover.
-    organisation_id text        NOT NULL,
+    user_organisation_id text   NOT NULL,
     user_id         text        NOT NULL,
     -- Grouping/telemetry and settlement only: never part of the conflict key. The
-    -- slot's identity is the pair (organisation_id, slot_id) (§1.2), and its
-    -- organisation is the slot's owner — not the identity's above, which is why this is
-    -- a separate column rather than a reuse of organisation_id.
+    -- slot's identity is the pair (slot_organisation_id, slot_id) (§1.2), whose
+    -- organisation is the slot's owner — not the user's above, which is why it is a
+    -- column of its own.
     slot_organisation_id text   NOT NULL,
     slot_id         text        NOT NULL,
-    FOREIGN KEY (slot_organisation_id, slot_id) REFERENCES slots (organisation_id, slot_id),
+    FOREIGN KEY (slot_organisation_id, slot_id) REFERENCES slots (slot_organisation_id, slot_id),
     -- Half-open [starts_at, ends_at): adjacent bookings do not overlap.
     claim_range     tstzrange   NOT NULL,
     -- The backing hold's expiry; NULL once confirmed, which is what makes a confirmed
     -- claim permanent and exempt from settlement.
     expires_at      timestamptz NULL,
     CONSTRAINT user_time_claims_no_overlap EXCLUDE USING gist (
-        organisation_id WITH =,
+        user_organisation_id WITH =,
         user_id         WITH =,
         claim_range     WITH &&
     )
@@ -56,7 +56,7 @@ CREATE TABLE user_time_claims (
 -- Identity-scoped settlement (§2.2) deletes this identity's elapsed claims on the
 -- reserve path. Partial, so the index stays proportional to unconfirmed claims.
 CREATE INDEX user_time_claims_settlement_idx
-    ON user_time_claims (organisation_id, user_id, expires_at)
+    ON user_time_claims (user_organisation_id, user_id, expires_at)
     WHERE expires_at IS NOT NULL;
 
 -- +goose StatementEnd

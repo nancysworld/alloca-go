@@ -3,7 +3,7 @@ package domain
 import "time"
 
 // SlotRef identifies a slot. A slot's identity is the pair
-// (organisation_id, slot_id), not slot_id alone (transaction-semantics §1.2):
+// (slot_organisation_id, slot_id), not slot_id alone (transaction-semantics §1.2):
 // identifiers are unique *within* the organisation that owns the slot, and nothing
 // requires them to be unique across organisations.
 //

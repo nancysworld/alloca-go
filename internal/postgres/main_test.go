@@ -197,7 +197,7 @@ const (
 )
 
 // slotRef pairs a slot identifier with testOrg, which owns every slot the helpers seed.
-// A slot's identity is the pair (organisation_id, slot_id) (transaction-semantics §1.2),
+// A slot's identity is the pair (slot_organisation_id, slot_id) (transaction-semantics §1.2),
 // so the two halves are joined here rather than at each call site.
 func slotRef(id domain.SlotID) domain.SlotRef {
 	return domain.SlotRef{OrganisationID: testOrg, SlotID: id}
@@ -235,13 +235,13 @@ func (h *harness) reserve(ctx context.Context, user, key string, slotID domain.S
 
 // reserveAs reserves for an explicit identity organisation against an explicit slot,
 // and the two organisations need not match. That is the cross-organisation case: the
-// identity is (organisation_id, user_id), scoped to where the *caller's* identity is
-// issued (transaction-semantics §1.1), while the slot is (organisation_id, slot_id),
-// scoped to its *owner* (§1.2). A member of one organisation booking another's slot is
+// user is (user_organisation_id, user_id), scoped to where the caller's identity is
+// issued (transaction-semantics §1.1), while the slot is (slot_organisation_id,
+// slot_id), scoped to its *owner* (§1.2). A member of one organisation booking another's slot is
 // still protected against overlapping their own schedule.
 func (h *harness) reserveAs(ctx context.Context, org domain.OrganisationID, user, key string, ref domain.SlotRef) (domain.Result, error) {
 	return h.svc.Reserve(ctx, service.ReserveCommand{
-		OrganisationID: org, UserID: domain.UserID(user),
+		UserRef: domain.UserRef{OrganisationID: org, UserID: domain.UserID(user)},
 		SlotRef: ref, IdempotencyKey: key,
 	})
 }
@@ -293,14 +293,14 @@ func assertClaimCount(t *testing.T, h *harness, want int) {
 
 func (h *harness) confirm(ctx context.Context, user, key string, res domain.ReservationID) (domain.Result, error) {
 	return h.svc.Confirm(ctx, service.ConfirmCommand{
-		OrganisationID: testOrg, UserID: domain.UserID(user),
+		UserRef:       domain.UserRef{OrganisationID: testOrg, UserID: domain.UserID(user)},
 		ReservationID: res, IdempotencyKey: key,
 	})
 }
 
 func (h *harness) cancel(ctx context.Context, user, key string, res domain.ReservationID) (domain.Result, error) {
 	return h.svc.Cancel(ctx, service.CancelCommand{
-		OrganisationID: testOrg, UserID: domain.UserID(user),
+		UserRef:       domain.UserRef{OrganisationID: testOrg, UserID: domain.UserID(user)},
 		ReservationID: res, IdempotencyKey: key,
 	})
 }

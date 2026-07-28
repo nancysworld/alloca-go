@@ -118,7 +118,7 @@ func TestOverlappingIntervalsForDifferentIdentitiesBothSucceed(t *testing.T) {
 	assertNoOverlappingClaims(t, h)
 }
 
-// Gate §10.1 8: the identity is the *caller's* (organisation_id, user_id), never the
+// Gate §10.1 8: the user is the caller's (user_organisation_id, user_id), never the
 // slot's organisation.
 //
 // This is the case the design turns on. A member of org-1 books a slot owned by org-1
@@ -533,7 +533,7 @@ func dropScheduleConstraint(t *testing.T, h *harness) {
 	t.Helper()
 	const drop = `ALTER TABLE user_time_claims DROP CONSTRAINT user_time_claims_no_overlap`
 	const restore = `ALTER TABLE user_time_claims ADD CONSTRAINT user_time_claims_no_overlap ` +
-		`EXCLUDE USING gist (organisation_id WITH =, user_id WITH =, claim_range WITH &&)`
+		`EXCLUDE USING gist (user_organisation_id WITH =, user_id WITH =, claim_range WITH &&)`
 
 	if _, err := h.repo.pool.Exec(context.Background(), drop); err != nil {
 		t.Fatalf("drop exclusion constraint: %v", err)
@@ -554,7 +554,7 @@ func assertClaimOwner(t *testing.T, h *harness, id domain.ReservationID, want do
 	t.Helper()
 	var org string
 	err := h.repo.pool.QueryRow(context.Background(),
-		`SELECT organisation_id FROM user_time_claims WHERE reservation_id = $1`, string(id)).Scan(&org)
+		`SELECT user_organisation_id FROM user_time_claims WHERE reservation_id = $1`, string(id)).Scan(&org)
 	if err != nil {
 		t.Fatalf("read claim owner for %q: %v", id, err)
 	}

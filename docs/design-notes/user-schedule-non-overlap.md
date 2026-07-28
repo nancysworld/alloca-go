@@ -135,11 +135,11 @@ Two consequences follow, and neither is a gap this milestone should close:
 The schedule-claim scope key is:
 
 ```text
-(organisation_id, user_id)
+(user_organisation_id, user_id)
 ```
 
-`organisation_id` is **the organisation under which the caller's identity is issued and
-scoped**. It is *not* derived from the target slot. For the representative club workload
+`user_organisation_id` is **the organisation under which the user's identity is issued
+and scoped**. It is *not* derived from the target slot. For the representative club workload
 this reads naturally as the member's home club, but the technical definition is identity
 issuance, not venue.
 
@@ -151,11 +151,11 @@ precisely the case §2 shows the slot lock cannot cover.
 Two properties follow, and both are reasons to prefer this key over a bare global
 `user_id`:
 
-- `(organisation_id, user_id)` is already a globally unique identity, so the invariant
+- `(user_organisation_id, user_id)` is already a globally unique identity, so the invariant
   needs no new identifier and no "`user_id` must be globally unique" precondition. It
   reuses the tuple that already scopes idempotency (`transaction-semantics.md` §5.1), so
   identity means one thing throughout the system.
-- All of one identity's claims carry a single `organisation_id`, so they shard together
+- All of one user's claims carry a single `user_organisation_id`, so they shard together
   under the organisation-based routing AG-M5 plans. A globally-keyed alternative would
   scatter them.
 
@@ -166,7 +166,7 @@ pins it with a cross-organisation test (§10.1 gate 8), so a later change cannot
 the field to the slot's organisation and silently disable the invariant.
 
 PR4 also corrected the other half of the picture. A slot's identity is the pair
-`(organisation_id, slot_id)` — the slot's *owner* — and it was previously keyed by
+`(slot_organisation_id, slot_id)` — the slot's *owner* — and it was previously keyed by
 `slot_id` alone (`transaction-semantics.md` §1.2). The two changes are the same
 correction seen from opposite ends: identity is a pair scoped to an organisation, and
 which organisation depends on whether the thing is a *user* or a *slot*. A claim
@@ -227,13 +227,13 @@ that may conflict for the same identity.
 
 ```sql
 EXCLUDE USING gist (
-    organisation_id WITH =,
-    user_id         WITH =,
-    claim_range     WITH &&
+    user_organisation_id WITH =,
+    user_id              WITH =,
+    claim_range          WITH &&
 )
 ```
 
-`organisation_id` and `user_id` are `text`, so the `btree_gist` extension is **required**
+`user_organisation_id` and `user_id` are `text`, so the `btree_gist` extension is **required**
 for the scalar equality operators — not optional. PR4 adds it in the forward migration.
 
 Strengths:
@@ -279,14 +279,14 @@ one logical claim is exactly one row:
 ```text
 user_time_claims
     reservation_id    primary key, references reservations
-    organisation_id   identity scope (§3.3), not the slot's organisation
-    user_id           identity scope (§3.3)
+    user_organisation_id, user_id
+                      the user (§3.3) — never the slot's organisation
     slot_organisation_id, slot_id
                       the slot's identity (§1.2), its *owner's* organisation — not the
                       identity's above; telemetry and settlement, never part of the key
     claim_range       tstzrange over [slot.starts_at, slot.ends_at)
     expires_at        the backing hold's expiry; NULL once confirmed
-    EXCLUDE USING gist (organisation_id =, user_id =, claim_range &&)
+    EXCLUDE USING gist (user_organisation_id =, user_id =, claim_range &&)
 ```
 
 Keying the row on `reservation_id` makes the confirm case safe by construction: confirming
@@ -308,7 +308,7 @@ before evaluating preconditions, `reserve` deletes this identity's own elapsed c
 
 ```sql
 DELETE FROM user_time_claims
- WHERE organisation_id = $1 AND user_id = $2
+ WHERE user_organisation_id = $1 AND user_id = $2
    AND expires_at IS NOT NULL AND expires_at <= $3   -- authoritative tx time
 ```
 
@@ -510,7 +510,7 @@ AG-M5's organisation-based sharding makes it an explicit constraint. A cross-org
 booking touches two authorities: slot capacity in the *slot's* organisation, and the
 schedule claim in the *identity's* organisation. Those can land on different shards.
 
-Claims for one identity always share one `organisation_id` (§3.3), so an identity's own
+Claims for one user always share one `user_organisation_id` (§3.3), so a user's own
 claims stay co-located and the exclusion constraint keeps working locally. What AG-M5 must
 decide is how a single booking spans two organisation authorities. This note records the
 constraint and does not attempt the distributed-transaction design.
@@ -519,7 +519,7 @@ constraint and does not attempt the distributed-transaction design.
 
 | # | Question | Decision |
 |---|---|---|
-| 1 | Scope key | `(organisation_id, user_id)`, scoped by identity issuance, never derived from the slot (§3.3) |
+| 1 | Scope key | `(user_organisation_id, user_id)`, scoped by identity issuance, never derived from the slot (§3.3) |
 | 2 | Which relation represents active claims | a separate `user_time_claims` relation (§6) |
 | 3 | How an elapsed hold stops participating | identity-scoped claim settlement inside the transaction, before preconditions (§6) |
 | 4 | Constraint primary or backstop | the exclusion constraint is the authority; any pre-check is for message quality only (§6) |

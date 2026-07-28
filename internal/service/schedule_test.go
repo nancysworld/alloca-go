@@ -46,7 +46,7 @@ func scheduleFixture(t *testing.T) *fixture {
 func (f *fixture) reserveSlot(t *testing.T, user, key string, slotID domain.SlotID) domain.Result {
 	t.Helper()
 	r, err := f.svc.Reserve(context.Background(), ReserveCommand{
-		OrganisationID: org, UserID: domain.UserID(user), SlotRef: ref(slotID), IdempotencyKey: key,
+		UserRef: domain.UserRef{OrganisationID: org, UserID: domain.UserID(user)}, SlotRef: ref(slotID), IdempotencyKey: key,
 	})
 	if err != nil {
 		t.Fatalf("Reserve(%s,%s,%s): unexpected error %v", user, key, slotID, err)
@@ -57,7 +57,7 @@ func (f *fixture) reserveSlot(t *testing.T, user, key string, slotID domain.Slot
 func (f *fixture) reserveAs(t *testing.T, orgID domain.OrganisationID, user, key string, slotID domain.SlotID) domain.Result {
 	t.Helper()
 	r, err := f.svc.Reserve(context.Background(), ReserveCommand{
-		OrganisationID: orgID, UserID: domain.UserID(user), SlotRef: ref(slotID), IdempotencyKey: key,
+		UserRef: domain.UserRef{OrganisationID: orgID, UserID: domain.UserID(user)}, SlotRef: ref(slotID), IdempotencyKey: key,
 	})
 	if err != nil {
 		t.Fatalf("Reserve(%s/%s): unexpected error %v", orgID, user, err)
@@ -181,8 +181,8 @@ func TestSlotSettlementRemovesTheClaim(t *testing.T) {
 	if len(claims) != 1 {
 		t.Fatalf("persisted claims = %d, want 1 (the expired hold's claim must be gone)", len(claims))
 	}
-	if claims[0].UserID != "user-2" {
-		t.Errorf("surviving claim belongs to %q, want user-2", claims[0].UserID)
+	if claims[0].UserRef.UserID != "user-2" {
+		t.Errorf("surviving claim belongs to %q, want user-2", claims[0].UserRef.UserID)
 	}
 }
 

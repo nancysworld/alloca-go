@@ -20,11 +20,10 @@ type ScheduleClaim struct {
 	// ReservationID identifies the claim: one reservation, one claim, for its whole
 	// lifetime.
 	ReservationID ReservationID
-	// OrganisationID is the *identity's* organisation, never the slot's (§1.1). The
-	// claim is keyed by identity, so an identity booking into another organisation is
-	// still protected against overlapping itself.
-	OrganisationID OrganisationID
-	UserID         UserID
+	// UserRef is the conflict key: whose schedule this claim occupies. Its organisation
+	// is the user's, never the slot's (§1.1), so a user booking into another
+	// organisation is still protected against overlapping themselves.
+	UserRef UserRef
 	// SlotRef is carried for settlement and telemetry; it is not part of the conflict
 	// key, which is exactly why claims on *different* slots still conflict.
 	SlotRef SlotRef
@@ -48,11 +47,11 @@ func (c ScheduleClaim) Overlaps(other ScheduleClaim) bool {
 	return c.StartsAt.Before(other.EndsAt) && other.StartsAt.Before(c.EndsAt)
 }
 
-// SameIdentity reports whether two claims belong to the same identity — the pair
-// (organisation_id, user_id), which is globally unique without user_id having to be
-// (§1.1). Claims of different identities never conflict, however much they overlap.
-func (c ScheduleClaim) SameIdentity(other ScheduleClaim) bool {
-	return c.OrganisationID == other.OrganisationID && c.UserID == other.UserID
+// SameUser reports whether two claims belong to the same user — the pair
+// (user_organisation_id, user_id), which is globally unique without user_id having to be
+// (§1.1). Claims of different users never conflict, however much they overlap.
+func (c ScheduleClaim) SameUser(other ScheduleClaim) bool {
+	return c.UserRef == other.UserRef
 }
 
 // Elapsed reports whether the claim's backing hold has lapsed at now, using the same

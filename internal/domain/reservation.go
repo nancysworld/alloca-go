@@ -24,16 +24,15 @@ func (s ReservationState) Terminal() bool {
 // created_at < expires_at <= slot.starts_at.
 type Reservation struct {
 	ID ReservationID
-	// SlotRef is the slot's identity — including the organisation that owns the slot,
-	// which is not necessarily the OrganisationID below (§1.1, §1.2).
+	// SlotRef is the slot this hold consumes, owning organisation included (§1.2).
 	SlotRef SlotRef
-	// OrganisationID and UserID are the *caller's* identity: the organisation the
-	// identity is issued under, never the slot's owner.
-	OrganisationID OrganisationID
-	UserID         UserID
-	State          ReservationState
-	CreatedAt      time.Time
-	ExpiresAt      time.Time
+	// UserRef is whose time is held. Its organisation is where the user's identity is
+	// issued (§1.1), never the slot's owner — the two differ on a cross-organisation
+	// booking, which is why they are separate columns.
+	UserRef   UserRef
+	State     ReservationState
+	CreatedAt time.Time
+	ExpiresAt time.Time
 }
 
 // Elapsed reports whether the hold's TTL has lapsed: now >= expires_at. This is the

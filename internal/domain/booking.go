@@ -18,11 +18,11 @@ const (
 type Booking struct {
 	ID            BookingID
 	ReservationID ReservationID
-	// SlotRef is the slot's identity, owning organisation included (§1.2).
-	SlotRef SlotRef
-	// OrganisationID and UserID are the caller's identity, not the slot's owner (§1.1).
-	OrganisationID OrganisationID
-	UserID         UserID
-	State          BookingState
-	CreatedAt      time.Time
+	// SlotRef is the slot this booking consumes (§1.2); UserRef is whose time it is
+	// (§1.1). Their organisations are different dimensions and differ whenever a user
+	// books into another organisation.
+	SlotRef   SlotRef
+	UserRef   UserRef
+	State     BookingState
+	CreatedAt time.Time
 }

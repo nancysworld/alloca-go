@@ -65,13 +65,12 @@ func New(repo domain.Repository, ids domain.IDGen, ttl time.Duration) *Service {
 // ReserveCommand asks to hold one unit of a slot's capacity.
 //
 // It carries two organisations and they are not interchangeable
-// (transaction-semantics §1.1, §1.2): OrganisationID is the organisation the *caller's
-// identity* is issued under, while SlotRef.OrganisationID is the organisation that
-// *owns the slot*. They differ whenever an identity books into another organisation,
-// which is exactly the case the schedule invariant exists to cover.
+// (transaction-semantics §1.1, §1.2): UserRef.OrganisationID is where the caller's
+// identity is issued, while SlotRef.OrganisationID is who owns the slot. They differ
+// whenever a user books into another organisation, which is exactly the case the
+// schedule invariant exists to cover.
 type ReserveCommand struct {
-	OrganisationID domain.OrganisationID
-	UserID         domain.UserID
+	UserRef        domain.UserRef
 	SlotRef        domain.SlotRef
 	IdempotencyKey string
 	Body           []byte
@@ -79,8 +78,7 @@ type ReserveCommand struct {
 
 // ConfirmCommand turns a held reservation into a booking.
 type ConfirmCommand struct {
-	OrganisationID domain.OrganisationID
-	UserID         domain.UserID
+	UserRef        domain.UserRef
 	ReservationID  domain.ReservationID
 	IdempotencyKey string
 	Body           []byte
@@ -88,8 +86,7 @@ type ConfirmCommand struct {
 
 // CancelCommand releases a held reservation or an active booking.
 type CancelCommand struct {
-	OrganisationID domain.OrganisationID
-	UserID         domain.UserID
+	UserRef        domain.UserRef
 	ReservationID  domain.ReservationID
 	IdempotencyKey string
 	Body           []byte
@@ -97,12 +94,12 @@ type CancelCommand struct {
 
 // Reserve holds one unit of the slot for the caller (transaction-semantics §4).
 func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Result, error) {
-	if cmd.OrganisationID == "" || cmd.UserID == "" || cmd.SlotRef.SlotID == "" ||
-		cmd.SlotRef.OrganisationID == "" || cmd.IdempotencyKey == "" {
+	if cmd.UserRef.OrganisationID == "" || cmd.UserRef.UserID == "" ||
+		cmd.SlotRef.OrganisationID == "" || cmd.SlotRef.SlotID == "" || cmd.IdempotencyKey == "" {
 		return domain.Result{Outcome: domain.OutcomeInvalidRequest}, nil
 	}
-	scope := idempotency.Scope(cmd.OrganisationID, cmd.UserID, domain.OpReserve, cmd.IdempotencyKey)
-	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpReserve, cmd.OrganisationID, cmd.UserID, slotTarget(cmd.SlotRef), cmd.Body)
+	scope := idempotency.Scope(cmd.UserRef, domain.OpReserve, cmd.IdempotencyKey)
+	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpReserve, cmd.UserRef, slotTarget(cmd.SlotRef), cmd.Body)
 
 	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
 		slot, err := tx.LockSlot(ctx, cmd.SlotRef)
@@ -126,13 +123,12 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 		if err != nil {
 			return domain.Result{}, err
 		}
-		// Identity-scoped claim settlement, the analogue of the slot-scoped settlement
-		// above (transaction-semantics §2.2). The requesting identity's elapsed holds may
-		// be on *other* slots, which this transaction never locks and settle() therefore
-		// never sees, so without this an abandoned hold would block the identity's
-		// schedule until the expiry worker happened to run. Correctness must not depend
-		// on that.
-		if err := tx.SettleClaims(ctx, cmd.OrganisationID, cmd.UserID, now); err != nil {
+		// User-scoped claim settlement, the analogue of the slot-scoped settlement above
+		// (transaction-semantics §2.2). The requesting user's elapsed holds may be on
+		// *other* slots, which this transaction never locks and settle() therefore never
+		// sees, so without this an abandoned hold would block the user's schedule until
+		// the expiry worker happened to run. Correctness must not depend on that.
+		if err := tx.SettleClaims(ctx, cmd.UserRef, now); err != nil {
 			return domain.Result{}, err
 		}
 
@@ -155,13 +151,12 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 			default:
 				resID := s.ids.NewReservationID()
 				res := domain.Reservation{
-					ID:             resID,
-					SlotRef:        slot.Ref(),
-					OrganisationID: cmd.OrganisationID,
-					UserID:         cmd.UserID,
-					State:          domain.ReservationHeld,
-					CreatedAt:      now,
-					ExpiresAt:      expiresAt,
+					ID:        resID,
+					SlotRef:   slot.Ref(),
+					UserRef:   cmd.UserRef,
+					State:     domain.ReservationHeld,
+					CreatedAt: now,
+					ExpiresAt: expiresAt,
 				}
 				// The claim is inserted here, during precondition evaluation, rather than
 				// alongside the reservation in persist. The insert is the conflict check —
@@ -173,17 +168,16 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 				// reference to reservations is DEFERRABLE INITIALLY DEFERRED so it is
 				// validated at COMMIT, by which point persist has written the row.
 				claim := domain.ScheduleClaim{
-					ReservationID:  resID,
-					OrganisationID: cmd.OrganisationID,
-					UserID:         cmd.UserID,
-					SlotRef:        slot.Ref(),
-					StartsAt:       slot.StartsAt,
-					EndsAt:         slot.EndsAt,
-					ExpiresAt:      expiresAt,
+					ReservationID: resID,
+					UserRef:       cmd.UserRef,
+					SlotRef:       slot.Ref(),
+					StartsAt:      slot.StartsAt,
+					EndsAt:        slot.EndsAt,
+					ExpiresAt:     expiresAt,
 				}
 				switch err := tx.InsertClaim(ctx, claim); {
 				case errors.Is(err, domain.ErrScheduleConflict):
-					// The identity's own time is already claimed. A business refusal, and
+					// The user's own time is already claimed. A business refusal, and
 					// distinct from no_capacity: this slot may still have room.
 					result = domain.Refusal(domain.ReasonScheduleConflict)
 				case err != nil:
@@ -202,11 +196,12 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 // (transaction-semantics §4). It changes no capacity: a held unit becomes a
 // confirmed unit.
 func (s *Service) Confirm(ctx context.Context, cmd ConfirmCommand) (domain.Result, error) {
-	if cmd.OrganisationID == "" || cmd.UserID == "" || cmd.ReservationID == "" || cmd.IdempotencyKey == "" {
+	if cmd.UserRef.OrganisationID == "" || cmd.UserRef.UserID == "" ||
+		cmd.ReservationID == "" || cmd.IdempotencyKey == "" {
 		return domain.Result{Outcome: domain.OutcomeInvalidRequest}, nil
 	}
-	scope := idempotency.Scope(cmd.OrganisationID, cmd.UserID, domain.OpConfirm, cmd.IdempotencyKey)
-	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpConfirm, cmd.OrganisationID, cmd.UserID, string(cmd.ReservationID), cmd.Body)
+	scope := idempotency.Scope(cmd.UserRef, domain.OpConfirm, cmd.IdempotencyKey)
+	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpConfirm, cmd.UserRef, string(cmd.ReservationID), cmd.Body)
 
 	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
 		slot, res, now, done, r, err := s.lockByReservation(ctx, tx, cmd.ReservationID, scope, hash)
@@ -227,13 +222,12 @@ func (s *Service) Confirm(ctx context.Context, cmd ConfirmCommand) (domain.Resul
 				res.State = domain.ReservationConfirmed
 				bkID := s.ids.NewBookingID()
 				bk := domain.Booking{
-					ID:             bkID,
-					ReservationID:  res.ID,
-					SlotRef:        slot.Ref(),
-					OrganisationID: res.OrganisationID,
-					UserID:         res.UserID,
-					State:          domain.BookingActive,
-					CreatedAt:      now,
+					ID:            bkID,
+					ReservationID: res.ID,
+					SlotRef:       slot.Ref(),
+					UserRef:       res.UserRef,
+					State:         domain.BookingActive,
+					CreatedAt:     now,
 				}
 				result = domain.Result{Outcome: domain.OutcomeAdmittedSuccess, BookingID: bkID}
 				persist = func(ctx context.Context, tx domain.Tx) error {
@@ -263,11 +257,12 @@ func (s *Service) Confirm(ctx context.Context, cmd ConfirmCommand) (domain.Resul
 // its active booking — but only while the slot is open (transaction-semantics §3.3,
 // §4).
 func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (domain.Result, error) {
-	if cmd.OrganisationID == "" || cmd.UserID == "" || cmd.ReservationID == "" || cmd.IdempotencyKey == "" {
+	if cmd.UserRef.OrganisationID == "" || cmd.UserRef.UserID == "" ||
+		cmd.ReservationID == "" || cmd.IdempotencyKey == "" {
 		return domain.Result{Outcome: domain.OutcomeInvalidRequest}, nil
 	}
-	scope := idempotency.Scope(cmd.OrganisationID, cmd.UserID, domain.OpCancel, cmd.IdempotencyKey)
-	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpCancel, cmd.OrganisationID, cmd.UserID, string(cmd.ReservationID), cmd.Body)
+	scope := idempotency.Scope(cmd.UserRef, domain.OpCancel, cmd.IdempotencyKey)
+	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpCancel, cmd.UserRef, string(cmd.ReservationID), cmd.Body)
 
 	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
 		slot, res, now, done, r, err := s.lockByReservation(ctx, tx, cmd.ReservationID, scope, hash)
@@ -288,8 +283,8 @@ func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (domain.Result,
 					if err := tx.PutReservation(ctx, res); err != nil {
 						return err
 					}
-					// Atomic with the lifecycle transition: the identity's time is freed by
-					// the same commit that releases the slot unit.
+					// Atomic with the lifecycle transition: the user's time is freed by the
+					// same commit that releases the slot unit.
 					return tx.DeleteClaim(ctx, res.ID)
 				}
 			}
@@ -482,16 +477,15 @@ func (s *Service) commit(ctx context.Context, tx domain.Tx, scope domain.ScopeKe
 		return domain.Result{}, fmt.Errorf("service: commit invariant violated: outcome %q with persist!=nil==%t", result.Outcome, persist != nil)
 	}
 	rec := domain.IdempotencyRecord{
-		OrganisationID: scope.OrganisationID,
-		UserID:         scope.UserID,
-		Operation:      scope.Operation,
-		Key:            scope.Key,
-		RequestHash:    hash,
-		Outcome:        result.Outcome,
-		Reason:         result.Reason,
-		ReservationID:  result.ReservationID,
-		BookingID:      result.BookingID,
-		CreatedAt:      now,
+		UserRef:       scope.UserRef,
+		Operation:     scope.Operation,
+		Key:           scope.Key,
+		RequestHash:   hash,
+		Outcome:       result.Outcome,
+		Reason:        result.Reason,
+		ReservationID: result.ReservationID,
+		BookingID:     result.BookingID,
+		CreatedAt:     now,
 	}
 	err := tx.InsertRecord(ctx, rec)
 	if errors.Is(err, domain.ErrConflict) {

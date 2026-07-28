@@ -1,24 +1,27 @@
 # User schedule non-overlap
 
-**Status:** Proposed. Implementation timing is intentionally deferred until after AG-M1
-PR3 is merged and the design has been reviewed.  
-**Scope:** define the cross-resource correctness invariant that one user cannot hold or
-confirm overlapping bookings, and identify the implementation and validation properties
-that a later milestone must satisfy.
+**Status:** Accepted 28 July 2026. Implementation is AG-M1 PR4; the original
+worker/API/telemetry PR becomes PR5.  
+**Scope:** define the cross-resource correctness invariant that one identity cannot hold
+or confirm overlapping bookings, record the design decisions that implement it, and state
+the correctness gates the implementation must pass.  
+**Normative owner:** this note records the design and its rationale. Once PR4 lands,
+[`../design/transaction-semantics.md`](../design/transaction-semantics.md) is the
+normative contract for the invariant and this note is history, not a second specification.
 
 ## 1. Decision summary
 
 Alloca-Go must enforce this committed-state invariant:
 
-> For one user, no two active booking claims may overlap in time.
+> For one identity, no two active booking claims may overlap in time.
 
 The invariant is cross-resource. It applies even when the two bookings refer to different
-slots, sessions, resources, clubs, or future service partitions.
+slots, sessions, resources, organisations, or future service partitions.
 
 The time model is half-open:
 
 ```text
-[start_at, end_at)
+[starts_at, ends_at)
 ```
 
 Therefore:
@@ -31,44 +34,44 @@ Therefore:
 Two intervals overlap exactly when:
 
 ```text
-existing.start_at < requested.end_at
-AND requested.start_at < existing.end_at
+existing.starts_at < requested.ends_at
+AND requested.starts_at < existing.ends_at
 ```
 
 For this invariant, an **active booking claim** is one that currently grants or reserves
-exclusive use of the user's time:
+exclusive use of the identity's time:
 
 - a confirmed booking is active;
 - an unexpired hold is active;
-- a cancelled booking is inactive;
-- an expired hold is inactive, whether or not historical reservation rows have already
-  been compacted or archived.
+- a cancelled reservation or booking is inactive;
+- an elapsed hold is inactive, whether or not a cleanup worker has rewritten its row yet.
 
-The database transaction boundary must be authoritative. A service-level pre-check may
-improve error reporting, but it cannot be the correctness mechanism.
+The database transaction boundary is authoritative. A service-level pre-check may improve
+error reporting, but it is not the correctness mechanism.
 
 ## 2. Why the existing slot lock is insufficient
 
-AG-M1 serialises mutations for one slot by locking that slot's aggregate row. That proves
-capacity safety for concurrent requests targeting the same slot.
+AG-M1 serialises mutations for one slot by locking that slot's aggregate row
+(`transaction-semantics.md` §2). That proves capacity safety for concurrent requests
+targeting the same slot.
 
 User schedule safety has a different conflict key. Consider two concurrent transactions:
 
 ```text
-T1: user U reserves Yoga,     10:00–11:00
-T2: user U reserves Swimming, 10:30–11:30
+T1: identity (org_a, user_1) reserves Yoga,     10:00–11:00
+T2: identity (org_a, user_1) reserves Swimming, 10:30–11:30
 ```
 
 If Yoga and Swimming are different slots, T1 and T2 lock different slot rows. Each can
-observe no conflicting user booking and both can commit unless they also contend on a
-shared user-schedule authority or the database rejects the overlapping committed state.
+observe no conflicting claim and both can commit unless they also contend on a shared
+schedule authority or the database rejects the overlapping committed state.
 
 The unsafe check-then-write shape is:
 
 ```text
-SELECT conflicting booking for user U;
+SELECT conflicting claim for identity K;
 -- both transactions observe none
-INSERT booking claim;
+INSERT claim;
 -- both transactions commit
 ```
 
@@ -79,385 +82,416 @@ serialization mechanism does not by itself establish the invariant.
 
 ### 3.1 What the invariant protects
 
-The rule protects a user's schedule, not slot capacity:
+The rule protects an identity's schedule, not slot capacity:
 
 ```text
 slot capacity safety
     one slot cannot admit more active claims than capacity
 user schedule safety
-    one user cannot own two active claims covering the same instant
+    one identity cannot own two active claims covering the same instant
 ```
 
 A successful reserve must satisfy both invariants in the same logical transaction.
 
-### 3.2 What it does not currently claim
+### 3.2 What it does not claim
 
-This note does not yet define:
+This note does not define:
 
 - travel or preparation buffers between adjacent bookings;
 - household, team, membership, or account-wide limits;
-- limits such as “at most N bookings per day”;
+- limits such as "at most N bookings per day";
 - recurring-series conflict policy;
 - priority rules for choosing which of two racing requests should win;
-- cross-database enforcement after physical sharding.
+- cross-database enforcement after physical sharding (§13).
 
-Those may become future policies, but they are not part of the present correctness gate.
+One limit is deliberate and worth stating plainly, because it follows directly from §3.3:
 
-### 3.3 Scope key
+> The invariant protects an **identity's** schedule, not a **human's**.
 
-The initial scope key is `user_id`.
+If one person holds two Alloca identities — `(org_a, user_1)` and `(org_b, user_1)` — those
+are distinct identities and may hold overlapping claims. Alloca has no concept that links
+them, and inventing one would require a person or identity service that AG-M1 deliberately
+does not have (`transaction-semantics.md` §1.1: AG-M1 introduces no authentication).
+Collapsing them would also require `user_id` to be globally unique, which is exactly the
+property the composite key avoids depending on.
 
-If the product later distinguishes identities by tenant or club, the schema must state
-whether the real key is `(tenant_id, user_id)` or a globally unique `user_id`. The
-implementation must not silently infer that choice from current identifier formatting.
+### 3.3 Identity scope key
+
+The schedule-claim scope key is:
+
+```text
+(organisation_id, user_id)
+```
+
+`organisation_id` is **the organisation under which the caller's identity is issued and
+scoped**. It is *not* derived from the target slot. For the representative club workload
+this reads naturally as the member's home club, but the technical definition is identity
+issuance, not venue.
+
+Consequently a cross-organisation booking is well defined: identity `(org_a, user_1)` may
+book a slot owned by `org_b`, and the resulting claim is keyed `(org_a, user_1)`. The
+identity's schedule is protected across every organisation it books into — which is
+precisely the case §2 shows the slot lock cannot cover.
+
+Two properties follow, and both are reasons to prefer this key over a bare global
+`user_id`:
+
+- `(organisation_id, user_id)` is already a globally unique identity, so the invariant
+  needs no new identifier and no "`user_id` must be globally unique" precondition. It
+  reuses the tuple that already scopes idempotency (`transaction-semantics.md` §5.1), so
+  identity means one thing throughout the system.
+- All of one identity's claims carry a single `organisation_id`, so they shard together
+  under the organisation-based routing AG-M5 plans. A person-keyed alternative would
+  scatter them.
+
+The current code already behaves this way, but by construction rather than by contract:
+`internal/service/service.go` writes the reservation's `OrganisationID` from the command,
+not from the locked slot, and `LockSlot` resolves a slot by `slot_id` alone with no
+organisation filter. PR4 makes that explicit in `transaction-semantics.md` §1.1 and pins
+it with a cross-organisation test (§10.1 gate 8), so a later change cannot "tidy" the
+field to the slot's organisation and silently disable the invariant.
 
 ## 4. Lifecycle semantics
 
-The invariant applies to active claims rather than to all historical reservation rows.
-This distinction matters because hold expiry is time-dependent.
+The invariant applies to active claims, not to all historical lifecycle rows. Two facts
+about the existing schema shape the design.
 
-A row with lifecycle state `held` is not necessarily an active claim forever. Once its
-persisted `expires_at` has elapsed according to authoritative PostgreSQL time, it must not
-continue to block the user's schedule merely because an asynchronous cleanup worker has
-not rewritten the row to `expired` yet.
+### 4.1 Lifecycle rows are not one-to-one with claims
 
-Consequently, a partial database constraint such as:
+Confirming does not move a row from one table to another. The reservation stays at
+`state = 'confirmed'` **and** a booking row is inserted with `state = 'active'`
+(`transaction-semantics.md` §3.1–§3.2). One logical claim is therefore represented by two
+rows after confirmation.
+
+Any model that derives active claims from a union of `reservations` and `bookings`
+self-conflicts the instant a hold is confirmed: the identity appears to hold two
+overlapping claims for the same booking. This is the strongest argument for a separate
+relation whose rows correspond exactly to live claims.
+
+### 4.2 An elapsed hold must stop blocking without worker help
+
+A row with `state = 'held'` is not an active claim forever. Once its persisted
+`expires_at` has elapsed according to authoritative PostgreSQL time, it must not continue
+to block the identity's schedule merely because the cleanup worker has not rewritten it.
+
+A partial constraint such as:
 
 ```sql
-WHERE status IN ('held', 'confirmed')
+WHERE state IN ('held', 'confirmed')
 ```
 
-is insufficient if elapsed holds can remain stored as `held`. Conversely, a partial
-predicate such as:
+is insufficient if elapsed holds remain stored as `held`. Conversely:
 
 ```sql
-WHERE status = 'confirmed'
-   OR (status = 'held' AND expires_at > now())
+WHERE state = 'confirmed'
+   OR (state = 'held' AND expires_at > now())
 ```
 
-is not a sound schema mechanism: PostgreSQL index predicates and exclusion constraints
-cannot depend on a moving wall-clock condition whose truth changes without a row update.
+is not a sound schema mechanism at all: PostgreSQL index predicates and exclusion
+constraints require immutable expressions, so they cannot depend on a moving wall-clock
+condition whose truth changes without a row update.
 
-A later implementation must therefore choose one of these explicit lifecycle models:
+The resolution mirrors the settlement rule the slot authority already uses
+(`transaction-semantics.md` §2.1): **correctness must not depend on the background worker
+having run**, so the operation settles stale state itself, inside the transaction, before
+evaluating preconditions. §6 applies that rule to claims.
 
-1. **Eager settlement before conflict enforcement.** The transaction settles elapsed
-   holds for the user before testing or inserting a new claim, while also using a shared
-   user-schedule serialization mechanism.
-2. **Separate live-claim relation.** Historical booking/reservation state remains in its
-   lifecycle table, while a separate relation contains only currently active user-time
-   claims. Reserve inserts a claim, confirm retains or transforms it, and cancel/expiry
-   removes it.
-3. **Materialised active state maintained transactionally.** The lifecycle row contains a
-   stable, indexable active marker that is changed transactionally when the claim stops
-   being active; correctness then depends on expiry settlement occurring before any
-   conflicting decision.
+## 5. Concurrency authority — options considered
 
-The design review must reject any model in which correctness depends on the cleanup worker
-running promptly.
+A correct implementation needs one database-visible authority shared by every transaction
+that may conflict for the same identity.
 
-## 5. Concurrency authority
-
-A correct implementation needs one database-visible authority shared by all transactions
-that may conflict for the same user.
-
-Candidate mechanisms are:
-
-### 5.1 PostgreSQL exclusion constraint on active claims
-
-Conceptually:
+### 5.1 PostgreSQL exclusion constraint on active claims — chosen
 
 ```sql
 EXCLUDE USING gist (
-    user_id WITH =,
-    tstzrange(start_at, end_at, '[)') WITH &&
+    organisation_id WITH =,
+    user_id         WITH =,
+    claim_range     WITH &&
 )
 ```
 
-This directly rejects overlapping ranges for the same user. UUID or scalar equality may
-require PostgreSQL's `btree_gist` extension.
+`organisation_id` and `user_id` are `text`, so the `btree_gist` extension is **required**
+for the scalar equality operators — not optional. PR4 adds it in the forward migration.
 
 Strengths:
 
 - the invariant is declared at the authoritative storage boundary;
 - transactions targeting different slots still conflict correctly;
-- every writer, including future tools or workers, receives the same protection;
-- the database can reject a race that passes an earlier service pre-check.
+- every writer, including future tools and workers, gets the same protection;
+- the database rejects a race that passes an earlier service pre-check.
 
-Constraints:
+Constraints, all discharged by §6:
 
-- the relation participating in the constraint must contain only active claims, or use a
-  stable predicate whose truth changes only through row updates;
-- the adapter must map the exclusion violation to a stable domain outcome;
+- the relation must contain only active claims, or use a predicate whose truth changes
+  only through row updates;
+- the adapter must map the exclusion violation to a stable domain refusal;
 - contention and deadlock behaviour with the slot lock must be measured and tested;
-- migrations must account for the required extension and existing conflicting data.
+- migrations must account for the extension and any conflicting existing data.
 
-### 5.2 Per-user schedule row lock
+### 5.2 Per-identity schedule row lock — rejected as the sole mechanism
 
-A transaction locks one stable row for the user, settles elapsed claims, checks the
-requested interval, then mutates the slot and user schedule.
+A transaction locks one stable row per identity, settles elapsed claims, checks the
+interval, then mutates. Easy to explain, and it supports richer identity-level policy
+inside one critical section. But every path that creates, removes, confirms, expires, or
+moves a claim must take the same lock, new identities need a race-safe way to establish
+the row, and a single missed writer path silently breaks the invariant with no backstop.
 
-Strengths:
+### 5.3 Serializable isolation with a predicate read — rejected
 
-- easy to explain as explicit serialization;
-- supports richer future user-level policies inside the same critical section;
-- can make the losing request's domain reason explicit before insert.
+Theoretically viable, but it broadens a narrow invariant into a transaction-wide
+mechanism, introduces retry semantics across all mutations, and is easier to misuse than
+an invariant-specific authority.
 
-Constraints:
+### 5.4 Advisory lock — rejected
 
-- every path that creates, removes, confirms, expires, or moves a claim must acquire the
-  same user lock;
-- new users need a race-safe way to establish the authority row;
-- lock ordering between user and slot authorities must be globally fixed to avoid
-  deadlocks;
-- a missed writer path silently breaks the invariant unless a database constraint also
-  provides a backstop.
+Advisory-lock key construction, collision analysis, and universal writer discipline are
+application conventions rather than schema-enforced facts. Useful at most as an
+optimisation alongside an authoritative constraint.
 
-### 5.3 Serializable isolation with a predicate read
+## 6. Decided design
 
-A serializable transaction reads the user's overlapping range and inserts only if none is
-found. PostgreSQL may abort one transaction with a serialization failure.
-
-This is theoretically viable but is not the preferred default for Alloca-Go at this
-stage. It broadens the transaction-level mechanism, introduces retry semantics across all
-mutations, and is easier to misuse than a narrow invariant-specific authority.
-
-### 5.4 Advisory lock
-
-A transaction-scoped advisory lock derived from `user_id` can serialize one user's
-schedule mutations.
-
-This is not preferred as the sole correctness boundary. Advisory-lock key construction,
-collision analysis, and universal writer discipline are application conventions rather
-than schema-enforced facts. It may be useful as an optimisation or transitional mechanism
-only when paired with an authoritative constraint.
-
-## 6. Preliminary recommendation
-
-The implementation design should start from this combination:
-
-1. represent active user-time ownership in a form whose rows correspond exactly to live
-   claims;
-2. enforce non-overlap with a PostgreSQL exclusion constraint;
-3. optionally perform an earlier transactional conflict query to return a clearer domain
-   refusal;
-4. retain the exclusion constraint as the race-proof backstop;
-5. define one global lock order if reserve/confirm/cancel/expiry must touch both slot and
-   user-schedule authorities.
-
-A separate `user_time_claims` relation is the cleanest current candidate because it keeps
-the moving expiry condition out of an index predicate:
+Active claims live in their own relation, so no moving-clock predicate is ever needed and
+one logical claim is exactly one row:
 
 ```text
 user_time_claims
-    user_id
-    reservation_id or booking_id
-    slot_id
-    time_range
-    claim_kind or lifecycle reference
+    reservation_id    primary key, references reservations
+    organisation_id   identity scope (§3.3), not the slot's organisation
+    user_id           identity scope (§3.3)
+    slot_id           references slots; telemetry and settlement, not part of the key
+    claim_range       tstzrange over [slot.starts_at, slot.ends_at)
+    expires_at        the backing hold's expiry; NULL once confirmed
+    EXCLUDE USING gist (organisation_id =, user_id =, claim_range &&)
 ```
 
-The exact schema is deliberately not decided by this note. Before implementation, the
-design must compare this relation with settling and constraining the existing reservation
-model, using the acceptance criteria in this document.
+Keying the row on `reservation_id` makes the confirm case safe by construction: confirming
+**updates** the existing claim rather than inserting a second one, so a booking can never
+self-conflict with the hold it was created from (§10.2 gate 13).
 
-## 7. Transaction and lock-order requirements
+Claim lifecycle, all transitions inside the operation's existing transaction:
 
-Reserve, confirm, cancel, expiry, and any future reschedule operation must preserve both
-slot capacity and user schedule safety atomically.
+| Operation | Effect on `user_time_claims` |
+|---|---|
+| reserve (success) | insert claim; `expires_at` = the hold's expiry |
+| confirm (success) | update the claim: `expires_at → NULL` (permanent) |
+| cancel reservation | delete the claim |
+| cancel booking | delete the claim |
+| expiry settlement | delete the claim alongside the `held → expired` transition |
 
-The implementation design must publish one lock order and follow it on every path. For
-example:
+**Claim settlement (the answer to §4.2).** Immediately after acquiring the slot lock and
+before evaluating preconditions, `reserve` deletes this identity's own elapsed claims:
+
+```sql
+DELETE FROM user_time_claims
+ WHERE organisation_id = $1 AND user_id = $2
+   AND expires_at IS NOT NULL AND expires_at <= $3   -- authoritative tx time
+```
+
+This is the identity-scoped analogue of the slot-scoped settlement in
+`transaction-semantics.md` §2.1, and it carries the same guarantee: an elapsed hold stops
+blocking the schedule whether or not the worker has run. The delete is bounded by one
+identity's own live claims, and it is indexed by the exclusion constraint's leading
+columns.
+
+Confirmed claims have `expires_at IS NULL` and are never settled — only cancellation
+removes them.
+
+A transactional pre-check query may still be issued before the insert to produce a clearer
+refusal, but the exclusion constraint remains the race-proof authority: any pre-check that
+passes can still lose to a concurrent commit, and the constraint is what catches it.
+
+## 7. Lock order (normative for PR4)
+
+Every path that touches both authorities uses one order:
 
 ```text
-user schedule authority -> slot authority
+slot authority  →  user schedule authority
 ```
 
-or:
+Reserve, confirm, cancel, and expiry all already begin by locking the slot row
+(`transaction-semantics.md` §2), so this order preserves existing flows unchanged and adds
+the claim mutation after the precondition evaluation. No path may touch
+`user_time_claims` before its slot lock, including the PR5 worker and any future
+administrative operation.
+
+Two concurrent reserves for one identity on different slots take *different* slot locks
+and then contend on the claim relation, where one blocks until the other commits. That is
+a wait, not a cycle: the claim authority is the only shared resource, so it cannot deadlock
+against the slot locks as long as the order above holds everywhere.
+
+An exclusion constraint can block while a conflicting transaction is uncommitted. That
+wait stays inside the existing caller, transaction, `lock_timeout`, and `statement_timeout`
+budgets, and database timeout classification stays distinct from a business refusal.
+
+## 8. Domain outcome and idempotency
+
+A schedule conflict is a **business refusal**, not a system fault, and it does not enlarge
+the outcome set. In the two-axis taxonomy of `internal/domain/outcome.go`, `Outcome` is a
+closed set and `Reason` is the stable code a `business_refusal` carries. So:
 
 ```text
-slot authority -> user schedule authority
+Outcome = OutcomeBusinessRefusal
+Reason  = ReasonScheduleConflict     ("schedule_conflict")
 ```
 
-The choice requires inspection of the existing transaction flows; this note does not pick
-one prematurely. The required property is that all multi-authority paths use the same
-order, including workers and administrative operations.
+`no_capacity` is a sibling `Reason`, not an outcome, and the two must stay distinct: a
+schedule conflict can occur while the slot still has capacity.
 
-An exclusion constraint can still produce blocking while another conflicting transaction
-is uncommitted. Its wait must remain inside the existing caller, transaction, lock, and
-statement budgets. Database timeout classification must remain distinct from a business
-conflict refusal.
+Idempotency rules are unchanged by this invariant:
 
-## 8. Domain outcomes and idempotency
-
-A schedule conflict is a business refusal, not a system fault. The exact public outcome
-name should be chosen alongside the API contract; candidates include:
-
-```text
-schedule_conflict
-user_time_conflict
-booking_overlap
-```
-
-The name must distinguish this refusal from `no_capacity` because the slot may still have
-capacity.
-
-Idempotency rules continue to apply before and after this invariant is added:
-
-- replaying the same successful reserve command and idempotency key returns the original
-  successful result rather than conflicting with its own claim;
-- replaying the same refused command returns the recorded refusal;
-- reusing one idempotency key for a different command remains key misuse;
-- two different keys racing for overlapping intervals for one user produce at most one
+- replaying a successful reserve with the same key returns the original result rather than
+  conflicting with its own claim;
+- replaying a refused command returns the recorded refusal;
+- reusing one key for a different command remains key misuse;
+- two different keys racing for overlapping intervals for one identity produce at most one
   successful active claim;
-- an ambiguous commit remains `unknown_replayable`; the client must replay with the same
-  key to learn whether the claim exists.
+- an ambiguous commit remains `unknown_replayable`; the client replays with the same key
+  to learn whether the claim exists.
 
-A database exclusion violation must therefore be interpreted only after the idempotency
-path has established whether the request is a replay or a genuinely new mutation.
+Because the idempotency record is written in the same transaction and before the mutation
+(`transaction-semantics.md` §5.2), an exclusion violation is interpreted only after replay
+resolution has established that the request is a genuinely new mutation.
 
 ## 9. Authoritative time
 
-The authoritative-time contract from `transaction-semantics.md` remains in force.
+The authoritative-time contract (`transaction-semantics.md` §1.5) remains in force.
 
-The requested booking interval comes from persisted slot data, not from an API-host clock.
-PostgreSQL-owned decision time determines whether an existing hold has elapsed and can be
-settled before the conflict decision. API-node clocks must not decide whether a user-time
-claim remains active.
+The claim interval comes from persisted slot data, never from an API-host clock.
+PostgreSQL-owned decision time determines whether a hold has elapsed and may be settled
+before the conflict decision. API-node clocks never decide whether a claim is active.
 
-Half-open interval semantics are independent of the decision timestamp:
+Half-open semantics are independent of the decision timestamp:
 
 ```text
 claim range: [slot.starts_at, slot.ends_at)
 hold active: decision_now < expires_at
 ```
 
-A hold may stop blocking before the booked slot interval begins if it expires or is
-cancelled. Confirmation keeps the same slot interval active without creating a second
-claim for the same booking.
+A hold may stop blocking before its slot interval begins, if it expires or is cancelled.
+Confirmation keeps the same interval active without creating a second claim.
 
 ## 10. Required correctness gates
 
-The future implementation is incomplete until PostgreSQL integration tests prove the
-following against persisted state.
+PR4 is incomplete until PostgreSQL integration tests prove the following against persisted
+state.
 
-### 10.1 Interval semantics
+### 10.1 Interval and identity semantics
 
-1. non-overlapping bookings for one user both succeed;
+1. non-overlapping claims for one identity both succeed;
 2. adjacent intervals succeed;
 3. identical intervals conflict;
 4. partial overlap from either side conflicts;
 5. a requested interval contained by an existing interval conflicts;
 6. a requested interval containing an existing interval conflicts;
-7. different users may hold overlapping intervals.
+7. different identities may hold overlapping intervals;
+8. a command issued for `(org_a, user_1)` against a slot owned by `org_b` creates a claim
+   keyed `(org_a, user_1)`, and conflicts with that identity's other claims — not with
+   `(org_b, user_1)`'s.
 
 ### 10.2 Lifecycle semantics
 
-8. an active hold conflicts with another hold;
-9. an active hold conflicts with a confirmed booking;
-10. a confirmed booking conflicts with another active claim;
-11. a cancelled booking does not conflict;
-12. an expired hold does not conflict even when historical cleanup has not yet run;
-13. confirmation does not briefly remove protection or create a duplicate self-conflict;
-14. cancellation and expiry remove the active claim atomically with their lifecycle
-    transition.
+9. an active hold conflicts with another hold;
+10. an active hold conflicts with a confirmed booking;
+11. a confirmed booking conflicts with another active claim;
+12. a cancelled reservation or booking does not conflict;
+13. an elapsed hold does not conflict even when the expiry worker has not run;
+14. confirmation neither briefly removes protection nor creates a duplicate self-conflict;
+15. cancellation and expiry remove the claim atomically with their lifecycle transition.
 
 ### 10.3 Concurrency semantics
 
-15. two concurrent overlapping reserves for the same user and different slots produce
+16. two concurrent overlapping reserves for one identity on different slots produce
     exactly one success;
-16. concurrent non-overlapping reserves for the same user can both succeed;
-17. concurrent overlapping reserves for different users can both succeed when slot
+17. concurrent non-overlapping reserves for one identity can both succeed;
+18. concurrent overlapping reserves for different identities can both succeed when slot
     capacity permits;
-18. a reserve racing cancellation or expiry observes one serializable committed outcome;
-19. a reserve racing confirmation cannot bypass the invariant during the state change;
-20. the test fails when the shared user authority or exclusion backstop is deliberately
-    removed.
+19. a reserve racing cancellation or expiry observes one serializable committed outcome;
+20. a reserve racing confirmation cannot bypass the invariant during the state change;
+21. the gates fail when the exclusion constraint is removed (§11).
 
 The decisive persisted-state assertion is:
 
-> At every committed database state, for any user and instant, at most one active claim
-> contains that instant.
+> At every committed database state, for any identity and any instant, at most one active
+> claim contains that instant.
 
 ### 10.4 Fault and budget semantics
 
-21. a genuine committed conflict maps to the chosen business refusal;
-22. waiting past `lock_timeout` or `statement_timeout` maps to `timeout_db`, not to the
+22. a genuine committed conflict maps to `business_refusal` / `schedule_conflict`;
+23. waiting past `lock_timeout` or `statement_timeout` maps to `timeout_db`, not to the
     business refusal;
-23. caller cancellation maps to the applicable client/server timeout outcome;
-24. an ambiguous commit remains replayable with the same idempotency key;
-25. rollback and cleanup remain independently bounded.
+24. caller cancellation maps to the applicable client/server timeout outcome;
+25. an ambiguous commit remains replayable with the same idempotency key;
+26. rollback and cleanup remain independently bounded.
 
 ## 11. Negative controls
 
 Passing concurrency tests are credible only if they fail when the protection is removed.
-The implementation PR must include at least one documented negative control, such as:
+PR4 must record at least one executed negative control:
 
-- remove the exclusion constraint while leaving the service pre-check in place and show
-  that the different-slot race admits both requests;
-- skip the per-user authority lock and show that both transactions pass the pre-check;
-- delay expiry cleanup and show that the chosen active-claim model still permits a new
-  booking after authoritative expiry;
-- invert one operation's lock order and demonstrate that the deadlock-focused test detects
-  the inconsistency.
+- drop the exclusion constraint, leave the service pre-check in place, and show that the
+  different-slot race admits both requests;
+- skip claim settlement and show that an elapsed hold wrongly blocks a new booking;
+- delete the claim on confirm instead of updating it, and show the self-conflict appear.
 
-The negative control does not need to remain executable in production code, but the PR
-must record what was changed and which gate failed.
+The control need not remain executable in production code, but the PR must record what was
+changed and which gate failed.
 
-## 12. Performance and scaling questions
+## 12. Performance and scaling
 
-This invariant adds a user-keyed contention domain. That is desirable for conflicting
-requests from one user, but its cost must not be confused with slot contention.
+This invariant adds an identity-keyed contention domain. That is desirable for one
+identity's conflicting requests, but its cost must not be confused with slot contention.
 
-A later measurement plan should distinguish:
+The AG-M2 measurement plan should distinguish:
 
-- same user, same slot;
-- same user, different overlapping slots;
-- same user, different non-overlapping slots;
-- different users, same slot;
-- different users, different slots.
+- same identity, same slot;
+- same identity, different overlapping slots;
+- same identity, different non-overlapping slots;
+- different identities, same slot;
+- different identities, different slots.
 
-The design should record:
+and record added statements per mutation, exclusion-index wait time, deadlock and retry
+counts, effect on p95/p99 and the timeout outcome mix, index growth, and whether one
+unusually active identity can affect unrelated identities through pool pressure.
 
-- added statements and round trips per mutation;
-- exclusion-index or user-lock wait time;
-- deadlock and serialization-retry counts;
-- effect on p95/p99 latency and timeout outcome mix;
-- index growth and cleanup behaviour;
-- whether one unusually active user can affect unrelated users through pool pressure.
+Because this changes the write path, **AG-M2's frontier baseline must be measured after
+PR4 lands**, or it has to be re-run. No performance claim is made by this note.
 
-No performance claim is made by this note.
+## 13. Scale-out boundary (AG-M5)
 
-## 13. Scale-out boundary
+While one PostgreSQL authority owns all claims, the database enforces the invariant across
+every API replica. AG-M1 through AG-M4 are in that regime, so this is not a correctness
+gap today.
 
-While one PostgreSQL authority owns all relevant user claims, the database can enforce the
-invariant across every API replica.
+AG-M5's organisation-based sharding makes it an explicit constraint. A cross-organisation
+booking touches two authorities: slot capacity in the *slot's* organisation, and the
+schedule claim in the *identity's* organisation. Those can land on different shards.
 
-Physical sharding changes the problem. If one user's claims can reside in different
-databases, a local exclusion constraint or local user lock cannot prove global non-overlap.
-A future shard design must therefore keep all schedule claims for one scope key on one
-authority, or introduce a dedicated global schedule authority. This is a placement
-constraint, not merely a query-routing optimisation.
+Claims for one identity always share one `organisation_id` (§3.3), so an identity's own
+claims stay co-located and the exclusion constraint keeps working locally. What AG-M5 must
+decide is how a single booking spans two organisation authorities. This note records the
+constraint and does not attempt the distributed-transaction design.
 
-## 14. Implementation entry criteria
+## 14. Decisions
 
-Before scheduling implementation, the design review should explicitly answer:
+| # | Question | Decision |
+|---|---|---|
+| 1 | Scope key | `(organisation_id, user_id)`, scoped by identity issuance, never derived from the slot (§3.3) |
+| 2 | Which relation represents active claims | a separate `user_time_claims` relation (§6) |
+| 3 | How an elapsed hold stops participating | identity-scoped claim settlement inside the transaction, before preconditions (§6) |
+| 4 | Constraint primary or backstop | the exclusion constraint is the authority; any pre-check is for message quality only (§6) |
+| 5 | Lock order | slot authority → user schedule authority, on every path (§7) |
+| 6 | Which operations touch a claim | reserve inserts, confirm updates, cancel and expiry delete (§6) |
+| 7 | Refusal name | `OutcomeBusinessRefusal` + new `ReasonScheduleConflict` (§8) |
+| 8 | Distinguishing a violation from faults | exclusion violation → refusal; lock/statement timeout → `timeout_db` (§8, §10.4) |
+| 9 | Concurrency acceptance gate | §10.3 gate 16 |
+| 10 | Discriminating negative control | §11 |
+| 11 | Migration and extension | new forward migration; `btree_gist` required (§5.1) |
+| 12 | Owning milestone | AG-M1 PR4; original worker/API/telemetry PR becomes PR5 |
 
-1. Is the scope key global `user_id` or `(tenant_id, user_id)`?
-2. Which persisted relation represents active claims?
-3. How does an elapsed hold stop participating without depending on worker promptness?
-4. Is the exclusion constraint the primary authority or the backstop to an explicit user
-   lock?
-5. What is the global lock order across user and slot authorities?
-6. Which operations create, retain, replace, or remove a claim?
-7. What domain outcome names a schedule conflict?
-8. How is an exclusion violation distinguished from timeout, cancellation, and internal
-   failure?
-9. Which integration test is the concurrency acceptance gate?
-10. Which negative control proves that gate is discriminating?
-11. What migration and extension requirements apply?
-12. Which milestone owns implementation and measurement?
+Remaining open, deliberately deferred:
 
-The implementation PR should update the normative transaction and API documents once
-these decisions are accepted. This design note should then be marked superseded or
-accepted with a pointer to the normative owner, rather than maintained as a second
-competing specification.
+- buffers, per-day limits, and other identity-level policies (§3.2);
+- the AG-M5 cross-authority design for bookings spanning two organisations (§13);
+- bounded/indexed claim settlement if the AG-M2 measurements show the per-identity delete
+  on the hot path is material (§12).

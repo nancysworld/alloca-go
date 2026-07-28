@@ -233,8 +233,13 @@ EXCLUDE USING gist (
 )
 ```
 
-`user_organisation_id` and `user_id` are `text`, so the `btree_gist` extension is **required**
-for the scalar equality operators — not optional. PR4 adds it in the forward migration.
+`user_organisation_id` and `user_id` are `text`, so the `btree_gist` extension is
+**required** for the scalar equality operators — not optional. It is a *trusted*
+extension (verified on PostgreSQL 16), so installing it needs the `CREATE` privilege on
+the database rather than superuser; it must, however, be available on the server, which
+on RDS means `rds.allowed_extensions`. The rollback deliberately leaves it installed:
+`CREATE EXTENSION IF NOT EXISTS` cannot establish that this migration created it, and
+dropping a possibly-shared extension is worse than leaving an unused one.
 
 Strengths:
 
@@ -478,7 +483,15 @@ instead of updating it" — that was executed and **passed**, because the delete
 the insert within the same transaction, so there is nothing to conflict with. It was not
 a discriminating control, and the version above is what actually models the risk.
 
-Control 1 remains in the suite; 2 and 3 were executed and reverted.
+**4. Remove the migration's backfill.** Added after review (Codex, P1). A claim table
+that starts empty exempts every pre-existing reservation: existing bookings never
+participate in the constraint, and confirming an existing hold finds no claim to update.
+Deleting the backfill `INSERT` makes `TestClaimBackfillCoversPreExistingReservations`
+fail with an empty claim set. `TestClaimBackfillRefusesPreExistingOverlaps` is its
+counterpart, and stays in the suite: a database that already contains overlapping
+bookings must abort the migration rather than have those rows silently skipped.
+
+Controls 1 and 4 remain in the suite; 2 and 3 were executed and reverted.
 
 ## 12. Performance and scaling
 

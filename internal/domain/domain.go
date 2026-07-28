@@ -25,7 +25,12 @@ const ContractVersion = "v1"
 // compiler rejects passing, say, a UserID where a SlotID is expected.
 type (
 	// OrganisationID is the coarse authority / routing dimension (AG-M5) and part of
-	// the idempotency scope. Each slot belongs to one organisation.
+	// the idempotency scope. It means two different things and they must not be
+	// conflated (transaction-semantics §1.1): on a Slot it is the organisation that
+	// owns the slot; on a Reservation, Booking, or ScheduleClaim it is the
+	// organisation the caller's identity is issued under, never the target slot's.
+	// The pair (OrganisationID, UserID) is therefore the identity, and it is globally
+	// unique without UserID having to be.
 	OrganisationID string
 	// UserID is the booking participant; it scopes idempotency and is a fairness
 	// dimension for later milestones.

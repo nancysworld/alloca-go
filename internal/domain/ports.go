@@ -17,6 +17,15 @@ var (
 	// concurrency backstop of transaction-semantics §5.3; the caller rolls back and
 	// re-runs so the winning record is observed.
 	ErrConflict = errors.New("domain: idempotency scope conflict")
+	// ErrScheduleConflict reports that inserting a schedule claim overlapped an
+	// existing active claim for the same identity — the user schedule non-overlap
+	// invariant (transaction-semantics §2.2). Unlike ErrConflict it is not a retry
+	// signal: it is the authoritative answer that this identity's time is already
+	// claimed, which the service turns into a business_refusal with
+	// ReasonScheduleConflict. It must leave the transaction usable, so an adapter that
+	// discovers it through a constraint violation has to roll back to a savepoint
+	// rather than abort the whole transaction.
+	ErrScheduleConflict = errors.New("domain: schedule claim overlaps an existing claim")
 	// ErrTimeNotEstablished reports that Tx.Now was called before the attempt's
 	// authoritative timestamp existed — that is, before a successful LockSlot or
 	// ResolveTimeWithoutSlot. It is a programming error on the fault line
@@ -103,6 +112,32 @@ type Tx interface {
 	PutReservation(ctx context.Context, r Reservation) error
 	// PutBooking inserts or updates a booking.
 	PutBooking(ctx context.Context, b Booking) error
+	// InsertClaim inserts an active schedule claim, returning ErrScheduleConflict if it
+	// overlaps an existing active claim for the same identity (transaction-semantics
+	// §2.2). The insert *is* the conflict check: a prior read cannot be authoritative,
+	// because a concurrent transaction may commit an overlapping claim between the read
+	// and the write. Implementations must leave the transaction usable after a
+	// conflict, since the caller still has to record the refusal.
+	//
+	// It is called during precondition evaluation rather than in the mutation step, so
+	// the outcome is known before the idempotency record is written.
+	InsertClaim(ctx context.Context, c ScheduleClaim) error
+	// ConfirmClaim makes a claim permanent by clearing its expiry: the hold became a
+	// booking, so settlement must no longer remove it. It updates the existing row
+	// rather than inserting a second one, so confirming cannot self-conflict.
+	ConfirmClaim(ctx context.Context, id ReservationID) error
+	// DeleteClaim removes a reservation's claim when it stops being active —
+	// cancellation or expiry. Deleting an absent claim is not an error: expiry settles
+	// reservations whose claims a previous identity-scoped settlement may already have
+	// removed.
+	DeleteClaim(ctx context.Context, id ReservationID) error
+	// SettleClaims removes the identity's elapsed claims — those whose backing hold has
+	// lapsed at now. It is the identity-scoped analogue of slot-scoped expiry
+	// settlement, and carries the same guarantee: an abandoned hold stops blocking the
+	// identity's schedule whether or not the expiry worker has run
+	// (transaction-semantics §2.1, §2.2). Confirmed claims have no expiry and are never
+	// settled.
+	SettleClaims(ctx context.Context, org OrganisationID, user UserID, now time.Time) error
 	// FindRecord loads an idempotency record by scoped key. Returns ErrNotFound if
 	// absent.
 	FindRecord(ctx context.Context, key ScopeKey) (IdempotencyRecord, error)

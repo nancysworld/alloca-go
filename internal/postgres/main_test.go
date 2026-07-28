@@ -223,10 +223,64 @@ func assertConsumed(t *testing.T, h *harness, slotID domain.SlotID, wantHeld, wa
 }
 
 func (h *harness) reserve(ctx context.Context, user, key string, slotID domain.SlotID) (domain.Result, error) {
+	return h.reserveAs(ctx, testOrg, user, key, slotID)
+}
+
+// reserveAs reserves for an explicit identity organisation, which need not be the
+// organisation that owns the slot. That is the cross-organisation case
+// (transaction-semantics §1.1): the identity is (organisation_id, user_id), and it is
+// the *caller's* organisation, so a member of one organisation booking another's slot
+// is still protected against overlapping their own schedule.
+func (h *harness) reserveAs(ctx context.Context, org domain.OrganisationID, user, key string, slotID domain.SlotID) (domain.Result, error) {
 	return h.svc.Reserve(ctx, service.ReserveCommand{
-		OrganisationID: testOrg, UserID: domain.UserID(user),
+		OrganisationID: org, UserID: domain.UserID(user),
 		SlotID: slotID, IdempotencyKey: key,
 	})
+}
+
+// seedWindow creates a slot with an explicit owning organisation and an explicit
+// interval, both expressed relative to a base instant the caller supplies. Unlike
+// seedSlot it reads no clock of its own: schedule tests turn on exact interval
+// relationships — adjacent, identical, containing — and a per-call clock read would put
+// microseconds of drift exactly where the boundary is being tested.
+func (h *harness) seedWindow(t *testing.T, org domain.OrganisationID, id domain.SlotID, capacity int, base time.Time, startsIn, endsIn time.Duration) domain.Slot {
+	t.Helper()
+	slot := domain.Slot{
+		ID:             id,
+		OrganisationID: org,
+		ResourceID:     "resource-1",
+		Capacity:       capacity,
+		ReleaseAt:      base.Add(-time.Hour),
+		StartsAt:       base.Add(startsIn),
+		EndsAt:         base.Add(endsIn),
+	}
+	if err := h.repo.SeedSlot(context.Background(), slot); err != nil {
+		t.Fatalf("seed slot %q: %v", id, err)
+	}
+	return slot
+}
+
+// assertNoOverlappingClaims checks the user schedule invariant against persisted rows.
+func assertNoOverlappingClaims(t *testing.T, h *harness) {
+	t.Helper()
+	overlaps, err := h.repo.OverlappingClaims(context.Background())
+	if err != nil {
+		t.Fatalf("overlapping claims: %v", err)
+	}
+	if overlaps != 0 {
+		t.Errorf("%d overlapping claim pairs persisted: one identity holds two claims covering the same instant", overlaps)
+	}
+}
+
+func assertClaimCount(t *testing.T, h *harness, want int) {
+	t.Helper()
+	got, err := h.repo.ClaimCount(context.Background())
+	if err != nil {
+		t.Fatalf("claim count: %v", err)
+	}
+	if got != want {
+		t.Errorf("persisted claims = %d, want %d", got, want)
+	}
 }
 
 func (h *harness) confirm(ctx context.Context, user, key string, res domain.ReservationID) (domain.Result, error) {

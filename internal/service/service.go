@@ -107,6 +107,15 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 		if err != nil {
 			return domain.Result{}, err
 		}
+		// Identity-scoped claim settlement, the analogue of the slot-scoped settlement
+		// above (transaction-semantics §2.2). The requesting identity's elapsed holds may
+		// be on *other* slots, which this transaction never locks and settle() therefore
+		// never sees, so without this an abandoned hold would block the identity's
+		// schedule until the expiry worker happened to run. Correctness must not depend
+		// on that.
+		if err := tx.SettleClaims(ctx, cmd.OrganisationID, cmd.UserID, now); err != nil {
+			return domain.Result{}, err
+		}
 
 		var result domain.Result
 		var persist func(context.Context, domain.Tx) error
@@ -135,8 +144,35 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 					CreatedAt:      now,
 					ExpiresAt:      expiresAt,
 				}
-				result = domain.Result{Outcome: domain.OutcomeAdmittedSuccess, ReservationID: resID}
-				persist = func(ctx context.Context, tx domain.Tx) error { return tx.PutReservation(ctx, res) }
+				// The claim is inserted here, during precondition evaluation, rather than
+				// alongside the reservation in persist. The insert is the conflict check —
+				// a preceding SELECT could always lose to a transaction committing between
+				// the read and the write — so the answer has to be known before commit()
+				// records a terminal outcome that cannot then be changed.
+				//
+				// Claim before reservation inverts the natural FK order; the claim's
+				// reference to reservations is DEFERRABLE INITIALLY DEFERRED so it is
+				// validated at COMMIT, by which point persist has written the row.
+				claim := domain.ScheduleClaim{
+					ReservationID:  resID,
+					OrganisationID: cmd.OrganisationID,
+					UserID:         cmd.UserID,
+					SlotID:         slot.ID,
+					StartsAt:       slot.StartsAt,
+					EndsAt:         slot.EndsAt,
+					ExpiresAt:      expiresAt,
+				}
+				switch err := tx.InsertClaim(ctx, claim); {
+				case errors.Is(err, domain.ErrScheduleConflict):
+					// The identity's own time is already claimed. A business refusal, and
+					// distinct from no_capacity: this slot may still have room.
+					result = domain.Refusal(domain.ReasonScheduleConflict)
+				case err != nil:
+					return domain.Result{}, err
+				default:
+					result = domain.Result{Outcome: domain.OutcomeAdmittedSuccess, ReservationID: resID}
+					persist = func(ctx context.Context, tx domain.Tx) error { return tx.PutReservation(ctx, res) }
+				}
 			}
 		}
 		return s.commit(ctx, tx, scope, hash, result, now, persist)
@@ -185,7 +221,14 @@ func (s *Service) Confirm(ctx context.Context, cmd ConfirmCommand) (domain.Resul
 					if err := tx.PutReservation(ctx, res); err != nil {
 						return err
 					}
-					return tx.PutBooking(ctx, bk)
+					if err := tx.PutBooking(ctx, bk); err != nil {
+						return err
+					}
+					// The hold's claim becomes the booking's claim: one logical claim
+					// throughout, so confirming can neither drop the identity's protection
+					// for an instant nor create a second claim to conflict with the first
+					// (transaction-semantics §2.2).
+					return tx.ConfirmClaim(ctx, res.ID)
 				}
 			}
 		case domain.ReservationExpired:
@@ -222,7 +265,14 @@ func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (domain.Result,
 			} else {
 				res.State = domain.ReservationCancelled
 				result = domain.Result{Outcome: domain.OutcomeAdmittedSuccess, ReservationID: res.ID}
-				persist = func(ctx context.Context, tx domain.Tx) error { return tx.PutReservation(ctx, res) }
+				persist = func(ctx context.Context, tx domain.Tx) error {
+					if err := tx.PutReservation(ctx, res); err != nil {
+						return err
+					}
+					// Atomic with the lifecycle transition: the identity's time is freed by
+					// the same commit that releases the slot unit.
+					return tx.DeleteClaim(ctx, res.ID)
+				}
 			}
 		case domain.ReservationConfirmed:
 			bk, err := tx.BookingForReservation(ctx, res.ID)
@@ -239,7 +289,12 @@ func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (domain.Result,
 			default:
 				bk.State = domain.BookingCancelled
 				result = domain.Result{Outcome: domain.OutcomeAdmittedSuccess, ReservationID: res.ID}
-				persist = func(ctx context.Context, tx domain.Tx) error { return tx.PutBooking(ctx, bk) }
+				persist = func(ctx context.Context, tx domain.Tx) error {
+					if err := tx.PutBooking(ctx, bk); err != nil {
+						return err
+					}
+					return tx.DeleteClaim(ctx, res.ID)
+				}
 			}
 		default: // expired or cancelled: nothing live to release
 			result = domain.Refusal(domain.ReasonInvalidState)
@@ -370,6 +425,14 @@ func (s *Service) settle(ctx context.Context, tx domain.Tx, slotID domain.SlotID
 		if r.Elapsed(now) {
 			r.State = domain.ReservationExpired
 			if err := tx.PutReservation(ctx, r); err != nil {
+				return 0, err
+			}
+			// The claim stops being active with the same commit that expires the hold, so
+			// user_time_claims holds only live claims (transaction-semantics §2.2). The
+			// identity-scoped settlement on the reserve path would eventually remove it
+			// too, but only once that identity reserved again — the relation would
+			// otherwise carry rows for holds that are already dead.
+			if err := tx.DeleteClaim(ctx, r.ID); err != nil {
 				return 0, err
 			}
 			continue

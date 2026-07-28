@@ -209,6 +209,101 @@ func (t *tx) PutBooking(ctx context.Context, b domain.Booking) error {
 	return nil
 }
 
+// InsertClaim inserts the schedule claim, returning domain.ErrScheduleConflict when the
+// exclusion constraint rejects it as overlapping an existing claim of the same identity.
+//
+// The insert runs inside a savepoint (pgx models a nested Begin as one). A constraint
+// violation aborts the *current* transaction block in PostgreSQL, and this one is not
+// over: the caller still has to record the refusal and commit. Rolling back to the
+// savepoint discards only the failed insert and leaves the surrounding transaction
+// usable, which is what lets a race that loses to a concurrent commit still produce a
+// clean business refusal rather than a fault.
+//
+// The range is built in SQL rather than passed as a range value so the '[)' bound is
+// stated where the constraint that reads it lives: the half-open boundary is the
+// difference between "adjacent" and "overlapping".
+func (t *tx) InsertClaim(ctx context.Context, c domain.ScheduleClaim) error {
+	sp, err := t.conn.Begin(ctx)
+	if err != nil {
+		return mapError(ctx, err)
+	}
+	_, err = sp.Exec(ctx, `
+		INSERT INTO user_time_claims
+			(reservation_id, organisation_id, user_id, slot_id, claim_range, expires_at)
+		VALUES ($1, $2, $3, $4, tstzrange($5, $6, '[)'), $7)`,
+		string(c.ReservationID), string(c.OrganisationID), string(c.UserID),
+		string(c.SlotID), c.StartsAt, c.EndsAt, c.ExpiresAt)
+	if err != nil {
+		// Rollback restores the savepoint; its own error is deliberately not returned
+		// over the classified insert error, which is the one that explains the outcome.
+		_ = sp.Rollback(ctx)
+		if isExclusionViolation(err) {
+			return domain.ErrScheduleConflict
+		}
+		return mapError(ctx, err)
+	}
+	if err := sp.Commit(ctx); err != nil {
+		return mapError(ctx, err)
+	}
+	return nil
+}
+
+// ConfirmClaim clears the claim's expiry, making it permanent. The interval and the
+// identity are untouched, so the constraint cannot reject this update: it is the same
+// row occupying the same range it already occupied.
+func (t *tx) ConfirmClaim(ctx context.Context, id domain.ReservationID) error {
+	tag, err := t.conn.Exec(ctx,
+		`UPDATE user_time_claims SET expires_at = NULL WHERE reservation_id = $1`,
+		string(id))
+	if err != nil {
+		return mapError(ctx, err)
+	}
+	if tag.RowsAffected() == 0 {
+		// Confirming a reservation whose claim is missing means hold and claim have
+		// diverged. That is an invariant breach, not a domain answer, so it surfaces as a
+		// fault rather than silently confirming an unprotected booking.
+		return fmt.Errorf("postgres: confirm claim for reservation %q: %w", id, domain.ErrNotFound)
+	}
+	return nil
+}
+
+// DeleteClaim removes a claim. Deleting an absent claim succeeds: expiry settlement runs
+// over held reservations whose claims identity-scoped settlement may already have
+// removed, and that convergence is not an error.
+func (t *tx) DeleteClaim(ctx context.Context, id domain.ReservationID) error {
+	_, err := t.conn.Exec(ctx, `DELETE FROM user_time_claims WHERE reservation_id = $1`, string(id))
+	if err != nil {
+		return mapError(ctx, err)
+	}
+	return nil
+}
+
+// SettleClaims deletes the identity's elapsed claims. The boundary is expires_at <= now,
+// matching Reservation.Elapsed, and now is the attempt's authoritative PostgreSQL
+// timestamp — never an API host clock, which must not decide whether a claim is live.
+//
+// Confirmed claims have expires_at IS NULL and are excluded by the predicate rather than
+// by a state check, so a permanent claim cannot be settled away by a boundary mistake.
+func (t *tx) SettleClaims(ctx context.Context, org domain.OrganisationID, user domain.UserID, now time.Time) error {
+	_, err := t.conn.Exec(ctx, `
+		DELETE FROM user_time_claims
+		WHERE organisation_id = $1 AND user_id = $2
+		  AND expires_at IS NOT NULL AND expires_at <= $3`,
+		string(org), string(user), now)
+	if err != nil {
+		return mapError(ctx, err)
+	}
+	return nil
+}
+
+// isExclusionViolation reports whether err is a PostgreSQL exclusion-constraint
+// violation. Scoped like isUniqueViolation: user_time_claims carries the only exclusion
+// constraint in the schema, so 23P01 means the schedule invariant and nothing else.
+func isExclusionViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == pgerrcode.ExclusionViolation
+}
+
 func (t *tx) FindRecord(ctx context.Context, key domain.ScopeKey) (domain.IdempotencyRecord, error) {
 	row := t.conn.QueryRow(ctx, `
 		SELECT organisation_id, user_id, operation, key, request_hash, outcome, reason,

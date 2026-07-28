@@ -427,15 +427,34 @@ The decisive persisted-state assertion is:
 ## 11. Negative controls
 
 Passing concurrency tests are credible only if they fail when the protection is removed.
-PR4 must record at least one executed negative control:
+Three controls were executed against the PR4 implementation; each is recorded with what
+was changed and which gate failed.
 
-- drop the exclusion constraint, leave the service pre-check in place, and show that the
-  different-slot race admits both requests;
-- skip claim settlement and show that an elapsed hold wrongly blocks a new booking;
-- delete the claim on confirm instead of updating it, and show the self-conflict appear.
+**1. Drop the exclusion constraint.** Automated, and permanently part of the suite:
+`TestNegativeControlDroppingTheConstraintAdmitsOverlap` drops
+`user_time_claims_no_overlap`, runs the different-slot race, and *asserts that
+overlapping claims are persisted*. It is the inverse of the acceptance gate, so if the
+race ever stops happening the control fails and says so. Result: overlapping claim pairs
+appear, confirming the acceptance gate is discriminating rather than passing vacuously.
 
-The control need not remain executable in production code, but the PR must record what was
-changed and which gate failed.
+**2. Remove identity-scoped claim settlement.** Deleting the `SettleClaims` call from
+`Service.Reserve` makes `TestElapsedHoldStopsBlockingWithoutTheWorker` fail with
+`business_refusal`/`schedule_conflict` — an abandoned hold on another slot goes on
+blocking the identity, exactly the worker-dependence §4.2 forbids. Verified at both
+layers, service and PostgreSQL.
+
+**3. Key the booking's claim separately on confirm.** Making confirm insert a
+booking-keyed claim instead of updating the hold's claim in place makes
+`TestConfirmKeepsOneClaimAndKeepsBlocking` fail with `ErrScheduleConflict`: the identity
+conflicts with itself the instant it confirms. This is what keying the relation on
+`reservation_id` (§6) makes unrepresentable.
+
+Note what control 3 replaced. An earlier draft proposed "delete the claim on confirm
+instead of updating it" — that was executed and **passed**, because the delete precedes
+the insert within the same transaction, so there is nothing to conflict with. It was not
+a discriminating control, and the version above is what actually models the risk.
+
+Control 1 remains in the suite; 2 and 3 were executed and reverted.
 
 ## 12. Performance and scaling
 

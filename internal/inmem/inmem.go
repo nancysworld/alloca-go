@@ -67,6 +67,7 @@ type Store struct {
 	bookings     map[domain.BookingID]domain.Booking
 	bookingByRes map[domain.ReservationID]domain.BookingID
 	records      map[domain.ScopeKey]domain.IdempotencyRecord
+	claims       map[domain.ReservationID]domain.ScheduleClaim
 }
 
 // New constructs an empty Store whose transactions take their authoritative time
@@ -85,7 +86,22 @@ func New(clock Clock) *Store {
 		bookings:     make(map[domain.BookingID]domain.Booking),
 		bookingByRes: make(map[domain.ReservationID]domain.BookingID),
 		records:      make(map[domain.ScopeKey]domain.IdempotencyRecord),
+		claims:       make(map[domain.ReservationID]domain.ScheduleClaim),
 	}
+}
+
+// Claims returns every stored schedule claim, for tests that assert the invariant
+// against persisted state rather than against operation results. Like SlotCounts it
+// does not settle: a caller wanting live claims only must reconcile at a time before
+// any hold elapses, or check Elapsed itself.
+func (s *Store) Claims() []domain.ScheduleClaim {
+	s.lock()
+	defer s.unlock()
+	out := make([]domain.ScheduleClaim, 0, len(s.claims))
+	for _, c := range s.claims {
+		out = append(out, c)
+	}
+	return out
 }
 
 // SeedSlot inserts or replaces a slot. Slot creation is a control-plane concern, not
@@ -255,6 +271,57 @@ func (t *tx) PutReservation(_ context.Context, r domain.Reservation) error {
 func (t *tx) PutBooking(_ context.Context, b domain.Booking) error {
 	t.store.bookings[b.ID] = b
 	t.store.bookingByRes[b.ReservationID] = b.ID
+	return nil
+}
+
+// InsertClaim inserts a claim unless it overlaps an existing claim of the same identity.
+//
+// The scan is the reference statement of the rule the PostgreSQL exclusion constraint
+// enforces: same identity, overlapping half-open intervals. Note what it deliberately
+// does *not* consider — whether the existing claim has elapsed. The constraint cannot
+// know: its index predicate would have to depend on the wall clock, which PostgreSQL
+// does not allow. Any stored row conflicts, elapsed or not.
+//
+// So an elapsed claim blocks here exactly as it would in PostgreSQL, and it is
+// settlement's job — not the insert's — to remove it first. Skipping elapsed rows here
+// would make this double more permissive than the authority it stands in for, and the
+// difference would only surface in production.
+func (t *tx) InsertClaim(_ context.Context, c domain.ScheduleClaim) error {
+	for _, existing := range t.store.claims {
+		if existing.ReservationID == c.ReservationID {
+			continue
+		}
+		if existing.SameIdentity(c) && existing.Overlaps(c) {
+			return domain.ErrScheduleConflict
+		}
+	}
+	t.store.claims[c.ReservationID] = c
+	return nil
+}
+
+func (t *tx) ConfirmClaim(_ context.Context, id domain.ReservationID) error {
+	c, ok := t.store.claims[id]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	// Clearing the expiry is the whole transition: the row, and therefore the interval
+	// it protects, is otherwise untouched.
+	c.ExpiresAt = time.Time{}
+	t.store.claims[id] = c
+	return nil
+}
+
+func (t *tx) DeleteClaim(_ context.Context, id domain.ReservationID) error {
+	delete(t.store.claims, id)
+	return nil
+}
+
+func (t *tx) SettleClaims(_ context.Context, org domain.OrganisationID, user domain.UserID, now time.Time) error {
+	for id, c := range t.store.claims {
+		if c.OrganisationID == org && c.UserID == user && c.Elapsed(now) {
+			delete(t.store.claims, id)
+		}
+	}
 	return nil
 }
 

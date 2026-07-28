@@ -225,8 +225,9 @@ func (t *tx) PutBooking(ctx context.Context, b domain.Booking) error {
 	return nil
 }
 
-// InsertClaim inserts the schedule claim, returning domain.ErrScheduleConflict when the
-// exclusion constraint rejects it as overlapping an existing claim of the same identity.
+// InsertClaim inserts the schedule claim, returning the authoritative instant at which
+// the claim authority was actually acquired, or domain.ErrScheduleConflict when the
+// exclusion constraint rejects it as overlapping an existing claim of the same user.
 //
 // The insert runs inside a savepoint (pgx models a nested Begin as one). A constraint
 // violation aborts the *current* transaction block in PostgreSQL, and this one is not
@@ -235,33 +236,59 @@ func (t *tx) PutBooking(ctx context.Context, b domain.Booking) error {
 // usable, which is what lets a race that loses to a concurrent commit still produce a
 // clean business refusal rather than a fault.
 //
+// The timestamp comes from RETURNING clock_timestamp() on the insert itself, so it is
+// evaluated once the row is in — including any time spent blocked behind a conflicting
+// uncommitted claim, which can last until lock_timeout. That is the point: the caller's
+// earlier decisions were made before this wait and may be stale by its length
+// (transaction-semantics §1.5). Taking the instant in the same statement rather than a
+// following query means it cannot drift between acquiring the authority and reading the
+// clock, and costs no extra round trip.
+//
 // The range is built in SQL rather than passed as a range value so the '[)' bound is
 // stated where the constraint that reads it lives: the half-open boundary is the
 // difference between "adjacent" and "overlapping".
-func (t *tx) InsertClaim(ctx context.Context, c domain.ScheduleClaim) error {
+func (t *tx) InsertClaim(ctx context.Context, c domain.ScheduleClaim) (time.Time, error) {
 	sp, err := t.conn.Begin(ctx)
 	if err != nil {
-		return mapError(ctx, err)
+		return time.Time{}, mapError(ctx, err)
 	}
-	_, err = sp.Exec(ctx, `
+	var acquiredAt time.Time
+	err = sp.QueryRow(ctx, `
 		INSERT INTO user_time_claims
 			(reservation_id, user_organisation_id, user_id, slot_organisation_id, slot_id,
 			 claim_range, expires_at)
-		VALUES ($1, $2, $3, $4, $5, tstzrange($6, $7, '[)'), $8)`,
+		VALUES ($1, $2, $3, $4, $5, tstzrange($6, $7, '[)'), $8)
+		RETURNING clock_timestamp()`,
 		string(c.ReservationID), string(c.UserRef.OrganisationID), string(c.UserRef.UserID),
 		string(c.SlotRef.OrganisationID), string(c.SlotRef.SlotID),
-		c.StartsAt, c.EndsAt, c.ExpiresAt)
+		c.StartsAt, c.EndsAt, c.ExpiresAt).Scan(&acquiredAt)
 	if err != nil {
 		// Rollback restores the savepoint; its own error is deliberately not returned
 		// over the classified insert error, which is the one that explains the outcome.
 		_ = sp.Rollback(ctx)
 		if isExclusionViolation(err) {
-			return domain.ErrScheduleConflict
+			return time.Time{}, domain.ErrScheduleConflict
 		}
-		return mapError(ctx, err)
+		return time.Time{}, mapError(ctx, err)
 	}
 	if err := sp.Commit(ctx); err != nil {
+		return time.Time{}, mapError(ctx, err)
+	}
+	return acquiredAt.UTC(), nil
+}
+
+// SetClaimExpiry writes the claim's final expiry, computed from the post-acquisition
+// instant. The interval and the user are untouched, so the exclusion constraint cannot
+// reject it: the row keeps the range it already occupies.
+func (t *tx) SetClaimExpiry(ctx context.Context, id domain.ReservationID, expiresAt time.Time) error {
+	tag, err := t.conn.Exec(ctx,
+		`UPDATE user_time_claims SET expires_at = $2 WHERE reservation_id = $1`,
+		string(id), expiresAt)
+	if err != nil {
 		return mapError(ctx, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("postgres: set expiry on claim for reservation %q: %w", id, domain.ErrNotFound)
 	}
 	return nil
 }

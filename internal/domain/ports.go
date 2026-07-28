@@ -125,15 +125,39 @@ type Tx interface {
 	//
 	// It is called during precondition evaluation rather than in the mutation step, so
 	// the outcome is known before the idempotency record is written.
-	InsertClaim(ctx context.Context, c ScheduleClaim) error
+	//
+	// # Why it returns a timestamp (transaction-semantics §1.5)
+	//
+	// This is the attempt's *second* authority wait. An insert that overlaps an
+	// uncommitted claim blocks until that transaction resolves, and if it rolls back the
+	// insert then succeeds — after a wait bounded only by lock_timeout. Every decision
+	// made from the LockSlot instant is stale by exactly that wait, which is the
+	// staleness §1.5 exists to prevent; a slot can cross starts_at while the claim is
+	// being acquired.
+	//
+	// So a successful insert returns the authoritative instant *after* the wait, and the
+	// caller re-evaluates the window and recomputes the TTL against it. The timestamp is
+	// returned from the acquisition rather than through a general "refresh time" method
+	// on purpose: time may only be re-resolved where an authority was actually waited
+	// for, and that stays visible at the call site instead of becoming something any
+	// code could reach for.
+	InsertClaim(ctx context.Context, c ScheduleClaim) (time.Time, error)
+	// SetClaimExpiry updates a claim's expiry, so the claim and the hold it backs agree
+	// on when the hold lapses. Reserve inserts the claim with a provisional expiry
+	// computed before the wait above, then sets the final one from the post-wait instant.
+	// A mismatch would let settlement remove a claim whose hold still consumes capacity,
+	// or leave one behind whose hold is gone.
+	SetClaimExpiry(ctx context.Context, id ReservationID, expiresAt time.Time) error
 	// ConfirmClaim makes a claim permanent by clearing its expiry: the hold became a
 	// booking, so settlement must no longer remove it. It updates the existing row
 	// rather than inserting a second one, so confirming cannot self-conflict.
 	ConfirmClaim(ctx context.Context, id ReservationID) error
-	// DeleteClaim removes a reservation's claim when it stops being active —
-	// cancellation or expiry. Deleting an absent claim is not an error: expiry settles
-	// reservations whose claims a previous identity-scoped settlement may already have
-	// removed.
+	// DeleteClaim removes a reservation's claim when it stops being active. Cancellation
+	// uses it, and so does reserve when a claim it provisionally inserted turns out to
+	// be refused after the window is re-evaluated. Expiry does *not*: elapsed claims are
+	// removed only by SettleClaims (§2.2), so no transaction ever locks a claim row
+	// belonging to a user other than the one it is acting for. Deleting an absent claim
+	// is not an error.
 	DeleteClaim(ctx context.Context, id ReservationID) error
 	// SettleClaims removes the user's elapsed claims — those whose backing hold has
 	// lapsed at now. It is the user-scoped analogue of slot-scoped expiry settlement,

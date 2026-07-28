@@ -134,6 +134,10 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 
 		var result domain.Result
 		var persist func(context.Context, domain.Tx) error
+		// The attempt's decision instant. LockSlot established it after the row-lock
+		// wait; a claim acquisition is the only thing that can supersede it, because it
+		// is the only other authority this transaction waits for (§1.5).
+		decisionNow := now
 		switch {
 		case !slot.Released(now):
 			result = domain.Refusal(domain.ReasonSlotNotReleased)
@@ -150,14 +154,6 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 				result = domain.Refusal(domain.ReasonNoCapacity)
 			default:
 				resID := s.ids.NewReservationID()
-				res := domain.Reservation{
-					ID:        resID,
-					SlotRef:   slot.Ref(),
-					UserRef:   cmd.UserRef,
-					State:     domain.ReservationHeld,
-					CreatedAt: now,
-					ExpiresAt: expiresAt,
-				}
 				// The claim is inserted here, during precondition evaluation, rather than
 				// alongside the reservation in persist. The insert is the conflict check —
 				// a preceding SELECT could always lose to a transaction committing between
@@ -167,15 +163,20 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 				// Claim before reservation inverts the natural FK order; the claim's
 				// reference to reservations is DEFERRABLE INITIALLY DEFERRED so it is
 				// validated at COMMIT, by which point persist has written the row.
+				//
+				// Its expiry is provisional: the insert may wait on a conflicting
+				// uncommitted claim, so the final value is computed from the instant the
+				// authority was actually acquired (§1.5) and written by admitAfterClaim.
 				claim := domain.ScheduleClaim{
 					ReservationID: resID,
 					UserRef:       cmd.UserRef,
 					SlotRef:       slot.Ref(),
 					StartsAt:      slot.StartsAt,
 					EndsAt:        slot.EndsAt,
-					ExpiresAt:     expiresAt,
+					ExpiresAt:     now.Add(s.ttl),
 				}
-				switch err := tx.InsertClaim(ctx, claim); {
+				acquiredAt, err := tx.InsertClaim(ctx, claim)
+				switch {
 				case errors.Is(err, domain.ErrScheduleConflict):
 					// The user's own time is already claimed. A business refusal, and
 					// distinct from no_capacity: this slot may still have room.
@@ -183,13 +184,70 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 				case err != nil:
 					return domain.Result{}, err
 				default:
-					result = domain.Result{Outcome: domain.OutcomeAdmittedSuccess, ReservationID: resID}
-					persist = func(ctx context.Context, tx domain.Tx) error { return tx.PutReservation(ctx, res) }
+					// The claim authority was waited for, so its acquisition instant
+					// supersedes the lock instant for every decision from here on.
+					decisionNow = acquiredAt
+					result, persist, err = s.admitAfterClaim(ctx, tx, slot, resID, cmd.UserRef, acquiredAt)
+					if err != nil {
+						return domain.Result{}, err
+					}
 				}
 			}
 		}
-		return s.commit(ctx, tx, scope, hash, result, now, persist)
+		return s.commit(ctx, tx, scope, hash, result, decisionNow, persist)
 	})
+}
+
+// admitAfterClaim re-evaluates the slot window against the instant the claim authority
+// was acquired, and either finalises the hold or withdraws the claim it provisionally
+// inserted.
+//
+// Acquiring the claim is the attempt's second authority wait (domain.Tx.InsertClaim). If
+// a conflicting transaction held the range and then rolled back, this transaction waited
+// — up to lock_timeout — and every check made from the slot-lock instant is stale by that
+// much. Two of them can flip: the slot can cross starts_at while we wait, and a TTL
+// computed from the older instant can end after starts_at or, with a short enough TTL,
+// already be in the past. Committing either would break §1.6's "never grant a silently
+// shortened hold" and §1.2's closed-slot rule.
+//
+// So the window is re-checked and the TTL recomputed in full. On refusal the provisional
+// claim is removed: it must not outlive the decision that created it, or it would block
+// the user's own schedule for an interval they were never granted.
+func (s *Service) admitAfterClaim(
+	ctx context.Context, tx domain.Tx, slot domain.Slot,
+	resID domain.ReservationID, user domain.UserRef, acquiredAt time.Time,
+) (domain.Result, func(context.Context, domain.Tx) error, error) {
+	withdraw := func(reason domain.Reason) (domain.Result, func(context.Context, domain.Tx) error, error) {
+		if err := tx.DeleteClaim(ctx, resID); err != nil {
+			return domain.Result{}, nil, err
+		}
+		return domain.Refusal(reason), nil, nil
+	}
+
+	expiresAt := acquiredAt.Add(s.ttl)
+	switch {
+	case slot.Closed(acquiredAt):
+		// The slot started while the claim authority was contended.
+		return withdraw(domain.ReasonSlotClosed)
+	case expiresAt.After(slot.StartsAt):
+		return withdraw(domain.ReasonOutsideWindow)
+	}
+
+	// The claim and the hold must agree on when the hold lapses, or settlement would
+	// remove one while the other still consumes capacity.
+	if err := tx.SetClaimExpiry(ctx, resID, expiresAt); err != nil {
+		return domain.Result{}, nil, err
+	}
+	res := domain.Reservation{
+		ID:        resID,
+		SlotRef:   slot.Ref(),
+		UserRef:   user,
+		State:     domain.ReservationHeld,
+		CreatedAt: acquiredAt,
+		ExpiresAt: expiresAt,
+	}
+	persist := func(ctx context.Context, tx domain.Tx) error { return tx.PutReservation(ctx, res) }
+	return domain.Result{Outcome: domain.OutcomeAdmittedSuccess, ReservationID: resID}, persist, nil
 }
 
 // Confirm turns a held, unexpired reservation on an open slot into a booking
@@ -441,14 +499,11 @@ func (s *Service) settle(ctx context.Context, tx domain.Tx, ref domain.SlotRef, 
 			if err := tx.PutReservation(ctx, r); err != nil {
 				return 0, err
 			}
-			// The claim stops being active with the same commit that expires the hold, so
-			// user_time_claims holds only live claims (transaction-semantics §2.2). The
-			// identity-scoped settlement on the reserve path would eventually remove it
-			// too, but only once that identity reserved again — the relation would
-			// otherwise carry rows for holds that are already dead.
-			if err := tx.DeleteClaim(ctx, r.ID); err != nil {
-				return 0, err
-			}
+			// Deliberately does not touch the claim. Removing an elapsed claim is
+			// SettleClaims' sole job (transaction-semantics §2.2), so no transaction ever
+			// locks a claim row belonging to a user other than the one it acts for —
+			// which is what makes claim-row deadlock unreachable. The claim is harmless
+			// meanwhile: it can only block its own user, whose next reserve settles it.
 			continue
 		}
 		stillHeld++

@@ -286,16 +286,30 @@ func (t *tx) PutBooking(_ context.Context, b domain.Booking) error {
 // settlement's job — not the insert's — to remove it first. Skipping elapsed rows here
 // would make this double more permissive than the authority it stands in for, and the
 // difference would only surface in production.
-func (t *tx) InsertClaim(_ context.Context, c domain.ScheduleClaim) error {
+func (t *tx) InsertClaim(_ context.Context, c domain.ScheduleClaim) (time.Time, error) {
 	for _, existing := range t.store.claims {
 		if existing.ReservationID == c.ReservationID {
 			continue
 		}
 		if existing.SameUser(c) && existing.Overlaps(c) {
-			return domain.ErrScheduleConflict
+			return time.Time{}, domain.ErrScheduleConflict
 		}
 	}
 	t.store.claims[c.ReservationID] = c
+	// The double serializes every transaction under one lock, so a claim insert never
+	// waits and the attempt's instant cannot have gone stale. Returning the memoised
+	// value keeps the port's shape honest without inventing a second clock read: where
+	// PostgreSQL reports the post-wait instant, here there was no wait to be after.
+	return t.now, nil
+}
+
+func (t *tx) SetClaimExpiry(_ context.Context, id domain.ReservationID, expiresAt time.Time) error {
+	c, ok := t.store.claims[id]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	c.ExpiresAt = expiresAt
+	t.store.claims[id] = c
 	return nil
 }
 

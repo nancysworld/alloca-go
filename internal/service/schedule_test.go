@@ -168,24 +168,37 @@ func TestElapsedHoldStopsBlockingWithoutTheWorker(t *testing.T) {
 	assertClaims(t, f, 1)
 }
 
-// Expiry settlement on the slot path removes the claim with the same transition, so a
-// dead hold never leaves a claim behind for another operation to trip over.
-func TestSlotSettlementRemovesTheClaim(t *testing.T) {
+// Expiry settlement on the slot path deliberately leaves the claim alone.
+//
+// Removing an elapsed claim is user-scoped settlement's sole job (§2.2), so no
+// transaction ever locks a claim row belonging to a user other than the one it acts for.
+// That is what makes claim-row deadlock unreachable — two reserves for one user with
+// elapsed claims on different slots would otherwise each hold the other's next row.
+//
+// The surviving claim is harmless: it can only block its own user.
+func TestSlotSettlementLeavesTheClaimToItsOwner(t *testing.T) {
 	f := scheduleFixture(t)
 
 	assertOutcome(t, f.reserveSlot(t, "user-1", "k1", "slot-a"), domain.OutcomeAdmittedSuccess, "")
 	f.clock.set(baseNow.Add(testTTL + time.Second))
 
-	// A different identity reserving the same slot settles user-1's elapsed hold.
+	// A different user reserving the same slot expires user-1's hold, but must not touch
+	// user-1's claim row.
 	assertOutcome(t, f.reserveSlot(t, "user-2", "k2", "slot-a"), domain.OutcomeAdmittedSuccess, "")
+	assertClaims(t, f, 2)
 
-	claims := f.store.Claims()
-	if len(claims) != 1 {
-		t.Fatalf("persisted claims = %d, want 1 (the expired hold's claim must be gone)", len(claims))
+	// And it never blocked user-2, whose interval overlaps it: claims are per user.
+	owners := map[domain.UserID]bool{}
+	for _, c := range f.store.Claims() {
+		owners[c.UserRef.UserID] = true
 	}
-	if claims[0].UserRef.UserID != "user-2" {
-		t.Errorf("surviving claim belongs to %q, want user-2", claims[0].UserRef.UserID)
+	if !owners["user-1"] || !owners["user-2"] {
+		t.Errorf("claim owners = %v, want both user-1 (elapsed, awaiting settlement) and user-2", owners)
 	}
+
+	// user-1's own next reserve settles it, so the relation does not grow without bound.
+	assertOutcome(t, f.reserveSlot(t, "user-1", "k3", "slot-c"), domain.OutcomeAdmittedSuccess, "")
+	assertClaims(t, f, 2)
 }
 
 // A schedule conflict is an ordinary business refusal, so it is recorded and replayed

@@ -312,7 +312,7 @@ Claim lifecycle, all transitions inside the operation's existing transaction:
 | confirm (success) | update the claim: `expires_at → NULL` (permanent) |
 | cancel reservation | delete the claim |
 | cancel booking | delete the claim |
-| expiry settlement | delete the claim alongside the `held → expired` transition |
+| expiry settlement | leaves the claim alone; user-scoped settlement removes it |
 
 **Claim settlement (the answer to §4.2).** Immediately after acquiring the slot lock and
 before evaluating preconditions, `reserve` deletes this identity's own elapsed claims:
@@ -343,6 +343,13 @@ Every path that touches both authorities uses one order:
 ```text
 slot authority  →  user schedule authority
 ```
+
+Only one statement ever locks more than one claim row — user-scoped settlement — and it
+selects its rows `ORDER BY reservation_id … FOR UPDATE`, so two transactions settling the
+same user acquire them in the same sequence and one waits. Expiry deliberately does not
+delete claims: were it to, each transaction would lock its own slot's claim first and
+then ask for another's, which is a cycle. Demonstrated: the two-statement shape deadlocks
+under a forced interleave, the single ordered statement does not (§11).
 
 Reserve, confirm, cancel, and expiry all already begin by locking the slot row
 (`transaction-semantics.md` §2), so this order preserves existing flows unchanged and adds
@@ -432,7 +439,13 @@ state.
 12. a cancelled reservation or booking does not conflict;
 13. an elapsed hold does not conflict even when the expiry worker has not run;
 14. confirmation neither briefly removes protection nor creates a duplicate self-conflict;
-15. cancellation and expiry remove the claim atomically with their lifecycle transition.
+15. cancellation removes the claim atomically with its lifecycle transition, and an
+    elapsed hold stops blocking through user-scoped settlement — expiry itself does not
+    touch the claim, so no transaction locks a claim row of a user it is not acting for
+    (§7);
+16. a reserve that waits on the claim authority and then succeeds is decided against the
+    instant the authority was acquired: the slot window is re-evaluated and the TTL
+    recomputed in full, and a provisional claim is removed if the request is refused.
 
 ### 10.3 Concurrency semantics
 
@@ -494,7 +507,24 @@ slot-identity gates fail at *setup* — two organisations can no longer own a sl
 same identifier — and on a database that already holds such a pair, PostgreSQL refuses to
 create the key at all. The old schema cannot represent the state the gates require.
 
-Control 1 remains in the suite; 2, 3 and 4 were executed and reverted.
+**5. Decide from the pre-wait instant.** Review (Codex, P1) showed that a claim insert can
+block on a conflicting uncommitted claim and then *succeed* when that transaction rolls
+back, leaving every check made from the slot-lock instant stale by up to `lock_timeout`.
+Ignoring the returned post-acquisition instant makes `TestClaimWaitRevalidatesTheSlotWindow`
+admit a hold on a slot that closed during the wait — `admitted_success`, with the
+provisional claim left behind — and `TestClaimWaitRecomputesTheHoldTTL` stamp the hold
+1ms after the pre-wait instant instead of 2s. Both gates stay in the suite.
+
+**6. Restore claim deletion to slot-scoped settlement.** Review (Codex, P2) showed the
+two-statement shape can deadlock. This one is recorded honestly: the service-level gate
+`TestConcurrentSettlementOfOneUserDoesNotDeadlock` passes either way, because the window
+between the two statements is microseconds and cannot be forced through the service API.
+The discriminating evidence is at the SQL level, where the interleave *can* be forced —
+the two-statement shape reports `deadlock detected`, and the single ordered statement does
+not across repeated concurrent rounds. The Go test is kept as a regression guard, not
+claimed as the control.
+
+Controls 1, 5 and part of 6 remain in the suite; 2, 3 and 4 were executed and reverted.
 
 A fifth control was written and then removed with the thing it guarded. Review raised
 (Codex, P1) that a claim table added to a database holding live reservations would exempt

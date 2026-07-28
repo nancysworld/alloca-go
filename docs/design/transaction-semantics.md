@@ -169,6 +169,14 @@ Two properties make this the right instant, and both are load-bearing:
   serialization authority, so making it the wall-clock source removes API-host skew
   from the decision without introducing a second distributed authority.
 
+**Every authority wait, not only the first.** The rule is about *waits*, not about the
+slot lock specifically. Where an operation waits on a second authority, the instant is
+re-resolved after that wait too, and the later value supersedes the earlier one for every
+decision made from then on. `reserve` has exactly one such second wait — acquiring the
+schedule claim (§2.2) — and the instant comes back from the acquisition itself. There is
+deliberately no general "refresh the time" call: it would make re-resolution available to
+code that never waited for anything, which is how a stale-by-design value creeps back in.
+
 **Port shape.** Authoritative time belongs to the transaction port: `Tx.LockSlot`
 establishes and memoises the attempt's timestamp, and `Tx.Now` returns only that
 memoised value — calling it first is a programming error (`ErrTimeNotEstablished`),
@@ -327,7 +335,7 @@ protected across every organisation they book into.
 | `reserve` (success) | insert claim; `expires_at` = the hold's expiry |
 | `confirm` (success) | update the claim, `expires_at → NULL`; **never** insert a second row |
 | `cancel` (reservation or booking) | delete the claim |
-| expiry settlement | delete the claim with the `held → expired` transition |
+| expiry settlement | **leaves the claim alone** — see claim settlement below |
 
 Keying on `reservation_id` and updating on confirm makes "a booking self-conflicts with
 the hold it came from" unrepresentable rather than merely untested.
@@ -342,9 +350,41 @@ DELETE FROM user_time_claims
    AND expires_at IS NOT NULL AND expires_at <= $3   -- authoritative tx time
 ```
 
-This is the identity-scoped analogue of slot-scoped settlement, and it is why the
-constraint never needs a moving wall-clock predicate — which PostgreSQL could not index
-anyway. Confirmed claims have `expires_at IS NULL` and are removed only by cancellation.
+This is the user-scoped analogue of slot-scoped settlement, and it is why the constraint
+never needs a moving wall-clock predicate — which PostgreSQL could not index anyway.
+Confirmed claims have `expires_at IS NULL` and are removed only by cancellation.
+
+**It is the only path that removes an elapsed claim (normative).** Slot-scoped expiry
+deliberately does not, so no transaction ever locks a claim row belonging to a user other
+than the one it is acting for. That is what makes claim-row deadlock unreachable: two
+transactions settling the same user run this one statement, whose rows are selected
+`ORDER BY reservation_id … FOR UPDATE`, so they acquire the same rows in the same
+sequence and one simply waits. When slot-scoped expiry also deleted claims, each
+transaction locked *its own* slot's claim first and then asked for the other's — a cycle,
+which PostgreSQL breaks by aborting one, turning a valid reserve into a fault.
+
+The cost is that `user_time_claims` may briefly hold claims whose holds have elapsed. That
+is harmless: an elapsed claim can only block the user who owns it, and their next reserve
+settles it before any conflict is decided. The relation therefore holds *live claims plus
+a user's own not-yet-settled ones*, never a claim that can wrongly refuse anybody.
+
+**Post-acquisition time (normative).** Acquiring the claim is the attempt's *second*
+authority wait. An insert that overlaps an uncommitted claim blocks until that transaction
+resolves, and if it rolls back the insert then succeeds — after a wait bounded only by
+`lock_timeout`. Every decision made from the slot-lock instant is stale by that much,
+which is exactly the staleness §1.5 exists to prevent.
+
+So a successful claim insert yields the authoritative instant *after* its wait, and the
+operation re-evaluates the slot window and recomputes the hold's TTL in full against it.
+If the slot closed, or the recomputed TTL would now end after `starts_at`, the request is
+refused and the provisional claim is removed — it must not outlive the decision that
+created it. The claim's `expires_at` is then written from the same instant, so the claim
+and the hold agree on when the hold lapses.
+
+The instant is returned by the claim acquisition rather than through a general
+"re-resolve time" method: time may be re-resolved only where an authority was actually
+waited for, and keeping that at the call site stops it becoming something any code can
+reach for.
 
 **Lock order.** Every path that touches both authorities uses one order:
 

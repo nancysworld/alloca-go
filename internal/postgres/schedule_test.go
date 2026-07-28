@@ -4,6 +4,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -573,5 +574,234 @@ func assertClaimExpiry(t *testing.T, h *harness, id domain.ReservationID, wantSe
 	}
 	if gotSet := expiresAt != nil; gotSet != wantSet {
 		t.Errorf("claim %q expires_at set = %t, want %t (a confirmed claim must be permanent)", id, gotSet, wantSet)
+	}
+}
+
+// --- post-acquisition revalidation (§1.5) -----------------------------------
+
+// holdConflictingClaim inserts a claim for the given user and interval in its own
+// transaction, holds it uncommitted for d, then rolls back.
+//
+// It models the case that makes the claim wait observable: a reserve that blocks on a
+// conflicting claim and *then succeeds*, because the transaction holding the range went
+// away. The blocked transaction's slot-lock instant is stale by the length of the wait.
+//
+// The claim must be held on a *different* slot from the one under test. This transaction
+// holds its slot's row lock for the whole wait, so a reserve targeting the same slot
+// would block on LockSlot instead — and LockSlot already resolves its instant after that
+// wait (§1.5), which is the very staleness this is meant to exhibit. Overlapping ranges
+// on two different slot rows is the only shape that puts the wait at the claim.
+func (h *harness) holdConflictingClaim(
+	t *testing.T, user domain.UserRef, ref domain.SlotRef, resID domain.ReservationID,
+	startsAt, endsAt time.Time, d time.Duration,
+) (wait func()) {
+	t.Helper()
+	held := make(chan struct{})
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		// A reservation row for the claim's deferred foreign key to satisfy at commit.
+		// This transaction rolls back, so nothing it writes survives.
+		err := h.repo.WithinTx(context.Background(), func(ctx context.Context, tx domain.Tx) error {
+			if _, err := tx.LockSlot(ctx, ref); err != nil {
+				return err
+			}
+			now, err := tx.Now(ctx)
+			if err != nil {
+				return err
+			}
+			if err := tx.PutReservation(ctx, domain.Reservation{
+				ID: resID, SlotRef: ref, UserRef: user, State: domain.ReservationHeld,
+				CreatedAt: now, ExpiresAt: startsAt,
+			}); err != nil {
+				return err
+			}
+			if _, err := tx.InsertClaim(ctx, domain.ScheduleClaim{
+				ReservationID: resID, UserRef: user, SlotRef: ref,
+				StartsAt: startsAt, EndsAt: endsAt, ExpiresAt: startsAt,
+			}); err != nil {
+				return err
+			}
+			close(held)
+			time.Sleep(d)
+			// Roll the whole thing back, releasing the range: the waiting reserve then
+			// succeeds rather than conflicting.
+			return errReleaseClaim
+		})
+		if err != nil && !errors.Is(err, errReleaseClaim) {
+			t.Errorf("conflicting claim holder: %v", err)
+			select {
+			case <-held:
+			default:
+				close(held)
+			}
+		}
+	}()
+
+	<-held
+	return func() { <-done }
+}
+
+// errReleaseClaim rolls the holder's transaction back once it has blocked the reserve
+// under test for long enough.
+var errReleaseClaim = errors.New("release conflicting claim")
+
+// Gate: a reserve that waits on the claim authority and then succeeds must not commit a
+// hold decided against the pre-wait instant.
+//
+// The slot closes *during* the wait. Under the pre-wait instant the slot is open and the
+// TTL fits, so without re-evaluation this commits a hold on a slot that has already
+// started — admitted_success for a booking that can never be confirmed.
+func TestClaimWaitRevalidatesTheSlotWindow(t *testing.T) {
+	const wait = 2 * time.Second
+
+	h := newHarness(t, testBudget(), 500*time.Millisecond)
+	base := h.dbNow(t)
+	// Two slots sharing one window, so their claims overlap while their rows do not:
+	// the blocker holds one, the reserve under test targets the other. The window opens
+	// now and starts one second into the wait — open when the reserve begins, closed by
+	// the time the claim authority is released.
+	blocker := h.seedWindow(t, testOrg, "blocker-slot", 5, base, time.Second, time.Hour)
+	slot := h.seedWindow(t, testOrg, "closing-slot", 5, base, time.Second, time.Hour)
+
+	release := h.holdConflictingClaim(t, userRef("user-1"), blocker.Ref(), "res-blocker",
+		slot.StartsAt, slot.EndsAt, wait)
+
+	r, err := h.reserveAs(context.Background(), testOrg, "user-1", "key-1", slot.Ref())
+	release()
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+
+	// The slot started while the claim was contended, so the request must be refused.
+	assertOutcome(t, r, domain.OutcomeBusinessRefusal, domain.ReasonSlotClosed)
+	// And the provisional claim must not have outlived the decision that created it.
+	assertClaimCount(t, h, 0)
+	assertSlotCounts(t, h, slot.Ref(), 0, 0)
+}
+
+// Gate: the hold's TTL is recomputed from the post-acquisition instant, so a hold is
+// never committed already expired or silently shortened (§1.6).
+func TestClaimWaitRecomputesTheHoldTTL(t *testing.T) {
+	const wait = 2 * time.Second
+	const ttl = 30 * time.Second
+
+	h := newHarness(t, testBudget(), ttl)
+	base := h.dbNow(t)
+	// Same shape as above: overlapping windows on two different slot rows, so the wait
+	// falls on the claim rather than on the slot lock.
+	blocker := h.seedWindow(t, testOrg, "blocker-slot", 5, base, time.Hour, 2*time.Hour)
+	slot := h.seedWindow(t, testOrg, "open-slot", 5, base, time.Hour, 2*time.Hour)
+
+	release := h.holdConflictingClaim(t, userRef("user-1"), blocker.Ref(), "res-blocker",
+		slot.StartsAt, slot.EndsAt, wait)
+
+	before := h.dbNow(t)
+	r, err := h.reserveAs(context.Background(), testOrg, "user-1", "key-1", slot.Ref())
+	release()
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	assertOutcome(t, r, domain.OutcomeAdmittedSuccess, "")
+
+	var createdAt, expiresAt time.Time
+	err = h.repo.pool.QueryRow(context.Background(),
+		`SELECT created_at, expires_at FROM reservations WHERE reservation_id = $1`,
+		string(r.ReservationID)).Scan(&createdAt, &expiresAt)
+	if err != nil {
+		t.Fatalf("read reservation: %v", err)
+	}
+
+	// Stamped from the instant the claim was acquired, which is after the wait — not
+	// from the slot-lock instant before it. The two readings are ~wait apart versus ~0,
+	// so a generous threshold separates them without depending on scheduling jitter.
+	if gap := createdAt.Sub(before); gap < wait/2 {
+		t.Errorf("created_at is only %v after the pre-wait instant, want most of the %v wait: "+
+			"the hold was stamped before the claim authority was acquired", gap, wait)
+	}
+	// The full TTL is granted from that instant, not eroded by the wait.
+	if got := expiresAt.Sub(createdAt); got != ttl {
+		t.Errorf("hold length = %v, want the full %v TTL", got, ttl)
+	}
+
+	// The claim agrees with the hold, or settlement would act on one and not the other.
+	var claimExpiry time.Time
+	err = h.repo.pool.QueryRow(context.Background(),
+		`SELECT expires_at FROM user_time_claims WHERE reservation_id = $1`,
+		string(r.ReservationID)).Scan(&claimExpiry)
+	if err != nil {
+		t.Fatalf("read claim: %v", err)
+	}
+	if !claimExpiry.Equal(expiresAt) {
+		t.Errorf("claim expires_at = %v, reservation expires_at = %v: they must agree",
+			claimExpiry, expiresAt)
+	}
+}
+
+// Gate: concurrent reserves for one user whose elapsed claims sit on different slots must
+// not deadlock.
+//
+// Before user-scoped settlement became the sole expiry-removal path, each transaction's
+// slot settlement deleted — and so locked — its own slot's claim row, and the following
+// user-scoped delete then wanted the other transaction's row. That is a cycle, and
+// PostgreSQL resolves it by aborting one transaction, turning a valid reserve into an
+// internal failure.
+func TestConcurrentSettlementOfOneUserDoesNotDeadlock(t *testing.T) {
+	const ttl = 200 * time.Millisecond
+	const rounds = 6
+
+	// Two slots whose windows do not overlap, so one user may hold both. Each reserve
+	// targets the slot its own elapsed hold sits on: that is what made the two paths
+	// collide, because slot-scoped settlement would delete (and so lock) *this* slot's
+	// claim before user-scoped settlement asked for the other's.
+	for round := range rounds {
+		h := newHarness(t, testBudget(), ttl)
+		base := h.dbNow(t)
+		a := h.seedWindow(t, testOrg, "deadlock-a", 5, base, time.Hour, 2*time.Hour)
+		b := h.seedWindow(t, testOrg, "deadlock-b", 5, base, 3*time.Hour, 4*time.Hour)
+
+		for i, ref := range []domain.SlotRef{a.Ref(), b.Ref()} {
+			if _, err := h.reserveAs(context.Background(), testOrg, "user-1",
+				fmt.Sprintf("stale-%d", i), ref); err != nil {
+				t.Fatalf("round %d: seed stale hold: %v", round, err)
+			}
+		}
+		time.Sleep(2 * ttl) // both holds elapse; nothing has settled them
+
+		var (
+			wg       sync.WaitGroup
+			mu       sync.Mutex
+			failures []error
+		)
+		start := make(chan struct{})
+		for i, ref := range []domain.SlotRef{a.Ref(), b.Ref()} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				r, err := h.reserveAs(context.Background(), testOrg, "user-1",
+					fmt.Sprintf("key-%d", i), ref)
+
+				mu.Lock()
+				defer mu.Unlock()
+				switch {
+				case err != nil:
+					failures = append(failures, fmt.Errorf("%s: %w", ref.SlotID, err))
+				case r.Outcome != domain.OutcomeAdmittedSuccess:
+					failures = append(failures, fmt.Errorf("%s: outcome %q/%q", ref.SlotID, r.Outcome, r.Reason))
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		for _, err := range failures {
+			t.Fatalf("round %d: concurrent reserve failed, want both admitted "+
+				"(a deadlock surfaces here as an error, not a refusal): %v", round, err)
+		}
+		// Both elapsed claims settled, both new holds claimed.
+		assertClaimCount(t, h, 2)
+		assertNoOverlappingClaims(t, h)
 	}
 }

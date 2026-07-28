@@ -80,3 +80,14 @@ type UserRef struct {
 	OrganisationID OrganisationID
 	UserID         UserID
 }
+
+// IsValid reports whether both halves of the user's identity are present.
+//
+// A half-empty ref is not a weaker identity — it is a different one, and a dangerous
+// kind. Two users from different organisations with an empty organisation half compare
+// *equal*, so one could replay the other's idempotency record or occupy the other's
+// schedule. Rejecting the pair at the edge (invalid_request) keeps that unrepresentable
+// rather than merely unlikely.
+func (u UserRef) IsValid() bool {
+	return u.OrganisationID != "" && u.UserID != ""
+}

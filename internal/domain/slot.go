@@ -42,6 +42,13 @@ type Slot struct {
 	EndsAt time.Time
 }
 
+// IsValid reports whether both halves of the slot's identity are present. As with
+// UserRef, a half-empty ref is a different identity rather than a weaker one: it would
+// resolve no slot, and two such refs would compare equal.
+func (r SlotRef) IsValid() bool {
+	return r.OrganisationID != "" && r.SlotID != ""
+}
+
 // Ref returns the slot's identity, so callers pass the whole key around rather than
 // re-pairing the two halves at every call site and risking one that pairs them wrongly.
 func (s Slot) Ref() SlotRef {

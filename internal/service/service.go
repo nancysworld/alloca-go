@@ -94,8 +94,7 @@ type CancelCommand struct {
 
 // Reserve holds one unit of the slot for the caller (transaction-semantics §4).
 func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Result, error) {
-	if cmd.UserRef.OrganisationID == "" || cmd.UserRef.UserID == "" ||
-		cmd.SlotRef.OrganisationID == "" || cmd.SlotRef.SlotID == "" || cmd.IdempotencyKey == "" {
+	if !cmd.UserRef.IsValid() || !cmd.SlotRef.IsValid() || cmd.IdempotencyKey == "" {
 		return domain.Result{Outcome: domain.OutcomeInvalidRequest}, nil
 	}
 	scope := idempotency.Scope(cmd.UserRef, domain.OpReserve, cmd.IdempotencyKey)
@@ -254,8 +253,7 @@ func (s *Service) admitAfterClaim(
 // (transaction-semantics §4). It changes no capacity: a held unit becomes a
 // confirmed unit.
 func (s *Service) Confirm(ctx context.Context, cmd ConfirmCommand) (domain.Result, error) {
-	if cmd.UserRef.OrganisationID == "" || cmd.UserRef.UserID == "" ||
-		cmd.ReservationID == "" || cmd.IdempotencyKey == "" {
+	if !cmd.UserRef.IsValid() || cmd.ReservationID == "" || cmd.IdempotencyKey == "" {
 		return domain.Result{Outcome: domain.OutcomeInvalidRequest}, nil
 	}
 	scope := idempotency.Scope(cmd.UserRef, domain.OpConfirm, cmd.IdempotencyKey)
@@ -315,8 +313,7 @@ func (s *Service) Confirm(ctx context.Context, cmd ConfirmCommand) (domain.Resul
 // its active booking — but only while the slot is open (transaction-semantics §3.3,
 // §4).
 func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (domain.Result, error) {
-	if cmd.UserRef.OrganisationID == "" || cmd.UserRef.UserID == "" ||
-		cmd.ReservationID == "" || cmd.IdempotencyKey == "" {
+	if !cmd.UserRef.IsValid() || cmd.ReservationID == "" || cmd.IdempotencyKey == "" {
 		return domain.Result{Outcome: domain.OutcomeInvalidRequest}, nil
 	}
 	scope := idempotency.Scope(cmd.UserRef, domain.OpCancel, cmd.IdempotencyKey)

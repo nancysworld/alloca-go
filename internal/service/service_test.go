@@ -205,6 +205,74 @@ func TestReserveUnknownSlot(t *testing.T) {
 	}
 }
 
+// Every half of every identity is required, and each is checked independently.
+//
+// Only the missing idempotency key was covered before. A half-empty ref is the more
+// interesting case: it is a different identity rather than a weaker one, and two of them
+// compare equal, so admitting one would let a caller reach another user's idempotency
+// record or schedule (domain.UserRef.IsValid).
+func TestReserveRejectsIncompleteIdentities(t *testing.T) {
+	f := newFixture(t, 1)
+	valid := ReserveCommand{UserRef: user("user-1"), SlotRef: ref(slot), IdempotencyKey: "k1"}
+
+	cases := []struct {
+		name string
+		mut  func(*ReserveCommand)
+	}{
+		{"missing user organisation", func(c *ReserveCommand) { c.UserRef.OrganisationID = "" }},
+		{"missing user id", func(c *ReserveCommand) { c.UserRef.UserID = "" }},
+		{"missing slot organisation", func(c *ReserveCommand) { c.SlotRef.OrganisationID = "" }},
+		{"missing slot id", func(c *ReserveCommand) { c.SlotRef.SlotID = "" }},
+		{"missing idempotency key", func(c *ReserveCommand) { c.IdempotencyKey = "" }},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cmd := valid
+			c.mut(&cmd)
+			r, err := f.svc.Reserve(context.Background(), cmd)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if r.Outcome != domain.OutcomeInvalidRequest {
+				t.Errorf("Outcome = %q, want invalid_request", r.Outcome)
+			}
+		})
+	}
+
+	// Nothing was written: an invalid request is rejected before the domain path.
+	assertClaims(t, f, 0)
+	if held, _ := f.store.SlotCounts(ref(slot)); held != 0 {
+		t.Errorf("held = %d, want 0", held)
+	}
+}
+
+// Confirm and cancel take no slot, but the user pair is required just the same.
+func TestConfirmAndCancelRejectIncompleteUser(t *testing.T) {
+	f := newFixture(t, 1)
+	held := f.reserve(t, "user-1", "k1")
+
+	partial := domain.UserRef{UserID: "user-1"} // organisation missing
+	confirmed, err := f.svc.Confirm(context.Background(), ConfirmCommand{
+		UserRef: partial, ReservationID: held.ReservationID, IdempotencyKey: "k2",
+	})
+	if err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	if confirmed.Outcome != domain.OutcomeInvalidRequest {
+		t.Errorf("confirm outcome = %q, want invalid_request", confirmed.Outcome)
+	}
+
+	cancelled, err := f.svc.Cancel(context.Background(), CancelCommand{
+		UserRef: partial, ReservationID: held.ReservationID, IdempotencyKey: "k3",
+	})
+	if err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	if cancelled.Outcome != domain.OutcomeInvalidRequest {
+		t.Errorf("cancel outcome = %q, want invalid_request", cancelled.Outcome)
+	}
+}
+
 func TestReserveMissingFieldsInvalidRequest(t *testing.T) {
 	f := newFixture(t, 1)
 	r, err := f.svc.Reserve(context.Background(), ReserveCommand{UserRef: user("user-1"), SlotRef: ref(slot)}) // no key

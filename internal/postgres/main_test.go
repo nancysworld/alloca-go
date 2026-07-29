@@ -254,6 +254,22 @@ func (h *harness) reserveAs(
 	})
 }
 
+// reserveWithTTL reserves through a service over the same repository but with a hold TTL
+// of its own, so one test can mix holds that must elapse within milliseconds with holds
+// that must survive to the end of the test. A Service is a thin value over the repo and
+// the ID generator, so building one per call costs nothing and shares all state.
+//
+// The two lifetimes have to come from two services because the TTL is service-owned
+// (transaction-semantics §1.6): a caller cannot ask for a shorter hold, which is the
+// point of the rule.
+func (h *harness) reserveWithTTL(
+	ctx context.Context, ttl time.Duration, user, key string, ref domain.SlotRef,
+) (domain.Result, error) {
+	return service.New(h.repo, h.ids, ttl).Reserve(ctx, service.ReserveCommand{
+		UserRef: userRef(user), SlotRef: ref, IdempotencyKey: key,
+	})
+}
+
 // seedWindow creates a slot with an explicit owning organisation and an explicit
 // interval, both expressed relative to a base instant the caller supplies. Unlike
 // seedSlot it reads no clock of its own: schedule tests turn on exact interval

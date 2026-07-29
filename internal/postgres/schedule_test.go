@@ -896,7 +896,8 @@ func TestIdentityLockWaitRecomputesTheHoldTTL(t *testing.T) {
 // PostgreSQL resolves it by aborting one transaction, turning a valid reserve into an
 // internal failure.
 func TestConcurrentSettlementOfOneUserDoesNotDeadlock(t *testing.T) {
-	const ttl = 200 * time.Millisecond
+	const staleTTL = 200 * time.Millisecond
+	const holdTTL = 30 * time.Second
 	const rounds = 6
 
 	// Two slots whose windows do not overlap, so one user may hold both. Each reserve
@@ -904,18 +905,28 @@ func TestConcurrentSettlementOfOneUserDoesNotDeadlock(t *testing.T) {
 	// collide, because slot-scoped settlement would delete (and so lock) *this* slot's
 	// claim before user-scoped settlement asked for the other's.
 	for round := range rounds {
-		h := newHarness(t, testBudget(), ttl)
+		h := newHarness(t, testBudget(), holdTTL)
 		base := h.dbNow(t)
 		a := h.seedWindow(t, testOrg, "deadlock-a", 5, base, time.Hour, 2*time.Hour)
 		b := h.seedWindow(t, testOrg, "deadlock-b", 5, base, 3*time.Hour, 4*time.Hour)
 
+		// The stale holds get a TTL of their own, because the two lifetimes this test
+		// needs are opposite: these must elapse within milliseconds, while the holds the
+		// racing reserves take must still exist when the round is asserted.
+		//
+		// One TTL for both cannot do that once the identity lock serializes the race. The
+		// second transaction resolves its instant *after* the first has committed, so with
+		// a 200ms TTL on everything it can legitimately reap the first reserve's
+		// freshly-committed claim as elapsed — leaving one claim, not two. That is correct
+		// settlement, not a fault, so the assertion below would be measuring how long the
+		// first transaction took rather than whether the two deadlocked.
 		for i, ref := range []domain.SlotRef{a.Ref(), b.Ref()} {
-			if _, err := h.reserveAs(context.Background(), testOrg, "user-1",
+			if _, err := h.reserveWithTTL(context.Background(), staleTTL, "user-1",
 				fmt.Sprintf("stale-%d", i), ref); err != nil {
 				t.Fatalf("round %d: seed stale hold: %v", round, err)
 			}
 		}
-		time.Sleep(2 * ttl) // both holds elapse; nothing has settled them
+		time.Sleep(2 * staleTTL) // both holds elapse; nothing has settled them
 
 		var (
 			wg       sync.WaitGroup

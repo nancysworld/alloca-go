@@ -82,10 +82,11 @@ func TestMigrationsRollBackAndReapply(t *testing.T) {
 		}
 	}
 
-	// The rebuilt schema must carry its constraints, not merely its tables. The
-	// exclusion constraint is the whole user schedule authority (§2.2), and it depends on
-	// an extension that a rollback dropped — so a Down/Up cycle that restored the table
-	// without it would leave the invariant silently unenforced.
+	// The rebuilt schema must carry its constraints, not merely its tables. The exclusion
+	// constraint is the whole user schedule authority (§2.2), so a Down/Up cycle that
+	// restored every table without it would satisfy the checks above while leaving the
+	// invariant silently unenforced. It covers the extension dependency too: the
+	// constraint cannot be created unless btree_gist is present.
 	var constraint string
 	err = repo.pool.QueryRow(ctx,
 		`SELECT conname FROM pg_constraint WHERE conname = 'user_time_claims_no_overlap'`).Scan(&constraint)

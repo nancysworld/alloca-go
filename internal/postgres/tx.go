@@ -367,9 +367,13 @@ func (t *tx) ConfirmClaim(ctx context.Context, id domain.ReservationID) error {
 	return nil
 }
 
-// DeleteClaim removes a claim. Deleting an absent claim succeeds: expiry settlement runs
-// over held reservations whose claims identity-scoped settlement may already have
-// removed, and that convergence is not an error.
+// DeleteClaim removes a claim. Its callers are cancellation and reserve withdrawing a
+// claim it provisionally inserted; expiry settlement deliberately never calls it, since
+// user-scoped SettleClaims is the sole reaper of elapsed claims (§2.2).
+//
+// Deleting an absent claim succeeds: both callers express "this claim must not survive
+// the transaction", and a claim user-scoped settlement already removed satisfies that.
+// Converging on the intended state is not an error.
 func (t *tx) DeleteClaim(ctx context.Context, id domain.ReservationID) error {
 	_, err := t.conn.Exec(ctx, `DELETE FROM user_time_claims WHERE reservation_id = $1`, string(id))
 	if err != nil {

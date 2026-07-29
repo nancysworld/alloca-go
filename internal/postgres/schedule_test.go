@@ -256,7 +256,7 @@ func TestElapsedHoldStopsBlockingWithoutTheWorker(t *testing.T) {
 	assertNoOverlappingClaims(t, h)
 }
 
-// Gate §10.3 16, §10.5 27: THE concurrency acceptance gate.
+// Gate §10.3 16, §10.5 28: THE concurrency acceptance gate.
 //
 // Many concurrent reserves for one identity across a set of mutually overlapping slots.
 // Every transaction locks a different slot row, so the aggregate lock never serializes
@@ -667,8 +667,8 @@ func (h *harness) holdConflictingClaim(
 // under test for long enough.
 var errReleaseClaim = errors.New("release conflicting claim")
 
-// Gate: a reserve that waits on the claim authority and then succeeds must not commit a
-// hold decided against the pre-wait instant.
+// Gate §10.5 27: a reserve that waits on the claim authority and then succeeds must not
+// commit a hold decided against the pre-wait instant.
 //
 // The slot closes *during* the wait. Under the pre-wait instant the slot is open and the
 // TTL fits, so without re-evaluation this commits a hold on a slot that has already
@@ -701,8 +701,8 @@ func TestClaimWaitRevalidatesTheSlotWindow(t *testing.T) {
 	assertSlotCounts(t, h, slot.Ref(), 0, 0)
 }
 
-// Gate: the hold's TTL is recomputed from the post-acquisition instant, so a hold is
-// never committed already expired or silently shortened (§1.6).
+// Gate §10.5 27: the hold's TTL is recomputed from the post-acquisition instant, so a
+// hold is never committed already expired or silently shortened (§1.6).
 func TestClaimWaitRecomputesTheHoldTTL(t *testing.T) {
 	const wait = 2 * time.Second
 	const ttl = 30 * time.Second
@@ -816,7 +816,7 @@ func (h *harness) holdIdentityLock(t *testing.T, user domain.UserRef, d time.Dur
 	return func() { <-done }
 }
 
-// Gate §10.5 28: a reserve that waits on the identity lock is decided against the
+// Gate §10.5 29: a reserve that waits on the identity lock is decided against the
 // instant the lock was granted, not the slot-lock instant before the wait.
 //
 // The slot closes *during* the wait. Under the pre-wait instant the slot is open, so
@@ -846,7 +846,7 @@ func TestIdentityLockWaitRevalidatesTheSlotWindow(t *testing.T) {
 	assertSlotCounts(t, h, slot.Ref(), 0, 0)
 }
 
-// Gate §10.5 28: the hold's TTL is computed from the post-wait instant, so a hold is
+// Gate §10.5 29: the hold's TTL is computed from the post-wait instant, so a hold is
 // never committed already eroded by the time spent queueing on the identity lock —
 // the identity-lock analogue of §1.6's rule for the claim wait.
 func TestIdentityLockWaitRecomputesTheHoldTTL(t *testing.T) {

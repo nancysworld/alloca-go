@@ -326,7 +326,7 @@ user_time_claims
 
 Keying the row on `reservation_id` makes the confirm case safe by construction: confirming
 **updates** the existing claim rather than inserting a second one, so a booking can never
-self-conflict with the hold it was created from (§10.2 gate 13).
+self-conflict with the hold it was created from (§10.2 gate 14).
 
 Claim lifecycle, all transitions inside the operation's existing transaction:
 
@@ -475,10 +475,7 @@ state.
 15. cancellation removes the claim atomically with its lifecycle transition, and an
     elapsed hold stops blocking through user-scoped settlement — expiry itself does not
     touch the claim, so no transaction locks a claim row of a user it is not acting for
-    (§7);
-16. a reserve that waits on the claim authority and then succeeds is decided against the
-    instant the authority was acquired: the slot window is re-evaluated and the TTL
-    recomputed in full, and a provisional claim is removed if the request is refused.
+    (§7).
 
 ### 10.3 Concurrency semantics
 
@@ -505,15 +502,21 @@ The decisive persisted-state assertion is:
 25. an ambiguous commit remains replayable with the same idempotency key;
 26. rollback and cleanup remain independently bounded.
 
-### 10.5 Serialization semantics
+### 10.5 Serialization and post-wait time semantics
 
-Added when the identity lock was introduced (§5.2, §7):
+An attempt waits on the identity lock and then on the claim relation, and each wait can
+invalidate what was decided before it (§7, `transaction-semantics.md` §1.5). Gate 27
+predates the identity lock and moved here from §10.2, where it had been numbered as a
+lifecycle gate and collided with §10.3's 16; 28 and 29 were added with the lock (§5.2).
 
-27. the concurrency acceptance gate (§10.3 16) produces **no faults**, deadlocks
+27. a reserve that waits on the claim authority and then succeeds is decided against the
+    instant the authority was acquired: the slot window is re-evaluated and the TTL
+    recomputed in full, and a provisional claim is removed if the request is refused;
+28. the concurrency acceptance gate (§10.3 16) produces **no faults**, deadlocks
     included, and holds across repeated rounds — a refusal is the only acceptable
     non-success — because 24 mutually overlapping single-round inserts deadlocked
     systematically before the identity lock existed (§11 control 7);
-28. a reserve that waits on the identity lock is decided against the instant the lock
+29. a reserve that waits on the identity lock is decided against the instant the lock
     was granted: a slot that closes during the wait is refused, and a granted hold's
     TTL is computed in full from the post-wait instant, never eroded by the queueing
     time.
@@ -578,7 +581,7 @@ starvation as the local cascade. Re-verified after the fix by bypassing the
 `LockUserIdentity` call in `Service.Reserve`: 23 deadlock faults across five runs of the
 gate under `-race`, versus none with the lock in place. The control is not kept as a
 permanent test because deadlock occurrence is probabilistic per run; the repeated-round
-gate (§10.5 27) is the regression guard, and this record is the discriminating evidence.
+gate (§10.5 28) is the regression guard, and this record is the discriminating evidence.
 
 Controls 1, 5 and part of 6 remain in the suite; 2, 3, 4 and 7 were executed and
 reverted.
@@ -634,7 +637,7 @@ constraint and does not attempt the distributed-transaction design.
 | 3 | How an elapsed hold stops participating | identity-scoped claim settlement inside the transaction, before preconditions (§6) |
 | 4 | Constraint primary or backstop | the exclusion constraint is the validity authority; any pre-check is for message quality only (§6) |
 | 5 | Lock order | slot authority → user identity → claims, on every path (§7) |
-| 6 | Which operations touch a claim | reserve inserts, confirm updates, cancel and expiry delete (§6) |
+| 6 | Which operations touch a claim | reserve inserts, confirm updates, cancel deletes; expiry leaves the claim alone and user-scoped settlement removes it (§6, §7) |
 | 7 | Refusal name | `OutcomeBusinessRefusal` + new `ReasonScheduleConflict` (§8) |
 | 8 | Distinguishing a violation from faults | exclusion violation → refusal; lock/statement timeout → `timeout_db` (§8, §10.4) |
 | 9 | Concurrency acceptance gate | §10.3 gate 16 |

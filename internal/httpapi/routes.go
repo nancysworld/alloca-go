@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/nancysworld/alloca-go/internal/buildinfo"
@@ -24,9 +25,10 @@ const (
 	pathReadyz  = "/readyz"
 	pathMeta    = "/meta"
 
-	pathReserve = "POST /v1/slots/{" + varSlotOrganisation + "}/{" + varSlotID + "}/reservations"
-	pathConfirm = "POST /v1/reservations/{" + varReservationID + "}/confirm"
-	pathCancel  = "POST /v1/reservations/{" + varReservationID + "}/cancel"
+	pathListSlots = "GET /v1/slots"
+	pathReserve   = "POST /v1/slots/{" + varSlotOrganisation + "}/{" + varSlotID + "}/reservations"
+	pathConfirm   = "POST /v1/reservations/{" + varReservationID + "}/confirm"
+	pathCancel    = "POST /v1/reservations/{" + varReservationID + "}/cancel"
 )
 
 // Path wildcard names. A slot is named by both halves of its identity (§1.2): slot
@@ -48,18 +50,23 @@ func registerRoutes(
 	metaSource func() buildinfo.Info,
 	cfg config.Config,
 	ready ReadinessFunc,
+	logger *slog.Logger,
 	svc BookingService,
+	slots SlotLister,
 	recorder telemetry.Recorder,
 ) {
 	mux.HandleFunc(pathHealthz, handleHealthz)
-	mux.HandleFunc(pathReadyz, handleReadyz(ready, cfg.RequestBudget.DBAcquireCap))
+	mux.HandleFunc(pathReadyz, handleReadyz(ready, cfg.ReadinessTimeout, logger))
 	mux.HandleFunc(pathMeta, handleMeta(metaSource, cfg.RequestBudget))
 
-	if svc == nil {
-		return
+	if svc != nil {
+		h := &bookingHandlers{svc: svc, recorder: recorder, budget: cfg.RequestBudget}
+		mux.HandleFunc(pathReserve, h.reserve)
+		mux.HandleFunc(pathConfirm, h.confirm)
+		mux.HandleFunc(pathCancel, h.cancel)
 	}
-	h := &bookingHandlers{svc: svc, recorder: recorder, budget: cfg.RequestBudget}
-	mux.HandleFunc(pathReserve, h.reserve)
-	mux.HandleFunc(pathConfirm, h.confirm)
-	mux.HandleFunc(pathCancel, h.cancel)
+	if slots != nil {
+		h := &slotHandlers{slots: slots, recorder: recorder, budget: cfg.RequestBudget}
+		mux.HandleFunc(pathListSlots, h.listSlots)
+	}
 }

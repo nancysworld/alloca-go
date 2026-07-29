@@ -239,3 +239,45 @@ func TestLoadParsesBudgetOverrides(t *testing.T) {
 		t.Errorf("StatementTimeout = %v, want 2500ms", cfg.RequestBudget.StatementTimeout)
 	}
 }
+
+// The readiness probe acquires a connection and round-trips a statement, so a bound
+// equal to the acquisition cap can expire on the round trip after acquisition succeeded
+// — reporting a healthy database as unready. The relationship is validated at startup
+// rather than left to a comment, like the rest of the §8.1 chain.
+func TestValidateRejectsAReadinessTimeoutThatCannotOutlastAcquisition(t *testing.T) {
+	tests := map[string]func(*Config){
+		"equal to the acquisition cap": func(c *Config) {
+			c.ReadinessTimeout = c.RequestBudget.DBAcquireCap
+		},
+		"below the acquisition cap": func(c *Config) {
+			c.ReadinessTimeout = c.RequestBudget.DBAcquireCap - time.Millisecond
+		},
+		"beyond the server deadline": func(c *Config) {
+			c.ReadinessTimeout = c.RequestBudget.ServerDeadline + time.Millisecond
+		},
+		"zero": func(c *Config) { c.ReadinessTimeout = 0 },
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg := Default()
+			mutate(&cfg)
+			if err := cfg.Validate(); err == nil {
+				t.Errorf("accepted ReadinessTimeout %s against db_acquire_cap %s / server_deadline %s",
+					cfg.ReadinessTimeout, cfg.RequestBudget.DBAcquireCap, cfg.RequestBudget.ServerDeadline)
+			}
+		})
+	}
+}
+
+// The default must satisfy the relationship it enforces, or the service cannot start
+// without configuration.
+func TestDefaultReadinessTimeoutOutlastsAcquisition(t *testing.T) {
+	cfg := Default()
+	if cfg.ReadinessTimeout <= cfg.RequestBudget.DBAcquireCap {
+		t.Errorf("default ReadinessTimeout %s does not exceed db_acquire_cap %s",
+			cfg.ReadinessTimeout, cfg.RequestBudget.DBAcquireCap)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("default config is invalid: %v", err)
+	}
+}

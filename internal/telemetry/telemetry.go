@@ -49,10 +49,15 @@ import (
 // measurement contract requires every completed request to carry exactly one terminal
 // outcome so totals reconcile (measurement-contract §4).
 type RequestObservation struct {
-	// Operation is the domain operation — reserve, confirm, cancel — not the URL path.
-	// A path would be unbounded once identifiers appear in it; the operation is a closed
-	// set of three.
-	Operation domain.Operation
+	// Operation names the request kind — the three domain operations, plus the read
+	// route — never the URL path, which is unbounded once identifiers appear in it.
+	//
+	// It is a plain string rather than a domain.Operation because domain.Operation is
+	// the closed set of *mutations* the idempotency record accepts, and a read is not
+	// one of those. The values here must stay a closed set of their own: use
+	// OperationListSlots or string(domain.OpReserve) and its siblings, never a path or
+	// anything caller-supplied.
+	Operation string
 	// Outcome is the single terminal classification (measurement-contract §4).
 	Outcome domain.Outcome
 	// Reason is the refusal's stable code, empty for non-refusals.
@@ -83,6 +88,10 @@ type ExpiryObservation struct {
 	Duration time.Duration
 }
 
+// OperationListSlots names the read route in an observation. The mutation operations
+// take their names from domain.Operation, so there is nothing to redeclare for them.
+const OperationListSlots = "list_slots"
+
 // Recorder consumes observations. Implementations must be safe for concurrent use and
 // must not block: they sit on the request path.
 type Recorder interface {
@@ -111,7 +120,7 @@ func NewSlogRecorder(logger *slog.Logger) *SlogRecorder {
 // milliseconds as a float so sub-millisecond requests do not all collapse to zero.
 func (r *SlogRecorder) RecordRequest(ctx context.Context, obs RequestObservation) {
 	r.logger.LogAttrs(ctx, slog.LevelInfo, "request",
-		slog.String("operation", string(obs.Operation)),
+		slog.String("operation", obs.Operation),
 		slog.String("outcome", string(obs.Outcome)),
 		slog.String("reason", string(obs.Reason)),
 		slog.Bool("replay", obs.Replay),

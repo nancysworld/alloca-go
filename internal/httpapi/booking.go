@@ -166,7 +166,7 @@ func (h *bookingHandlers) respond(
 ) {
 	writeJSON(w, status, body)
 	h.recorder.RecordRequest(ctx, telemetry.RequestObservation{
-		Operation:  op,
+		Operation:  string(op),
 		Outcome:    body.Outcome,
 		Reason:     body.Reason,
 		Replay:     body.Replay,

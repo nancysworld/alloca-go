@@ -74,7 +74,9 @@ func run(logger *slog.Logger) error {
 
 	srv := httpapi.New(cfg, metaSource, httpapi.Options{
 		Service:  svc,
+		Slots:    repo,
 		Recorder: recorder,
+		Logger:   logger,
 		// Readiness is the database check: this service cannot answer a booking request
 		// without it, so reporting ready while it is unreachable would just move the
 		// failure from the probe to every request.

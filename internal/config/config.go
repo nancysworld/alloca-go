@@ -70,6 +70,18 @@ type Config struct {
 	// this bounds a hold that outlives the request that created it by design.
 	ReservationTTL time.Duration
 
+	// ReadinessTimeout bounds the readiness probe's dependency check.
+	//
+	// It must exceed RequestBudget.DBAcquireCap, and Validate enforces that. The check
+	// acquires a pooled connection *and* round-trips a statement, so a bound equal to
+	// the acquisition cap alone could expire during the round trip after acquisition
+	// succeeded within its own budget — reporting a healthy database as unready.
+	//
+	// It must also stay within ServerDeadline: a probe is not a request, and one that
+	// can outlast the service's own per-request deadline tells an orchestrator nothing
+	// useful on the timescale it polls.
+	ReadinessTimeout time.Duration
+
 	// RequestBudget is the per-request deadline chain (measurement-contract §8).
 	RequestBudget RequestBudget
 }
@@ -197,6 +209,7 @@ func Default() Config {
 		WriteResponseMargin: 500 * time.Millisecond,
 		ShutdownGrace:       15 * time.Second,
 		ReservationTTL:      2 * time.Minute,
+		ReadinessTimeout:    1 * time.Second,
 		RequestBudget: RequestBudget{
 			ClientDeadline:   6000 * time.Millisecond,
 			ServerDeadline:   5000 * time.Millisecond,
@@ -219,6 +232,7 @@ const (
 	envWriteResponseMargin = "ALLOCA_WRITE_RESPONSE_MARGIN"
 	envShutdownGrace       = "ALLOCA_SHUTDOWN_GRACE"
 	envReservationTTL      = "ALLOCA_RESERVATION_TTL"
+	envReadinessTimeout    = "ALLOCA_READINESS_TIMEOUT"
 
 	envClientDeadline   = "ALLOCA_CLIENT_DEADLINE"
 	envServerDeadline   = "ALLOCA_SERVER_DEADLINE"
@@ -255,6 +269,7 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		{envWriteResponseMargin, &cfg.WriteResponseMargin},
 		{envShutdownGrace, &cfg.ShutdownGrace},
 		{envReservationTTL, &cfg.ReservationTTL},
+		{envReadinessTimeout, &cfg.ReadinessTimeout},
 		{envClientDeadline, &cfg.RequestBudget.ClientDeadline},
 		{envServerDeadline, &cfg.RequestBudget.ServerDeadline},
 		{envAdmissionCap, &cfg.RequestBudget.AdmissionCap},
@@ -328,6 +343,25 @@ func (c Config) Validate() error {
 	// difference against the margin — no addition, no overflow.
 	if c.WriteTimeout <= b.ServerDeadline || c.WriteTimeout-b.ServerDeadline <= c.WriteResponseMargin {
 		return fmt.Errorf("config: WriteTimeout (%s) must be > server_deadline (%s) + WriteResponseMargin (%s)", c.WriteTimeout, b.ServerDeadline, c.WriteResponseMargin)
+	}
+
+	// Readiness relationship. The probe's check both acquires a connection and
+	// round-trips a statement, so its bound must be strictly greater than the
+	// acquisition cap — otherwise it can expire on the round trip after acquisition
+	// succeeded, and report a healthy database as unready. It must not exceed the
+	// per-request server deadline, because a probe that outlasts a request is answering
+	// on the wrong timescale.
+	//
+	// Comparisons only, never a sum: adding two int64 durations risks the overflow that
+	// would make an unsafe config pass (the same rule as the write-phase check above).
+	if c.ReadinessTimeout <= 0 {
+		return fmt.Errorf("config: ReadinessTimeout must be positive (got %s)", c.ReadinessTimeout)
+	}
+	if c.ReadinessTimeout <= b.DBAcquireCap {
+		return fmt.Errorf("config: ReadinessTimeout (%s) must be > db_acquire_cap (%s): the probe acquires a connection and round-trips a statement", c.ReadinessTimeout, b.DBAcquireCap)
+	}
+	if c.ReadinessTimeout > b.ServerDeadline {
+		return fmt.Errorf("config: ReadinessTimeout (%s) must be <= server_deadline (%s)", c.ReadinessTimeout, b.ServerDeadline)
 	}
 
 	return nil

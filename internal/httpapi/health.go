@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 )
@@ -24,15 +25,20 @@ func handleHealthz(w http.ResponseWriter, _ *http.Request) {
 // because a pool that cannot hand one out within its own cap would fail real requests
 // anyway, which is precisely what "not ready" should mean.
 //
-// The reason is deliberately not echoed to the caller: readiness failures come from
-// infrastructure, and the underlying error can carry connection strings or driver
-// detail. It is logged by the readiness function's owner instead.
-func handleReadyz(ready ReadinessFunc, probeTimeout time.Duration) http.HandlerFunc {
+// The reason is not echoed to the caller — an infrastructure error can carry a DSN or
+// driver detail, and this is an unauthenticated endpoint — so it is logged here instead.
+// Removing the detail from the response and recording it are one decision, and keeping
+// them in one function is what stops the reason being lost altogether.
+func handleReadyz(ready ReadinessFunc, probeTimeout time.Duration, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), probeTimeout)
 		defer cancel()
 
 		if err := ready(ctx); err != nil {
+			logger.WarnContext(ctx, "readiness check failed",
+				slog.Any("error", err),
+				slog.Duration("probe_timeout", probeTimeout),
+			)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 				"status": "unavailable",
 			})

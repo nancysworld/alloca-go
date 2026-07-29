@@ -75,6 +75,42 @@ func (r *Repo) ElapsedHoldSlots(ctx context.Context, limit int) ([]domain.SlotRe
 	return refs, nil
 }
 
+// SlotsByOrganisation returns up to limit of the organisation's slots, for the
+// informational listing endpoint.
+//
+// Ordering is (starts_at, slot_id): chronological, and deterministic because slot_id is
+// unique within the organisation the query already fixes. Determinism is what makes the
+// caller's truncation predictable rather than an arbitrary subset.
+//
+// It reads no reservation or booking state, deliberately. A count of what is left would
+// be derived without the slot lock and stale before the response was written; reserve
+// under the lock is the only authority on that (§2).
+func (r *Repo) SlotsByOrganisation(ctx context.Context, org domain.OrganisationID, limit int) ([]domain.Slot, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT `+slotColumns+`
+		FROM slots
+		WHERE slot_organisation_id = $1
+		ORDER BY starts_at, slot_id
+		LIMIT $2`, string(org), limit)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: slots by organisation: %w", err)
+	}
+	defer rows.Close()
+
+	var slots []domain.Slot
+	for rows.Next() {
+		slot, err := scanSlot(rows)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: slots by organisation: %w", err)
+		}
+		slots = append(slots, slot)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: slots by organisation: %w", err)
+	}
+	return slots, nil
+}
+
 // Ready reports whether the database can serve booking traffic, for the readiness probe.
 //
 // It acquires a pooled connection and round-trips a trivial statement, so it exercises

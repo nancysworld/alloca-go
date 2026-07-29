@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -50,6 +51,11 @@ type Options struct {
 	// Service enables the booking endpoints. When nil, only the operational surface is
 	// registered.
 	Service BookingService
+	// Slots enables the read route. When nil, it is not registered.
+	Slots SlotLister
+	// Logger records what the responses deliberately withhold — a readiness failure's
+	// cause, for instance. When nil, slog.Default is used.
+	Logger *slog.Logger
 	// Recorder observes completed requests. When nil, observations are discarded.
 	Recorder telemetry.Recorder
 	// Ready gates /readyz. When nil, the service always reports ready.
@@ -74,8 +80,12 @@ func New(cfg config.Config, metaSource func() buildinfo.Info, opts Options) *Ser
 	if recorder == nil {
 		recorder = telemetry.Nop{}
 	}
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	mux := http.NewServeMux()
-	registerRoutes(mux, metaSource, cfg, ready, opts.Service, recorder)
+	registerRoutes(mux, metaSource, cfg, ready, logger, opts.Service, opts.Slots, recorder)
 	return &Server{cfg: cfg, handler: withRequestID(mux)}
 }
 

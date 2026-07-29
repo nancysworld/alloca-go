@@ -208,6 +208,20 @@ func (t *tx) LockSlot(_ context.Context, ref domain.SlotRef) (domain.Slot, error
 	return slot, nil
 }
 
+// LockUserIdentity serializes one identity's claim-creating transactions in the real
+// adapter. Here every transaction already runs under the process-wide lock, so there is
+// no per-identity lock to take and no wait to resolve time after: the memoised instant
+// is returned, exactly as InsertClaim returns it. The established guard is kept, though
+// — it is what makes a violation of the normative slot → identity lock order
+// (transaction-semantics §2.2) loud in the reference double rather than only in
+// production.
+func (t *tx) LockUserIdentity(_ context.Context, _ domain.UserRef) (time.Time, error) {
+	if !t.established {
+		return time.Time{}, domain.ErrTimeNotEstablished
+	}
+	return t.now, nil
+}
+
 func (t *tx) Now(_ context.Context) (time.Time, error) {
 	if !t.established {
 		return time.Time{}, domain.ErrTimeNotEstablished

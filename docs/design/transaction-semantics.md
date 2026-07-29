@@ -170,12 +170,13 @@ Two properties make this the right instant, and both are load-bearing:
   from the decision without introducing a second distributed authority.
 
 **Every authority wait, not only the first.** The rule is about *waits*, not about the
-slot lock specifically. Where an operation waits on a second authority, the instant is
+slot lock specifically. Where an operation waits on a further authority, the instant is
 re-resolved after that wait too, and the later value supersedes the earlier one for every
-decision made from then on. `reserve` has exactly one such second wait — acquiring the
-schedule claim (§2.2) — and the instant comes back from the acquisition itself. There is
-deliberately no general "refresh the time" call: it would make re-resolution available to
-code that never waited for anything, which is how a stale-by-design value creeps back in.
+decision made from then on. `reserve` has two such later waits — the user identity lock
+and the schedule claim acquisition (§2.2) — and in each case the instant comes back from
+the acquisition itself. There is deliberately no general "refresh the time" call: it
+would make re-resolution available to code that never waited for anything, which is how
+a stale-by-design value creeps back in.
 
 **Port shape.** Authoritative time belongs to the transaction port: `Tx.LockSlot`
 establishes and memoises the attempt's timestamp, and `Tx.Now` returns only that
@@ -328,6 +329,27 @@ concurrent commit.
 A claim's `user_organisation_id` is the **user's** (§1.1), never the slot's, so a user is
 protected across every organisation they book into.
 
+**Identity serialization (normative).** The constraint decides *validity*; it must not be
+the mechanism that serializes the hot path. PostgreSQL enforces an exclusion constraint
+by inserting the index tuple first and then scanning for conflicts, so N concurrent
+overlapping inserts for one user can each find another's uncommitted tuple and each wait
+for its owner — a deadlock cycle the server breaks by aborting victims with `40P01`,
+turning valid requests into faults. Claim-creating operations (in AG-M1, `reserve`)
+therefore first take `FOR UPDATE` on the user's row in `user_identities` — created on the
+identity's first reserve, never deleted — so one user's claim creation runs one
+transaction at a time and never meets itself inside the GiST index. The three relations
+divide the model cleanly:
+
+```text
+slot row            owns capacity
+user identity row   serializes schedule mutation
+claim relation      proves schedule validity
+```
+
+A writer that skips the identity lock loses liveness at worst — it can wait, or deadlock
+and fault — never correctness: the exclusion constraint remains the authority for
+whatever still races past the serialization.
+
 **Lifecycle.** One claim exists per logical booking, from hold through confirmation:
 
 | Operation | Effect |
@@ -341,7 +363,7 @@ Keying on `reservation_id` and updating on confirm makes "a booking self-conflic
 the hold it came from" unrepresentable rather than merely untested.
 
 **Claim settlement.** As with §2.1, **correctness must not depend on the expiry worker
-having run.** Immediately after taking the slot lock and before evaluating
+having run.** After taking the slot and identity locks and before evaluating
 preconditions, `reserve` settles the *requesting identity's* elapsed claims:
 
 ```sql
@@ -356,23 +378,26 @@ Confirmed claims have `expires_at IS NULL` and are removed only by cancellation.
 
 **It is the only path that removes an elapsed claim (normative).** Slot-scoped expiry
 deliberately does not, so no transaction ever locks a claim row belonging to a user other
-than the one it is acting for. That is what makes claim-row deadlock unreachable: two
-transactions settling the same user run this one statement, whose rows are selected
-`ORDER BY reservation_id … FOR UPDATE`, so they acquire the same rows in the same
-sequence and one simply waits. When slot-scoped expiry also deleted claims, each
-transaction locked *its own* slot's claim first and then asked for the other's — a cycle,
-which PostgreSQL breaks by aborting one, turning a valid reserve into a fault.
+than the one it is acting for. The multi-row delete itself runs only under the identity
+lock, so two transactions settling the same user's claims are serialized before either
+touches a row and cannot deadlock on acquisition order. When slot-scoped expiry also
+deleted claims, each transaction locked *its own* slot's claim first and then asked for
+the other's — a cycle, which PostgreSQL breaks by aborting one, turning a valid reserve
+into a fault.
 
 The cost is that `user_time_claims` may briefly hold claims whose holds have elapsed. That
 is harmless: an elapsed claim can only block the user who owns it, and their next reserve
 settles it before any conflict is decided. The relation therefore holds *live claims plus
 a user's own not-yet-settled ones*, never a claim that can wrongly refuse anybody.
 
-**Post-acquisition time (normative).** Acquiring the claim is the attempt's *second*
-authority wait. An insert that overlaps an uncommitted claim blocks until that transaction
-resolves, and if it rolls back the insert then succeeds — after a wait bounded only by
-`lock_timeout`. Every decision made from the slot-lock instant is stale by that much,
-which is exactly the staleness §1.5 exists to prevent.
+**Post-acquisition time (normative).** The identity lock and the claim acquisition are
+the attempt's later authority waits, and each resolves the instant after its own wait
+(§1.5). The identity lock is taken before settlement and preconditions, so everything
+downstream is simply decided against its instant. The claim insert can still wait — on
+an uncommitted claim mutation from a path that holds no identity lock, cancellation
+being the AG-M1 case — and if that transaction rolls back the insert then succeeds,
+after a wait bounded only by `lock_timeout`. Every decision made before it is stale by
+that much, which is exactly the staleness §1.5 exists to prevent.
 
 So a successful claim insert yields the authoritative instant *after* its wait, and the
 operation re-evaluates the slot window and recomputes the hold's TTL in full against it.
@@ -386,16 +411,21 @@ The instant is returned by the claim acquisition rather than through a general
 waited for, and keeping that at the call site stops it becoming something any code can
 reach for.
 
-**Lock order.** Every path that touches both authorities uses one order:
+**Lock order.** Every path uses one order:
 
 ```text
-slot authority  →  user schedule authority
+slot authority  →  user identity  →  claims
 ```
 
 No operation, worker, or administrative path may touch `user_time_claims` before its
-slot lock. Two concurrent reserves for one identity on different slots take different
-slot locks and then contend on the claim relation, where one waits; since the claim
-authority is the only shared resource, that wait cannot form a cycle.
+slot lock, and none may acquire a slot or identity lock *after* touching
+`user_time_claims`. Under that discipline the shape is cycle-free: two concurrent
+reserves for one identity on different slots take different slot locks and then queue on
+the identity row, and the paths that touch claims without the identity lock — cancel and
+confirm — acquire nothing further afterwards, so a claim-relation wait behind them is a
+wait with an exit, not a cycle. (An earlier revision claimed the claim relation itself
+could not produce a cycle; concurrent exclusion-constraint inserts disproved that — see
+the identity serialization block above.)
 
 **Outcome.** A schedule conflict is a business refusal, not a fault:
 `business_refusal` + `Reason = schedule_conflict` (§4). It is distinct from

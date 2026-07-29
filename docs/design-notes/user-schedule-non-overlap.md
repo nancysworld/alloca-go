@@ -262,13 +262,29 @@ Constraints, all discharged by §6:
 - contention and deadlock behaviour with the slot lock must be measured and tested;
 - migrations must account for the extension and any conflicting existing data.
 
-### 5.2 Per-identity schedule row lock — rejected as the sole mechanism
+### 5.2 Per-identity row lock — rejected as the sole mechanism, adopted as the hot-path serializer
 
 A transaction locks one stable row per identity, settles elapsed claims, checks the
 interval, then mutates. Easy to explain, and it supports richer identity-level policy
 inside one critical section. But every path that creates, removes, confirms, expires, or
 moves a claim must take the same lock, new identities need a race-safe way to establish
 the row, and a single missed writer path silently breaks the invariant with no backstop.
+Those objections rule it out as the *sole* mechanism.
+
+Implementation review then showed the constraint cannot be the sole mechanism either.
+PostgreSQL enforces an exclusion constraint by inserting the index tuple first and then
+scanning for conflicts, so N mutually overlapping concurrent inserts for one identity
+each place their tuple, find another's, and wait for its owner — a cycle the server
+breaks by aborting victims with `40P01`, turning valid requests into faults. The
+acceptance gate (§10.3 16) deadlocked systematically until reserve first took
+`FOR UPDATE` on the identity's row in `user_identities` (§11 control 7).
+
+So the two mechanisms are composed, each doing the one job it is good at: the identity
+row lock serializes claim creation for one identity, and the exclusion constraint
+remains the authority that proves validity. §5.2's objections dissolve in the composed
+form — a writer path that skips the lock loses liveness at worst, never correctness, and
+the row is established race-safely by `INSERT … ON CONFLICT DO NOTHING` followed by
+`SELECT … FOR UPDATE` on a row that is never deleted.
 
 ### 5.3 Serializable isolation with a predicate read — rejected
 
@@ -280,14 +296,22 @@ an invariant-specific authority.
 
 Advisory-lock key construction, collision analysis, and universal writer discipline are
 application conventions rather than schema-enforced facts. Useful at most as an
-optimisation alongside an authoritative constraint.
+optimisation alongside an authoritative constraint — and when a serializer did become
+necessary (§5.2), the schema-visible row lock was chosen over an advisory key
+convention for exactly this reason.
 
 ## 6. Decided design
 
 Active claims live in their own relation, so no moving-clock predicate is ever needed and
-one logical claim is exactly one row:
+one logical claim is exactly one row. Beside it sits the serialization row (§5.2): no
+schedule state, created on the identity's first reserve, never deleted, existing to be
+locked:
 
 ```text
+user_identities
+    user_organisation_id, user_id
+                      primary key; reserve takes FOR UPDATE here after the slot lock
+
 user_time_claims
     reservation_id    primary key, references reservations
     user_organisation_id, user_id
@@ -314,8 +338,9 @@ Claim lifecycle, all transitions inside the operation's existing transaction:
 | cancel booking | delete the claim |
 | expiry settlement | leaves the claim alone; user-scoped settlement removes it |
 
-**Claim settlement (the answer to §4.2).** Immediately after acquiring the slot lock and
-before evaluating preconditions, `reserve` deletes this identity's own elapsed claims:
+**Claim settlement (the answer to §4.2).** After acquiring the slot and identity locks
+and before evaluating preconditions, `reserve` deletes this identity's own elapsed
+claims:
 
 ```sql
 DELETE FROM user_time_claims
@@ -338,33 +363,41 @@ passes can still lose to a concurrent commit, and the constraint is what catches
 
 ## 7. Lock order (normative for PR4)
 
-Every path that touches both authorities uses one order:
+Every path uses one order, and the three levels are the three relations' jobs — the slot
+row owns capacity, the user identity row serializes schedule mutation, the claim
+relation proves schedule validity:
 
 ```text
-slot authority  →  user schedule authority
+slot authority  →  user identity  →  claims
 ```
 
-Only one statement ever locks more than one claim row — user-scoped settlement — and it
-selects its rows `ORDER BY reservation_id … FOR UPDATE`, so two transactions settling the
-same user acquire them in the same sequence and one waits. Expiry deliberately does not
-delete claims: were it to, each transaction would lock its own slot's claim first and
-then ask for another's, which is a cycle. Demonstrated: the two-statement shape deadlocks
-under a forced interleave, the single ordered statement does not (§11).
+Claim-creating operations — in AG-M1, reserve — take `FOR UPDATE` on the identity's
+`user_identities` row after the slot lock and before any claim work, so one identity's
+claim inserts never run concurrently and never meet inside the GiST exclusion index
+(§5.2). Confirm and cancel mutate existing claims without the identity lock; that is
+safe because they acquire no slot or identity lock *after* touching claims, so a
+claim-relation wait behind them always has an exit. The multi-row user-scoped settlement
+delete runs only under the identity lock, which is what serializes two settlements of
+the same user. Expiry deliberately does not delete claims: were it to, each transaction
+would lock its own slot's claim first and then ask for another's, which is a cycle.
+Demonstrated: the two-statement expiry shape deadlocks under a forced interleave, the
+identity-scoped delete does not (§11).
 
 Reserve, confirm, cancel, and expiry all already begin by locking the slot row
-(`transaction-semantics.md` §2), so this order preserves existing flows unchanged and adds
-the claim mutation after the precondition evaluation. No path may touch
-`user_time_claims` before its slot lock, including the PR5 worker and any future
-administrative operation.
+(`transaction-semantics.md` §2). No path may touch `user_time_claims` before its slot
+lock, and none may acquire a slot or identity lock after touching `user_time_claims` —
+including the PR5 worker and any future administrative operation.
 
-Two concurrent reserves for one identity on different slots take *different* slot locks
-and then contend on the claim relation, where one blocks until the other commits. That is
-a wait, not a cycle: the claim authority is the only shared resource, so it cannot deadlock
-against the slot locks as long as the order above holds everywhere.
+An earlier revision of this section claimed a claim-relation wait "cannot form a cycle"
+because the claim authority was the only shared resource. That was wrong, and it is the
+reason the identity lock exists: an exclusion-constraint insert both *holds* a resource
+(its own speculative index tuple) and *waits* on others', so mutually overlapping
+concurrent inserts are themselves a cycle (§5.2, §11 control 7).
 
-An exclusion constraint can block while a conflicting transaction is uncommitted. That
-wait stays inside the existing caller, transaction, `lock_timeout`, and `statement_timeout`
-budgets, and database timeout classification stays distinct from a business refusal.
+An exclusion constraint, and the identity lock before it, can block while a conflicting
+transaction is uncommitted. Those waits stay inside the existing caller, transaction,
+`lock_timeout`, and `statement_timeout` budgets, and database timeout classification
+stays distinct from a business refusal.
 
 ## 8. Domain outcome and idempotency
 
@@ -472,10 +505,23 @@ The decisive persisted-state assertion is:
 25. an ambiguous commit remains replayable with the same idempotency key;
 26. rollback and cleanup remain independently bounded.
 
+### 10.5 Serialization semantics
+
+Added when the identity lock was introduced (§5.2, §7):
+
+27. the concurrency acceptance gate (§10.3 16) produces **no faults**, deadlocks
+    included, and holds across repeated rounds — a refusal is the only acceptable
+    non-success — because 24 mutually overlapping single-round inserts deadlocked
+    systematically before the identity lock existed (§11 control 7);
+28. a reserve that waits on the identity lock is decided against the instant the lock
+    was granted: a slot that closes during the wait is refused, and a granted hold's
+    TTL is computed in full from the post-wait instant, never eroded by the queueing
+    time.
+
 ## 11. Negative controls
 
 Passing concurrency tests are credible only if they fail when the protection is removed.
-Three controls were executed against the PR4 implementation; each is recorded with what
+Seven controls were executed against the PR4 implementation; each is recorded with what
 was changed and which gate failed.
 
 **1. Drop the exclusion constraint.** Automated, and permanently part of the suite:
@@ -524,7 +570,18 @@ the two-statement shape reports `deadlock detected`, and the single ordered stat
 not across repeated concurrent rounds. The Go test is kept as a regression guard, not
 claimed as the control.
 
-Controls 1, 5 and part of 6 remain in the suite; 2, 3 and 4 were executed and reverted.
+**7. Remove the identity lock.** This control ran itself first: before `user_identities`
+existed, the acceptance gate (§10.3 16) failed in CI with three `40P01 deadlock detected`
+faults — the 24 mutually overlapping GiST exclusion inserts each placed their index tuple,
+found the others', and waited in a cycle the server broke by aborting victims, with pool
+starvation as the local cascade. Re-verified after the fix by bypassing the
+`LockUserIdentity` call in `Service.Reserve`: 23 deadlock faults across five runs of the
+gate under `-race`, versus none with the lock in place. The control is not kept as a
+permanent test because deadlock occurrence is probabilistic per run; the repeated-round
+gate (§10.5 27) is the regression guard, and this record is the discriminating evidence.
+
+Controls 1, 5 and part of 6 remain in the suite; 2, 3, 4 and 7 were executed and
+reverted.
 
 A fifth control was written and then removed with the thing it guarded. Review raised
 (Codex, P1) that a claim table added to a database holding live reservations would exempt
@@ -575,8 +632,8 @@ constraint and does not attempt the distributed-transaction design.
 | 1 | Scope key | `(user_organisation_id, user_id)`, scoped by identity issuance, never derived from the slot (§3.3) |
 | 2 | Which relation represents active claims | a separate `user_time_claims` relation (§6) |
 | 3 | How an elapsed hold stops participating | identity-scoped claim settlement inside the transaction, before preconditions (§6) |
-| 4 | Constraint primary or backstop | the exclusion constraint is the authority; any pre-check is for message quality only (§6) |
-| 5 | Lock order | slot authority → user schedule authority, on every path (§7) |
+| 4 | Constraint primary or backstop | the exclusion constraint is the validity authority; any pre-check is for message quality only (§6) |
+| 5 | Lock order | slot authority → user identity → claims, on every path (§7) |
 | 6 | Which operations touch a claim | reserve inserts, confirm updates, cancel and expiry delete (§6) |
 | 7 | Refusal name | `OutcomeBusinessRefusal` + new `ReasonScheduleConflict` (§8) |
 | 8 | Distinguishing a violation from faults | exclusion violation → refusal; lock/statement timeout → `timeout_db` (§8, §10.4) |
@@ -584,6 +641,7 @@ constraint and does not attempt the distributed-transaction design.
 | 10 | Discriminating negative control | §11 |
 | 11 | Migration and extension | folded into the `00001_init.sql` baseline; `btree_gist` required (§5.1) |
 | 12 | Owning milestone | AG-M1 PR4; original worker/API/telemetry PR becomes PR5 |
+| 13 | Hot-path serialization | claim-creating operations take `FOR UPDATE` on the `user_identities` row after the slot lock, so one identity's claim inserts never deadlock inside the exclusion index (§5.2, §7, §11 control 7) |
 
 Remaining open, deliberately deferred:
 

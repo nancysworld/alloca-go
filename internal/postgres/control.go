@@ -126,7 +126,7 @@ func (r *Repo) ClaimCount(ctx context.Context) (int, error) {
 // known world; it is never called by the service.
 func (r *Repo) Truncate(ctx context.Context) error {
 	_, err := r.pool.Exec(ctx,
-		`TRUNCATE user_time_claims, idempotency_records, bookings, reservations, slots RESTART IDENTITY CASCADE`)
+		`TRUNCATE user_time_claims, user_identities, idempotency_records, bookings, reservations, slots RESTART IDENTITY CASCADE`)
 	if err != nil {
 		return fmt.Errorf("postgres: truncate: %w", err)
 	}

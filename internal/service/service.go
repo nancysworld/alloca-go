@@ -108,14 +108,21 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 		if err != nil {
 			return domain.Result{}, err
 		}
-		// Established by the LockSlot above, so it describes the instant this attempt
-		// serialized rather than when the request arrived (transaction-semantics §1.5).
-		now, err := tx.Now(ctx)
-		if err != nil {
-			return domain.Result{}, err
-		}
 		if r, done, err := s.lookup(ctx, tx, scope, hash); done || err != nil {
 			return r, err
+		}
+
+		// The identity lock is the attempt's second authority: it serializes this
+		// identity's claim-creating transactions so they queue here instead of
+		// deadlocking inside the exclusion index (transaction-semantics §2.2). It sits
+		// after the idempotency lookup so a replay resolves without queueing behind the
+		// identity's live traffic, and before both settlements, which must not run
+		// concurrently with another of the identity's reserves. The instant it returns
+		// was resolved after its wait and supersedes the slot-lock instant for every
+		// decision from here on (§1.5).
+		now, err := tx.LockUserIdentity(ctx, cmd.UserRef)
+		if err != nil {
+			return domain.Result{}, err
 		}
 
 		consumed, err := s.settle(ctx, tx, slot.Ref(), now)
@@ -133,9 +140,9 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 
 		var result domain.Result
 		var persist func(context.Context, domain.Tx) error
-		// The attempt's decision instant. LockSlot established it after the row-lock
-		// wait; a claim acquisition is the only thing that can supersede it, because it
-		// is the only other authority this transaction waits for (§1.5).
+		// The attempt's decision instant, currently from the identity lock above. A
+		// claim acquisition is the only thing that can still supersede it: the claim
+		// relation is the one authority this transaction may yet wait for (§1.5).
 		decisionNow := now
 		switch {
 		case !slot.Released(now):
@@ -201,10 +208,12 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 // was acquired, and either finalises the hold or withdraws the claim it provisionally
 // inserted.
 //
-// Acquiring the claim is the attempt's second authority wait (domain.Tx.InsertClaim). If
-// a conflicting transaction held the range and then rolled back, this transaction waited
-// — up to lock_timeout — and every check made from the slot-lock instant is stale by that
-// much. Two of them can flip: the slot can cross starts_at while we wait, and a TTL
+// Acquiring the claim is the attempt's final authority wait (domain.Tx.InsertClaim).
+// The identity lock serializes the identity's own reserves, but a claim writer that
+// does not hold it — cancellation deleting a conflicting claim, say — can still leave
+// the insert blocked on an uncommitted row. If that transaction held the range and then
+// rolled back, this one waited — up to lock_timeout — and every check made from the
+// identity-lock instant is stale by that much. Two of them can flip: the slot can cross starts_at while we wait, and a TTL
 // computed from the older instant can end after starts_at or, with a short enough TTL,
 // already be in the past. Committing either would break §1.6's "never grant a silently
 // shortened hold" and §1.2's closed-slot rule.

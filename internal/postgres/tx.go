@@ -73,6 +73,61 @@ func (t *tx) LockSlot(ctx context.Context, ref domain.SlotRef) (domain.Slot, err
 	return slot, nil
 }
 
+// LockUserIdentity takes the identity's schedule-serialization lock (§2.2): reserve
+// calls it after LockSlot and before any claim work, so one identity's claim-creating
+// transactions queue here instead of meeting inside the GiST exclusion index — where
+// concurrent overlapping inserts deadlock, because each places its index tuple and
+// then waits on the others'.
+//
+// Three statements, one batch, executed in order for the same reason LockSlot's are:
+//
+//  1. INSERT … ON CONFLICT DO NOTHING creates the row on the identity's first
+//     reserve. It takes no lock on a pre-existing row — which is why it cannot
+//     replace the FOR UPDATE — but when the row is genuinely new, concurrent
+//     first-timers serialize on the speculative insert here instead.
+//  2. SELECT … FOR UPDATE is the lock. Identity rows are never deleted, so this
+//     always finds the row step 1 guaranteed exists.
+//  3. clock_timestamp() resolves the instant after the lock wait (§1.5): the wait can
+//     last until lock_timeout, and every decision made before it is stale by exactly
+//     its length.
+func (t *tx) LockUserIdentity(ctx context.Context, user domain.UserRef) (time.Time, error) {
+	if !t.established {
+		// An attempt with no timestamp has not locked its slot, and proceeding would
+		// take the two authorities in the order the design forbids (§2.2 lock order).
+		return time.Time{}, domain.ErrTimeNotEstablished
+	}
+
+	batch := &pgx.Batch{}
+	batch.Queue(`INSERT INTO user_identities (user_organisation_id, user_id)
+		VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+		string(user.OrganisationID), string(user.UserID))
+	batch.Queue(`SELECT 1 FROM user_identities
+		WHERE user_organisation_id = $1 AND user_id = $2 FOR UPDATE`,
+		string(user.OrganisationID), string(user.UserID))
+	batch.Queue(`SELECT clock_timestamp()`)
+
+	results := t.conn.SendBatch(ctx, batch)
+	// Every queued result must be consumed before Close, on the error paths too.
+	_, insertErr := results.Exec()
+	var one int
+	lockErr := results.QueryRow().Scan(&one)
+	var now time.Time
+	timeErr := results.QueryRow().Scan(&now)
+	closeErr := results.Close()
+
+	switch {
+	case insertErr != nil:
+		return time.Time{}, fmt.Errorf("postgres: establish user identity: %w", mapError(ctx, insertErr))
+	case lockErr != nil:
+		return time.Time{}, fmt.Errorf("postgres: lock user identity: %w", mapError(ctx, lockErr))
+	case timeErr != nil:
+		return time.Time{}, fmt.Errorf("postgres: resolve authoritative time: %w", mapError(ctx, timeErr))
+	case closeErr != nil:
+		return time.Time{}, fmt.Errorf("postgres: lock user identity batch: %w", mapError(ctx, closeErr))
+	}
+	return now.UTC(), nil
+}
+
 // Now returns the attempt's authoritative timestamp, or ErrTimeNotEstablished if no
 // lock (or explicit no-slot resolution) has established one. It never resolves a time
 // source of its own — that is the whole point of memoising.

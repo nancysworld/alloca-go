@@ -18,11 +18,12 @@ import (
 //
 //	for one identity, no two active booking claims may overlap in time
 //
-// These live against real PostgreSQL because the mechanism *is* a PostgreSQL exclusion
-// constraint. The in-memory reference proves the service drives the claim lifecycle
-// correctly when serialized; only the database can prove that two transactions locking
-// *different* slot rows — which therefore never contend on the existing aggregate lock —
-// still cannot both commit.
+// These live against real PostgreSQL because the mechanism *is* PostgreSQL: the
+// identity row lock serializes one identity's claim-creating transactions, and the
+// exclusion constraint rejects whatever still races past it. The in-memory reference
+// proves the service drives the claim lifecycle correctly when serialized; only the
+// database can prove that two transactions locking *different* slot rows — which
+// therefore never contend on the existing aggregate lock — still cannot both commit.
 //
 // The negative control that makes these gates credible is at the bottom of the file.
 
@@ -255,65 +256,76 @@ func TestElapsedHoldStopsBlockingWithoutTheWorker(t *testing.T) {
 	assertNoOverlappingClaims(t, h)
 }
 
-// Gate §10.3 16: THE concurrency acceptance gate.
+// Gate §10.3 16, §10.5 27: THE concurrency acceptance gate.
 //
 // Many concurrent reserves for one identity across a set of mutually overlapping slots.
-// Every transaction locks a different slot row, so the existing aggregate lock never
-// serializes any pair of them: without the schedule authority they would all commit.
+// Every transaction locks a different slot row, so the aggregate lock never serializes
+// any pair of them: without the identity lock and the exclusion constraint they would
+// all commit.
+//
+// Every error is a failure — a refusal is the only acceptable non-success. Before the
+// identity lock existed, this gate deadlocked systematically: the mutually overlapping
+// GiST exclusion inserts each placed their index tuple, found the others', and waited in
+// a cycle PostgreSQL broke by aborting victims with 40P01 (§11 control 7). The rounds
+// keep the gate a reliable detector of that failure mode rather than one lucky pass.
 func TestConcurrentOverlappingReservesForOneIdentityYieldOneSuccess(t *testing.T) {
 	const contenders = 24
+	const rounds = 4
 
-	h := newHarness(t, testBudget(), 30*time.Second)
-	base := h.dbNow(t)
-	// Every slot contains base+90m, so all of them mutually overlap, but each is its own
-	// row and therefore its own lock.
-	for i := range contenders {
-		h.seedWindow(t, testOrg, domain.SlotID(fmt.Sprintf("slot-%d", i)), 5, base,
-			time.Duration(i)*time.Minute+time.Hour, 2*time.Hour)
+	for round := range rounds {
+		h := newHarness(t, testBudget(), 30*time.Second)
+		base := h.dbNow(t)
+		// Every slot contains base+90m, so all of them mutually overlap, but each is its
+		// own row and therefore its own lock.
+		for i := range contenders {
+			h.seedWindow(t, testOrg, domain.SlotID(fmt.Sprintf("slot-%d", i)), 5, base,
+				time.Duration(i)*time.Minute+time.Hour, 2*time.Hour)
+		}
+
+		var (
+			wg        sync.WaitGroup
+			mu        sync.Mutex
+			succeeded int
+			refused   int
+			failures  []error
+		)
+		start := make(chan struct{})
+
+		for i := range contenders {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start // release everyone at once, maximising real contention
+				r, err := h.reserve(context.Background(), "user-1",
+					fmt.Sprintf("key-%d", i), domain.SlotID(fmt.Sprintf("slot-%d", i)))
+
+				mu.Lock()
+				defer mu.Unlock()
+				switch {
+				case err != nil:
+					failures = append(failures, err)
+				case r.Outcome == domain.OutcomeAdmittedSuccess:
+					succeeded++
+				case r.Outcome == domain.OutcomeBusinessRefusal && r.Reason == domain.ReasonScheduleConflict:
+					refused++
+				default:
+					failures = append(failures, fmt.Errorf("unexpected outcome %q/%q", r.Outcome, r.Reason))
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		for _, err := range failures {
+			t.Errorf("round %d: reserve failed: %v", round, err)
+		}
+		if succeeded != 1 {
+			t.Errorf("round %d: admitted %d overlapping reserves for one identity, want exactly 1 (refused %d)",
+				round, succeeded, refused)
+		}
+		assertClaimCount(t, h, 1)
+		assertNoOverlappingClaims(t, h)
 	}
-
-	var (
-		wg        sync.WaitGroup
-		mu        sync.Mutex
-		succeeded int
-		refused   int
-		failures  []error
-	)
-	start := make(chan struct{})
-
-	for i := range contenders {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-start // release everyone at once, maximising real contention
-			r, err := h.reserve(context.Background(), "user-1",
-				fmt.Sprintf("key-%d", i), domain.SlotID(fmt.Sprintf("slot-%d", i)))
-
-			mu.Lock()
-			defer mu.Unlock()
-			switch {
-			case err != nil:
-				failures = append(failures, err)
-			case r.Outcome == domain.OutcomeAdmittedSuccess:
-				succeeded++
-			case r.Outcome == domain.OutcomeBusinessRefusal && r.Reason == domain.ReasonScheduleConflict:
-				refused++
-			default:
-				failures = append(failures, fmt.Errorf("unexpected outcome %q/%q", r.Outcome, r.Reason))
-			}
-		}()
-	}
-	close(start)
-	wg.Wait()
-
-	for _, err := range failures {
-		t.Errorf("reserve failed: %v", err)
-	}
-	if succeeded != 1 {
-		t.Errorf("admitted %d overlapping reserves for one identity, want exactly 1 (refused %d)", succeeded, refused)
-	}
-	assertClaimCount(t, h, 1)
-	assertNoOverlappingClaims(t, h)
 }
 
 // Gate §10.3 17: non-overlapping concurrent reserves for one identity all succeed. The
@@ -444,11 +456,14 @@ func TestScheduleConflictIsARefusalNotAFault(t *testing.T) {
 
 // Gate §10.3 21 — the negative control that makes every gate above credible.
 //
-// A passing concurrency test proves nothing on its own: it may be passing because the
-// race never actually occurred. This test removes the protection and asserts that the
-// race then *does* produce overlapping committed state. If this test ever starts
-// failing — if the overlap stops appearing once the constraint is dropped — then the
-// acceptance gate above has stopped discriminating and is no longer evidence.
+// A passing concurrency test proves nothing on its own. This test removes the
+// constraint and asserts that overlapping committed state then *does* appear. Since the
+// identity lock serializes one identity's reserves, what this proves is that the
+// constraint — not the serialization — is what decides validity: serialized inserts
+// with nothing to check them commit overlap silently. If this test ever starts failing
+// — if the overlap stops appearing once the constraint is dropped — some other
+// mechanism has started deciding conflicts and the acceptance gate above is no longer
+// evidence about the constraint.
 //
 // The constraint is dropped and restored inside the test, so the removal cannot leak
 // into another test.
@@ -591,6 +606,11 @@ func assertClaimExpiry(t *testing.T, h *harness, id domain.ReservationID, wantSe
 // would block on LockSlot instead — and LockSlot already resolves its instant after that
 // wait (§1.5), which is the very staleness this is meant to exhibit. Overlapping ranges
 // on two different slot rows is the only shape that puts the wait at the claim.
+//
+// It deliberately takes no identity lock: it models a claim writer that does not
+// serialize on the identity — the cancel race, a future worker — which is exactly why
+// the claim-relation wait, and the post-acquisition revalidation these gates prove,
+// still exist now that reserves serialize on the identity row.
 func (h *harness) holdConflictingClaim(
 	t *testing.T, user domain.UserRef, ref domain.SlotRef, resID domain.ReservationID,
 	startsAt, endsAt time.Time, d time.Duration,
@@ -736,6 +756,134 @@ func TestClaimWaitRecomputesTheHoldTTL(t *testing.T) {
 	if !claimExpiry.Equal(expiresAt) {
 		t.Errorf("claim expires_at = %v, reservation expires_at = %v: they must agree",
 			claimExpiry, expiresAt)
+	}
+}
+
+// --- identity-lock wait (§2.2, §10.5) ----------------------------------------
+
+// holdIdentityLock takes the user's identity lock in its own transaction — creating the
+// row exactly as Tx.LockUserIdentity would — holds it for d, then commits. It models
+// another of the identity's reserves holding the serialization authority: the reserve
+// under test acquires its slot lock immediately and then waits *here*, so every
+// pre-wait instant is stale by the length of the wait.
+func (h *harness) holdIdentityLock(t *testing.T, user domain.UserRef, d time.Duration) (wait func()) {
+	t.Helper()
+	held := make(chan struct{})
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		ctx := context.Background()
+		fail := func(format string, args ...any) {
+			t.Errorf(format, args...)
+			// Unblock a caller waiting on a lock that was never taken, so a failure here
+			// surfaces as a test error rather than a hang.
+			select {
+			case <-held:
+			default:
+				close(held)
+			}
+		}
+
+		conn, err := h.repo.pool.Begin(ctx)
+		if err != nil {
+			fail("identity lock holder: begin: %v", err)
+			return
+		}
+		defer conn.Rollback(ctx) //nolint:errcheck // no-op after the Commit below
+		if _, err := conn.Exec(ctx, `INSERT INTO user_identities (user_organisation_id, user_id)
+			VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+			string(user.OrganisationID), string(user.UserID)); err != nil {
+			fail("identity lock holder: establish row: %v", err)
+			return
+		}
+		if _, err := conn.Exec(ctx, `SELECT 1 FROM user_identities
+			WHERE user_organisation_id = $1 AND user_id = $2 FOR UPDATE`,
+			string(user.OrganisationID), string(user.UserID)); err != nil {
+			fail("identity lock holder: lock row: %v", err)
+			return
+		}
+		close(held)
+		time.Sleep(d)
+		// Commit rather than roll back: identity rows persist for the life of the
+		// identity, and the waiter must find the row the holder may have created.
+		if err := conn.Commit(ctx); err != nil {
+			t.Errorf("identity lock holder: commit: %v", err)
+		}
+	}()
+
+	<-held
+	return func() { <-done }
+}
+
+// Gate §10.5 28: a reserve that waits on the identity lock is decided against the
+// instant the lock was granted, not the slot-lock instant before the wait.
+//
+// The slot closes *during* the wait. Under the pre-wait instant the slot is open, so
+// deciding against it would commit a hold on a slot that has already started —
+// admitted_success for a booking that can never be confirmed. Unlike the claim-wait
+// analogue above, no revalidation step is involved: the identity lock is acquired
+// before settlement and preconditions, so the gate proves that ordering.
+func TestIdentityLockWaitRevalidatesTheSlotWindow(t *testing.T) {
+	const wait = 2 * time.Second
+
+	h := newHarness(t, testBudget(), 500*time.Millisecond)
+	base := h.dbNow(t)
+	// Opens now, starts one second into the wait: open when the reserve takes its slot
+	// lock, closed by the time the identity lock is granted.
+	slot := h.seedWindow(t, testOrg, "closing-slot", 5, base, time.Second, time.Hour)
+
+	release := h.holdIdentityLock(t, userRef("user-1"), wait)
+	r, err := h.reserveAs(context.Background(), testOrg, "user-1", "key-1", slot.Ref())
+	release()
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+
+	assertOutcome(t, r, domain.OutcomeBusinessRefusal, domain.ReasonSlotClosed)
+	// Refused before any claim or hold was written: nothing provisional to withdraw.
+	assertClaimCount(t, h, 0)
+	assertSlotCounts(t, h, slot.Ref(), 0, 0)
+}
+
+// Gate §10.5 28: the hold's TTL is computed from the post-wait instant, so a hold is
+// never committed already eroded by the time spent queueing on the identity lock —
+// the identity-lock analogue of §1.6's rule for the claim wait.
+func TestIdentityLockWaitRecomputesTheHoldTTL(t *testing.T) {
+	const wait = 2 * time.Second
+	const ttl = 30 * time.Second
+
+	h := newHarness(t, testBudget(), ttl)
+	base := h.dbNow(t)
+	slot := h.seedWindow(t, testOrg, "open-slot", 5, base, time.Hour, 2*time.Hour)
+
+	release := h.holdIdentityLock(t, userRef("user-1"), wait)
+	before := h.dbNow(t)
+	r, err := h.reserveAs(context.Background(), testOrg, "user-1", "key-1", slot.Ref())
+	release()
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	assertOutcome(t, r, domain.OutcomeAdmittedSuccess, "")
+
+	var createdAt, expiresAt time.Time
+	err = h.repo.pool.QueryRow(context.Background(),
+		`SELECT created_at, expires_at FROM reservations WHERE reservation_id = $1`,
+		string(r.ReservationID)).Scan(&createdAt, &expiresAt)
+	if err != nil {
+		t.Fatalf("read reservation: %v", err)
+	}
+
+	// Stamped from the instant the identity lock was granted, which is after the wait.
+	// The two readings are ~wait apart versus ~0, so a generous threshold separates
+	// them without depending on scheduling jitter.
+	if gap := createdAt.Sub(before); gap < wait/2 {
+		t.Errorf("created_at is only %v after the pre-wait instant, want most of the %v wait: "+
+			"the hold was stamped before the identity lock was acquired", gap, wait)
+	}
+	// The full TTL is granted from that instant, not eroded by the wait.
+	if got := expiresAt.Sub(createdAt); got != ttl {
+		t.Errorf("hold length = %v, want the full %v TTL", got, ttl)
 	}
 }
 

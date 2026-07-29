@@ -76,6 +76,13 @@ type Repository interface {
 // Because it is per attempt rather than per request, a re-run after the §5.3
 // insert-race backstop resolves a new timestamp; only the committed attempt's value
 // becomes durable.
+//
+// The slot lock is not the attempt's only authority wait. LockUserIdentity and
+// InsertClaim can each wait too, and each returns the instant resolved after its own
+// wait, which supersedes the memoised value for every decision the caller makes from
+// then on. The memoised Now is deliberately not advanced by them: re-resolved time is
+// handed back at the call site where the wait actually happened, so it stays visible
+// where it is justified instead of silently changing what Now means mid-attempt.
 type Tx interface {
 	// LockSlot loads a slot and takes its write lock for the remainder of the
 	// transaction, then establishes the attempt's authoritative timestamp (readable
@@ -83,6 +90,29 @@ type Tx interface {
 	// exist, in which case no timestamp is established — the caller is on the
 	// unknown-target path and must use ResolveTimeWithoutSlot.
 	LockSlot(ctx context.Context, ref SlotRef) (Slot, error)
+	// LockUserIdentity takes the write lock on the caller's identity row — creating the
+	// row on the identity's first reserve — so claim-creating transactions for one
+	// identity serialize before they reach the claim relation
+	// (transaction-semantics §2.2). It returns the authoritative instant resolved
+	// *after* the lock wait: the caller may have queued behind another of the
+	// identity's transactions for up to lock_timeout, and settlement and preconditions
+	// must be decided against the instant this attempt actually serialized (§1.5).
+	// Like InsertClaim's, the returned instant supersedes the memoised Now at the call
+	// site rather than mutating it.
+	//
+	// Why a lock, when the exclusion constraint already rejects overlap: PostgreSQL
+	// enforces an exclusion constraint by inserting the index tuple first and then
+	// scanning for conflicts, so concurrent overlapping inserts for one identity can
+	// each wait on another's uncommitted tuple — a deadlock cycle the server breaks by
+	// aborting victims, turning valid requests into faults. Serializing the identity's
+	// claim creation makes the cycle unreachable, while the constraint remains the
+	// invariant's authority for any writer that does not hold this lock.
+	//
+	// Lock order is normative — slot authority → user identity → claims — so this must
+	// be called only after LockSlot has established the attempt's timestamp.
+	// Implementations return ErrTimeNotEstablished otherwise, keeping an order
+	// violation loud in both adapters.
+	LockUserIdentity(ctx context.Context, user UserRef) (time.Time, error)
 	// Now returns the attempt's authoritative timestamp. It returns
 	// ErrTimeNotEstablished if neither LockSlot nor ResolveTimeWithoutSlot has
 	// succeeded in this attempt.

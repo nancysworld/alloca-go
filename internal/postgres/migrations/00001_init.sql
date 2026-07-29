@@ -142,6 +142,33 @@ CREATE TABLE idempotency_records (
     PRIMARY KEY (user_organisation_id, user_id, operation, key)
 );
 
+-- User identities: the serialization authority for one user's schedule mutations
+-- (§2.2). The row carries no schedule state — the schedule itself is proven by
+-- user_time_claims below — it exists to be locked: reserve takes FOR UPDATE on it after
+-- the slot lock and before touching claims, so one user's claim-creating transactions
+-- run one at a time.
+--
+-- Why serialize, when the exclusion constraint below already rejects overlap? Because
+-- of *how* PostgreSQL enforces an exclusion constraint: each inserter places its index
+-- tuple first and then scans for conflicts, so concurrent overlapping inserts for one
+-- user can each find another's uncommitted tuple and each wait for the other — a
+-- deadlock the server resolves by aborting victims, turning valid requests into faults.
+-- Serializing a user's claim inserts before they reach the GiST index makes that cycle
+-- unreachable; the constraint remains the invariant's authority for any writer that
+-- does not hold this lock.
+--
+-- Rows are created on a user's first reserve and never deleted. A FOR UPDATE on a
+-- never-deleted row is what makes the insert-then-lock acquisition race-free.
+--
+-- The three relations divide the transactional model cleanly: the slot row owns
+-- capacity, the user identity row serializes schedule mutation, and the claim relation
+-- proves schedule validity.
+CREATE TABLE user_identities (
+    user_organisation_id text NOT NULL,
+    user_id              text NOT NULL,
+    PRIMARY KEY (user_organisation_id, user_id)
+);
+
 -- User schedule non-overlap (§2.2). The slot row is the authority for one slot's
 -- capacity, but it cannot protect one user booking two overlapping slots: those
 -- transactions lock different slot rows and never contend. This table is the second
@@ -201,6 +228,7 @@ CREATE INDEX user_time_claims_settlement_idx
 -- EXTENSION IF NOT EXISTS does not establish that this migration created it, and
 -- dropping a possibly-shared extension is worse than leaving an unused one.
 DROP TABLE user_time_claims;
+DROP TABLE user_identities;
 DROP TABLE idempotency_records;
 DROP TABLE bookings;
 DROP TABLE reservations;

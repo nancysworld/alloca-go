@@ -62,6 +62,14 @@ type Config struct {
 	// deadline to complete before the server is forced closed.
 	ShutdownGrace time.Duration
 
+	// ReservationTTL is how long a hold survives without being confirmed. The hold
+	// duration is service-owned — a client cannot ask for a longer or shorter one —
+	// so it is configuration rather than request input (transaction-semantics §1.6).
+	//
+	// It is not part of the RequestBudget chain: that chain bounds one request, while
+	// this bounds a hold that outlives the request that created it by design.
+	ReservationTTL time.Duration
+
 	// RequestBudget is the per-request deadline chain (measurement-contract §8).
 	RequestBudget RequestBudget
 }
@@ -188,6 +196,7 @@ func Default() Config {
 		IdleTimeout:         60 * time.Second,
 		WriteResponseMargin: 500 * time.Millisecond,
 		ShutdownGrace:       15 * time.Second,
+		ReservationTTL:      2 * time.Minute,
 		RequestBudget: RequestBudget{
 			ClientDeadline:   6000 * time.Millisecond,
 			ServerDeadline:   5000 * time.Millisecond,
@@ -209,6 +218,7 @@ const (
 	envIdleTimeout         = "ALLOCA_IDLE_TIMEOUT"
 	envWriteResponseMargin = "ALLOCA_WRITE_RESPONSE_MARGIN"
 	envShutdownGrace       = "ALLOCA_SHUTDOWN_GRACE"
+	envReservationTTL      = "ALLOCA_RESERVATION_TTL"
 
 	envClientDeadline   = "ALLOCA_CLIENT_DEADLINE"
 	envServerDeadline   = "ALLOCA_SERVER_DEADLINE"
@@ -244,6 +254,7 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		{envIdleTimeout, &cfg.IdleTimeout},
 		{envWriteResponseMargin, &cfg.WriteResponseMargin},
 		{envShutdownGrace, &cfg.ShutdownGrace},
+		{envReservationTTL, &cfg.ReservationTTL},
 		{envClientDeadline, &cfg.RequestBudget.ClientDeadline},
 		{envServerDeadline, &cfg.RequestBudget.ServerDeadline},
 		{envAdmissionCap, &cfg.RequestBudget.AdmissionCap},

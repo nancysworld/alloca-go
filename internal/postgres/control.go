@@ -34,6 +34,60 @@ func (r *Repo) SeedSlot(ctx context.Context, slot domain.Slot) error {
 	return nil
 }
 
+// ElapsedHoldSlots returns up to limit slots that currently hold at least one elapsed
+// reservation, so the expiry worker knows which slot locks are worth taking.
+//
+// It takes no timestamp. "Elapsed" is decided by clock_timestamp() inside the query, so
+// the worker never supplies a host clock to a booking decision — the same rule the
+// request path follows (transaction-semantics §1.5). The worker's own process clock is
+// therefore only ever used to decide *when to poll*, never *what has expired*.
+//
+// It is a candidate list, not an authority: the rows are read without a lock, so a slot
+// may be settled by a concurrent request between this query and the worker's
+// transaction. That is harmless — settlement under the slot lock re-derives everything
+// and simply expires nothing.
+//
+// DISTINCT with the ordering and limit keeps one iteration's work bounded; whatever it
+// does not reach this tick, it reaches on the next.
+func (r *Repo) ElapsedHoldSlots(ctx context.Context, limit int) ([]domain.SlotRef, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT slot_organisation_id, slot_id
+		FROM reservations
+		WHERE state = 'held' AND expires_at <= clock_timestamp()
+		ORDER BY slot_organisation_id, slot_id
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: elapsed hold slots: %w", err)
+	}
+	defer rows.Close()
+
+	var refs []domain.SlotRef
+	for rows.Next() {
+		var ref domain.SlotRef
+		if err := rows.Scan(&ref.OrganisationID, &ref.SlotID); err != nil {
+			return nil, fmt.Errorf("postgres: elapsed hold slots: %w", err)
+		}
+		refs = append(refs, ref)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: elapsed hold slots: %w", err)
+	}
+	return refs, nil
+}
+
+// Ready reports whether the database can serve booking traffic, for the readiness probe.
+//
+// It acquires a pooled connection and round-trips a trivial statement, so it exercises
+// the two things a request needs: that the pool can hand out a connection, and that the
+// server answers. Bounding is the caller's job — the probe's timeout is what makes the
+// difference between "slow" and "gone" (httpapi.handleReadyz).
+func (r *Repo) Ready(ctx context.Context) error {
+	if err := r.pool.Ping(ctx); err != nil {
+		return fmt.Errorf("postgres: readiness: %w", err)
+	}
+	return nil
+}
+
 // SlotCounts reports a slot's held reservations and active bookings by reading rows
 // directly, bypassing the service entirely.
 //

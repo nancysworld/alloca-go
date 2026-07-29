@@ -6,17 +6,55 @@
 package httpapi
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"net/http"
 	"time"
 
 	"github.com/nancysworld/alloca-go/internal/buildinfo"
 	"github.com/nancysworld/alloca-go/internal/config"
+	"github.com/nancysworld/alloca-go/internal/telemetry"
 )
 
-// ReadinessFunc reports whether the service is ready to serve domain traffic. In
-// AG-M0 it always reports ready; AG-M1 replaces it with a check of the database
-// and any other hard dependencies.
-type ReadinessFunc func() error
+// withRequestID attaches a short random identifier to every request's context, so log
+// lines from one request can be tied together.
+//
+// It is diagnostic context, not a dimension: it travels in the context where a logging
+// recorder can read it, and it is deliberately absent from the observation types, so a
+// future metrics implementation cannot label a time series with it
+// (internal/telemetry).
+func withRequestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b [8]byte
+		// rand.Read never fails on the platforms this runs on; an unlikely failure
+		// yields the zero identifier, which is worse for correlation but harmless.
+		_, _ = rand.Read(b[:])
+		ctx := telemetry.WithRequestID(r.Context(), hex.EncodeToString(b[:]))
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// ReadinessFunc reports whether the service is ready to serve domain traffic.
+//
+// It takes a context because a readiness check talks to a dependency and must be
+// bounded: an unbounded probe cannot distinguish "the database is slow" from "the
+// database is gone", which is the only question readiness exists to answer. The caller
+// supplies the bound (see handleReadyz).
+type ReadinessFunc func(ctx context.Context) error
+
+// Options carry the collaborators the booking surface needs. They are optional so the
+// operational skeleton — liveness, readiness, metadata — can still be served without a
+// database behind it, which is what AG-M0 shipped and what the probe tests still use.
+type Options struct {
+	// Service enables the booking endpoints. When nil, only the operational surface is
+	// registered.
+	Service BookingService
+	// Recorder observes completed requests. When nil, observations are discarded.
+	Recorder telemetry.Recorder
+	// Ready gates /readyz. When nil, the service always reports ready.
+	Ready ReadinessFunc
+}
 
 // Server bundles the HTTP handler and the configuration used to construct the
 // underlying *http.Server.
@@ -25,15 +63,20 @@ type Server struct {
 	handler http.Handler
 }
 
-// New constructs a Server. metaSource supplies runtime metadata for /meta; ready
-// gates /readyz. A nil ready is treated as "always ready".
-func New(cfg config.Config, metaSource func() buildinfo.Info, ready ReadinessFunc) *Server {
+// New constructs a Server. metaSource supplies runtime metadata for /meta; opts supply
+// the booking service, telemetry, and readiness check, each of which may be absent.
+func New(cfg config.Config, metaSource func() buildinfo.Info, opts Options) *Server {
+	ready := opts.Ready
 	if ready == nil {
-		ready = func() error { return nil }
+		ready = func(context.Context) error { return nil }
+	}
+	recorder := opts.Recorder
+	if recorder == nil {
+		recorder = telemetry.Nop{}
 	}
 	mux := http.NewServeMux()
-	registerRoutes(mux, metaSource, cfg.RequestBudget, ready)
-	return &Server{cfg: cfg, handler: mux}
+	registerRoutes(mux, metaSource, cfg, ready, opts.Service, recorder)
+	return &Server{cfg: cfg, handler: withRequestID(mux)}
 }
 
 // Handler exposes the router, primarily so tests can exercise it via httptest

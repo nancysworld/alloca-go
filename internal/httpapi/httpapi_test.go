@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -15,7 +16,7 @@ import (
 func testServer(t *testing.T, ready ReadinessFunc) *Server {
 	t.Helper()
 	meta := func() buildinfo.Info { return buildinfo.Collect(time.Now()) }
-	return New(config.Default(), meta, ready)
+	return New(config.Default(), meta, Options{Ready: ready})
 }
 
 func do(t *testing.T, s *Server, path string) *httptest.ResponseRecorder {
@@ -41,17 +42,23 @@ func TestReadyzReadyByDefault(t *testing.T) {
 }
 
 func TestReadyzUnavailableWhenNotReady(t *testing.T) {
-	notReady := func() error { return errors.New("database unreachable") }
+	notReady := func(context.Context) error { return errors.New("database unreachable") }
 	rec := do(t, testServer(t, notReady), pathReadyz)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("GET %s = %d, want 503", pathReadyz, rec.Code)
 	}
+	// The reason is deliberately NOT echoed. A readiness failure comes from
+	// infrastructure, so its error text can carry a DSN or driver detail, and the probe
+	// is an unauthenticated endpoint. The operator gets it from the logs instead.
 	var body map[string]string
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("readyz body not JSON: %v", err)
 	}
-	if body["reason"] != "database unreachable" {
-		t.Errorf("reason = %q, want %q", body["reason"], "database unreachable")
+	if got, ok := body["reason"]; ok {
+		t.Errorf("readyz leaked a failure reason to the caller: %q", got)
+	}
+	if body["status"] != "unavailable" {
+		t.Errorf("status = %q, want %q", body["status"], "unavailable")
 	}
 }
 
@@ -106,7 +113,7 @@ func TestMetaIncludesRequestBudget(t *testing.T) {
 
 func TestHTTPServerAppliesTimeouts(t *testing.T) {
 	cfg := config.Default()
-	s := New(cfg, func() buildinfo.Info { return buildinfo.Info{} }, nil)
+	s := New(cfg, func() buildinfo.Info { return buildinfo.Info{} }, Options{})
 	hs := s.HTTPServer()
 	if hs.ReadHeaderTimeout != cfg.ReadHeaderTimeout {
 		t.Errorf("ReadHeaderTimeout = %v, want %v", hs.ReadHeaderTimeout, cfg.ReadHeaderTimeout)

@@ -125,7 +125,7 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 			return domain.Result{}, err
 		}
 
-		consumed, err := s.settle(ctx, tx, slot.Ref(), now)
+		consumed, _, err := s.settle(ctx, tx, slot.Ref(), now)
 		if err != nil {
 			return domain.Result{}, err
 		}
@@ -410,7 +410,7 @@ func (s *Service) lockByReservation(ctx context.Context, tx domain.Tx, id domain
 	if r, resolved, lerr := s.lookup(ctx, tx, scope, hash); resolved || lerr != nil {
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, r, lerr
 	}
-	if _, err = s.settle(ctx, tx, slot.Ref(), now); err != nil {
+	if _, _, err = s.settle(ctx, tx, slot.Ref(), now); err != nil {
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, domain.Result{}, err
 	}
 	res, err = tx.Reservation(ctx, id)
@@ -490,21 +490,59 @@ func (s *Service) unknownTarget(ctx context.Context, tx domain.Tx, scope domain.
 	return s.commit(ctx, tx, scope, hash, domain.Refusal(domain.ReasonUnknownTarget), now, nil)
 }
 
-// settle transitions every elapsed held reservation on the slot to expired, then
-// returns the slot's consumed capacity derived from settled state: held reservations
-// plus active bookings (transaction-semantics §1.7, §2.1).
-func (s *Service) settle(ctx context.Context, tx domain.Tx, ref domain.SlotRef, now time.Time) (consumed int, err error) {
-	held, err := tx.HeldReservations(ctx, ref)
+// SettleSlot transitions the slot's elapsed holds to expired and reports how many it
+// settled. It is the expiry worker's entry point (transaction-semantics §2.1).
+//
+// It is a Service method rather than worker logic against the repository because
+// deciding that a hold has elapsed is a domain decision, and there must be exactly one
+// implementation of it. This runs the same settle() that every operation runs, under the
+// same slot lock, against the same authoritative post-lock instant — so a hold expired
+// by the worker and a hold expired by a concurrent reserve are expired by identical
+// rules, and the worker cannot drift from the request path.
+//
+// It writes no idempotency record: this is not a client mutation with a terminal outcome
+// to replay, it is the state transition the design already performs inside every
+// operation, merely triggered by time instead of by a request.
+//
+// Crucially it does not touch user_time_claims. User-scoped settlement is the sole
+// reaper of elapsed claims (§2.2), which is what keeps every transaction from ever
+// locking a claim row belonging to a user it is not acting for.
+func (s *Service) SettleSlot(ctx context.Context, ref domain.SlotRef) (expired int, err error) {
+	err = s.repo.WithinTx(ctx, func(ctx context.Context, tx domain.Tx) error {
+		slot, err := tx.LockSlot(ctx, ref)
+		if err != nil {
+			return err
+		}
+		now, err := tx.Now(ctx)
+		if err != nil {
+			return err
+		}
+		_, expired, err = s.settle(ctx, tx, slot.Ref(), now)
+		return err
+	})
 	if err != nil {
 		return 0, err
+	}
+	return expired, nil
+}
+
+// settle transitions every elapsed held reservation on the slot to expired, then
+// returns the slot's consumed capacity derived from settled state (held reservations
+// plus active bookings) and how many holds it expired
+// (transaction-semantics §1.7, §2.1).
+func (s *Service) settle(ctx context.Context, tx domain.Tx, ref domain.SlotRef, now time.Time) (consumed, expired int, err error) {
+	held, err := tx.HeldReservations(ctx, ref)
+	if err != nil {
+		return 0, 0, err
 	}
 	stillHeld := 0
 	for _, r := range held {
 		if r.Elapsed(now) {
 			r.State = domain.ReservationExpired
 			if err := tx.PutReservation(ctx, r); err != nil {
-				return 0, err
+				return 0, 0, err
 			}
+			expired++
 			// Deliberately does not touch the claim. Removing an elapsed claim is
 			// SettleClaims' sole job (transaction-semantics §2.2), so no transaction ever
 			// locks a claim row belonging to a user other than the one it acts for —
@@ -516,9 +554,9 @@ func (s *Service) settle(ctx context.Context, tx domain.Tx, ref domain.SlotRef, 
 	}
 	active, err := tx.ActiveBookingCount(ctx, ref)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	return stillHeld + active, nil
+	return stillHeld + active, expired, nil
 }
 
 // commit records the terminal outcome and then persists the mutation (if any). The

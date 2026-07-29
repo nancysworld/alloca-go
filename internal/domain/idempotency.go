@@ -13,10 +13,9 @@ import "time"
 // case is resolved by the unique constraint plus request-hash comparison, not by the
 // slot lock (transaction-semantics §5.3).
 type ScopeKey struct {
-	OrganisationID OrganisationID
-	UserID         UserID
-	Operation      Operation
-	Key            string
+	UserRef   UserRef
+	Operation Operation
+	Key       string
 }
 
 // IdempotencyRecord is the durable record of one logical mutation request and its
@@ -24,10 +23,9 @@ type ScopeKey struct {
 // transaction as the mutation (or refusal) it describes, so one scoped key records
 // exactly one terminal outcome.
 type IdempotencyRecord struct {
-	OrganisationID OrganisationID
-	UserID         UserID
-	Operation      Operation
-	Key            string
+	UserRef   UserRef
+	Operation Operation
+	Key       string
 	// RequestHash is computed by internal/idempotency over the semantically
 	// significant request fields. It detects a key reused for a different request and
 	// excludes server-generated values (now, expires_at) so ordinary retries hash
@@ -45,5 +43,5 @@ type IdempotencyRecord struct {
 
 // Scope returns the record's scope key.
 func (r IdempotencyRecord) Scope() ScopeKey {
-	return ScopeKey{OrganisationID: r.OrganisationID, UserID: r.UserID, Operation: r.Operation, Key: r.Key}
+	return ScopeKey{UserRef: r.UserRef, Operation: r.Operation, Key: r.Key}
 }

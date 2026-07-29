@@ -62,11 +62,12 @@ func (SystemClock) Now() time.Time { return time.Now() }
 type Store struct {
 	sem          chan struct{}
 	clock        Clock
-	slots        map[domain.SlotID]domain.Slot
+	slots        map[domain.SlotRef]domain.Slot
 	reservations map[domain.ReservationID]domain.Reservation
 	bookings     map[domain.BookingID]domain.Booking
 	bookingByRes map[domain.ReservationID]domain.BookingID
 	records      map[domain.ScopeKey]domain.IdempotencyRecord
+	claims       map[domain.ReservationID]domain.ScheduleClaim
 }
 
 // New constructs an empty Store whose transactions take their authoritative time
@@ -80,12 +81,27 @@ func New(clock Clock) *Store {
 	return &Store{
 		sem:          make(chan struct{}, 1),
 		clock:        clock,
-		slots:        make(map[domain.SlotID]domain.Slot),
+		slots:        make(map[domain.SlotRef]domain.Slot),
 		reservations: make(map[domain.ReservationID]domain.Reservation),
 		bookings:     make(map[domain.BookingID]domain.Booking),
 		bookingByRes: make(map[domain.ReservationID]domain.BookingID),
 		records:      make(map[domain.ScopeKey]domain.IdempotencyRecord),
+		claims:       make(map[domain.ReservationID]domain.ScheduleClaim),
 	}
+}
+
+// Claims returns every stored schedule claim, for tests that assert the invariant
+// against persisted state rather than against operation results. Like SlotCounts it
+// does not settle: a caller wanting live claims only must reconcile at a time before
+// any hold elapses, or check Elapsed itself.
+func (s *Store) Claims() []domain.ScheduleClaim {
+	s.lock()
+	defer s.unlock()
+	out := make([]domain.ScheduleClaim, 0, len(s.claims))
+	for _, c := range s.claims {
+		out = append(out, c)
+	}
+	return out
 }
 
 // SeedSlot inserts or replaces a slot. Slot creation is a control-plane concern, not
@@ -94,7 +110,7 @@ func New(clock Clock) *Store {
 func (s *Store) SeedSlot(slot domain.Slot) {
 	s.lock()
 	defer s.unlock()
-	s.slots[slot.ID] = slot
+	s.slots[slot.Ref()] = slot
 }
 
 // SlotCounts reports the slot's held reservations and active bookings by direct
@@ -103,16 +119,16 @@ func (s *Store) SeedSlot(slot domain.Slot) {
 // (measurement-contract §9, scaled to the reference store). It does not settle
 // elapsed holds, so callers that need settled counts must reconcile at a time before
 // any hold elapses.
-func (s *Store) SlotCounts(slotID domain.SlotID) (held, activeBookings int) {
+func (s *Store) SlotCounts(ref domain.SlotRef) (held, activeBookings int) {
 	s.lock()
 	defer s.unlock()
 	for _, r := range s.reservations {
-		if r.SlotID == slotID && r.State == domain.ReservationHeld {
+		if r.SlotRef == ref && r.State == domain.ReservationHeld {
 			held++
 		}
 	}
 	for _, b := range s.bookings {
-		if b.SlotID == slotID && b.State == domain.BookingActive {
+		if b.SlotRef == ref && b.State == domain.BookingActive {
 			activeBookings++
 		}
 	}
@@ -180,8 +196,8 @@ func (t *tx) establish() time.Time {
 	return t.now
 }
 
-func (t *tx) LockSlot(_ context.Context, id domain.SlotID) (domain.Slot, error) {
-	slot, ok := t.store.slots[id]
+func (t *tx) LockSlot(_ context.Context, ref domain.SlotRef) (domain.Slot, error) {
+	slot, ok := t.store.slots[ref]
 	if !ok {
 		// No timestamp is established on the not-found path: the caller is heading for
 		// the unknown-target refusal and must say so explicitly via
@@ -190,6 +206,20 @@ func (t *tx) LockSlot(_ context.Context, id domain.SlotID) (domain.Slot, error) 
 	}
 	t.establish()
 	return slot, nil
+}
+
+// LockUserIdentity serializes one identity's claim-creating transactions in the real
+// adapter. Here every transaction already runs under the process-wide lock, so there is
+// no per-identity lock to take and no wait to resolve time after: the memoised instant
+// is returned, exactly as InsertClaim returns it. The established guard is kept, though
+// — it is what makes a violation of the normative slot → identity lock order
+// (transaction-semantics §2.2) loud in the reference double rather than only in
+// production.
+func (t *tx) LockUserIdentity(_ context.Context, _ domain.UserRef) (time.Time, error) {
+	if !t.established {
+		return time.Time{}, domain.ErrTimeNotEstablished
+	}
+	return t.now, nil
 }
 
 func (t *tx) Now(_ context.Context) (time.Time, error) {
@@ -203,12 +233,12 @@ func (t *tx) ResolveTimeWithoutSlot(_ context.Context) (time.Time, error) {
 	return t.establish(), nil
 }
 
-func (t *tx) SlotIDForReservation(_ context.Context, id domain.ReservationID) (domain.SlotID, error) {
+func (t *tx) SlotRefForReservation(_ context.Context, id domain.ReservationID) (domain.SlotRef, error) {
 	r, ok := t.store.reservations[id]
 	if !ok {
-		return "", domain.ErrNotFound
+		return domain.SlotRef{}, domain.ErrNotFound
 	}
-	return r.SlotID, nil
+	return r.SlotRef, nil
 }
 
 func (t *tx) Reservation(_ context.Context, id domain.ReservationID) (domain.Reservation, error) {
@@ -219,20 +249,20 @@ func (t *tx) Reservation(_ context.Context, id domain.ReservationID) (domain.Res
 	return r, nil
 }
 
-func (t *tx) HeldReservations(_ context.Context, slotID domain.SlotID) ([]domain.Reservation, error) {
+func (t *tx) HeldReservations(_ context.Context, ref domain.SlotRef) ([]domain.Reservation, error) {
 	var held []domain.Reservation
 	for _, r := range t.store.reservations {
-		if r.SlotID == slotID && r.State == domain.ReservationHeld {
+		if r.SlotRef == ref && r.State == domain.ReservationHeld {
 			held = append(held, r)
 		}
 	}
 	return held, nil
 }
 
-func (t *tx) ActiveBookingCount(_ context.Context, slotID domain.SlotID) (int, error) {
+func (t *tx) ActiveBookingCount(_ context.Context, ref domain.SlotRef) (int, error) {
 	count := 0
 	for _, b := range t.store.bookings {
-		if b.SlotID == slotID && b.State == domain.BookingActive {
+		if b.SlotRef == ref && b.State == domain.BookingActive {
 			count++
 		}
 	}
@@ -255,6 +285,71 @@ func (t *tx) PutReservation(_ context.Context, r domain.Reservation) error {
 func (t *tx) PutBooking(_ context.Context, b domain.Booking) error {
 	t.store.bookings[b.ID] = b
 	t.store.bookingByRes[b.ReservationID] = b.ID
+	return nil
+}
+
+// InsertClaim inserts a claim unless it overlaps an existing claim of the same user.
+//
+// The scan is the reference statement of the rule the PostgreSQL exclusion constraint
+// enforces: same user, overlapping half-open intervals. Note what it deliberately
+// does *not* consider — whether the existing claim has elapsed. The constraint cannot
+// know: its index predicate would have to depend on the wall clock, which PostgreSQL
+// does not allow. Any stored row conflicts, elapsed or not.
+//
+// So an elapsed claim blocks here exactly as it would in PostgreSQL, and it is
+// settlement's job — not the insert's — to remove it first. Skipping elapsed rows here
+// would make this double more permissive than the authority it stands in for, and the
+// difference would only surface in production.
+func (t *tx) InsertClaim(_ context.Context, c domain.ScheduleClaim) (time.Time, error) {
+	for _, existing := range t.store.claims {
+		if existing.ReservationID == c.ReservationID {
+			continue
+		}
+		if existing.SameUser(c) && existing.Overlaps(c) {
+			return time.Time{}, domain.ErrScheduleConflict
+		}
+	}
+	t.store.claims[c.ReservationID] = c
+	// The double serializes every transaction under one lock, so a claim insert never
+	// waits and the attempt's instant cannot have gone stale. Returning the memoised
+	// value keeps the port's shape honest without inventing a second clock read: where
+	// PostgreSQL reports the post-wait instant, here there was no wait to be after.
+	return t.now, nil
+}
+
+func (t *tx) SetClaimExpiry(_ context.Context, id domain.ReservationID, expiresAt time.Time) error {
+	c, ok := t.store.claims[id]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	c.ExpiresAt = expiresAt
+	t.store.claims[id] = c
+	return nil
+}
+
+func (t *tx) ConfirmClaim(_ context.Context, id domain.ReservationID) error {
+	c, ok := t.store.claims[id]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	// Clearing the expiry is the whole transition: the row, and therefore the interval
+	// it protects, is otherwise untouched.
+	c.ExpiresAt = time.Time{}
+	t.store.claims[id] = c
+	return nil
+}
+
+func (t *tx) DeleteClaim(_ context.Context, id domain.ReservationID) error {
+	delete(t.store.claims, id)
+	return nil
+}
+
+func (t *tx) SettleClaims(_ context.Context, user domain.UserRef, now time.Time) error {
+	for id, c := range t.store.claims {
+		if c.UserRef == user && c.Elapsed(now) {
+			delete(t.store.claims, id)
+		}
+	}
 	return nil
 }
 

@@ -17,6 +17,15 @@ var (
 	// concurrency backstop of transaction-semantics §5.3; the caller rolls back and
 	// re-runs so the winning record is observed.
 	ErrConflict = errors.New("domain: idempotency scope conflict")
+	// ErrScheduleConflict reports that inserting a schedule claim overlapped an
+	// existing active claim for the same user — the user schedule non-overlap
+	// invariant (transaction-semantics §2.2). Unlike ErrConflict it is not a retry
+	// signal: it is the authoritative answer that this identity's time is already
+	// claimed, which the service turns into a business_refusal with
+	// ReasonScheduleConflict. It must leave the transaction usable, so an adapter that
+	// discovers it through a constraint violation has to roll back to a savepoint
+	// rather than abort the whole transaction.
+	ErrScheduleConflict = errors.New("domain: schedule claim overlaps an existing claim")
 	// ErrTimeNotEstablished reports that Tx.Now was called before the attempt's
 	// authoritative timestamp existed — that is, before a successful LockSlot or
 	// ResolveTimeWithoutSlot. It is a programming error on the fault line
@@ -67,13 +76,43 @@ type Repository interface {
 // Because it is per attempt rather than per request, a re-run after the §5.3
 // insert-race backstop resolves a new timestamp; only the committed attempt's value
 // becomes durable.
+//
+// The slot lock is not the attempt's only authority wait. LockUserIdentity and
+// InsertClaim can each wait too, and each returns the instant resolved after its own
+// wait, which supersedes the memoised value for every decision the caller makes from
+// then on. The memoised Now is deliberately not advanced by them: re-resolved time is
+// handed back at the call site where the wait actually happened, so it stays visible
+// where it is justified instead of silently changing what Now means mid-attempt.
 type Tx interface {
 	// LockSlot loads a slot and takes its write lock for the remainder of the
 	// transaction, then establishes the attempt's authoritative timestamp (readable
 	// via Now) from the post-lock instant. Returns ErrNotFound if the slot does not
 	// exist, in which case no timestamp is established — the caller is on the
 	// unknown-target path and must use ResolveTimeWithoutSlot.
-	LockSlot(ctx context.Context, id SlotID) (Slot, error)
+	LockSlot(ctx context.Context, ref SlotRef) (Slot, error)
+	// LockUserIdentity takes the write lock on the caller's identity row — creating the
+	// row on the identity's first reserve — so claim-creating transactions for one
+	// identity serialize before they reach the claim relation
+	// (transaction-semantics §2.2). It returns the authoritative instant resolved
+	// *after* the lock wait: the caller may have queued behind another of the
+	// identity's transactions for up to lock_timeout, and settlement and preconditions
+	// must be decided against the instant this attempt actually serialized (§1.5).
+	// Like InsertClaim's, the returned instant supersedes the memoised Now at the call
+	// site rather than mutating it.
+	//
+	// Why a lock, when the exclusion constraint already rejects overlap: PostgreSQL
+	// enforces an exclusion constraint by inserting the index tuple first and then
+	// scanning for conflicts, so concurrent overlapping inserts for one identity can
+	// each wait on another's uncommitted tuple — a deadlock cycle the server breaks by
+	// aborting victims, turning valid requests into faults. Serializing the identity's
+	// claim creation makes the cycle unreachable, while the constraint remains the
+	// invariant's authority for any writer that does not hold this lock.
+	//
+	// Lock order is normative — slot authority → user identity → claims — so this must
+	// be called only after LockSlot has established the attempt's timestamp.
+	// Implementations return ErrTimeNotEstablished otherwise, keeping an order
+	// violation loud in both adapters.
+	LockUserIdentity(ctx context.Context, user UserRef) (time.Time, error)
 	// Now returns the attempt's authoritative timestamp. It returns
 	// ErrTimeNotEstablished if neither LockSlot nor ResolveTimeWithoutSlot has
 	// succeeded in this attempt.
@@ -84,18 +123,22 @@ type Tx interface {
 	// separate method rather than a fallback inside Now so that the no-slot path is
 	// explicit at the call site and cannot be reached by forgetting to lock.
 	ResolveTimeWithoutSlot(ctx context.Context) (time.Time, error)
-	// SlotIDForReservation resolves the slot a reservation belongs to, without
+	// SlotRefForReservation resolves the slot a reservation belongs to, without
 	// locking, so the caller can then LockSlot that slot (transaction-semantics §2).
 	// Returns ErrNotFound if the reservation does not exist. It establishes no
 	// timestamp: only the subsequent LockSlot does.
-	SlotIDForReservation(ctx context.Context, id ReservationID) (SlotID, error)
+	//
+	// It returns the whole SlotRef rather than a bare identifier because the caller
+	// cannot reconstruct the owning organisation: for a booking made into another
+	// organisation it is neither the user's own organisation nor derivable from it.
+	SlotRefForReservation(ctx context.Context, id ReservationID) (SlotRef, error)
 	// Reservation loads a reservation by ID. Returns ErrNotFound if absent.
 	Reservation(ctx context.Context, id ReservationID) (Reservation, error)
 	// HeldReservations returns every reservation on the slot currently in the held
 	// state, for settlement and consumed-capacity derivation.
-	HeldReservations(ctx context.Context, slotID SlotID) ([]Reservation, error)
+	HeldReservations(ctx context.Context, ref SlotRef) ([]Reservation, error)
 	// ActiveBookingCount returns the number of active bookings on the slot.
-	ActiveBookingCount(ctx context.Context, slotID SlotID) (int, error)
+	ActiveBookingCount(ctx context.Context, ref SlotRef) (int, error)
 	// BookingForReservation loads the booking created from a reservation. Returns
 	// ErrNotFound if none exists.
 	BookingForReservation(ctx context.Context, id ReservationID) (Booking, error)
@@ -103,6 +146,56 @@ type Tx interface {
 	PutReservation(ctx context.Context, r Reservation) error
 	// PutBooking inserts or updates a booking.
 	PutBooking(ctx context.Context, b Booking) error
+	// InsertClaim inserts an active schedule claim, returning ErrScheduleConflict if it
+	// overlaps an existing active claim for the same user (transaction-semantics
+	// §2.2). The insert *is* the conflict check: a prior read cannot be authoritative,
+	// because a concurrent transaction may commit an overlapping claim between the read
+	// and the write. Implementations must leave the transaction usable after a
+	// conflict, since the caller still has to record the refusal.
+	//
+	// It is called during precondition evaluation rather than in the mutation step, so
+	// the outcome is known before the idempotency record is written.
+	//
+	// # Why it returns a timestamp (transaction-semantics §1.5)
+	//
+	// This is the attempt's *second* authority wait. An insert that overlaps an
+	// uncommitted claim blocks until that transaction resolves, and if it rolls back the
+	// insert then succeeds — after a wait bounded only by lock_timeout. Every decision
+	// made from the LockSlot instant is stale by exactly that wait, which is the
+	// staleness §1.5 exists to prevent; a slot can cross starts_at while the claim is
+	// being acquired.
+	//
+	// So a successful insert returns the authoritative instant *after* the wait, and the
+	// caller re-evaluates the window and recomputes the TTL against it. The timestamp is
+	// returned from the acquisition rather than through a general "refresh time" method
+	// on purpose: time may only be re-resolved where an authority was actually waited
+	// for, and that stays visible at the call site instead of becoming something any
+	// code could reach for.
+	InsertClaim(ctx context.Context, c ScheduleClaim) (time.Time, error)
+	// SetClaimExpiry updates a claim's expiry, so the claim and the hold it backs agree
+	// on when the hold lapses. Reserve inserts the claim with a provisional expiry
+	// computed before the wait above, then sets the final one from the post-wait instant.
+	// A mismatch would let settlement remove a claim whose hold still consumes capacity,
+	// or leave one behind whose hold is gone.
+	SetClaimExpiry(ctx context.Context, id ReservationID, expiresAt time.Time) error
+	// ConfirmClaim makes a claim permanent by clearing its expiry: the hold became a
+	// booking, so settlement must no longer remove it. It updates the existing row
+	// rather than inserting a second one, so confirming cannot self-conflict.
+	ConfirmClaim(ctx context.Context, id ReservationID) error
+	// DeleteClaim removes a reservation's claim when it stops being active. Cancellation
+	// uses it, and so does reserve when a claim it provisionally inserted turns out to
+	// be refused after the window is re-evaluated. Expiry does *not*: elapsed claims are
+	// removed only by SettleClaims (§2.2), so no transaction ever locks a claim row
+	// belonging to a user other than the one it is acting for. Deleting an absent claim
+	// is not an error.
+	DeleteClaim(ctx context.Context, id ReservationID) error
+	// SettleClaims removes the user's elapsed claims — those whose backing hold has
+	// lapsed at now. It is the user-scoped analogue of slot-scoped expiry settlement,
+	// and carries the same guarantee: an abandoned hold stops blocking the user's
+	// schedule whether or not the expiry worker has run
+	// (transaction-semantics §2.1, §2.2). Confirmed claims have no expiry and are never
+	// settled.
+	SettleClaims(ctx context.Context, user UserRef, now time.Time) error
 	// FindRecord loads an idempotency record by scoped key. Returns ErrNotFound if
 	// absent.
 	FindRecord(ctx context.Context, key ScopeKey) (IdempotencyRecord, error)

@@ -202,11 +202,11 @@ func TestConcurrentKeyReuseAcrossSlotsYieldsOneMutation(t *testing.T) {
 	}
 
 	// The decisive assertion: across both slots, exactly one reservation exists.
-	heldA, _, err := h.repo.SlotCounts(context.Background(), slotA)
+	heldA, _, err := h.repo.SlotCounts(context.Background(), slotRef(slotA))
 	if err != nil {
 		t.Fatalf("slot counts: %v", err)
 	}
-	heldB, _, err := h.repo.SlotCounts(context.Background(), slotB)
+	heldB, _, err := h.repo.SlotCounts(context.Background(), slotRef(slotB))
 	if err != nil {
 		t.Fatalf("slot counts: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestExpiryCannotReleaseConfirmedCapacity(t *testing.T) {
 	}
 	assertOutcome(t, blocked, domain.OutcomeBusinessRefusal, domain.ReasonNoCapacity)
 
-	states, err := h.repo.ReservationStates(context.Background(), testSlot)
+	states, err := h.repo.ReservationStates(context.Background(), slotRef(testSlot))
 	if err != nil {
 		t.Fatalf("reservation states: %v", err)
 	}

@@ -15,8 +15,8 @@ import (
 
 // Scope builds the idempotency scope key (transaction-semantics §5.1). The target is
 // deliberately absent — it lives only in the request hash.
-func Scope(org domain.OrganisationID, user domain.UserID, op domain.Operation, key string) domain.ScopeKey {
-	return domain.ScopeKey{OrganisationID: org, UserID: user, Operation: op, Key: key}
+func Scope(user domain.UserRef, op domain.Operation, key string) domain.ScopeKey {
+	return domain.ScopeKey{UserRef: user, Operation: op, Key: key}
 }
 
 // canonical is the stable, ordered representation hashed to form the request hash.
@@ -28,7 +28,7 @@ func Scope(org domain.OrganisationID, user domain.UserID, op domain.Operation, k
 type canonical struct {
 	ContractVersion string `json:"contract_version"`
 	Operation       string `json:"operation"`
-	OrganisationID  string `json:"organisation_id"`
+	OrganisationID  string `json:"user_organisation_id"`
 	UserID          string `json:"user_id"`
 	TargetID        string `json:"target_id"`
 	Body            []byte `json:"body"`
@@ -37,15 +37,15 @@ type canonical struct {
 // RequestHash computes the request hash over the canonical representation of the
 // request's semantically significant fields. AG-M1 mutation bodies are empty, but
 // body stays in the contract so fields can be added later without changing the model.
-func RequestHash(contractVersion string, op domain.Operation, org domain.OrganisationID, user domain.UserID, targetID string, body []byte) string {
+func RequestHash(contractVersion string, op domain.Operation, user domain.UserRef, targetID string, body []byte) string {
 	if body == nil {
 		body = []byte{}
 	}
 	c := canonical{
 		ContractVersion: contractVersion,
 		Operation:       string(op),
-		OrganisationID:  string(org),
-		UserID:          string(user),
+		OrganisationID:  string(user.OrganisationID),
+		UserID:          string(user.UserID),
 		TargetID:        targetID,
 		Body:            body,
 	}

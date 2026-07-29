@@ -22,14 +22,18 @@ func (s ReservationState) Terminal() bool {
 // Reservation is a temporary, expiring hold on exactly one unit of a slot's
 // capacity (transaction-semantics §1.3). A held reservation is valid only when
 // created_at < expires_at <= slot.starts_at.
+//
+// SlotRef is the slot the hold consumes; UserRef is whose time is held. Their
+// organisations are different dimensions — who owns the slot (§1.2) versus where the
+// user's identity is issued (§1.1) — and they differ whenever a user books into another
+// organisation. That is why each is a pair of its own rather than one shared column.
 type Reservation struct {
-	ID             ReservationID
-	SlotID         SlotID
-	OrganisationID OrganisationID
-	UserID         UserID
-	State          ReservationState
-	CreatedAt      time.Time
-	ExpiresAt      time.Time
+	ID        ReservationID
+	SlotRef   SlotRef
+	UserRef   UserRef
+	State     ReservationState
+	CreatedAt time.Time
+	ExpiresAt time.Time
 }
 
 // Elapsed reports whether the hold's TTL has lapsed: now >= expires_at. This is the

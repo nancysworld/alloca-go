@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/nancysworld/alloca-go/internal/config"
 	"github.com/nancysworld/alloca-go/internal/domain"
 	"github.com/nancysworld/alloca-go/internal/service"
@@ -32,20 +34,87 @@ import (
 // between runs.
 var databaseURL string
 
+// TestMain delegates so the setup below can use defer: os.Exit skips deferred calls, and
+// the database claim has to be released on every exit path.
 func TestMain(m *testing.M) {
+	os.Exit(runSuite(m))
+}
+
+func runSuite(m *testing.M) int {
 	databaseURL = os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
 		fmt.Fprintln(os.Stderr, "integration tests require DATABASE_URL")
-		os.Exit(1)
+		return 1
 	}
+
+	// Claimed before the migration, which mutates the same shared schema.
+	release, err := claimDatabase(databaseURL)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer release()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	if err := Migrate(ctx, databaseURL); err != nil {
 		fmt.Fprintf(os.Stderr, "migrate: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
-	os.Exit(m.Run())
+	return m.Run()
+}
+
+// suiteLockKey is this suite's advisory-lock key: "alloca" in ASCII. The value is
+// arbitrary and only ever compared against another copy of this same test binary.
+const suiteLockKey int64 = 0x616c6c6f6361
+
+// suiteLockWait bounds how long a second test process queues behind the first. Long
+// enough to sit through a full suite run, short enough that a wedged process fails with
+// an explanation rather than hanging until someone notices.
+const suiteLockWait = 3 * time.Minute
+
+// claimDatabase takes a session-scoped advisory lock so only one copy of this test binary
+// works against a given database at a time, and returns the release.
+//
+// It exists because every harness truncates the *whole* database (see newHarness), so two
+// concurrent test processes sharing one DATABASE_URL delete each other's world mid-test.
+// The symptom is maximally misleading: a slot a round has just seeded and committed
+// disappears, and the reserve under test is refused unknown_target — which reads as a
+// correctness bug in the code under test rather than as two processes colliding. Verified
+// by running this suite's own TRUNCATE in a loop underneath it, which reproduces exactly
+// that refusal.
+//
+// The claim is held on a dedicated connection for the life of the process, because a lock
+// taken with pg_advisory_lock belongs to the *session* that took it: a pooled connection
+// could be handed to another borrower or reset, dropping the claim while the suite runs.
+// Ending the session releases the lock, so a crashed or killed process cannot wedge the
+// next one.
+//
+// It guards against another copy of this binary, which is the case that actually happens.
+// It cannot protect against an unrelated client writing to the same database — nothing
+// short of a private database can.
+func claimDatabase(dsn string) (release func(), err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), suiteLockWait)
+	defer cancel()
+
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		return nil, fmt.Errorf("claim database: connect: %w", err)
+	}
+	// Blocks until the holder exits. The DSN is deliberately not echoed on failure: it
+	// carries credentials.
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, suiteLockKey); err != nil {
+		_ = conn.Close(context.Background())
+		return nil, fmt.Errorf("claim database: gave up after %s waiting for another integration "+
+			"test process to finish with this database; each process truncates the whole "+
+			"database, so they cannot share one: %w", suiteLockWait, err)
+	}
+	return func() {
+		closeCtx, cancelClose := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelClose()
+		// Ending the session releases the lock; an explicit unlock would be redundant.
+		_ = conn.Close(closeCtx)
+	}, nil
 }
 
 // testBudget is the deadline chain used by most tests. LockTimeout is deliberately
@@ -136,7 +205,7 @@ func (h *harness) holdSlotLock(t *testing.T, id domain.SlotID, d time.Duration) 
 	go func() {
 		defer close(releasedAt)
 		err := h.repo.WithinTx(context.Background(), func(ctx context.Context, tx domain.Tx) error {
-			if _, err := tx.LockSlot(ctx, id); err != nil {
+			if _, err := tx.LockSlot(ctx, slotRef(id)); err != nil {
 				return err
 			}
 			close(locked)
@@ -196,6 +265,19 @@ const (
 	testSlot = domain.SlotID("slot-1")
 )
 
+// slotRef pairs a slot identifier with testOrg, which owns every slot the helpers seed.
+// A slot's identity is the pair (slot_organisation_id, slot_id) (transaction-semantics §1.2),
+// so the two halves are joined here rather than at each call site.
+// userRef pairs a user identifier with testOrg, which issues every identity these
+// helpers use. Symmetrical with slotRef: both identities are pairs (§1.1, §1.2).
+func userRef(id string) domain.UserRef {
+	return domain.UserRef{OrganisationID: testOrg, UserID: domain.UserID(id)}
+}
+
+func slotRef(id domain.SlotID) domain.SlotRef {
+	return domain.SlotRef{OrganisationID: testOrg, SlotID: id}
+}
+
 // --- assertions -------------------------------------------------------------
 
 func assertOutcome(t *testing.T, r domain.Result, want domain.Outcome, reason domain.Reason) {
@@ -212,7 +294,7 @@ func assertOutcome(t *testing.T, r domain.Result, want domain.Outcome, reason do
 // against what the service reported.
 func assertConsumed(t *testing.T, h *harness, slotID domain.SlotID, wantHeld, wantBookings int) {
 	t.Helper()
-	held, active, err := h.repo.SlotCounts(context.Background(), slotID)
+	held, active, err := h.repo.SlotCounts(context.Background(), slotRef(slotID))
 	if err != nil {
 		t.Fatalf("slot counts: %v", err)
 	}
@@ -223,22 +305,98 @@ func assertConsumed(t *testing.T, h *harness, slotID domain.SlotID, wantHeld, wa
 }
 
 func (h *harness) reserve(ctx context.Context, user, key string, slotID domain.SlotID) (domain.Result, error) {
+	return h.reserveAs(ctx, testOrg, user, key, slotRef(slotID))
+}
+
+// reserveAs reserves for an explicit identity organisation against an explicit slot,
+// and the two organisations need not match. That is the cross-organisation case: the
+// user is (user_organisation_id, user_id), scoped to where the caller's identity is
+// issued (transaction-semantics §1.1), while the slot is (slot_organisation_id,
+// slot_id), scoped to its *owner* (§1.2). A member of one organisation booking another's slot is
+// still protected against overlapping their own schedule.
+func (h *harness) reserveAs(
+	ctx context.Context, org domain.OrganisationID, user, key string, ref domain.SlotRef,
+) (domain.Result, error) {
 	return h.svc.Reserve(ctx, service.ReserveCommand{
-		OrganisationID: testOrg, UserID: domain.UserID(user),
-		SlotID: slotID, IdempotencyKey: key,
+		UserRef: domain.UserRef{OrganisationID: org, UserID: domain.UserID(user)},
+		SlotRef: ref, IdempotencyKey: key,
 	})
+}
+
+// reserveWithTTL reserves through a service over the same repository but with a hold TTL
+// of its own, so one test can mix holds that must elapse within milliseconds with holds
+// that must survive to the end of the test. A Service is a thin value over the repo and
+// the ID generator, so building one per call costs nothing and shares all state.
+//
+// The two lifetimes have to come from two services because the TTL is service-owned
+// (transaction-semantics §1.6): a caller cannot ask for a shorter hold, which is the
+// point of the rule.
+func (h *harness) reserveWithTTL(
+	ctx context.Context, ttl time.Duration, user, key string, ref domain.SlotRef,
+) (domain.Result, error) {
+	return service.New(h.repo, h.ids, ttl).Reserve(ctx, service.ReserveCommand{
+		UserRef: userRef(user), SlotRef: ref, IdempotencyKey: key,
+	})
+}
+
+// seedWindow creates a slot with an explicit owning organisation and an explicit
+// interval, both expressed relative to a base instant the caller supplies. Unlike
+// seedSlot it reads no clock of its own: schedule tests turn on exact interval
+// relationships — adjacent, identical, containing — and a per-call clock read would put
+// microseconds of drift exactly where the boundary is being tested.
+func (h *harness) seedWindow(
+	t *testing.T, org domain.OrganisationID, id domain.SlotID, capacity int,
+	base time.Time, startsIn, endsIn time.Duration,
+) domain.Slot {
+	t.Helper()
+	slot := domain.Slot{
+		ID:             id,
+		OrganisationID: org,
+		ResourceID:     "resource-1",
+		Capacity:       capacity,
+		ReleaseAt:      base.Add(-time.Hour),
+		StartsAt:       base.Add(startsIn),
+		EndsAt:         base.Add(endsIn),
+	}
+	if err := h.repo.SeedSlot(context.Background(), slot); err != nil {
+		t.Fatalf("seed slot %q: %v", id, err)
+	}
+	return slot
+}
+
+// assertNoOverlappingClaims checks the user schedule invariant against persisted rows.
+func assertNoOverlappingClaims(t *testing.T, h *harness) {
+	t.Helper()
+	overlaps, err := h.repo.OverlappingClaims(context.Background())
+	if err != nil {
+		t.Fatalf("overlapping claims: %v", err)
+	}
+	if overlaps != 0 {
+		t.Errorf("%d overlapping claim pairs persisted: one identity holds two claims covering the same instant", overlaps)
+	}
+}
+
+func assertClaimCount(t *testing.T, h *harness, want int) {
+	t.Helper()
+	got, err := h.repo.ClaimCount(context.Background())
+	if err != nil {
+		t.Fatalf("claim count: %v", err)
+	}
+	if got != want {
+		t.Errorf("persisted claims = %d, want %d", got, want)
+	}
 }
 
 func (h *harness) confirm(ctx context.Context, user, key string, res domain.ReservationID) (domain.Result, error) {
 	return h.svc.Confirm(ctx, service.ConfirmCommand{
-		OrganisationID: testOrg, UserID: domain.UserID(user),
+		UserRef:       userRef(user),
 		ReservationID: res, IdempotencyKey: key,
 	})
 }
 
 func (h *harness) cancel(ctx context.Context, user, key string, res domain.ReservationID) (domain.Result, error) {
 	return h.svc.Cancel(ctx, service.CancelCommand{
-		OrganisationID: testOrg, UserID: domain.UserID(user),
+		UserRef:       userRef(user),
 		ReservationID: res, IdempotencyKey: key,
 	})
 }

@@ -56,8 +56,11 @@ taxonomy. All are reframed synthetically; see
 - **Single-unit holds.** A reservation holds **one** unit of a slot's capacity;
   capacity is an integer count, no per-reservation quantity field. Shared-resource
   **quantities and conserved balances are explicitly AG-M6**.
-- **Minimal identity now.** Entities and mutations carry `organisation_id` (coarse
-  authority / AG-M5 routing key) and `user_id` (participant / fairness). AG-M1 adds
+- **Minimal identity now.** Entities and mutations carry the organisation dimension
+  (coarse authority / AG-M5 routing key) and `user_id` (participant / fairness). Both
+  identities are pairs and each names its organisation's role —
+  `(user_organisation_id, user_id)` and `(slot_organisation_id, slot_id)` — because the
+  two differ whenever a user books into another organisation. AG-M1 adds
   **no authentication** — identity exists to scope idempotency correctly (a client key
   must not be global across organisations/users) and to seed AG-M5, avoiding a later
   repaint.
@@ -144,14 +147,48 @@ questions and is independently reviewable.
 | 1 | Timeout budget + §8.1 startup validation | `config.RequestBudget`, `config.Validate()`, `/meta` exposure, `.gitignore __debug_bin*` | no | **Merged #3** |
 | 2 | Domain core + services + idempotency | `internal/domain` (entities, invariants, ports, outcome types), `internal/idempotency`, `internal/service`, in-memory repository, `transaction-semantics.md`, ADR-0002, measurement-contract §4 `invalid_request` amendment; full unit + race tests | no | **Merged #4** |
 | 3 | PostgreSQL adapter | `internal/postgres` (transactional repo, `SELECT … FOR UPDATE`, per-txn `lock_timeout`/`statement_timeout`, error→outcome mapping), schema + migrations, transaction-owned authoritative time (`Tx.Now`, retiring the service `Clock`), `cmd/alloca-migrate`, CI Postgres integration tests | yes | **In review #5** |
-| 4 | Expiry worker + HTTP API + telemetry | `internal/worker` (expiry that cannot release confirmed capacity), `internal/httpapi` booking endpoints (idempotency-key handling, outcome→HTTP mapping), structured outcome/timing telemetry, `cmd` wiring, readiness gated on DB, e2e tests | yes | planned |
+| 4 | User schedule non-overlap invariant + composite slot identity | `user_time_claims` relation (`btree_gist`, exclusion constraint), identity-scoped claim settlement, `ReasonScheduleConflict`, claim lifecycle across reserve/confirm/cancel/expiry; slot identity becomes `(slot_organisation_id, slot_id)` with `domain.SlotRef`/`domain.UserRef` and `contract_version` v2; schema consolidated into the `00001_init.sql` baseline; transaction-semantics §1.1/§1.2/§2.2/§4; PostgreSQL gates + negative controls | yes | in progress |
+| 5 | Expiry worker + HTTP API + telemetry | `internal/worker` (expiry that cannot release confirmed capacity), `internal/httpapi` booking endpoints (idempotency-key handling, outcome→HTTP mapping), structured outcome/timing telemetry, `cmd` wiring, readiness gated on DB, e2e tests | yes | planned |
 
 **Why this order.** PR1 is DB-free and discharges the §8.1 obligation, giving later
 PRs a validated budget. PR2 proves every correctness gate expressible above the SQL
 layer against an in-memory repository (which remains a permanent test double). PR3 is
 where SQL-level serialization is actually proven — "capacity never exceeded" under
-real concurrent transactions needs a real PostgreSQL. PR4 closes the loop with the
+real concurrent transactions needs a real PostgreSQL. PR5 closes the loop with the
 worker, transport, and telemetry once the authoritative repository exists.
+
+**Why PR4 was inserted.** The user schedule non-overlap invariant
+([design note](../design-notes/user-schedule-non-overlap.md)) was identified after this
+plan was written. It is a *correctness* invariant of the transactional core: one
+identity can currently hold two overlapping bookings on different slots, because those
+transactions lock different slot rows and never contend. Shipping AG-M1 — the milestone
+whose name is "correct transactional core" — with that gap would overstate what the
+milestone proved, so it lands before the worker/API/telemetry PR rather than after.
+
+PR4 also corrects the **slot's** identity to `(slot_organisation_id, slot_id)`. The two
+belong together: both are the same correction — an identity is a pair scoped to an
+organisation — and which organisation applies depends on whether the thing is a user or
+a slot. A cross-organisation booking has different values in each, so the schedule
+claim carries both. Keying slots by `slot_id` alone assumed identifiers are unique
+across organisations, which nothing establishes; since the slot row *is* the aggregate
+lock, that assumption was a correctness one.
+
+Doing it here rather than at AG-M5 is deliberate: it changes the aggregate lock's
+resolution path, which is exactly what AG-M2 measures the frontier of and AG-M4 builds
+the capacity-unit economics on. Changing it later would invalidate those measurements.
+
+Because both corrections change the schema and AG-M1 has no deployed database, PR4 also
+**consolidates the schema into the `00001_init.sql` baseline** rather than layering
+transitional migrations on top of it. Migration compatibility begins at that merged
+baseline; every change after it is forward-only and numbered. The first public schema
+therefore states the model the project believes rather than preserving the record of
+correcting it during review — and the transitional machinery it would otherwise carry
+(a composite-key rewrite, a column backfill) disappears with it.
+
+Three consequences are accepted deliberately: AG-M1 extends beyond its original 28 July
+date; `contract_version` moves to `v2`, invalidating any stored idempotency record
+(there is no production data); and **AG-M2's frontier baseline must be measured after
+PR4**, since PR4 adds a user-keyed contention domain to the write path.
 
 ## 5. Correctness gates → where proven
 
@@ -163,14 +200,16 @@ The roadmap's AG-M1 gates and the layer that establishes each:
 | Reserved/confirmed counts consistent with reservation/booking rows | PR3 (reconciliation under lock); PR2 for the state model |
 | One idempotency key cannot produce two logical mutations | PR2 (logic) + PR3 (same-transaction record under concurrency) |
 | Replay after a lost response returns the original outcome | PR2 (replay resolution) + PR3 (durable record) |
-| Expiry cannot release confirmed capacity | PR2 (expiry policy) + PR4 (worker) |
+| Expiry cannot release confirmed capacity | PR2 (expiry policy) + PR5 (worker) |
 | Cancellation/confirmation races have one valid winner | PR3 (serialized under the slot lock) |
-| Timed-out and unknown-outcome transactions accounted for explicitly | PR3 (DB error→outcome mapping) + PR4 (telemetry) |
+| One identity cannot hold two overlapping active claims | PR4 (exclusion constraint under real concurrent transactions, with negative controls) |
+| Two organisations may own same-named slots without sharing capacity or a lock | PR4 (composite slot key; the gates cannot even set up under the old single-column key) |
+| Timed-out and unknown-outcome transactions accounted for explicitly | PR3 (DB error→outcome mapping) + PR5 (telemetry) |
 
 The **required semantics** (roadmap: distinguish successful mutation, business
 refusal, conflict, client cancellation, server deadline, DB timeout, lost response
 after commit, unknown commit outcome, permanent failure, and idempotent replay) are
-realised by the §3.3 taxonomy and validated across PR2–PR4.
+realised by the §3.3 taxonomy and validated across PR2–PR5.
 
 ## 6. Tooling decisions (recorded — ADR-0002)
 

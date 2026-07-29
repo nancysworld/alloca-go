@@ -28,6 +28,18 @@ import (
 	"github.com/nancysworld/alloca-go/internal/idempotency"
 )
 
+// slotTarget renders a slot's identity as the request hash's target field
+// (transaction-semantics §5.1). A bare slot_id is no longer a target: two organisations
+// may each mint "slot-1", and hashing only that would let a request for one hash
+// identically to a request for the other.
+//
+// Length-prefixed rather than delimiter-joined, because organisation and slot
+// identifiers are arbitrary caller-supplied strings: any separator could occur inside
+// one of them, so ("a/b", "c") and ("a", "b/c") would otherwise collide.
+func slotTarget(ref domain.SlotRef) string {
+	return fmt.Sprintf("%d:%s/%s", len(ref.OrganisationID), ref.OrganisationID, ref.SlotID)
+}
+
 // errRetry signals that an idempotency-record insert lost the unique-constraint race
 // (domain.ErrConflict). The transaction is rolled back and the whole operation is
 // re-run once; the re-run observes the winning record and replays or conflicts
@@ -51,18 +63,22 @@ func New(repo domain.Repository, ids domain.IDGen, ttl time.Duration) *Service {
 }
 
 // ReserveCommand asks to hold one unit of a slot's capacity.
+//
+// It carries two organisations and they are not interchangeable
+// (transaction-semantics §1.1, §1.2): UserRef.OrganisationID is where the caller's
+// identity is issued, while SlotRef.OrganisationID is who owns the slot. They differ
+// whenever a user books into another organisation, which is exactly the case the
+// schedule invariant exists to cover.
 type ReserveCommand struct {
-	OrganisationID domain.OrganisationID
-	UserID         domain.UserID
-	SlotID         domain.SlotID
+	UserRef        domain.UserRef
+	SlotRef        domain.SlotRef
 	IdempotencyKey string
 	Body           []byte
 }
 
 // ConfirmCommand turns a held reservation into a booking.
 type ConfirmCommand struct {
-	OrganisationID domain.OrganisationID
-	UserID         domain.UserID
+	UserRef        domain.UserRef
 	ReservationID  domain.ReservationID
 	IdempotencyKey string
 	Body           []byte
@@ -70,8 +86,7 @@ type ConfirmCommand struct {
 
 // CancelCommand releases a held reservation or an active booking.
 type CancelCommand struct {
-	OrganisationID domain.OrganisationID
-	UserID         domain.UserID
+	UserRef        domain.UserRef
 	ReservationID  domain.ReservationID
 	IdempotencyKey string
 	Body           []byte
@@ -79,23 +94,17 @@ type CancelCommand struct {
 
 // Reserve holds one unit of the slot for the caller (transaction-semantics §4).
 func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Result, error) {
-	if cmd.OrganisationID == "" || cmd.UserID == "" || cmd.SlotID == "" || cmd.IdempotencyKey == "" {
+	if !cmd.UserRef.IsValid() || !cmd.SlotRef.IsValid() || cmd.IdempotencyKey == "" {
 		return domain.Result{Outcome: domain.OutcomeInvalidRequest}, nil
 	}
-	scope := idempotency.Scope(cmd.OrganisationID, cmd.UserID, domain.OpReserve, cmd.IdempotencyKey)
-	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpReserve, cmd.OrganisationID, cmd.UserID, string(cmd.SlotID), cmd.Body)
+	scope := idempotency.Scope(cmd.UserRef, domain.OpReserve, cmd.IdempotencyKey)
+	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpReserve, cmd.UserRef, slotTarget(cmd.SlotRef), cmd.Body)
 
 	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
-		slot, err := tx.LockSlot(ctx, cmd.SlotID)
+		slot, err := tx.LockSlot(ctx, cmd.SlotRef)
 		if errors.Is(err, domain.ErrNotFound) {
 			return s.unknownTarget(ctx, tx, scope, hash)
 		}
-		if err != nil {
-			return domain.Result{}, err
-		}
-		// Established by the LockSlot above, so it describes the instant this attempt
-		// serialized rather than when the request arrived (transaction-semantics §1.5).
-		now, err := tx.Now(ctx)
 		if err != nil {
 			return domain.Result{}, err
 		}
@@ -103,13 +112,38 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 			return r, err
 		}
 
-		consumed, err := s.settle(ctx, tx, slot.ID, now)
+		// The identity lock is the attempt's second authority: it serializes this
+		// identity's claim-creating transactions so they queue here instead of
+		// deadlocking inside the exclusion index (transaction-semantics §2.2). It sits
+		// after the idempotency lookup so a replay resolves without queueing behind the
+		// identity's live traffic, and before both settlements, which must not run
+		// concurrently with another of the identity's reserves. The instant it returns
+		// was resolved after its wait and supersedes the slot-lock instant for every
+		// decision from here on (§1.5).
+		now, err := tx.LockUserIdentity(ctx, cmd.UserRef)
 		if err != nil {
+			return domain.Result{}, err
+		}
+
+		consumed, err := s.settle(ctx, tx, slot.Ref(), now)
+		if err != nil {
+			return domain.Result{}, err
+		}
+		// User-scoped claim settlement, the analogue of the slot-scoped settlement above
+		// (transaction-semantics §2.2). The requesting user's elapsed holds may be on
+		// *other* slots, which this transaction never locks and settle() therefore never
+		// sees, so without this an abandoned hold would block the user's schedule until
+		// the expiry worker happened to run. Correctness must not depend on that.
+		if err := tx.SettleClaims(ctx, cmd.UserRef, now); err != nil {
 			return domain.Result{}, err
 		}
 
 		var result domain.Result
 		var persist func(context.Context, domain.Tx) error
+		// The attempt's decision instant, currently from the identity lock above. A
+		// claim acquisition is the only thing that can still supersede it: the claim
+		// relation is the one authority this transaction may yet wait for (§1.5).
+		decisionNow := now
 		switch {
 		case !slot.Released(now):
 			result = domain.Refusal(domain.ReasonSlotNotReleased)
@@ -126,32 +160,113 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 				result = domain.Refusal(domain.ReasonNoCapacity)
 			default:
 				resID := s.ids.NewReservationID()
-				res := domain.Reservation{
-					ID:             resID,
-					SlotID:         slot.ID,
-					OrganisationID: cmd.OrganisationID,
-					UserID:         cmd.UserID,
-					State:          domain.ReservationHeld,
-					CreatedAt:      now,
-					ExpiresAt:      expiresAt,
+				// The claim is inserted here, during precondition evaluation, rather than
+				// alongside the reservation in persist. The insert is the conflict check —
+				// a preceding SELECT could always lose to a transaction committing between
+				// the read and the write — so the answer has to be known before commit()
+				// records a terminal outcome that cannot then be changed.
+				//
+				// Claim before reservation inverts the natural FK order; the claim's
+				// reference to reservations is DEFERRABLE INITIALLY DEFERRED so it is
+				// validated at COMMIT, by which point persist has written the row.
+				//
+				// Its expiry is provisional: the insert may wait on a conflicting
+				// uncommitted claim, so the final value is computed from the instant the
+				// authority was actually acquired (§1.5) and written by admitAfterClaim.
+				claim := domain.ScheduleClaim{
+					ReservationID: resID,
+					UserRef:       cmd.UserRef,
+					SlotRef:       slot.Ref(),
+					StartsAt:      slot.StartsAt,
+					EndsAt:        slot.EndsAt,
+					ExpiresAt:     now.Add(s.ttl),
 				}
-				result = domain.Result{Outcome: domain.OutcomeAdmittedSuccess, ReservationID: resID}
-				persist = func(ctx context.Context, tx domain.Tx) error { return tx.PutReservation(ctx, res) }
+				acquiredAt, err := tx.InsertClaim(ctx, claim)
+				switch {
+				case errors.Is(err, domain.ErrScheduleConflict):
+					// The user's own time is already claimed. A business refusal, and
+					// distinct from no_capacity: this slot may still have room.
+					result = domain.Refusal(domain.ReasonScheduleConflict)
+				case err != nil:
+					return domain.Result{}, err
+				default:
+					// The claim authority was waited for, so its acquisition instant
+					// supersedes the lock instant for every decision from here on.
+					decisionNow = acquiredAt
+					result, persist, err = s.admitAfterClaim(ctx, tx, slot, resID, cmd.UserRef, acquiredAt)
+					if err != nil {
+						return domain.Result{}, err
+					}
+				}
 			}
 		}
-		return s.commit(ctx, tx, scope, hash, result, now, persist)
+		return s.commit(ctx, tx, scope, hash, result, decisionNow, persist)
 	})
+}
+
+// admitAfterClaim re-evaluates the slot window against the instant the claim authority
+// was acquired, and either finalises the hold or withdraws the claim it provisionally
+// inserted.
+//
+// Acquiring the claim is the attempt's final authority wait (domain.Tx.InsertClaim).
+// The identity lock serializes the identity's own reserves, but a claim writer that
+// does not hold it — cancellation deleting a conflicting claim, say — can still leave
+// the insert blocked on an uncommitted row. If that transaction held the range and then
+// rolled back, this one waited — up to lock_timeout — and every check made from the
+// identity-lock instant is stale by that much. Two of them can flip: the slot can cross starts_at while we wait, and a TTL
+// computed from the older instant can end after starts_at or, with a short enough TTL,
+// already be in the past. Committing either would break §1.6's "never grant a silently
+// shortened hold" and §1.2's closed-slot rule.
+//
+// So the window is re-checked and the TTL recomputed in full. On refusal the provisional
+// claim is removed: it must not outlive the decision that created it, or it would block
+// the user's own schedule for an interval they were never granted.
+func (s *Service) admitAfterClaim(
+	ctx context.Context, tx domain.Tx, slot domain.Slot,
+	resID domain.ReservationID, user domain.UserRef, acquiredAt time.Time,
+) (domain.Result, func(context.Context, domain.Tx) error, error) {
+	withdraw := func(reason domain.Reason) (domain.Result, func(context.Context, domain.Tx) error, error) {
+		if err := tx.DeleteClaim(ctx, resID); err != nil {
+			return domain.Result{}, nil, err
+		}
+		return domain.Refusal(reason), nil, nil
+	}
+
+	expiresAt := acquiredAt.Add(s.ttl)
+	switch {
+	case slot.Closed(acquiredAt):
+		// The slot started while the claim authority was contended.
+		return withdraw(domain.ReasonSlotClosed)
+	case expiresAt.After(slot.StartsAt):
+		return withdraw(domain.ReasonOutsideWindow)
+	}
+
+	// The claim and the hold must agree on when the hold lapses, or settlement would
+	// remove one while the other still consumes capacity.
+	if err := tx.SetClaimExpiry(ctx, resID, expiresAt); err != nil {
+		return domain.Result{}, nil, err
+	}
+	res := domain.Reservation{
+		ID:        resID,
+		SlotRef:   slot.Ref(),
+		UserRef:   user,
+		State:     domain.ReservationHeld,
+		CreatedAt: acquiredAt,
+		ExpiresAt: expiresAt,
+	}
+	persist := func(ctx context.Context, tx domain.Tx) error { return tx.PutReservation(ctx, res) }
+	return domain.Result{Outcome: domain.OutcomeAdmittedSuccess, ReservationID: resID}, persist, nil
 }
 
 // Confirm turns a held, unexpired reservation on an open slot into a booking
 // (transaction-semantics §4). It changes no capacity: a held unit becomes a
 // confirmed unit.
 func (s *Service) Confirm(ctx context.Context, cmd ConfirmCommand) (domain.Result, error) {
-	if cmd.OrganisationID == "" || cmd.UserID == "" || cmd.ReservationID == "" || cmd.IdempotencyKey == "" {
+	if !cmd.UserRef.IsValid() || cmd.ReservationID == "" || cmd.IdempotencyKey == "" {
 		return domain.Result{Outcome: domain.OutcomeInvalidRequest}, nil
 	}
-	scope := idempotency.Scope(cmd.OrganisationID, cmd.UserID, domain.OpConfirm, cmd.IdempotencyKey)
-	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpConfirm, cmd.OrganisationID, cmd.UserID, string(cmd.ReservationID), cmd.Body)
+	scope := idempotency.Scope(cmd.UserRef, domain.OpConfirm, cmd.IdempotencyKey)
+	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpConfirm, cmd.UserRef, string(cmd.ReservationID), cmd.Body)
 
 	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
 		slot, res, now, done, r, err := s.lockByReservation(ctx, tx, cmd.ReservationID, scope, hash)
@@ -172,20 +287,26 @@ func (s *Service) Confirm(ctx context.Context, cmd ConfirmCommand) (domain.Resul
 				res.State = domain.ReservationConfirmed
 				bkID := s.ids.NewBookingID()
 				bk := domain.Booking{
-					ID:             bkID,
-					ReservationID:  res.ID,
-					SlotID:         slot.ID,
-					OrganisationID: res.OrganisationID,
-					UserID:         res.UserID,
-					State:          domain.BookingActive,
-					CreatedAt:      now,
+					ID:            bkID,
+					ReservationID: res.ID,
+					SlotRef:       slot.Ref(),
+					UserRef:       res.UserRef,
+					State:         domain.BookingActive,
+					CreatedAt:     now,
 				}
 				result = domain.Result{Outcome: domain.OutcomeAdmittedSuccess, BookingID: bkID}
 				persist = func(ctx context.Context, tx domain.Tx) error {
 					if err := tx.PutReservation(ctx, res); err != nil {
 						return err
 					}
-					return tx.PutBooking(ctx, bk)
+					if err := tx.PutBooking(ctx, bk); err != nil {
+						return err
+					}
+					// The hold's claim becomes the booking's claim: one logical claim
+					// throughout, so confirming can neither drop the identity's protection
+					// for an instant nor create a second claim to conflict with the first
+					// (transaction-semantics §2.2).
+					return tx.ConfirmClaim(ctx, res.ID)
 				}
 			}
 		case domain.ReservationExpired:
@@ -201,11 +322,11 @@ func (s *Service) Confirm(ctx context.Context, cmd ConfirmCommand) (domain.Resul
 // its active booking — but only while the slot is open (transaction-semantics §3.3,
 // §4).
 func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (domain.Result, error) {
-	if cmd.OrganisationID == "" || cmd.UserID == "" || cmd.ReservationID == "" || cmd.IdempotencyKey == "" {
+	if !cmd.UserRef.IsValid() || cmd.ReservationID == "" || cmd.IdempotencyKey == "" {
 		return domain.Result{Outcome: domain.OutcomeInvalidRequest}, nil
 	}
-	scope := idempotency.Scope(cmd.OrganisationID, cmd.UserID, domain.OpCancel, cmd.IdempotencyKey)
-	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpCancel, cmd.OrganisationID, cmd.UserID, string(cmd.ReservationID), cmd.Body)
+	scope := idempotency.Scope(cmd.UserRef, domain.OpCancel, cmd.IdempotencyKey)
+	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpCancel, cmd.UserRef, string(cmd.ReservationID), cmd.Body)
 
 	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
 		slot, res, now, done, r, err := s.lockByReservation(ctx, tx, cmd.ReservationID, scope, hash)
@@ -222,7 +343,14 @@ func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (domain.Result,
 			} else {
 				res.State = domain.ReservationCancelled
 				result = domain.Result{Outcome: domain.OutcomeAdmittedSuccess, ReservationID: res.ID}
-				persist = func(ctx context.Context, tx domain.Tx) error { return tx.PutReservation(ctx, res) }
+				persist = func(ctx context.Context, tx domain.Tx) error {
+					if err := tx.PutReservation(ctx, res); err != nil {
+						return err
+					}
+					// Atomic with the lifecycle transition: the user's time is freed by the
+					// same commit that releases the slot unit.
+					return tx.DeleteClaim(ctx, res.ID)
+				}
 			}
 		case domain.ReservationConfirmed:
 			bk, err := tx.BookingForReservation(ctx, res.ID)
@@ -239,7 +367,12 @@ func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (domain.Result,
 			default:
 				bk.State = domain.BookingCancelled
 				result = domain.Result{Outcome: domain.OutcomeAdmittedSuccess, ReservationID: res.ID}
-				persist = func(ctx context.Context, tx domain.Tx) error { return tx.PutBooking(ctx, bk) }
+				persist = func(ctx context.Context, tx domain.Tx) error {
+					if err := tx.PutBooking(ctx, bk); err != nil {
+						return err
+					}
+					return tx.DeleteClaim(ctx, res.ID)
+				}
 			}
 		default: // expired or cancelled: nothing live to release
 			result = domain.Refusal(domain.ReasonInvalidState)
@@ -257,7 +390,7 @@ func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (domain.Result,
 // before the lock, so its instant is exactly the stale one the authoritative-time
 // contract rejects. Only the LockSlot below fixes the attempt's now.
 func (s *Service) lockByReservation(ctx context.Context, tx domain.Tx, id domain.ReservationID, scope domain.ScopeKey, hash string) (slot domain.Slot, res domain.Reservation, now time.Time, done bool, result domain.Result, err error) {
-	slotID, err := tx.SlotIDForReservation(ctx, id)
+	ref, err := tx.SlotRefForReservation(ctx, id)
 	if errors.Is(err, domain.ErrNotFound) {
 		result, err = s.unknownTarget(ctx, tx, scope, hash)
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, result, err
@@ -265,7 +398,7 @@ func (s *Service) lockByReservation(ctx context.Context, tx domain.Tx, id domain
 	if err != nil {
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, domain.Result{}, err
 	}
-	slot, err = tx.LockSlot(ctx, slotID)
+	slot, err = tx.LockSlot(ctx, ref)
 	if err != nil {
 		// A reservation pointing at a missing slot is an invariant violation.
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, domain.Result{}, err
@@ -277,7 +410,7 @@ func (s *Service) lockByReservation(ctx context.Context, tx domain.Tx, id domain
 	if r, resolved, lerr := s.lookup(ctx, tx, scope, hash); resolved || lerr != nil {
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, r, lerr
 	}
-	if _, err = s.settle(ctx, tx, slot.ID, now); err != nil {
+	if _, err = s.settle(ctx, tx, slot.Ref(), now); err != nil {
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, domain.Result{}, err
 	}
 	res, err = tx.Reservation(ctx, id)
@@ -360,8 +493,8 @@ func (s *Service) unknownTarget(ctx context.Context, tx domain.Tx, scope domain.
 // settle transitions every elapsed held reservation on the slot to expired, then
 // returns the slot's consumed capacity derived from settled state: held reservations
 // plus active bookings (transaction-semantics §1.7, §2.1).
-func (s *Service) settle(ctx context.Context, tx domain.Tx, slotID domain.SlotID, now time.Time) (consumed int, err error) {
-	held, err := tx.HeldReservations(ctx, slotID)
+func (s *Service) settle(ctx context.Context, tx domain.Tx, ref domain.SlotRef, now time.Time) (consumed int, err error) {
+	held, err := tx.HeldReservations(ctx, ref)
 	if err != nil {
 		return 0, err
 	}
@@ -372,11 +505,16 @@ func (s *Service) settle(ctx context.Context, tx domain.Tx, slotID domain.SlotID
 			if err := tx.PutReservation(ctx, r); err != nil {
 				return 0, err
 			}
+			// Deliberately does not touch the claim. Removing an elapsed claim is
+			// SettleClaims' sole job (transaction-semantics §2.2), so no transaction ever
+			// locks a claim row belonging to a user other than the one it acts for —
+			// which is what makes claim-row deadlock unreachable. The claim is harmless
+			// meanwhile: it can only block its own user, whose next reserve settles it.
 			continue
 		}
 		stillHeld++
 	}
-	active, err := tx.ActiveBookingCount(ctx, slotID)
+	active, err := tx.ActiveBookingCount(ctx, ref)
 	if err != nil {
 		return 0, err
 	}
@@ -400,16 +538,15 @@ func (s *Service) commit(ctx context.Context, tx domain.Tx, scope domain.ScopeKe
 		return domain.Result{}, fmt.Errorf("service: commit invariant violated: outcome %q with persist!=nil==%t", result.Outcome, persist != nil)
 	}
 	rec := domain.IdempotencyRecord{
-		OrganisationID: scope.OrganisationID,
-		UserID:         scope.UserID,
-		Operation:      scope.Operation,
-		Key:            scope.Key,
-		RequestHash:    hash,
-		Outcome:        result.Outcome,
-		Reason:         result.Reason,
-		ReservationID:  result.ReservationID,
-		BookingID:      result.BookingID,
-		CreatedAt:      now,
+		UserRef:       scope.UserRef,
+		Operation:     scope.Operation,
+		Key:           scope.Key,
+		RequestHash:   hash,
+		Outcome:       result.Outcome,
+		Reason:        result.Reason,
+		ReservationID: result.ReservationID,
+		BookingID:     result.BookingID,
+		CreatedAt:     now,
 	}
 	err := tx.InsertRecord(ctx, rec)
 	if errors.Is(err, domain.ErrConflict) {

@@ -15,12 +15,15 @@ const (
 // confirmed (transaction-semantics §1.4). An active booking consumes one unit of
 // slot capacity until cancelled. It is created only by confirm, atomically with the
 // reservation's held → confirmed transition, under the slot lock.
+//
+// SlotRef is the slot the booking consumes; UserRef is whose time it is. As on a
+// Reservation, their organisations are different dimensions and differ whenever a user
+// books into another organisation (§1.1, §1.2).
 type Booking struct {
-	ID             BookingID
-	ReservationID  ReservationID
-	SlotID         SlotID
-	OrganisationID OrganisationID
-	UserID         UserID
-	State          BookingState
-	CreatedAt      time.Time
+	ID            BookingID
+	ReservationID ReservationID
+	SlotRef       SlotRef
+	UserRef       UserRef
+	State         BookingState
+	CreatedAt     time.Time
 }

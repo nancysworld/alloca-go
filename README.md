@@ -56,13 +56,30 @@ make db-down
 
 ## Running the service
 
-Migrations are applied by a separate binary, never by a serving replica, so replicas
-never race the same DDL on startup:
+From cold — starts a local PostgreSQL, migrates it, then serves:
 
 ```sh
-export DATABASE_URL='postgres://alloca:alloca@localhost:55432/alloca?sslmode=disable'
-go run ./cmd/alloca-migrate   # once, before a new version serves traffic
-go run ./cmd/alloca-go        # DATABASE_URL is required
+make dev
+```
+
+The steps are also available individually, and `make run` deliberately does **not**
+migrate. Migrations are applied by a separate binary, never by a serving replica, so
+replicas never race the same DDL on startup ([ADR-0002](docs/decisions/0002-postgresql-transactional-authority.md));
+a `run` that quietly migrated would make local development the one place that rule does not
+hold:
+
+```sh
+make db-up     # local PostgreSQL on port 55432
+make migrate   # once, before a new version serves traffic
+make run       # serves on :8080
+make db-down
+```
+
+Every target defaults `DATABASE_URL` to the local container and accepts an override, so
+the same commands work against another database:
+
+```sh
+make run DATABASE_URL='postgres://user:pass@host:5432/alloca?sslmode=require'
 ```
 
 The HTTP contract — routes, request and response shapes, status mapping, and the

@@ -12,17 +12,14 @@ import (
 // entry, including the ones AG-M1 never produces, so adding a producer later cannot
 // silently fall through to a default.
 //
-// The mapping takes two inputs because the service has two answer channels
-// (transaction-semantics §4): a domain.Result carries a classified *domain* answer, and a
-// non-nil error is an infrastructure fault classified by domain.ClassifyFault. Handlers
-// must never invent an outcome of their own — they hand one of these two things here.
+// It has two entry points because the service has two answer channels: a domain.Result,
+// and a non-nil error classified by domain.ClassifyFault. Handlers must never invent an
+// outcome of their own.
 
 // response is the body every booking endpoint returns, success or refusal alike.
 //
-// It carries the classification the measurement contract reconciles on, so a client and
-// an experiment read the same fields. Internal error text never appears: Message is
-// chosen from the closed set below, never built from an error, so no SQL, pgx, or
-// invariant detail can escape (project-structure §4).
+// Internal error text never appears: Message is chosen from the closed set below, never
+// built from an error, so no SQL, pgx, or invariant detail can escape.
 type response struct {
 	Outcome       domain.Outcome `json:"outcome"`
 	Reason        domain.Reason  `json:"reason,omitempty"`
@@ -35,19 +32,15 @@ type response struct {
 // statusForOutcome maps a terminal outcome to its HTTP status.
 //
 // Refusals are 409 Conflict rather than 422: the request is well-formed and understood,
-// and it is the current state of the slot, the schedule, or the key that prevents it —
-// which is what 409 means. unknown_target is the exception, because "the thing you named
-// does not exist" is 404 in any HTTP vocabulary.
+// and it is the current state of the slot, the schedule, or the key that prevents it.
+// unknown_target is the exception, because "the thing you named does not exist" is 404 in
+// any HTTP vocabulary.
 //
-// The AG-M2/AG-M3 outcomes are mapped to their natural statuses rather than to a
-// placeholder. They are unreachable today (nothing produces them), but a wrong-but-
-// plausible mapping would be harder to notice later than an honest one.
-//
-// It reports known=false for an outcome it does not recognise. That flag is the whole
-// reason the mapping can be *proven* total rather than assumed total: a test asserts
-// known for every outcome the contract declares, and it discriminates because a
-// fabricated outcome makes it false. Without it, an unmapped outcome would fall through
-// to a plausible 500 and nothing would ever notice.
+// known=false reports an outcome this function does not recognise, and is what lets
+// totality be *proven* rather than assumed: a test asserts known for every outcome the
+// contract declares, and discriminates because a fabricated outcome makes it false.
+// Without the flag an unmapped outcome would fall through to a plausible 500 and nothing
+// would ever notice.
 func statusForOutcome(outcome domain.Outcome, reason domain.Reason) (status int, known bool) {
 	switch outcome {
 	case domain.OutcomeAdmittedSuccess:

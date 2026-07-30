@@ -493,20 +493,16 @@ func (s *Service) unknownTarget(ctx context.Context, tx domain.Tx, scope domain.
 // SettleSlot transitions the slot's elapsed holds to expired and reports how many it
 // settled. It is the expiry worker's entry point (transaction-semantics §2.1).
 //
-// It is a Service method rather than worker logic against the repository because
-// deciding that a hold has elapsed is a domain decision, and there must be exactly one
-// implementation of it. This runs the same settle() that every operation runs, under the
-// same slot lock, against the same authoritative post-lock instant — so a hold expired
-// by the worker and a hold expired by a concurrent reserve are expired by identical
+// It lives on Service, not in the worker, so that the same settle() runs under the same
+// slot lock against the same authoritative post-lock instant as every request — a hold
+// expired by the worker and one expired by a concurrent reserve are expired by identical
 // rules, and the worker cannot drift from the request path.
 //
-// It writes no idempotency record: this is not a client mutation with a terminal outcome
-// to replay, it is the state transition the design already performs inside every
-// operation, merely triggered by time instead of by a request.
-//
-// Crucially it does not touch user_time_claims. User-scoped settlement is the sole
-// reaper of elapsed claims (§2.2), which is what keeps every transaction from ever
-// locking a claim row belonging to a user it is not acting for.
+// It writes no idempotency record: this is not a client mutation with an outcome to
+// replay, but the transition every operation already performs, triggered by time. And it
+// does not touch user_time_claims — user-scoped settlement is the sole reaper of elapsed
+// claims (§2.2), which is what stops any transaction locking a claim row belonging to a
+// user it is not acting for.
 func (s *Service) SettleSlot(ctx context.Context, ref domain.SlotRef) (expired int, err error) {
 	err = s.repo.WithinTx(ctx, func(ctx context.Context, tx domain.Tx) error {
 		slot, err := tx.LockSlot(ctx, ref)

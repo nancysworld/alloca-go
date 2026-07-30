@@ -13,35 +13,33 @@ import (
 // SlotLister reads an organisation's slots. Declared here, where it is consumed;
 // *postgres.Repo satisfies it and cmd wires the two together.
 //
-// It reaches the repository rather than the service, which is a deliberate exception.
-// The service orchestrates *mutations* — a transaction, a lock, an authoritative instant,
-// an idempotency record, a terminal outcome. A catalogue listing has none of those, so
-// routing it through the service would add a passthrough method and imply a
-// transactional guarantee this endpoint does not have.
+// It reaches the repository rather than the service, deliberately. The service
+// orchestrates mutations — a transaction, a lock, an authoritative instant, an
+// idempotency record, a terminal outcome — and a catalogue listing has none of those, so
+// a service method would be a passthrough implying a transactional guarantee this
+// endpoint does not have.
 type SlotLister interface {
 	SlotsByOrganisation(ctx context.Context, org domain.OrganisationID, limit int) ([]domain.Slot, error)
 }
 
-// listLimit caps one response. It is a safety bound, not pagination: an unbounded query
-// against the table AG-M2 will fill with slots is a hazard, and the deterministic
-// ordering makes truncation predictable rather than arbitrary. A cursor contract is
-// query-platform work and is deliberately out of scope.
+// listLimit caps one response. A safety bound, not pagination: the repository's
+// deterministic ordering makes truncation predictable rather than arbitrary. A cursor
+// contract is query-platform work and is deliberately out of scope.
 const listLimit = 1000
 
-// queryParamSlotOrganisation names the required filter. It is required rather than
-// optional because "every slot in the database" is not a meaningful request for a
-// multi-tenant service, and an optional filter would quietly invite one.
+// queryParamSlotOrganisation names the required filter. Required rather than optional
+// because "every slot in the database" is not a meaningful request for a multi-tenant
+// service, and an optional filter would quietly invite one.
 const queryParamSlotOrganisation = "slot_organisation_id"
 
 // slotView reports what a slot *is*: identity, resource, capacity, booking window.
 //
-// It deliberately reports nothing about availability — no remaining count, no "bookable"
-// flag. Any such number would be computed without the slot lock and would be stale
-// before the response was written, which is exactly when it would matter. Reserve under
-// the slot lock is the sole authority on whether a unit can be held
-// (transaction-semantics §2), and this endpoint must not read as a second opinion.
-// Capacity is safe to report because it is the slot's configured size, not a measurement
-// of what is left.
+// It must never report availability — no remaining count, no "bookable" flag. Any such
+// number would be computed without the slot lock and stale before the response was
+// written, which is exactly when it would matter; reserve under the slot lock is the sole
+// authority on whether a unit can be held (transaction-semantics §2), and this endpoint
+// must not read as a second opinion. Capacity is safe because it is the slot's configured
+// size, not a measurement of what is left.
 type slotView struct {
 	SlotOrganisationID string    `json:"slot_organisation_id"`
 	SlotID             string    `json:"slot_id"`
@@ -110,8 +108,8 @@ func (h *slotHandlers) listSlots(w http.ResponseWriter, r *http.Request) {
 
 // write emits the response and observes the request.
 //
-// The observation carries operation=list_slots, so read traffic stays countable and
-// separable. AG-M2 must compute booking goodput over the three mutation operations
+// The observation carries operation=list_slots, which keeps read traffic countable and
+// separable — so AG-M2 must compute booking goodput over the three mutation operations
 // rather than over all requests: a successful listing means the service answered
 // correctly, not that a booking happened.
 func (h *slotHandlers) write(

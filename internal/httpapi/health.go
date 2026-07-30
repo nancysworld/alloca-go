@@ -17,18 +17,14 @@ func handleHealthz(w http.ResponseWriter, _ *http.Request) {
 // handleReadyz is the readiness probe. It returns 200 when ready reports no error, and
 // 503 otherwise, so an orchestrator can withhold traffic until dependencies are healthy.
 //
-// The check is bounded by probeTimeout, independently of the per-request server
-// deadline. A readiness probe that can run for the whole of a request budget is useless
-// to an orchestrator whose probe interval is a few seconds: it would report "still
-// deciding" exactly when the answer matters. The bound comes from the budget's
-// DBAcquireCap — the same limit the request path allows for obtaining a connection —
-// because a pool that cannot hand one out within its own cap would fail real requests
-// anyway, which is precisely what "not ready" should mean.
+// probeTimeout is config.ReadinessTimeout, which is bounded against the request budget at
+// startup rather than derived here; see that field for why the relationship matters.
 //
 // The reason is not echoed to the caller — an infrastructure error can carry a DSN or
 // driver detail, and this is an unauthenticated endpoint — so it is logged here instead.
-// Removing the detail from the response and recording it are one decision, and keeping
-// them in one function is what stops the reason being lost altogether.
+// Withholding the detail and recording it are one decision, and keeping them in one
+// function is what stops the reason being lost altogether, as it was in this PR's first
+// draft.
 func handleReadyz(ready ReadinessFunc, probeTimeout time.Duration, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), probeTimeout)

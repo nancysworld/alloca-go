@@ -16,12 +16,11 @@ import (
 // Random mints identifiers from crypto/rand. The zero value is ready to use and is safe
 // for concurrent use.
 //
-// Random rather than sequential, and 128 bits rather than a counter, because these
-// identifiers are handed to clients: a guessable reservation identifier would let one
-// caller name another's reservation on confirm or cancel. AG-M1 has no authentication,
-// so unguessability is the only thing standing between a booking and a stranger — a
-// property worth stating plainly, since it is not a substitute for the authorisation
-// check a later milestone must add.
+// Random rather than sequential because these identifiers are handed to clients, and a
+// guessable one would let a caller name another's reservation on confirm or cancel. AG-M1
+// has no authentication, so unguessability is the only thing standing between a booking
+// and a stranger — which is a named gap, not a substitute for the authorisation check a
+// later milestone must add.
 type Random struct{}
 
 // prefixes distinguish the two identifier kinds on sight, in a log or a support
@@ -44,12 +43,10 @@ func (Random) NewBookingID() domain.BookingID {
 
 // token returns hex-encoded entropy.
 //
-// It panics if the system entropy source fails. That is deliberate: every alternative is
-// worse. Returning an error would push a "cannot happen" branch into every call site;
-// falling back to a weaker source would silently produce guessable identifiers, which is
-// precisely the failure this type exists to prevent. crypto/rand.Read on Linux does not
-// fail in practice, and a system where it does is one that must not be minting booking
-// identifiers.
+// It panics if the system entropy source fails, deliberately: returning an error would
+// push a "cannot happen" branch into every call site, and falling back to a weaker source
+// would silently produce the guessable identifiers this type exists to prevent. A system
+// where crypto/rand.Read fails must not be minting booking identifiers.
 func token() string {
 	var b [entropyBytes]byte
 	if _, err := rand.Read(b[:]); err != nil {

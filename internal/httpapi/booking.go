@@ -11,14 +11,9 @@ import (
 	"github.com/nancysworld/alloca-go/internal/telemetry"
 )
 
-// BookingService is the transport's view of the application layer. It is declared here,
-// where it is consumed, so the handlers can be tested against a fake without a database;
-// *service.Service satisfies it.
-//
-// The handlers deliberately have no other way to reach the domain. Every decision —
-// whether a slot has capacity, whether a key is a replay, whether an identity's schedule
-// is free — belongs to the service, and the transport's whole job is to turn HTTP into
-// one of these commands and the answer back into HTTP.
+// BookingService is the transport's view of the application layer, declared here where it
+// is consumed so the handlers can be tested against a fake without a database;
+// *service.Service satisfies it. It is also the handlers' only route to the domain.
 type BookingService interface {
 	Reserve(ctx context.Context, cmd service.ReserveCommand) (domain.Result, error)
 	Confirm(ctx context.Context, cmd service.ConfirmCommand) (domain.Result, error)
@@ -32,21 +27,15 @@ type bookingHandlers struct {
 	budget   config.RequestBudget
 }
 
-// A note on the command's Body field, which every handler here leaves unset.
+// Every handler here leaves the command's Body field unset, and must keep doing so.
 //
-// It is tempting to pass the raw request bytes so the request hash covers "what the
-// client sent". That would be wrong. The hash is defined over the request's
-// *semantically significant fields* — contract_version, operation, user organisation and
-// id, target, body — canonicalised by internal/idempotency, and AG-M1 mutation bodies
-// are empty (transaction-semantics §5.1). Everything our bodies carry is the identity,
-// which the hash already covers as typed fields.
-//
-// Passing raw bytes would make the hash depend on JSON *representation*: the same
-// logical request with its two fields in the other order, or with different whitespace,
-// would hash differently and a legitimate retry would be refused as
-// idempotency_conflict. Representation is not part of the contract, so it must not be
-// part of the hash. If a future body carries semantically significant fields, they
-// belong in the canonical struct as typed fields, not as opaque bytes.
+// Passing the raw request bytes would look like it made the hash cover "what the client
+// sent", but it would make the hash depend on JSON *representation*: the same logical
+// request with its two fields reordered would hash differently and a legitimate retry
+// would be refused as idempotency_conflict. The hash is defined over semantically
+// significant *typed* fields, and AG-M1 mutation bodies are empty apart from the identity
+// the hash already covers (transaction-semantics §5.1). A future body's significant
+// fields belong in the canonical struct, not in opaque bytes.
 
 func (h *bookingHandlers) reserve(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
@@ -125,10 +114,7 @@ func (h *bookingHandlers) cancel(w http.ResponseWriter, r *http.Request) {
 	h.finish(ctx, w, domain.OpCancel, start, result, err)
 }
 
-// finish renders the operation's answer and observes it. It is the only place a booking
-// response is written, so every completed request carries exactly one terminal outcome
-// and the telemetry cannot disagree with the status the client received
-// (measurement-contract §4).
+// finish renders the operation's answer and observes it.
 //
 // A fault and a domain answer are mutually exclusive: the service returns a Result or an
 // error, never both, and the error channel is classified by the domain rather than
@@ -145,8 +131,8 @@ func (h *bookingHandlers) finish(
 }
 
 // invalid renders a request rejected before the domain path. It is observed like any
-// other outcome: invalid_request is a member of the taxonomy, counted separately from
-// refusals and faults, and dropping it would leave the totals short.
+// other outcome — invalid_request is a member of the taxonomy, and dropping it would
+// leave the totals short.
 func (h *bookingHandlers) invalid(
 	ctx context.Context, w http.ResponseWriter, op domain.Operation, start time.Time, detail string,
 ) {
@@ -154,12 +140,14 @@ func (h *bookingHandlers) invalid(
 	h.respond(ctx, w, op, start, status, body)
 }
 
-// respond writes the response and records the observation.
+// respond writes the response and records the observation. It is the only place a booking
+// response is written, so every completed request carries exactly one terminal outcome and
+// the telemetry cannot disagree with the status the client received
+// (measurement-contract §4).
 //
-// The write is best-effort by design. When the caller has already disconnected the
-// status reaches nobody, but the request still completed and still has an outcome, so it
-// is still observed — that is what keeps timeout_client visible instead of vanishing
-// from the mix.
+// The write is best-effort by design: when the caller has already disconnected the status
+// reaches nobody, but the request still completed and is still observed, which is what
+// keeps timeout_client visible instead of vanishing from the mix.
 func (h *bookingHandlers) respond(
 	ctx context.Context, w http.ResponseWriter, op domain.Operation,
 	start time.Time, status int, body response,

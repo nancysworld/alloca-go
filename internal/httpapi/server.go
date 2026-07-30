@@ -1,8 +1,10 @@
-// Package httpapi builds the Alloca-Go HTTP surface.
+// Package httpapi builds the Alloca-Go HTTP surface: the operational endpoints
+// (liveness, readiness, runtime metadata) and the booking endpoints over them.
 //
-// AG-M0 intentionally exposes only operational endpoints — liveness, readiness,
-// and runtime metadata. The transactional booking API arrives in AG-M1; the
-// readiness hook here is the seam it will extend.
+// It makes no domain decisions. A handler turns a request into one service command and
+// hands the answer to the mapping in mapping.go; whether a slot has capacity, whether a
+// key is a replay, and whether an identity's schedule is free are all decided below this
+// package (project-structure §4).
 package httpapi
 
 import (
@@ -19,11 +21,8 @@ import (
 )
 
 // withRequestID attaches a short random identifier to every request's context, so log
-// lines from one request can be tied together.
-//
-// It is diagnostic context, not a dimension: it travels in the context where a logging
-// recorder can read it, and it is deliberately absent from the observation types, so a
-// future metrics implementation cannot label a time series with it
+// lines from one request can be tied together. It travels in the context, not on the
+// observation types, which is what keeps it out of a future metric's labels
 // (internal/telemetry).
 func withRequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -36,10 +35,8 @@ func withRequestID(next http.Handler) http.Handler {
 	})
 }
 
-// ReadinessFunc reports whether the service is ready to serve domain traffic.
-//
-// It takes a context because a readiness check talks to a dependency and must be
-// bounded: an unbounded probe cannot distinguish "the database is slow" from "the
+// ReadinessFunc reports whether the service is ready to serve domain traffic. It takes a
+// context because an unbounded probe cannot distinguish "the database is slow" from "the
 // database is gone", which is the only question readiness exists to answer. The caller
 // supplies the bound (see handleReadyz).
 type ReadinessFunc func(ctx context.Context) error

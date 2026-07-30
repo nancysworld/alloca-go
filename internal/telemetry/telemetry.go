@@ -1,36 +1,17 @@
 // Package telemetry defines the semantic observations Alloca-Go emits about its own
 // behaviour, and the one AG-M1 implementation of them: structured slog output.
 //
-// It is an adapter leaf (project-structure §4): it imports domain for the outcome
-// vocabulary and is wired in by cmd. It must not import httpapi, postgres, or service,
-// and nothing imports it in order to make a decision — an observation is a report, never
-// an input to domain behaviour.
+// It is an adapter leaf (project-structure §4), wired in by cmd and never consulted to
+// make a decision — an observation is a report, never an input to domain behaviour.
+// Callers hand Recorder a value describing *what happened* rather than a formatted
+// message, so adding Prometheus or OpenTelemetry is one new Recorder and a line in cmd.
 //
-// # Why an interface at all, when AG-M1 only logs
-//
-// AG-M2 measures this service, and the roadmap expects Prometheus or OpenTelemetry
-// eventually. The cost of getting there should be one new Recorder implementation and a
-// line in cmd — not edits to every handler and the worker. So the callers depend on
-// Recorder, and what they hand it is a value describing *what happened*, not a formatted
-// message. A future metrics recorder consumes the same values and derives counters and
-// histograms from them; the handlers and the worker do not change.
-//
-// This is deliberately not a telemetry framework. There is no registry, no exporter
-// plumbing, no configuration surface: two observation types, one interface, one
-// implementation.
-//
-// # Why the observation types carry only low-cardinality fields
-//
-// Every field on RequestObservation and ExpiryObservation is drawn from a closed set or
-// is a measurement — operation, outcome, reason, replay, HTTP status, counts, duration.
-// Identities, slot identifiers, idempotency keys, request identifiers, and error strings
-// are deliberately *absent*, so a future metrics recorder cannot label a time series with
-// them even by accident: they are not in the value it receives. That makes the
+// Every field on the two observation types is drawn from a closed set or is a
+// measurement. Identities, slot identifiers, idempotency keys, request identifiers and
+// error strings are deliberately *absent*, so a metrics recorder cannot label a series
+// with them even by accident: they are not in the value it receives. That makes the
 // cardinality rule structural rather than a comment someone has to remember.
-//
-// Diagnostic context that is useful in a log and ruinous as a metric label travels in the
-// context instead (RequestID), where a logging recorder can read it and a metrics
-// recorder will simply ignore it.
+// High-cardinality diagnostics travel in the context instead (RequestID).
 package telemetry
 
 import (
@@ -43,27 +24,25 @@ import (
 
 // RequestObservation is the semantic record of one completed request.
 //
-// It is emitted for every request that reaches the booking handlers, including those
-// whose response never reached the caller: when a client disconnects mid-request the
-// outcome is still classified (timeout_client) and still observed here, because the
-// measurement contract requires every completed request to carry exactly one terminal
-// outcome so totals reconcile (measurement-contract §4).
+// It is emitted even when the response never reached the caller: a client that
+// disconnects mid-request is still classified (timeout_client) and still observed, since
+// every completed request must carry exactly one terminal outcome for the totals to
+// reconcile (measurement-contract §4).
 type RequestObservation struct {
-	// Operation names the request kind — the three domain operations, plus the read
-	// route — never the URL path, which is unbounded once identifiers appear in it.
+	// Operation names the request kind, never the URL path — which is unbounded once
+	// identifiers appear in it.
 	//
-	// It is a plain string rather than a domain.Operation because domain.Operation is
-	// the closed set of *mutations* the idempotency record accepts, and a read is not
-	// one of those. The values here must stay a closed set of their own: use
-	// OperationListSlots or string(domain.OpReserve) and its siblings, never a path or
-	// anything caller-supplied.
+	// A plain string rather than a domain.Operation because domain.Operation is the set
+	// of *mutations* the idempotency record accepts, and the read route is not one. The
+	// values must stay a closed set of their own: use OperationListSlots or
+	// string(domain.OpReserve) and its siblings, never anything caller-supplied.
 	Operation string
 	// Outcome is the single terminal classification (measurement-contract §4).
 	Outcome domain.Outcome
 	// Reason is the refusal's stable code, empty for non-refusals.
 	Reason domain.Reason
 	// Replay reports whether the outcome was served from a recorded idempotency record.
-	// It is the orthogonal half of the classification and never an Outcome of its own.
+	// It is the orthogonal half of the classification, never an Outcome of its own.
 	Replay bool
 	// HTTPStatus is the status the handler wrote, or intended to write when the caller
 	// had already gone away.
@@ -72,10 +51,8 @@ type RequestObservation struct {
 	Duration time.Duration
 }
 
-// ExpiryObservation is the semantic record of one expiry worker iteration.
-//
-// Counts, not identifiers: which slots were settled is a question for the database, not
-// for a time series.
+// ExpiryObservation is the semantic record of one expiry worker iteration. Counts, not
+// identifiers: which slots were settled is a question for the database, not a time series.
 type ExpiryObservation struct {
 	// Slots is how many candidate slots the iteration examined.
 	Slots int
@@ -99,10 +76,9 @@ type Recorder interface {
 	RecordExpiry(ctx context.Context, obs ExpiryObservation)
 }
 
-// SlogRecorder is the AG-M1 Recorder: one structured log line per observation.
-//
-// The attribute keys are the field names a future metrics implementation would use as
-// label names, so a query written against these logs translates directly.
+// SlogRecorder is the AG-M1 Recorder: one structured log line per observation. The
+// attribute keys are the label names a metrics implementation would use, so a query
+// written against these logs translates directly.
 type SlogRecorder struct {
 	logger *slog.Logger
 }
@@ -154,11 +130,9 @@ func (Nop) RecordExpiry(context.Context, ExpiryObservation)   {}
 // requestIDKey types the context key so it cannot collide with another package's.
 type requestIDKey struct{}
 
-// WithRequestID attaches a request identifier for diagnostics.
-//
-// It is context-carried rather than a field on RequestObservation on purpose: it is
-// high-cardinality by construction, so it must be reachable by a log and unreachable by
-// a metric label.
+// WithRequestID attaches a request identifier for diagnostics. Context-carried rather
+// than a field on RequestObservation on purpose: it is high-cardinality by construction,
+// so it must be reachable by a log and unreachable by a metric label.
 func WithRequestID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, requestIDKey{}, id)
 }

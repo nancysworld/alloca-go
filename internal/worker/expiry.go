@@ -1,19 +1,13 @@
 // Package worker holds Alloca-Go's background processing. AG-M1 has exactly one worker:
 // expiry, which settles holds whose TTL has lapsed so their capacity returns to the slot.
 //
-// # What this worker is not
-//
-// It is not the mechanism that makes expiry correct. Every operation already settles the
-// slot it locks before evaluating preconditions, and a reserve settles the requesting
-// identity's elapsed claims, so a request never sees stale state whether or not this
-// worker has run (transaction-semantics §2.1, §2.2). The worker exists to return
-// capacity that *nobody is asking for* — a slot with abandoned holds and no traffic
-// would otherwise stay full until someone happened to request it.
-//
-// That is why it needs no leader election, no locking of its own, and no exactly-once
-// machinery. PostgreSQL remains the concurrency authority: each iteration settles under
-// the same slot lock as every request, so two workers, or a worker racing a request,
-// produce the same state as one. Running two is wasteful, never wrong.
+// It is not what makes expiry correct. Every operation already settles the slot it locks
+// before evaluating preconditions (transaction-semantics §2.1), so a request never sees
+// stale state whether or not this worker has run; the worker exists to return capacity
+// that *nobody is asking for*. That is why it needs no leader election and no
+// exactly-once machinery: each iteration settles under the same slot lock as every
+// request, so two workers, or a worker racing a request, produce the same state as one.
+// Running two is wasteful, never wrong.
 package worker
 
 import (
@@ -34,8 +28,8 @@ type SlotSource interface {
 // Settler expires a slot's elapsed holds under its lock. *service.Service satisfies it.
 //
 // The worker deliberately cannot reach the repository directly: deciding that a hold has
-// elapsed is a domain decision, and routing through the service is what guarantees the
-// worker and the request path apply identical rules to identical state.
+// elapsed is a domain decision, and routing through the service is what keeps the worker
+// and the request path applying identical rules.
 type Settler interface {
 	SettleSlot(ctx context.Context, ref domain.SlotRef) (expired int, err error)
 }
@@ -84,18 +78,15 @@ func NewExpiry(slots SlotSource, settler Settler, recorder telemetry.Recorder, l
 	return &Expiry{slots: slots, settler: settler, recorder: recorder, logger: logger, cfg: cfg}
 }
 
-// RunOnce performs exactly one iteration and reports what it did.
+// RunOnce performs exactly one iteration and reports what it did. It is exported so a
+// test can drive an iteration with no ticker and no sleeping, which leaves Run thin
+// enough to have nothing left to get wrong.
 //
-// It is exported so its behaviour can be tested directly, with no ticker and no sleeping:
-// a test drives one iteration, or cancels the context, and asserts on the observation.
-// Run below is then thin enough to have nothing left to get wrong.
-//
-// An error from settling one slot ends the iteration rather than skipping to the next.
-// The realistic cause is the database being unreachable or overloaded, which the next
-// slot would hit too; stopping and reporting, then retrying on the following tick with a
-// freshly derived candidate list, is both simpler and self-correcting. The observation
-// still reports what was settled before the failure, so the work is not lost from the
-// telemetry.
+// An error from settling one slot ends the iteration rather than skipping to the next:
+// the realistic cause is the database being unreachable or overloaded, which the next
+// slot would hit too, and the following tick retries from a freshly derived candidate
+// list. The observation still reports what was settled before the failure, so that work
+// is not lost from the telemetry.
 func (e *Expiry) RunOnce(ctx context.Context) (telemetry.ExpiryObservation, error) {
 	start := time.Now()
 	obs := telemetry.ExpiryObservation{}

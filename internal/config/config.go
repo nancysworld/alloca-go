@@ -62,24 +62,25 @@ type Config struct {
 	// deadline to complete before the server is forced closed.
 	ShutdownGrace time.Duration
 
-	// ReservationTTL is how long a hold survives without being confirmed. The hold
-	// duration is service-owned — a client cannot ask for a longer or shorter one —
-	// so it is configuration rather than request input (transaction-semantics §1.6).
+	// ReservationTTL is how long a hold survives without being confirmed. The duration is
+	// service-owned — a client cannot ask for a longer or shorter one — so it is
+	// configuration rather than request input (transaction-semantics §1.6).
 	//
-	// It is not part of the RequestBudget chain: that chain bounds one request, while
-	// this bounds a hold that outlives the request that created it by design.
+	// It is deliberately not part of the RequestBudget chain: that chain bounds one
+	// request, while this bounds a hold designed to outlive the request that created it.
 	ReservationTTL time.Duration
 
-	// ReadinessTimeout bounds the readiness probe's dependency check.
+	// ReadinessTimeout bounds the readiness probe's dependency check. Validate enforces
 	//
-	// It must exceed RequestBudget.DBAcquireCap, and Validate enforces that. The check
-	// acquires a pooled connection *and* round-trips a statement, so a bound equal to
-	// the acquisition cap alone could expire during the round trip after acquisition
-	// succeeded within its own budget — reporting a healthy database as unready.
+	//	db_acquire_cap < readiness_timeout <= server_deadline
 	//
-	// It must also stay within ServerDeadline: a probe is not a request, and one that
-	// can outlast the service's own per-request deadline tells an orchestrator nothing
-	// useful on the timescale it polls.
+	// Lower bound: the check acquires a pooled connection *and* round-trips a statement,
+	// so a bound equal to the acquisition cap could expire on the round trip after
+	// acquisition had succeeded within its own budget — reporting a healthy database as
+	// unready, and making the probe stricter than the request path it predicts.
+	//
+	// Upper bound: a probe that can outlast the service's own per-request deadline is
+	// answering on the wrong timescale for something polled every few seconds.
 	ReadinessTimeout time.Duration
 
 	// RequestBudget is the per-request deadline chain (measurement-contract §8).
@@ -345,15 +346,9 @@ func (c Config) Validate() error {
 		return fmt.Errorf("config: WriteTimeout (%s) must be > server_deadline (%s) + WriteResponseMargin (%s)", c.WriteTimeout, b.ServerDeadline, c.WriteResponseMargin)
 	}
 
-	// Readiness relationship. The probe's check both acquires a connection and
-	// round-trips a statement, so its bound must be strictly greater than the
-	// acquisition cap — otherwise it can expire on the round trip after acquisition
-	// succeeded, and report a healthy database as unready. It must not exceed the
-	// per-request server deadline, because a probe that outlasts a request is answering
-	// on the wrong timescale.
-	//
+	// Readiness relationship; see Config.ReadinessTimeout for why each bound holds.
 	// Comparisons only, never a sum: adding two int64 durations risks the overflow that
-	// would make an unsafe config pass (the same rule as the write-phase check above).
+	// would let an unsafe config through (the same rule as the write-phase check above).
 	if c.ReadinessTimeout <= 0 {
 		return fmt.Errorf("config: ReadinessTimeout must be positive (got %s)", c.ReadinessTimeout)
 	}

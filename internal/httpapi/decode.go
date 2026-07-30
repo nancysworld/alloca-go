@@ -9,41 +9,35 @@ import (
 	"github.com/nancysworld/alloca-go/internal/domain"
 )
 
-// headerIdempotencyKey carries the client's idempotency key. The conventional header
-// name is used rather than a body field so the key is visible to proxies and logs
-// without parsing the body, and so it reads the same for every operation.
+// headerIdempotencyKey carries the client's idempotency key. A header rather than a body
+// field so the key is visible to proxies and logs without parsing the body, and so it
+// reads the same for every operation.
 const headerIdempotencyKey = "Idempotency-Key"
 
 // maxBodyBytes bounds a request body. AG-M1 bodies carry two short identifiers, so this
 // is generous by three orders of magnitude and exists only to stop an unbounded read.
 const maxBodyBytes int64 = 4 << 10
 
-// identityRequest is the body every booking endpoint takes: who the caller is.
+// identityRequest is the body every booking endpoint takes: who the caller is. The user
+// is a pair and both halves are required (transaction-semantics §1.1). AG-M1 has no
+// authentication, so identity is asserted by the caller; when authentication arrives this
+// struct is what it replaces, and nothing else moves.
 //
-// The user is a pair (transaction-semantics §1.1), and both halves are required. AG-M1
-// has no authentication, so identity is asserted by the caller; when authentication
-// arrives this struct is what it replaces, and nothing else moves.
-//
-// Note what is *not* here. The slot and the reservation are named by the URL, and
-// nothing server-generated is accepted from a client: no timestamps, no reservation IDs
-// on reserve, no TTL. The hold's lifetime is service-owned (§1.6).
+// Note what is *not* here: nothing server-generated is accepted from a client — no
+// timestamps, no reservation IDs on reserve, no TTL (§1.6).
 type identityRequest struct {
 	UserOrganisationID string `json:"user_organisation_id"`
 	UserID             string `json:"user_id"`
 }
 
-// decodeIdentity reads and validates the request body, returning the caller's identity
-// or a detail describing what was malformed.
-//
-// A non-empty detail means invalid_request: the request could not be turned into a
-// domain operation at all, so it is rejected at this edge and never reaches the mutation
-// path (transaction-semantics §8). The detail describes the *request*, never anything
-// internal.
+// decodeIdentity reads and validates the request body, returning the caller's identity or
+// a detail describing what was malformed. A non-empty detail means invalid_request: the
+// request never reaches the mutation path (transaction-semantics §8), and the detail
+// describes the *request*, never anything internal.
 //
 // Unknown fields are rejected. A caller who sends "userId" instead of "user_id" would
-// otherwise get a confusing invalid_request about a missing field they believe they
-// sent, and silently ignoring input is how a client comes to depend on a field the
-// server never read.
+// otherwise get a confusing invalid_request about a field they believe they sent, and
+// silently ignoring input is how a client comes to depend on a field the server never read.
 func decodeIdentity(r *http.Request, maxBytes int64) (domain.UserRef, string) {
 	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxBytes))
 	dec.DisallowUnknownFields()

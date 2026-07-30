@@ -3,6 +3,9 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/nancysworld/alloca-go/internal/domain"
 )
@@ -37,18 +40,13 @@ func (r *Repo) SeedSlot(ctx context.Context, slot domain.Slot) error {
 // ElapsedHoldSlots returns up to limit slots that currently hold at least one elapsed
 // reservation, so the expiry worker knows which slot locks are worth taking.
 //
-// It takes no timestamp. "Elapsed" is decided by clock_timestamp() inside the query, so
-// the worker never supplies a host clock to a booking decision — the same rule the
-// request path follows (transaction-semantics §1.5). The worker's own process clock is
-// therefore only ever used to decide *when to poll*, never *what has expired*.
+// It takes no timestamp, deliberately: "elapsed" is decided by clock_timestamp() inside
+// the query (transaction-semantics §1.5), so the worker's process clock only ever decides
+// *when to poll*, never *what has expired*.
 //
-// It is a candidate list, not an authority: the rows are read without a lock, so a slot
-// may be settled by a concurrent request between this query and the worker's
-// transaction. That is harmless — settlement under the slot lock re-derives everything
-// and simply expires nothing.
-//
-// DISTINCT with the ordering and limit keeps one iteration's work bounded; whatever it
-// does not reach this tick, it reaches on the next.
+// It is a candidate list, not an authority — the rows are read without a lock, so a
+// concurrent request may settle a slot first. That is harmless: settlement under the slot
+// lock re-derives everything and simply expires nothing.
 func (r *Repo) ElapsedHoldSlots(ctx context.Context, limit int) ([]domain.SlotRef, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT DISTINCT slot_organisation_id, slot_id
@@ -79,12 +77,11 @@ func (r *Repo) ElapsedHoldSlots(ctx context.Context, limit int) ([]domain.SlotRe
 // informational listing endpoint.
 //
 // Ordering is (starts_at, slot_id): chronological, and deterministic because slot_id is
-// unique within the organisation the query already fixes. Determinism is what makes the
-// caller's truncation predictable rather than an arbitrary subset.
+// unique within the organisation the query already fixes — which is what makes the
+// caller's truncation predictable rather than an arbitrary subset. The handler does not
+// re-sort, so determinism has one owner.
 //
-// It reads no reservation or booking state, deliberately. A count of what is left would
-// be derived without the slot lock and stale before the response was written; reserve
-// under the lock is the only authority on that (§2).
+// It reads no reservation or booking state, deliberately; see httpapi.slotView.
 func (r *Repo) SlotsByOrganisation(ctx context.Context, org domain.OrganisationID, limit int) ([]domain.Slot, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+slotColumns+`
@@ -113,10 +110,10 @@ func (r *Repo) SlotsByOrganisation(ctx context.Context, org domain.OrganisationI
 
 // Ready reports whether the database can serve booking traffic, for the readiness probe.
 //
-// It acquires a pooled connection and round-trips a trivial statement, so it exercises
-// the two things a request needs: that the pool can hand out a connection, and that the
-// server answers. Bounding is the caller's job — the probe's timeout is what makes the
-// difference between "slow" and "gone" (httpapi.handleReadyz).
+// It acquires a pooled connection and round-trips a trivial statement, exercising the two
+// things a request needs: that the pool can hand out a connection, and that the server
+// answers. Bounding is the caller's job — the probe's timeout is what makes the difference
+// between "slow" and "gone" (httpapi.handleReadyz).
 func (r *Repo) Ready(ctx context.Context) error {
 	if err := r.pool.Ping(ctx); err != nil {
 		return fmt.Errorf("postgres: readiness: %w", err)
@@ -210,6 +207,62 @@ func (r *Repo) ClaimCount(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("postgres: claim count: %w", err)
 	}
 	return count, nil
+}
+
+// suiteLockKey is the integration suites' advisory-lock key: "alloca" in ASCII. The value
+// is arbitrary; what matters is that every suite uses the *same* one, which is why it
+// lives here rather than in one package's test files.
+const suiteLockKey int64 = 0x616c6c6f6361
+
+// suiteLockWait bounds how long a second test process queues behind the first. Long
+// enough to sit through a full suite run, short enough that a wedged process fails with an
+// explanation rather than hanging until someone notices.
+const suiteLockWait = 3 * time.Minute
+
+// ClaimDatabase takes a session-scoped advisory lock so only one integration test binary
+// works against a given database at a time, and returns the release. Like Truncate, it
+// exists for tests and is never called by the service.
+//
+// It is required because every suite truncates the *whole* database, so two concurrent
+// test processes sharing one DATABASE_URL delete each other's world mid-test — and
+// `go test ./...` runs package binaries in parallel, so two suites is the normal case, not
+// an unusual one. The symptom is maximally misleading: a slot a test has just seeded and
+// committed disappears, and the operation under test is refused unknown_target, which
+// reads as a correctness bug in the code under test rather than as two processes
+// colliding. Verified by running a TRUNCATE in a loop underneath the suite, which
+// reproduces exactly that refusal.
+//
+// The claim is held on a dedicated connection for the life of the process, because a lock
+// taken with pg_advisory_lock belongs to the *session* that took it: a pooled connection
+// could be handed to another borrower or reset, dropping the claim while the suite runs.
+// Ending the session releases the lock, so a crashed or killed process cannot wedge the
+// next one.
+//
+// It guards against another test binary, which is the case that actually happens. It
+// cannot protect against an unrelated client writing to the same database — nothing short
+// of a private database can.
+func ClaimDatabase(dsn string) (release func(), err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), suiteLockWait)
+	defer cancel()
+
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		return nil, fmt.Errorf("claim database: connect: %w", err)
+	}
+	// Blocks until the holder exits. The DSN is deliberately not echoed on failure: it
+	// carries credentials.
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, suiteLockKey); err != nil {
+		_ = conn.Close(context.Background())
+		return nil, fmt.Errorf("claim database: gave up after %s waiting for another integration "+
+			"test process to finish with this database; each process truncates the whole "+
+			"database, so they cannot share one: %w", suiteLockWait, err)
+	}
+	return func() {
+		closeCtx, cancelClose := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelClose()
+		// Ending the session releases the lock; an explicit unlock would be redundant.
+		_ = conn.Close(closeCtx)
+	}, nil
 }
 
 // Truncate empties every domain table. It exists so an integration test starts from a

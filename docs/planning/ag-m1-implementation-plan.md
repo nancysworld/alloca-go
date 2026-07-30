@@ -139,16 +139,17 @@ import is an ADR trigger, not a quiet exception.
 
 ## 4. PR split
 
-Four PRs, one open at a time (per the agreed workflow). Each answers the four PR
-questions and is independently reviewable.
+Five PRs, one open at a time (per the agreed workflow). Each answers the four PR
+questions and is independently reviewable. The split began as four; PR4 was inserted
+during the milestone for the reason recorded below.
 
 | PR | Title | Delivers | DB? | Status |
 |---|---|---|---|---|
 | 1 | Timeout budget + §8.1 startup validation | `config.RequestBudget`, `config.Validate()`, `/meta` exposure, `.gitignore __debug_bin*` | no | **Merged #3** |
 | 2 | Domain core + services + idempotency | `internal/domain` (entities, invariants, ports, outcome types), `internal/idempotency`, `internal/service`, in-memory repository, `transaction-semantics.md`, ADR-0002, measurement-contract §4 `invalid_request` amendment; full unit + race tests | no | **Merged #4** |
-| 3 | PostgreSQL adapter | `internal/postgres` (transactional repo, `SELECT … FOR UPDATE`, per-txn `lock_timeout`/`statement_timeout`, error→outcome mapping), schema + migrations, transaction-owned authoritative time (`Tx.Now`, retiring the service `Clock`), `cmd/alloca-migrate`, CI Postgres integration tests | yes | **In review #5** |
-| 4 | User schedule non-overlap invariant + composite slot identity | `user_time_claims` relation (`btree_gist`, exclusion constraint), identity-scoped claim settlement, `ReasonScheduleConflict`, claim lifecycle across reserve/confirm/cancel/expiry; slot identity becomes `(slot_organisation_id, slot_id)` with `domain.SlotRef`/`domain.UserRef` and `contract_version` v2; schema consolidated into the `00001_init.sql` baseline; transaction-semantics §1.1/§1.2/§2.2/§4; PostgreSQL gates + negative controls | yes | in progress |
-| 5 | Expiry worker + HTTP API + telemetry | `internal/worker` (expiry that cannot release confirmed capacity), `internal/httpapi` booking endpoints (idempotency-key handling, outcome→HTTP mapping), structured outcome/timing telemetry, `cmd` wiring, readiness gated on DB, e2e tests | yes | planned |
+| 3 | PostgreSQL adapter | `internal/postgres` (transactional repo, `SELECT … FOR UPDATE`, per-txn `lock_timeout`/`statement_timeout`, error→outcome mapping), schema + migrations, transaction-owned authoritative time (`Tx.Now`, retiring the service `Clock`), `cmd/alloca-migrate`, CI Postgres integration tests | yes | **Merged #5** |
+| 4 | User schedule non-overlap invariant + composite slot identity | `user_time_claims` relation (`btree_gist`, exclusion constraint), identity-scoped claim settlement, `ReasonScheduleConflict`, claim lifecycle across reserve/confirm/cancel/expiry; slot identity becomes `(slot_organisation_id, slot_id)` with `domain.SlotRef`/`domain.UserRef` and `contract_version` v2; schema consolidated into the `00001_init.sql` baseline; transaction-semantics §1.1/§1.2/§2.2/§4; PostgreSQL gates + negative controls | yes | **Merged #6** |
+| 5 | Expiry worker + HTTP API + telemetry | `internal/worker` (expiry that cannot release confirmed capacity), `internal/httpapi` booking endpoints + informational `GET /v1/slots` (idempotency-key handling, total outcome→HTTP mapping), `internal/telemetry` observation boundary, `internal/ids`, `Service.SettleSlot`, `cmd` wiring, readiness gated on the DB and bounded by `ReadinessTimeout`; [`api-surface.md`](../design/api-surface.md) and [`observability.md`](../design/observability.md); vertical PostgreSQL-backed HTTP tests | yes | **In review #7** |
 
 **Why this order.** PR1 is DB-free and discharges the §8.1 obligation, giving later
 PRs a validated budget. PR2 proves every correctness gate expressible above the SQL

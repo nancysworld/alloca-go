@@ -1,14 +1,15 @@
 # System context
 
-**Status:** AG-M0 draft
+**Status:** Living — current through AG-M1
 **Scope:** the system boundary, its actors and external dependencies, the internal
 module layout of the modular monolith, and the authority boundaries that make
 horizontal scaling safe.
 
-This document is descriptive of the *target* shape. AG-M0 ships only the
-operational skeleton (see [`../../README.md`](../../README.md) and the roadmap
+This document is descriptive of the *target* shape, with each region's current status
+recorded against it. AG-M0 shipped the operational skeleton and AG-M1 the transactional
+core and the surfaces over it (see [`../../README.md`](../../README.md) and the roadmap
 [`../planning/alloca-go-roadmap.md`](../planning/alloca-go-roadmap.md)); each later
-milestone fills in one region of the diagrams below.
+milestone fills in one more region of the diagrams below.
 
 All diagrams are Mermaid so they render on GitHub and are reviewable as text —
 there is no binary asset to sweep before public release.
@@ -72,34 +73,47 @@ boundary enforceable are specified in
 ```mermaid
 flowchart TB
     subgraph node[Go API capacity unit]
-        adm[Request admission<br/>and per-node ordering]:::m0
-        dom[Reservation / shared-resource<br/>domain services]:::m1
-        idem[Idempotency and<br/>outcome classification]:::m1
-        repo[Transactional repository]:::m1
-        work[Background expiry /<br/>settlement workers]:::m1
+        adm[Request admission<br/>and per-node ordering]:::m2
+        api[Booking HTTP surface<br/>and outcome mapping]:::done
+        dom[Reservation / shared-resource<br/>domain services]:::done
+        idem[Idempotency and<br/>outcome classification]:::done
+        repo[Transactional repository]:::done
+        work[Background expiry /<br/>settlement workers]:::done
+        tel[Observation boundary]:::done
         ops[Operational surface<br/>/healthz /readyz /meta]:::done
     end
 
     pg[(PostgreSQL authority)]:::ext
 
-    adm --> dom --> repo --> pg
+    adm --> api --> dom --> repo --> pg
     dom --> idem
-    work --> repo
+    work --> dom
+    api --> tel
+    work --> tel
 
     classDef done fill:#eaf6ec,stroke:#4a8a5a,color:#12301a;
-    classDef m0 fill:#fff6d6,stroke:#c9a227,color:#3a3212;
-    classDef m1 fill:#f0eefb,stroke:#7a6ec9,color:#241a3a;
+    classDef m2 fill:#fff6d6,stroke:#c9a227,color:#3a3212;
     classDef ext fill:#f6f0e8,stroke:#a8895b,color:#3a2e1a;
 ```
 
 | Region | Status | Milestone |
 |---|---|---|
 | Operational surface (`/healthz`, `/readyz`, `/meta`) | implemented | AG-M0 |
+| Booking HTTP surface and outcome mapping | implemented | AG-M1 |
+| Domain services (slot, reservation, booking) | implemented | AG-M1 |
+| Domain services (inventory, balance) | planned | AG-M6 |
+| Idempotency and outcome classification | implemented | AG-M1 |
+| Transactional repository | implemented | AG-M1 |
+| Background expiry / settlement workers | implemented | AG-M1 |
+| Observation boundary (emission only; no metrics backend) | implemented | AG-M1 |
 | Request admission and per-node ordering | planned | AG-M2+ |
-| Domain services (slot, reservation, booking, inventory, balance) | planned | AG-M1 |
-| Idempotency and outcome classification | planned | AG-M1 |
-| Transactional repository | planned | AG-M1 |
-| Background expiry / settlement workers | planned | AG-M1 |
+
+Note the direction of the `work --> dom` edge: the expiry worker settles **through the
+domain services**, not directly against the repository, so a hold expired by the worker and
+one expired by a concurrent request are expired by identical rules. The worker is not what
+makes expiry correct — every operation settles the slot it locks — so it needs no leader
+election and no exactly-once machinery
+([`transaction-semantics.md`](transaction-semantics.md) §2.1).
 
 The `/meta` endpoint already exposes the runtime provenance (Go version, observed
 `GOMAXPROCS`, revision) that every capacity result must carry (roadmap §4.4).
@@ -153,14 +167,23 @@ this document asserts.
 
 ---
 
-## 4. Scope boundary for AG-M0
+## 4. Scope boundary
 
-**In scope (this milestone):** the system/architecture/authority diagrams above; the
-operational skeleton; the measurement contract
-([`measurement-contract.md`](measurement-contract.md)); the modular-monolith
-decision record.
+**Built (AG-M0):** the system/architecture/authority diagrams above; the operational
+skeleton; the measurement contract
+([`measurement-contract.md`](measurement-contract.md)); the modular-monolith decision
+record.
 
-**Explicitly not yet built:** the transactional core (AG-M1), the load system and
-local frontier (AG-M2), the AWS slice (AG-M3), and any capacity or cost measurement
-(AG-M4+). No number in this repository is a measured Alloca-Go capacity result until
-a milestone produces it under the measurement contract.
+**Built (AG-M1):** the correct transactional core — slot capacity, hold/confirm/cancel,
+domain-local idempotency, the user-schedule non-overlap invariant, and PostgreSQL as the
+transactional authority ([`transaction-semantics.md`](transaction-semantics.md)) — plus the
+booking HTTP surface ([`api-surface.md`](api-surface.md)), background expiry, and the
+observation boundary ([`observability.md`](observability.md)).
+
+**Explicitly not yet built:** the load system and local frontier (AG-M2), the AWS slice
+(AG-M3), and any capacity or cost measurement (AG-M4+). Shared-resource inventory and
+balances are AG-M6.
+
+AG-M1 makes **no performance claim**. It builds the emission path for telemetry but
+aggregates nothing: no number in this repository is a measured Alloca-Go capacity result
+until a milestone produces it under the measurement contract.

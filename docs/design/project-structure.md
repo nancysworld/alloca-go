@@ -50,31 +50,29 @@ those; the packages themselves stay ignorant of how they are assembled.
 
 ## 3. Intended internal package layout
 
-Present (AG-M0):
+Present (through AG-M1):
 
 ```text
 internal/
-  config/      # env-driven configuration + validation
-  buildinfo/   # runtime/build metadata for /meta (Go version, GOMAXPROCS, revision)
-  httpapi/     # HTTP transport: routing, handlers, server construction
+  config/       # env-driven configuration + validation
+  buildinfo/    # runtime/build metadata for /meta (Go version, GOMAXPROCS, revision)
+  domain/       # core: entities, invariants, and the interfaces it needs
+    ports.go    # domain-OWNED interfaces (repositories, id-gen)
+  idempotency/  # idempotency scope, request hashing, replay resolution
+  service/      # application/use-case orchestration over the domain
+  postgres/     # adapter: IMPLEMENTS domain-owned repository interfaces
+  inmem/        # in-memory reference repository; a permanent test double
+  httpapi/      # transport adapter: HTTP <-> service calls, outcome->status mapping
+  worker/       # background expiry scheduling
+  telemetry/    # observation types + Recorder port; slog implementation
+  ids/          # server-minted random identifiers (implements domain.IDGen)
 ```
 
-Planned as AG-M1+ land (names indicative, boundaries normative):
+Planned as AG-M2+ land (names indicative, boundaries normative):
 
 ```text
 internal/
-  config/
-  buildinfo/
-  httpapi/                 # transport adapter: HTTP <-> domain calls, outcome mapping
-  admission/               # per-node request admission and ordering (AG-M2+)
-  domain/                  # core: entities, invariants, and the interfaces it needs
-    <e.g. reservation, booking, inventory, balance>
-    ports.go               # domain-OWNED interfaces (repositories, clock, id-gen)
-  service/                 # application/use-case orchestration over the domain
-  idempotency/             # idempotency scope, request hashing, replay resolution
-  worker/                  # background expiry / settlement scheduling (AG-M1+)
-  postgres/                # adapter: IMPLEMENTS domain-owned repository interfaces
-  telemetry/               # metrics/traces/logging wiring (OpenTelemetry-compatible)
+  admission/    # per-node request admission and ordering (AG-M2+)
 ```
 
 The key structural rule is in §4: **the domain owns its interfaces; adapters
@@ -89,23 +87,37 @@ standard library and its own types.
 
 ```text
 cmd/alloca-go
-    -> config, httpapi, service, domain, postgres, telemetry   (wires everything)
+    -> config, httpapi, service, domain, postgres, telemetry, worker, ids
+                                  (wires everything)
 
 httpapi
-    -> service, domain            (calls use-cases; maps outcomes to HTTP)
+    -> service, domain, telemetry, config
+                                  (calls use-cases; maps outcomes to HTTP)
+
+worker
+    -> domain, telemetry          (schedules background work through service ports
+                                   it declares itself)
 
 service
-    -> domain                     (orchestrates domain operations)
+    -> domain, idempotency        (orchestrates domain operations)
 
 domain
     -> (stdlib only)              (owns entities, invariants, and port interfaces)
 
 postgres
-    -> domain                     (IMPLEMENTS domain-owned repository interfaces)
+    -> domain, config             (IMPLEMENTS domain-owned repository interfaces)
+
+ids
+    -> domain                     (IMPLEMENTS domain.IDGen)
 
 telemetry
-    -> (stdlib + OTel libs)       (injected into others by cmd)
+    -> domain                     (outcome vocabulary only; injected by cmd)
 ```
+
+`httpapi` and `worker` declare the narrow interfaces they consume (`BookingService`,
+`SlotLister`, `SlotSource`, `Settler`) **at the point of consumption**, and `cmd` supplies
+the concrete `*service.Service` or `*postgres.Repo` that satisfies them. That is why
+neither imports `postgres` despite depending on its behaviour.
 
 ### 4.1 Domain owns its interfaces
 
@@ -130,6 +142,32 @@ transactional core be tested and reasoned about without a database.
 
 A dependency that would violate these is the trigger for a new ADR, not a quiet
 exception.
+
+### 4.3 The rules constrain the shipped graph, not test composition roots
+
+A **vertical integration test is a composition root**, like `cmd`: proving the assembled
+service works means wiring the transport, the service, and the database adapter together,
+which no single package in §4 is allowed to do.
+
+Such a test belongs in an **external test package** (`package httpapi_test` in the
+`internal/httpapi` directory), never in the package under test. An external test package is
+compiled into the test binary only and is not part of the package's dependency graph, so
+the arrows above continue to hold for everything that ships:
+
+```console
+$ go list -deps ./internal/httpapi | grep postgres   # no output
+```
+
+Adding the same import to a `package httpapi` file — including a `_test.go` file in that
+package — *would* violate §4.2, because it puts `postgres` in `httpapi`'s graph. The
+distinction is the whole reason the external package is used.
+
+Test-support helpers that need the database live on the adapter that owns it
+(`postgres.Truncate`, `postgres.ClaimDatabase`), documented as existing for tests and never
+called by the service. `postgres.ClaimDatabase` in particular must be shared rather than
+reimplemented per suite: every integration suite truncates the whole database and
+`go test ./...` runs package binaries in parallel, so the suites must serialize on one
+advisory-lock key.
 
 ---
 
@@ -180,14 +218,16 @@ planned remain indicative until code lands.
 |---|---|---|---|
 | Service executable and lifecycle | `cmd/alloca-go` | `internal/config` | Implemented, AG-M0 |
 | Operational surface (`/healthz`, `/readyz`, `/meta`) | `internal/httpapi` | `internal/buildinfo`, `internal/config` | Implemented, AG-M0 |
-| Reservation and shared-resource domain services | `internal/domain`, `internal/service` | domain-specific files or subpackages | Planned, AG-M1 |
-| Idempotency and replay resolution | `internal/idempotency` | domain-owned outcome types, `internal/postgres` persistence | Planned, AG-M1 |
-| Outcome classification | `internal/domain` | `internal/httpapi` maps outcomes to transport responses | Planned, AG-M1 |
-| Transactional repository contract | interfaces owned by `internal/domain` | consumed by `internal/service` | Planned, AG-M1 |
-| PostgreSQL transaction and cross-node authority adapter | `internal/postgres` | database migrations and configuration | Planned, AG-M1 |
+| Booking HTTP surface and outcome→status mapping | `internal/httpapi` | `internal/telemetry`; contract in [`api-surface.md`](api-surface.md) | Implemented, AG-M1 |
+| Reservation and shared-resource domain services | `internal/domain`, `internal/service` | domain-specific files or subpackages | Implemented, AG-M1 (shared-resource: AG-M6) |
+| Idempotency and replay resolution | `internal/idempotency` | domain-owned outcome types, `internal/postgres` persistence | Implemented, AG-M1 |
+| Outcome classification | `internal/domain` | `internal/httpapi` maps outcomes to transport responses | Implemented, AG-M1 |
+| Transactional repository contract | interfaces owned by `internal/domain` | consumed by `internal/service` | Implemented, AG-M1 |
+| PostgreSQL transaction and cross-node authority adapter | `internal/postgres` | database migrations and configuration | Implemented, AG-M1 |
+| Server-minted identifiers | `internal/ids` | implements `domain.IDGen` | Implemented, AG-M1 |
 | Request admission and per-node ordering | `internal/admission` (indicative) | optional domain/service integration | Planned, AG-M2+ |
-| Background expiry and settlement | domain policy in `internal/domain`/`internal/service`; scheduling in `internal/worker` (indicative) | `internal/postgres` | Planned, AG-M1+ |
-| Telemetry | `internal/telemetry` | instrumentation injected into transport, service, and adapters | Planned, AG-M2+ |
+| Background expiry and settlement | expiry policy in `internal/service` (`SettleSlot`); scheduling in `internal/worker` | `internal/postgres` candidate query | Implemented, AG-M1 |
+| Telemetry | `internal/telemetry` | observation boundary per [`observability.md`](observability.md); metrics backend AG-M2+ | Emission implemented, AG-M1 |
 | External load generation | `cmd/loadgen` | experiment/load-generation packages under `internal/` | Planned, AG-M2 |
 
 The mapping does not weaken the dependency rules in §4. In particular, the fact

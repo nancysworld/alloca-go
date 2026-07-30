@@ -45,8 +45,8 @@ architecture at a glance, and maps which document owns each detailed decision.
 Tests come in two tiers. The default gate is hermetic and needs no services. The
 **integration** tier proves the properties that only exist against a real PostgreSQL —
 capacity safety under genuinely concurrent transactions, the post-lock decision
-timestamp, and the idempotency-key race — so it is behind the `integration` build tag
-and requires a database:
+timestamp, the idempotency-key race, and the assembled HTTP-to-database path — so it is
+behind the `integration` build tag and requires a database:
 
 ```sh
 make db-up             # start a local PostgreSQL in Docker
@@ -54,11 +54,21 @@ make test-integration  # run the integration tier under -race
 make db-down
 ```
 
-Migrations are applied by a separate binary, never by a serving replica:
+## Running the service
+
+Migrations are applied by a separate binary, never by a serving replica, so replicas
+never race the same DDL on startup:
 
 ```sh
-DATABASE_URL=... go run ./cmd/alloca-migrate
+export DATABASE_URL='postgres://alloca:alloca@localhost:55432/alloca?sslmode=disable'
+go run ./cmd/alloca-migrate   # once, before a new version serves traffic
+go run ./cmd/alloca-go        # DATABASE_URL is required
 ```
+
+The HTTP contract — routes, request and response shapes, status mapping, and the
+`/healthz`, `/readyz`, `/meta` operational endpoints — is documented in
+[`docs/design/api-surface.md`](docs/design/api-surface.md). What the service emits about
+itself is in [`docs/design/observability.md`](docs/design/observability.md).
 
 ## Roadmap
 

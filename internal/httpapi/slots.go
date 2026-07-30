@@ -116,7 +116,7 @@ func (h *slotHandlers) write(
 	ctx context.Context, w http.ResponseWriter, start time.Time,
 	status int, outcome domain.Outcome, body any,
 ) {
-	writeJSON(w, status, body)
+	writeJSONResponse(w, status, body)
 	h.recorder.RecordRequest(ctx, telemetry.RequestObservation{
 		Operation:  telemetry.OperationListSlots,
 		Outcome:    outcome,

@@ -1,5 +1,13 @@
 package httpapi
 
+// This file is the package's JSON boundary: the one place HTTP bytes become typed values
+// and typed values become an HTTP response. Handlers deal in domain types on one side of it
+// and never touch an encoder or decoder on the other.
+//
+// Endpoint-specific response shapes stay with their handlers — listResponse in slots.go,
+// metaResponse in meta.go, response in mapping.go — because each belongs to the concern that
+// produces it. What lives here is what all of them share.
+
 import (
 	"encoding/json"
 	"errors"
@@ -8,6 +16,18 @@ import (
 
 	"github.com/nancysworld/alloca-go/internal/domain"
 )
+
+// writeJSONResponse writes v as a complete JSON response: content type, status, body.
+//
+// Encoding errors are ignored, and there is no useful alternative: the status line is
+// already committed by the time the encoder runs, so nothing can be reported to the client,
+// and the usual cause is a connection that has gone away — which the observation records
+// (see bookingHandlers.respond).
+func writeJSONResponse(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
 
 // headerIdempotencyKey carries the client's idempotency key. A header rather than a body
 // field so the key is visible to proxies and logs without parsing the body, and so it

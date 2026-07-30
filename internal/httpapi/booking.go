@@ -152,7 +152,7 @@ func (h *bookingHandlers) respond(
 	ctx context.Context, w http.ResponseWriter, op domain.Operation,
 	start time.Time, status int, body response,
 ) {
-	writeJSON(w, status, body)
+	writeJSONResponse(w, status, body)
 	h.recorder.RecordRequest(ctx, telemetry.RequestObservation{
 		Operation:  string(op),
 		Outcome:    body.Outcome,

@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"time"
@@ -11,7 +10,7 @@ import (
 // handleHealthz is the liveness probe: it returns 200 as long as the process can
 // serve HTTP. It does not check dependencies — that is readiness' job.
 func handleHealthz(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSONResponse(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // handleReadyz is the readiness probe. It returns 200 when ready reports no error, and
@@ -35,20 +34,11 @@ func handleReadyz(ready ReadinessFunc, probeTimeout time.Duration, logger *slog.
 				slog.Any("error", err),
 				slog.Duration("probe_timeout", probeTimeout),
 			)
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			writeJSONResponse(w, http.StatusServiceUnavailable, map[string]string{
 				"status": "unavailable",
 			})
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+		writeJSONResponse(w, http.StatusOK, map[string]string{"status": "ready"})
 	}
-}
-
-// writeJSON writes v as a JSON response with the given status code. Encoding
-// errors are ignored: the header is already committed and there is no useful
-// recovery on a broken client connection.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
 }

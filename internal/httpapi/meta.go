@@ -32,7 +32,7 @@ type metaResponse struct {
 // handleMeta returns runtime metadata and the resolved timing configuration as JSON.
 func handleMeta(source func() buildinfo.Info, cfg config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, metaResponse{
+		writeJSONResponse(w, http.StatusOK, metaResponse{
 			Info:             source(),
 			RequestBudget:    cfg.RequestBudget,
 			ReservationTTL:   cfg.ReservationTTL.String(),

@@ -41,7 +41,9 @@ MAX_TIME="${MAX_TIME:-10}"
 
 ORG="org-1"
 RUN="smoke-$$"
-SLOT="$RUN"
+SLOT="$RUN-1"
+# A second slot whose window OVERLAPS the first, for the schedule-conflict check.
+SLOT_OVERLAPPING="$RUN-2"
 USER_A="$RUN-a"
 USER_B="$RUN-b"
 
@@ -57,12 +59,12 @@ done
 # a smoke test starts interfering with the next run.
 cleanup() {
   psql "$DSN" -q -v ON_ERROR_STOP=1 \
-    -c "DELETE FROM user_time_claims WHERE slot_organisation_id='$ORG' AND slot_id='$SLOT'" \
-    -c "DELETE FROM bookings         WHERE slot_organisation_id='$ORG' AND slot_id='$SLOT'" \
-    -c "DELETE FROM reservations     WHERE slot_organisation_id='$ORG' AND slot_id='$SLOT'" \
-    -c "DELETE FROM slots            WHERE slot_organisation_id='$ORG' AND slot_id='$SLOT'" \
+    -c "DELETE FROM user_time_claims WHERE slot_organisation_id='$ORG' AND slot_id LIKE '$RUN%'" \
+    -c "DELETE FROM bookings         WHERE slot_organisation_id='$ORG' AND slot_id LIKE '$RUN%'" \
+    -c "DELETE FROM reservations     WHERE slot_organisation_id='$ORG' AND slot_id LIKE '$RUN%'" \
+    -c "DELETE FROM slots            WHERE slot_organisation_id='$ORG' AND slot_id LIKE '$RUN%'" \
     -c "DELETE FROM idempotency_records WHERE user_organisation_id='$ORG' AND user_id LIKE '$RUN%'" \
-    || echo "smoke: WARNING — cleanup failed; rows for $SLOT remain"
+    || echo "smoke: WARNING — cleanup failed; rows for $RUN remain"
 }
 trap cleanup EXIT
 
@@ -120,7 +122,7 @@ check "readyz sees the database"      200 '"status":"ready"' "$BASE/readyz"
 check "meta reports the hold TTL"     200 'reservation_ttl'  "$BASE/meta"
 echo
 
-echo "seeding a slot with capacity 1 (control plane, not an API)"
+echo "seeding two slots with overlapping windows (control plane, not an API)"
 # Released an hour ago so it is bookable now, but starting a day out.
 #
 # The start offset must stay comfortably longer than the service's configured hold TTL. A
@@ -128,11 +130,18 @@ echo "seeding a slot with capacity 1 (control plane, not an API)"
 # starting in an hour is refused outside_window the moment someone runs with a one-hour TTL
 # — which reads as a broken service rather than a mis-sized fixture. A day of headroom means
 # this script does not silently depend on how the service under test is configured.
+# The second slot overlaps the first by half an hour and has room to spare. The spare
+# capacity is what makes the schedule-conflict check below discriminating: with capacity 1 a
+# refusal could be no_capacity, and the test would pass for the wrong reason.
 psql "$DSN" -q -v ON_ERROR_STOP=1 -c "INSERT INTO slots
   (slot_id, slot_organisation_id, resource_id, capacity, release_at, starts_at, ends_at)
-  VALUES ('$SLOT','$ORG','yoga',1, now()-interval '1 hour', now()+interval '24 hours', now()+interval '25 hours')" \
+  VALUES
+   ('$SLOT','$ORG','yoga',1, now()-interval '1 hour',
+    now()+interval '24 hours', now()+interval '25 hours'),
+   ('$SLOT_OVERLAPPING','$ORG','pilates',5, now()-interval '1 hour',
+    now()+interval '24 hours 30 minutes', now()+interval '25 hours 30 minutes')" \
   || { echo "smoke: seed failed — is the database up? (make db-up)"; exit 2; }
-echo "  seeded $ORG/$SLOT"
+echo "  seeded $ORG/$SLOT (capacity 1) and $ORG/$SLOT_OVERLAPPING (capacity 5, overlapping)"
 echo
 
 RES="$BASE/v1/slots/$ORG/$SLOT/reservations"
@@ -180,6 +189,21 @@ echo "refusals and rejections"
 check "second user gets no_capacity"   409 '"reason":"no_capacity"' \
   -X POST "$RES" -H "$J" -H "Idempotency-Key: $RUN-k2" \
   -d "{\"user_organisation_id\":\"$ORG\",\"user_id\":\"$USER_B\"}"
+# The milestone's flagship invariant: one identity cannot hold two claims covering the same
+# instant, even on different slots that never contend for a lock (transaction-semantics §2.2).
+#
+# USER_A already holds the claim created above, and this slot overlaps it by half an hour.
+# The refusal is decided by the INSERT into user_time_claims failing the exclusion
+# constraint — not by a preceding read, which could always lose a race — and the surrounding
+# transaction survives it via a savepoint, which is what makes this a clean 409 rather than a
+# fault. The slot has spare capacity, so no_capacity cannot be the reason.
+check "overlapping slot is schedule_conflict" 409 '"reason":"schedule_conflict"' \
+  -X POST "$BASE/v1/slots/$ORG/$SLOT_OVERLAPPING/reservations" -H "$J" -H "Idempotency-Key: $RUN-k6" \
+  -d "{\"user_organisation_id\":\"$ORG\",\"user_id\":\"$USER_A\"}"
+# A different identity is unaffected: it is the *user's* schedule that is full, not the slot.
+check "another user may book the same slot" 200 '"outcome":"admitted_success"' \
+  -X POST "$BASE/v1/slots/$ORG/$SLOT_OVERLAPPING/reservations" -H "$J" -H "Idempotency-Key: $RUN-k7" \
+  -d "{\"user_organisation_id\":\"$ORG\",\"user_id\":\"$RUN-c\"}"
 check "unknown slot is 404"            404 '"reason":"unknown_target"' \
   -X POST "$BASE/v1/slots/$ORG/no-such-slot/reservations" -H "$J" -H "Idempotency-Key: $RUN-k3" \
   -d "{\"user_organisation_id\":\"$ORG\",\"user_id\":\"$USER_A\"}"

@@ -66,9 +66,15 @@ check() {
   if [[ "$status" == "$want_status" && "$body" == *"$want_body"* ]]; then
     printf '  \033[32mPASS\033[0m  %-42s %s\n' "$label" "$status"
     pass=$((pass + 1))
+  elif [[ "$status" != "$want_status" ]]; then
+    printf '  \033[31mFAIL\033[0m  %-42s status %s, want %s\n' "$label" "$status" "$want_status"
+    printf '        body: %s\n' "$body"
+    fail=$((fail + 1))
   else
-    printf '  \033[31mFAIL\033[0m  %-42s got %s want %s\n' "$label" "$status" "$want_status"
-    printf '        body: %s\n        want substring: %s\n' "$body" "$want_body"
+    # Status matched and only the body did. Reported separately, because printing
+    # "got 409 want 409" for this case reads as a bug in the script.
+    printf '  \033[31mFAIL\033[0m  %-42s status %s as expected, wrong body\n' "$label" "$status"
+    printf '        body:           %s\n        want substring: %s\n' "$body" "$want_body"
     fail=$((fail + 1))
   fi
   LAST_BODY="$body"
@@ -90,9 +96,16 @@ check "meta reports the hold TTL"     200 'reservation_ttl'  "$BASE/meta"
 echo
 
 echo "seeding a slot with capacity 1 (control plane, not an API)"
+# Released an hour ago so it is bookable now, but starting a day out.
+#
+# The start offset must stay comfortably longer than the service's configured hold TTL. A
+# hold is valid only while expires_at <= starts_at (transaction-semantics §1.6), so a slot
+# starting in an hour is refused outside_window the moment someone runs with a one-hour TTL
+# — which reads as a broken service rather than a mis-sized fixture. A day of headroom means
+# this script does not silently depend on how the service under test is configured.
 psql "$DSN" -q -v ON_ERROR_STOP=1 -c "INSERT INTO slots
   (slot_id, slot_organisation_id, resource_id, capacity, release_at, starts_at, ends_at)
-  VALUES ('$SLOT','$ORG','yoga',1, now()-interval '1 hour', now()+interval '1 hour', now()+interval '2 hours')" \
+  VALUES ('$SLOT','$ORG','yoga',1, now()-interval '1 hour', now()+interval '24 hours', now()+interval '25 hours')" \
   || { echo "smoke: seed failed — is the database up? (make db-up)"; exit 2; }
 echo "  seeded $ORG/$SLOT"
 echo
@@ -111,6 +124,17 @@ check "reserve is admitted"            200 '"outcome":"admitted_success"' \
   -d "{\"user_organisation_id\":\"$ORG\",\"user_id\":\"$USER_A\"}"
 RESERVATION=$(json_field reservation_id)
 echo "        reservation_id=$RESERVATION"
+
+# Everything below names this reservation in a URL. Without it the path becomes
+# /v1/reservations//confirm, and ServeMux answers an empty path segment with a 307 from path
+# cleaning — so the run would end in redirects that say nothing about the failure above.
+if [[ -z "$RESERVATION" ]]; then
+  echo
+  echo "smoke: reserve returned no reservation_id, so the remaining checks cannot run."
+  echo "       Fix the failure above first — the refusal reason names the cause."
+  printf '\npassed %d, failed %d\n' "$pass" "$fail"
+  exit 1
+fi
 
 # The same logical request with its fields in the other order. This is a replay, not a
 # conflict: the request hash covers semantically significant typed fields, never the JSON

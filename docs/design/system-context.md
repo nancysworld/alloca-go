@@ -85,7 +85,7 @@ flowchart TB
 
     pg[(PostgreSQL authority)]:::ext
 
-    adm --> api --> dom --> repo --> pg
+    api --> adm --> dom --> repo --> pg
     dom --> idem
     work --> dom
     api --> tel

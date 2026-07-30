@@ -2,6 +2,7 @@ package config
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -266,6 +267,51 @@ func TestValidateRejectsAReadinessTimeoutThatCannotOutlastAcquisition(t *testing
 					cfg.ReadinessTimeout, cfg.RequestBudget.DBAcquireCap, cfg.RequestBudget.ServerDeadline)
 			}
 		})
+	}
+}
+
+// A non-positive hold TTL must be refused by Validate, because service.New panics on one.
+//
+// This covers the Validate-without-Load path specifically: a Config assembled in code
+// never passes through Load's duration table, so Validate is the only thing between it and
+// that panic. The environment path is covered separately below, and the two are independent
+// — this test still fails if the Validate check is removed, even though that one would not.
+func TestValidateRejectsANonPositiveReservationTTL(t *testing.T) {
+	for name, ttl := range map[string]time.Duration{
+		"zero":     0,
+		"negative": -time.Second,
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := Default()
+			cfg.ReservationTTL = ttl
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatalf("accepted ReservationTTL %s", ttl)
+			}
+			// The message must name the field, so the operator knows which variable to
+			// correct without reading this test.
+			if !strings.Contains(err.Error(), "ReservationTTL") {
+				t.Errorf("error %q does not name ReservationTTL", err)
+			}
+		})
+	}
+}
+
+// The environment path is already closed by Load's duration table, which rejects a
+// non-positive value for every override it parses. Locking it in here because
+// ReservationTTL's membership of that table is what makes it true, and dropping it from the
+// table would otherwise be a silent regression: the panic would move from unreachable to
+// reachable by an operator typo.
+func TestLoadRejectsANonPositiveReservationTTLOverride(t *testing.T) {
+	for _, raw := range []string{"0s", "-5s"} {
+		_, err := Load(lookupFrom(map[string]string{envReservationTTL: raw}))
+		if err == nil {
+			t.Errorf("Load accepted %s=%s", envReservationTTL, raw)
+			continue
+		}
+		if !strings.Contains(err.Error(), envReservationTTL) {
+			t.Errorf("error for %s does not name the variable: %v", raw, err)
+		}
 	}
 }
 

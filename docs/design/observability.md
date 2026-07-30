@@ -28,6 +28,11 @@ AG-M1 ships one implementation: structured `slog` output. The reason the port ex
 anyway is cost of change — adding Prometheus or OpenTelemetry must be **one new `Recorder`
 and one line in `cmd`**, not edits to every handler and the worker.
 
+Recorders execute **on the request path** and must remain bounded; remote export must not
+occur directly there. The obligation is boundedness rather than "must not block", which no
+implementation could honour — even an `slog.Handler` writing to a pipe blocks if the reader
+stalls. See §5.1 for the backpressure AG-M1's implementation does not remove.
+
 This is deliberately not a telemetry framework. There is no registry, no exporter
 plumbing, and no configuration surface: two observation types, one interface, one
 implementation.
@@ -40,21 +45,28 @@ decision, which is why `internal/telemetry` is an adapter leaf wired in by `cmd`
 
 ## 2. The cardinality rule (normative)
 
-**Every field on an observation type is drawn from a closed set or is a measurement.**
+**Observation values exclude high-cardinality diagnostic fields, and metrics
+implementations must not derive labels from request context.**
 
-Identities, slot identifiers, reservation identifiers, idempotency keys, request
-identifiers, and error strings are **absent from the observation types**. A metrics
-implementation therefore *cannot* label a time series with them even by accident — they
-are not in the value it receives.
+Two halves, because one alone is not enough.
 
-This makes the rule **structural rather than documentary**. A comment saying "do not label
-with user id" relies on every future author reading it; a type that does not carry the user
-id cannot be misused. Adding a high-cardinality field to these structs is the change that
-must be refused in review.
+The first half is **structural**. Identities, slot identifiers, reservation identifiers,
+idempotency keys, request identifiers, and error strings are absent from the observation
+types, so the obvious way to build a metrics recorder — label the series with the fields
+you were given — cannot produce an unbounded label set. A comment saying "do not label with
+user id" relies on every future author reading it; a type that does not carry the user id
+cannot be misused that way. Adding a high-cardinality field to these structs is the change
+that must be refused in review.
 
-Diagnostic context that is useful in a log and ruinous as a metric label travels in the
-**context** instead. `telemetry.WithRequestID` / `telemetry.RequestID` carry a per-request
-identifier that a logging recorder reads and a metrics recorder ignores.
+The second half is **discipline**, and it is needed because the first half is a strong
+default rather than a guarantee: a recorder receives the `context` as well as the value, and
+the context carries `RequestID` by design. Nothing in the type system stops an
+implementation reading it and labelling with it. So the structural half removes the
+accident; only the stated rule removes the deliberate case.
+
+Diagnostic context that is useful in a log and ruinous as a metric label therefore travels
+in the **context**: `telemetry.WithRequestID` / `telemetry.RequestID` carry a per-request
+identifier that the logging recorder reads and a metrics recorder must ignore.
 
 ---
 
@@ -137,6 +149,26 @@ implementation would use, so a query written against these logs translates direc
 - A failed expiry iteration is logged at **info** level here; the worker logs the error
   itself at error level with its diagnostic context. Emitting both at error level would
   double-count one event in a log-based alert.
+
+### 5.1 Emission is synchronous, and that is a deferred risk not a solved one
+
+`slog` invokes its handler on the calling goroutine, and the handlers call `RecordRequest`
+before returning. If the log sink stalls — a full pipe, a stopped reader on stderr — the
+request is held **after its transaction has already committed**.
+
+Correctness is unaffected: the mutation is durable, and the idempotency record makes the
+client's retry safe. Two consequences remain, and both land later rather than now:
+
+- a client may time out and retry a request that in fact succeeded — resolved by replaying
+  the same key, but visible in the outcome mix;
+- **measured latency includes log backpressure**, so a slow sink perturbs exactly the
+  numbers AG-M2 exists to collect.
+
+AG-M1 accepts this: one line to local stderr, at AG-M1 load, is not a plausible stall. The
+fix, if AG-M2's measurement or a remote sink makes it real, is a bounded asynchronous sink
+that drops on full and flushes at shutdown — a drop policy and a shutdown ordering are real
+design decisions, and they belong with the milestone that needs them rather than ahead of
+it.
 
 ---
 

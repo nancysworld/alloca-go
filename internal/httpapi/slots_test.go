@@ -106,6 +106,23 @@ func TestListSlotsMakesNoAvailabilityClaim(t *testing.T) {
 	}
 }
 
+// An organisation with no slots must serialise as an empty array, not null. The repository
+// returns a nil slice for no rows, and a nil []slotView marshals to `null` — which is a
+// different type to a client, and breaks anything that iterates the field without a nil
+// check. The handler's make(..., 0, n) is what prevents it, and that is easy to "simplify"
+// away, so it is asserted on the raw JSON rather than through a decode that would hide the
+// difference.
+func TestListSlotsReturnsAnEmptyArrayNotNull(t *testing.T) {
+	rec := getSlots(t, listServer(t, &fakeLister{slots: nil}), "?slot_organisation_id=org-1")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
+	}
+	if got := rec.Body.String(); !strings.Contains(got, `"slots":[]`) {
+		t.Errorf("body = %s, want an empty slots array", got)
+	}
+}
+
 func TestListSlotsRequiresTheOrganisation(t *testing.T) {
 	for _, query := range []string{"", "?slot_organisation_id="} {
 		rec := getSlots(t, listServer(t, &fakeLister{}), query)

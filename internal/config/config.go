@@ -333,6 +333,21 @@ func (c Config) Validate() error {
 		return fmt.Errorf("config: WriteResponseMargin must be positive (got %s)", c.WriteResponseMargin)
 	}
 
+	// ReservationTTL has no relationship to the deadline chain — it bounds a hold that
+	// outlives the request by design — but it must still be positive, because
+	// service.New panics on a non-positive TTL.
+	//
+	// Load already rejects a non-positive ALLOCA_RESERVATION_TTL along with every other
+	// duration override, so this is not the environment path. It closes the
+	// Validate-without-Load path: a Config built in code (config.Default() mutated, or a
+	// future caller assembling one directly) reaches service.New without ever passing
+	// through Load's table. That is the same gap OpenPool was hardened against in PR3,
+	// and the same §8.1 discipline — a constraint is enforced where the value is
+	// consumed, not only at the one gate we happen to remember.
+	if c.ReservationTTL <= 0 {
+		return fmt.Errorf("config: ReservationTTL must be positive (got %s)", c.ReservationTTL)
+	}
+
 	// Write-phase relationship (§8.1 clause 2): the Go context deadline must fire
 	// before the connection-level write timeout, with margin for encoding and writing
 	// the response, so an overrun is a classified timeout_server/timeout_db rather

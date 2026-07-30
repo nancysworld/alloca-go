@@ -51,7 +51,7 @@ func registerRoutes(
 ) {
 	mux.HandleFunc(pathHealthz, handleHealthz)
 	mux.HandleFunc(pathReadyz, handleReadyz(ready, cfg.ReadinessTimeout, logger))
-	mux.HandleFunc(pathMeta, handleMeta(metaSource, cfg.RequestBudget))
+	mux.HandleFunc(pathMeta, handleMeta(metaSource, cfg))
 
 	if svc != nil {
 		h := &bookingHandlers{svc: svc, recorder: recorder, budget: cfg.RequestBudget}

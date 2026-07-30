@@ -101,8 +101,16 @@ A refusal:
 and a client must not have to infer it. The remaining fields are omitted when empty rather
 than sent as `""`, so a client should treat absent and empty as the same thing.
 
-Internal error text never appears. `message` is chosen from constants, never built from an
-error, so no SQL, `pgx`, or invariant detail can reach a client.
+No *internal* error text appears. For domain answers and faults, `message` is chosen from
+constants and never built from an error, so no SQL, `pgx`, or invariant detail can reach a
+client.
+
+`invalid_request` is the deliberate exception: its `message` describes what was malformed
+about the request, and for an unparseable body it includes the JSON decoder's own text
+(`"request body is not valid JSON for this endpoint: json: unknown field \"userId\""`). That
+names a field or type **the caller supplied**, which is the information they need in order to
+fix the request, and nothing about the service's internals. A client should treat it as
+diagnostic prose, never parse it.
 
 ### 2.3 Status mapping
 
@@ -189,8 +197,14 @@ seconds.
 ## 4. Identifiers
 
 Reservation and booking identifiers are **server-minted and unguessable** — 128 bits of
-`crypto/rand`, prefixed `res_` and `bk_` so the two kinds are distinguishable on sight. A
-client never supplies one.
+`crypto/rand`, prefixed `res_` and `bk_` so the two kinds are distinguishable on sight.
+
+Only the server mints them: a client can never choose or invent an identifier, and none is
+accepted on reserve. A client does *supply* one afterwards — confirm and cancel name their
+target reservation in the URL (§2) — so the precise rule is that any identifier a client
+sends must be one the server previously minted and returned to it. Unguessability is what
+makes that rule enforceable in the absence of authentication, and §5 is where its limits are
+stated.
 
 Path identifiers round-trip percent-encoding: Go's `ServeMux` decodes `%2F` within a
 segment, so an organisation or slot identifier containing a separator addresses correctly.

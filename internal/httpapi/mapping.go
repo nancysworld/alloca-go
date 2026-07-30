@@ -18,8 +18,11 @@ import (
 
 // response is the body every booking endpoint returns, success or refusal alike.
 //
-// Internal error text never appears: Message is chosen from the closed set below, never
-// built from an error, so no SQL, pgx, or invariant detail can escape.
+// No *internal* error text appears. For domain answers and faults, Message is chosen from
+// the closed set below and never built from an error, so no SQL, pgx, or invariant detail
+// can escape. The one exception is invalid_request, whose Message describes what was
+// malformed about the request and may include the JSON decoder's own text — that names an
+// offending field or type the caller supplied, and nothing internal. See responseForInvalid.
 type response struct {
 	Outcome       domain.Outcome `json:"outcome"`
 	Reason        domain.Reason  `json:"reason,omitempty"`

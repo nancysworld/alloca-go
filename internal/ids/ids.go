@@ -1,8 +1,13 @@
 // Package ids mints the server-assigned identifiers the domain requires.
 //
-// Identity is server-owned: a client never supplies a reservation or booking identifier
-// (domain.IDGen). This is the production implementation of that port; tests use
-// deterministic sequential generators instead, which is why the interface exists.
+// Identity is server-owned: only the server *mints* a reservation or booking identifier,
+// and a client can never choose or invent one (domain.IDGen). A client does later supply
+// one — a confirm or cancel names its target reservation in the URL — so what matters is
+// that the value it echoes back must be one the server minted, which is exactly why these
+// are unguessable rather than sequential.
+//
+// This is the production implementation of that port; tests use deterministic sequential
+// generators instead, which is why the interface exists.
 package ids
 
 import (

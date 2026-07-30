@@ -37,11 +37,17 @@ type fakeSettler struct {
 	failOn   domain.SlotID
 	settled  []domain.SlotRef
 	failWith error
+	// onSettle runs before the slot is settled, so a test can interleave an event —
+	// cancelling the context, say — with the iteration rather than racing it.
+	onSettle func(domain.SlotID)
 }
 
 func (f *fakeSettler) SettleSlot(_ context.Context, ref domain.SlotRef) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.onSettle != nil {
+		f.onSettle(ref.SlotID)
+	}
 	f.settled = append(f.settled, ref)
 	if ref.SlotID == f.failOn {
 		return 0, f.failWith
@@ -204,6 +210,57 @@ func TestRunSurvivesAFailingIteration(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+// Shutdown must not look like an incident. Cancelling the context mid-iteration makes
+// RunOnce report a failure, which is correct in isolation and wrong in the loop: the
+// iteration was abandoned, not broken. Without the suppression, every clean shutdown
+// increments the one signal AG-M2 would alert on.
+func TestRunDoesNotReportCancellationAsAFailedIteration(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	recorder := &countingRecorder{seen: make(chan telemetry.ExpiryObservation, 8)}
+
+	// The settler cancels the context while the iteration is in flight, then fails the
+	// way a real one does when its context is done. That is exactly the shutdown race:
+	// the worker is mid-iteration when the signal arrives.
+	slots := &fakeSlots{refs: []domain.SlotRef{ref("a"), ref("b")}}
+	settler := &fakeSettler{
+		perSlot:  map[domain.SlotID]int{"a": 2},
+		failOn:   "b",
+		failWith: context.Canceled,
+		onSettle: func(id domain.SlotID) {
+			if id == "b" {
+				cancel()
+			}
+		},
+	}
+	w := NewExpiry(slots, settler, recorder, quietLogger(), Config{Interval: time.Millisecond})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		w.Run(ctx)
+	}()
+
+	select {
+	case obs := <-recorder.seen:
+		if obs.Failed {
+			t.Error("a shutdown-cancelled iteration was observed as failed")
+		}
+		// The work that committed before cancellation is still reported, or the
+		// telemetry would disagree with the database.
+		if obs.Expired != 2 {
+			t.Errorf("observed expired = %d, want 2: work committed before cancellation was lost", obs.Expired)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no expiry observation was recorded")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after cancellation")
+	}
 }
 
 type countingRecorder struct {

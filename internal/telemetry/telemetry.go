@@ -7,11 +7,13 @@
 // message, so adding Prometheus or OpenTelemetry is one new Recorder and a line in cmd.
 //
 // Every field on the two observation types is drawn from a closed set or is a
-// measurement. Identities, slot identifiers, idempotency keys, request identifiers and
-// error strings are deliberately *absent*, so a metrics recorder cannot label a series
-// with them even by accident: they are not in the value it receives. That makes the
-// cardinality rule structural rather than a comment someone has to remember.
-// High-cardinality diagnostics travel in the context instead (RequestID).
+// measurement: observation values exclude high-cardinality diagnostic fields, so the
+// obvious way to build a metrics recorder cannot produce an unbounded label set.
+//
+// That is a strong default, not a guarantee. A recorder is handed the context as well as
+// the value, and the context carries RequestID — so the rule metrics implementations must
+// follow is: **do not derive labels from request context.** The observation shape removes
+// the accident; only that discipline removes the deliberate case.
 package telemetry
 
 import (
@@ -69,8 +71,13 @@ type ExpiryObservation struct {
 // take their names from domain.Operation, so there is nothing to redeclare for them.
 const OperationListSlots = "list_slots"
 
-// Recorder consumes observations. Implementations must be safe for concurrent use and
-// must not block: they sit on the request path.
+// Recorder consumes observations. Implementations must be safe for concurrent use.
+//
+// They execute **on the request path** and must remain bounded; remote export must not
+// occur directly there. "Must not block" would be a contract no implementation can
+// honour — even an slog.Handler writing to a pipe can block if the reader stalls — so the
+// obligation is stated as boundedness, and SlogRecorder documents the backpressure it
+// does not remove.
 type Recorder interface {
 	RecordRequest(ctx context.Context, obs RequestObservation)
 	RecordExpiry(ctx context.Context, obs ExpiryObservation)
@@ -79,6 +86,22 @@ type Recorder interface {
 // SlogRecorder is the AG-M1 Recorder: one structured log line per observation. The
 // attribute keys are the label names a metrics implementation would use, so a query
 // written against these logs translates directly.
+//
+// Emission is synchronous. slog invokes its handler on the calling goroutine, so if the
+// log sink stalls — a full pipe, a stopped reader on stderr — the handler is held *after*
+// its transaction has already committed. Correctness is unaffected: the mutation is
+// durable and the idempotency record makes the client's retry safe. Two things are
+// affected, and both matter later rather than now:
+//
+//   - the client may time out and retry a request that in fact succeeded, which the
+//     idempotency key resolves but which shows up in the outcome mix;
+//   - measured latency includes log backpressure, so a slow sink perturbs the very
+//     numbers AG-M2 exists to collect.
+//
+// AG-M1 accepts this: one line to a local stderr, at AG-M1 load, is not a plausible
+// stall. A bounded asynchronous sink (drop-on-full, flushed at shutdown) is the fix if
+// AG-M2 measurement or a remote sink makes it real, and belongs with the work that needs
+// it rather than ahead of it.
 type SlogRecorder struct {
 	logger *slog.Logger
 }

@@ -111,6 +111,39 @@ func TestMetaIncludesRequestBudget(t *testing.T) {
 	}
 }
 
+// The hold TTL changes how long each admitted reserve holds a unit, so it changes how much
+// contention a given arrival rate produces: two runs with different TTLs are not
+// comparable. It therefore has to reach the provenance payload, not just the log line at
+// startup. ReadinessTimeout rides along as the other bound validated against the chain.
+func TestMetaReportsTheTimingsThatChangeAMeasurement(t *testing.T) {
+	cfg := config.Default()
+	cfg.ReservationTTL = 90 * time.Second
+	meta := func() buildinfo.Info { return buildinfo.Collect(time.Now()) }
+	srv := New(cfg, meta, Options{})
+
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, pathMeta, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET %s = %d, want 200", pathMeta, rec.Code)
+	}
+
+	var body struct {
+		ReservationTTL   string `json:"reservation_ttl"`
+		ReadinessTimeout string `json:"readiness_timeout"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("meta body not JSON: %v", err)
+	}
+	// The configured value, not the default: a payload that reported the default would
+	// misattribute every run made with an override.
+	if body.ReservationTTL != "1m30s" {
+		t.Errorf("reservation_ttl = %q, want 1m30s", body.ReservationTTL)
+	}
+	if body.ReadinessTimeout != "1s" {
+		t.Errorf("readiness_timeout = %q, want 1s", body.ReadinessTimeout)
+	}
+}
+
 func TestHTTPServerAppliesTimeouts(t *testing.T) {
 	cfg := config.Default()
 	s := New(cfg, func() buildinfo.Info { return buildinfo.Info{} }, Options{})

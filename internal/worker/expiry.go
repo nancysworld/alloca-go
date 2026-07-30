@@ -116,9 +116,14 @@ func (e *Expiry) RunOnce(ctx context.Context) (telemetry.ExpiryObservation, erro
 //
 // A failed iteration is reported and the loop continues: expiry is opportunistic, and a
 // transient database failure must not take down a process that is still serving requests
-// perfectly well from its own settlement path. Cancellation is not a failure — during
-// shutdown the in-flight iteration's context is already done, and logging that as an
-// error would make every clean shutdown look like an incident.
+// perfectly well from its own settlement path.
+//
+// Cancellation is not a failure. During shutdown the in-flight iteration's context is
+// already done, so RunOnce returns an error and marks the observation failed — but nothing
+// is wrong, and reporting it would make **every clean shutdown** look like an incident in
+// the one signal built to be counted. Both the log line and the Failed flag are suppressed
+// on that path; the counts of what was settled before cancellation are still reported,
+// because that work committed.
 func (e *Expiry) Run(ctx context.Context) {
 	ticker := time.NewTicker(e.cfg.Interval)
 	defer ticker.Stop()
@@ -129,8 +134,13 @@ func (e *Expiry) Run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			obs, err := e.RunOnce(ctx)
+			if err != nil && ctx.Err() != nil {
+				// Shutdown cut the iteration short. Abandoned, not failed.
+				obs.Failed = false
+				err = nil
+			}
 			e.recorder.RecordExpiry(ctx, obs)
-			if err != nil && ctx.Err() == nil {
+			if err != nil {
 				// The error is diagnostic context for a human, never a telemetry
 				// dimension: the observation above already carries the fact of failure
 				// in a form that can be counted (internal/telemetry).

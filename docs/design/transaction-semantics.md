@@ -1,6 +1,6 @@
 # Transaction semantics
 
-**Status:** AG-M1 draft — **normative for the AG-M1 transactional core**
+**Status:** **Normative for the AG-M1 transactional core** — AG-M1 merged 2026-07-30
 **Scope:** the booking domain model, its state machines, the aggregate lock
 strategy, expiry settlement, the mapping from domain events and failures to the
 outcome taxonomy, and idempotent-replay behaviour. This is the design contract that
@@ -24,6 +24,16 @@ This document decides **semantics**, not implementation. Column types, SQL, and 
 wiring belong to the `postgres` adapter (PR3). Every numeric deadline referenced here
 is `[HYPOTHESIS]` per the measurement contract; the *ordering* and *classification*
 are normative.
+
+**Two entry points, for readers who do not need all of it:**
+
+- **What the system guarantees, and where each guarantee is decided** —
+  [Appendix A: invariant register](#appendix-a--invariant-register). Each invariant has a
+  stable `INV-n` identifier that code, tests and later milestones may cite, plus the test
+  that would fail if it broke.
+- **Why the model has three authorities and not one lock** — the
+  [three-authority model](#the-three-authority-model) (§2.2), which is what capacity safety
+  alone could not provide.
 
 ---
 
@@ -152,7 +162,7 @@ never an API host's clock. A client timestamp may be recorded as a telemetry dim
 but must never decide release eligibility, closure, expiry, confirmation validity, or
 cancellation capacity effects.
 
-**The rule.** Each transaction attempt resolves exactly **one** authoritative decision
+**The rule (INV-9).** Each transaction attempt resolves exactly **one** authoritative decision
 timestamp from PostgreSQL, **after acquiring the relevant slot lock**, and uses that
 value for the remainder of the attempt: settling elapsed holds, deciding release and
 closure, computing and validating `expires_at`, stamping entity `created_at`, and
@@ -239,10 +249,10 @@ consumed(slot) = |{ reservations : (slot_organisation_id, slot_id) = S, state = 
                                                                      (post-settlement)
 ```
 
-**Capacity invariant:** `consumed(slot) ≤ slot.capacity`, checked inside every
+**Capacity invariant (INV-1):** `consumed(slot) ≤ slot.capacity`, checked inside every
 capacity-increasing operation while holding the slot lock (§2). Deriving counts from
-rows means there is **no counter that can drift**, so the gate "counts consistent with
-rows" holds by construction. A denormalised counter is a possible AG-M2 throughput
+rows means there is **no counter that can drift** (INV-2), so the gate "counts consistent
+with rows" holds by construction. A denormalised counter is a possible AG-M2 throughput
 optimisation — only with its own reconciliation check and evidence — and is **out of
 scope for AG-M1**.
 
@@ -341,14 +351,24 @@ for its owner — a deadlock cycle the server breaks by aborting victims with `4
 turning valid requests into faults. Claim-creating operations (in AG-M1, `reserve`)
 therefore first take `FOR UPDATE` on the user's row in `user_identities` — created on the
 identity's first reserve, never deleted — so one user's claim creation runs one
-transaction at a time and never meets itself inside the GiST index. The three relations
-divide the model cleanly:
+transaction at a time and never meets itself inside the GiST index.
+
+<a id="the-three-authority-model"></a>
+
+**The three-authority model.** Three relations divide the model cleanly, each answering
+exactly one question and none able to answer another's:
 
 ```text
-slot row            owns capacity
-user identity row   serializes schedule mutation
-claim relation      proves schedule validity
+slot row            owns capacity                  §2      INV-1
+user identity row   serializes schedule mutation   §2.2    INV-10
+claim relation      proves schedule validity       §2.2    INV-4
 ```
+
+This is the name used throughout the project for that division, and it is recorded here
+because the division is the design, not an implementation detail of it. It is what the
+deadlock taught: treating the claim relation as though it were *also* the serialization
+point — one authority both ordering writers and validating them — is precisely what left
+concurrent overlapping inserts waiting on each other's index tuples.
 
 A writer that skips the identity lock loses liveness at worst — it can wait, or deadlock
 and fault — never correctness: the exclusion constraint remains the authority for
@@ -415,7 +435,7 @@ The instant is returned by the claim acquisition rather than through a general
 waited for, and keeping that at the call site stops it becoming something any code can
 reach for.
 
-**Lock order.** Every path uses one order:
+**Lock order (INV-10).** Every path uses one order:
 
 ```text
 slot authority  →  user identity  →  claims
@@ -609,7 +629,7 @@ refusal) it describes** — under the slot's `FOR UPDATE` lock when the request 
 slot (reserve/confirm/cancel), or, when there is no slot to lock (an `unknown_target`
 refusal, §5.5), in a transaction guarded only by the record's unique constraint. Record
 and outcome therefore commit or abort together: **one scoped key records exactly one
-terminal outcome** — the first to commit — with no window where a mutation exists
+terminal outcome** (INV-5) — the first to commit — with no window where a mutation exists
 without its record or vice versa. Every later use of that key either replays the
 recorded outcome or, if the request differs, is refused (§5.3).
 
@@ -799,3 +819,72 @@ No number here is `[MEASURED]`; deadline values are `[HYPOTHESIS]` owned by
 measurement-contract §8. All entities and examples are synthetic engineering models,
 not descriptions of any organisation's system (see
 [`../public-disclosure-policy.md`](../public-disclosure-policy.md)).
+
+---
+
+## Appendix A — Invariant register
+
+**What this is.** One row per property the AG-M1 transactional core guarantees, with the
+section that *decides* it and the test that would fail if it broke. The register **indexes;
+it does not define** — where this table and a section disagree, the section wins, and the
+table is the bug.
+
+**Identifiers are permanent.** `INV-n` is a stable handle for code comments, test names,
+review discussion and later milestones. Numbers are never reused or renumbered; a retired
+invariant is struck through with the milestone that retired it, and new ones append.
+
+**The evidence column is deliberately unflattering.** It names the test that fails when the
+property is removed — not a test that merely exercises the area. Where a property holds by
+construction, or is not directly proven, the table says so. An honest gap is more useful
+than a reassuring citation, and AG-M2 will read this column when deciding what its
+measurements may assume.
+
+### Capacity and accounting
+
+| ID | Invariant | Decided in | Proven by |
+|---|---|---|---|
+| **INV-1** | `consumed(slot) ≤ slot.capacity` at every committed state | §1.7, §2 | `postgres/concurrency_test.go` — `TestCapacityNeverExceededUnderConcurrentReserves`; `service/service_test.go` — `TestCapacityInvariantUnderRandomOperations` |
+| **INV-2** | Consumed capacity is derived from rows; no denormalised counter exists to drift | §1.7 | By construction — no counter exists. Reconciled against rows by `Repo.SlotCounts` in the concurrency suite |
+| **INV-3** | A held reservation satisfies `created_at < expires_at ≤ slot.starts_at` | §1.3, §1.6 | `postgres/time_test.go` — `TestTTLNoLongerFittingAfterLockWaitRefuses`, `TestTTLMeasuredFromDecisionPointNotArrival`; `service/service_test.go` — `TestReserveTTLOutsideWindow` |
+| **INV-4** | One identity never holds two active claims covering the same instant, on any slots | §2.2 | `postgres/schedule_test.go` — `TestConcurrentOverlappingReservesForOneIdentityYieldOneSuccess`, with negative control `TestNegativeControlDroppingTheConstraintAdmitsOverlap` |
+| **INV-8** | Expiry acts only on `held` rows, so it can never release confirmed capacity | §2.1, §3, §7 | `postgres/concurrency_test.go` — `TestExpiryCannotReleaseConfirmedCapacity`; `postgres/settle_test.go` — `TestSettleSlotLeavesConfirmedBookingsAlone` |
+| **INV-14** | Cancellation returns capacity only while the slot is open (`now < starts_at`) | §3.3 | `service/service_test.go` — `TestCancelAfterStartIsSlotClosed`, `TestCancelHeldReleasesCapacity`, `TestCancelConfirmedReleasesCapacity` |
+
+### Identity and authority
+
+| ID | Invariant | Decided in | Proven by |
+|---|---|---|---|
+| **INV-9** | Every booking decision uses one authoritative instant, resolved from PostgreSQL *after* the lock wait — never a client or API-host clock | §1.5 | `postgres/time_test.go` — `TestDecisionTimestampResolvedAfterLockWait`, `TestNowBeforeLockSlotIsAnError`, `TestHoldExpiringDuringLockWaitIsSettled`. Negative control recorded in the design note: substituting `transaction_timestamp()` fails all five time tests |
+| **INV-10** | Lock order is slot → user identity → claims; nothing acquires a slot or identity lock *after* touching `user_time_claims` | §2.2 | `postgres/schedule_test.go` — `TestConcurrentSettlementOfOneUserDoesNotDeadlock`. The violating order's deadlock is recorded as design-note control 7, deliberately not kept as a permanent test: per-run deadlock occurrence is probabilistic |
+| **INV-11** | Only user-scoped claim settlement removes an elapsed claim; slot-scoped expiry never does | §2.2 | `postgres/settle_test.go` — `TestSettleSlotReturnsCapacityAndLeavesClaimsAlone`; `postgres/schedule_test.go` — `TestNegativeControlElapsedClaimSurvivesUntilSettled` |
+| **INV-12** | A slot's identity is `(slot_organisation_id, slot_id)`; same-named slots in different organisations share neither capacity nor a lock | §1.2 | `postgres/slot_identity_test.go` — `TestSlotIdentityIsScopedToItsOwningOrganisation`, `TestReservationResolvesToItsOwnSlotNotASameNamedOne` |
+| **INV-13** | A claim is keyed by the *caller's* organisation, never the slot's, so a user is protected across every organisation they book into | §1.1, §2.2 | `postgres/schedule_test.go` — `TestScheduleIdentityIsTheCallersOrganisationNotTheSlots`; `postgres/slot_identity_test.go` — `TestScheduleInvariantHoldsAcrossSameNamedSlotsInDifferentOrganisations` |
+
+### Idempotency and outcome
+
+| ID | Invariant | Decided in | Proven by |
+|---|---|---|---|
+| **INV-5** | One scoped key records exactly one terminal outcome, written in the mutation's own transaction | §5.1, §5.2 | `postgres/concurrency_test.go` — `TestConcurrentDuplicateKeyProducesOneMutation`, `TestConcurrentKeyReuseAcrossSlotsYieldsOneMutation` |
+| **INV-6** | A replay returns the *originally recorded* outcome and never re-runs the mutation | §5.3, §5.4 | `postgres/idempotency_test.go` — `TestReplayReturnsRecordedOutcome`, `TestRefusalIsRecordedAndReplayed` |
+| **INV-7** | Every completed request has a recorded, replayable terminal outcome — including a refusal that never reached a slot | §5.5, §8 | `postgres/idempotency_test.go` — `TestUnknownTargetIsRecordedAndReplayable`, `TestConfirmUnknownReservationIsUnknownTarget` |
+| **INV-15** | A key reused for a different request is refused, never silently repurposed | §5.3 | `postgres/idempotency_test.go` — `TestKeyReusedForDifferentTargetConflicts`; `postgres/migrate_test.go` — `TestIdempotencyScopeIsTheTableIdentity` |
+| **INV-16** | A schedule conflict is a `business_refusal`, never a fault | §2.2, §4 | `postgres/schedule_test.go` — `TestScheduleConflictIsARefusalNotAFault` |
+| **INV-17** | An internal invariant violation is `internal_failure`, never a `business_refusal` (the fault line) | §4, §8 | `service/service_test.go` — `TestCommitInvariantGuard` |
+
+### State machine
+
+| ID | Invariant | Decided in | Proven by |
+|---|---|---|---|
+| **INV-18** | `held` is the only non-terminal reservation state; terminal states are irreversible | §3.1 | `domain/reservation_test.go` — `TestReservationStateTerminal`; `service/service_test.go` — `TestConfirmAlreadyCancelledIsInvalidState`, `TestCancelTwiceIsInvalidState` |
+| **INV-19** | A booking is created only by confirming a held reservation, atomically with that transition | §3.2 | `service/service_test.go` — `TestConfirmSuccessKeepsCapacityConsumed`, `TestConfirmExpiredHold` |
+| **INV-20** | Every same-slot race has exactly one winner, determined by commit order | §7 | `postgres/concurrency_test.go` — `TestConfirmCancelRaceHasOneWinner`; `postgres/schedule_test.go` — `TestReserveRacingCancellationHasOneCommittedOutcome` |
+
+### Not directly proven
+
+Recorded so the gap is visible rather than assumed. Neither is a known defect; both are
+properties no current test discriminates.
+
+| ID | Property | Decided in | Status |
+|---|---|---|---|
+| **INV-21** | An ambiguous commit yields `unknown_replayable`, and replaying the same key produces exactly one logical mutation | §5.4, §6 | The classification is unit-tested as a mapping (`postgres/classify_test.go` — `TestClassifyCommitTimeoutSQLSTATEs`), but **no test kills a connection mid-`COMMIT`**. Flagged since PR3; carried into AG-M2 |
+| **INV-22** | Decision timestamps are coherent but not monotonic: a backwards host-clock correction never revives a terminal state | §1.5 | Proven against the in-memory double only. A PostgreSQL host clock cannot be stepped from a test, so the real adapter is unproven here |

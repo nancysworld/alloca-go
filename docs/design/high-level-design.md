@@ -226,6 +226,8 @@ them all; the entries below **own** their subject and are the authority for it.
 | Package layout, dependency rules, extraction seams | [`project-structure.md`](project-structure.md) |
 | Evidence labelling, **outcome taxonomy**, SLIs, provisional SLOs, **timeout budget** | [`measurement-contract.md`](measurement-contract.md) |
 | **Domain model, state machines, aggregate lock, expiry, outcome mapping, idempotency** | [`transaction-semantics.md`](transaction-semantics.md) |
+| HTTP contract — routes, request/response shapes, status mapping, operational endpoints | [`api-surface.md`](api-surface.md) |
+| What the service emits about itself — observation types, cardinality rule, log shape | [`observability.md`](observability.md) |
 | Latency bands, deadline-budget rationale, retry policy | [`latency-timeouts-and-retries.md`](latency-timeouts-and-retries.md) |
 | Modular monolith first | [`../decisions/0001-modular-monolith-first.md`](../decisions/0001-modular-monolith-first.md) |
 | PostgreSQL as transactional authority | [`../decisions/0002-postgresql-transactional-authority.md`](../decisions/0002-postgresql-transactional-authority.md) |

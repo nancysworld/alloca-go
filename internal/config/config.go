@@ -62,6 +62,27 @@ type Config struct {
 	// deadline to complete before the server is forced closed.
 	ShutdownGrace time.Duration
 
+	// ReservationTTL is how long a hold survives without being confirmed. The duration is
+	// service-owned — a client cannot ask for a longer or shorter one — so it is
+	// configuration rather than request input (transaction-semantics §1.6).
+	//
+	// It is deliberately not part of the RequestBudget chain: that chain bounds one
+	// request, while this bounds a hold designed to outlive the request that created it.
+	ReservationTTL time.Duration
+
+	// ReadinessTimeout bounds the readiness probe's dependency check. Validate enforces
+	//
+	//	db_acquire_cap < readiness_timeout <= server_deadline
+	//
+	// Lower bound: the check acquires a pooled connection *and* round-trips a statement,
+	// so a bound equal to the acquisition cap could expire on the round trip after
+	// acquisition had succeeded within its own budget — reporting a healthy database as
+	// unready, and making the probe stricter than the request path it predicts.
+	//
+	// Upper bound: a probe that can outlast the service's own per-request deadline is
+	// answering on the wrong timescale for something polled every few seconds.
+	ReadinessTimeout time.Duration
+
 	// RequestBudget is the per-request deadline chain (measurement-contract §8).
 	RequestBudget RequestBudget
 }
@@ -188,6 +209,8 @@ func Default() Config {
 		IdleTimeout:         60 * time.Second,
 		WriteResponseMargin: 500 * time.Millisecond,
 		ShutdownGrace:       15 * time.Second,
+		ReservationTTL:      2 * time.Minute,
+		ReadinessTimeout:    1 * time.Second,
 		RequestBudget: RequestBudget{
 			ClientDeadline:   6000 * time.Millisecond,
 			ServerDeadline:   5000 * time.Millisecond,
@@ -209,6 +232,8 @@ const (
 	envIdleTimeout         = "ALLOCA_IDLE_TIMEOUT"
 	envWriteResponseMargin = "ALLOCA_WRITE_RESPONSE_MARGIN"
 	envShutdownGrace       = "ALLOCA_SHUTDOWN_GRACE"
+	envReservationTTL      = "ALLOCA_RESERVATION_TTL"
+	envReadinessTimeout    = "ALLOCA_READINESS_TIMEOUT"
 
 	envClientDeadline   = "ALLOCA_CLIENT_DEADLINE"
 	envServerDeadline   = "ALLOCA_SERVER_DEADLINE"
@@ -244,6 +269,8 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		{envIdleTimeout, &cfg.IdleTimeout},
 		{envWriteResponseMargin, &cfg.WriteResponseMargin},
 		{envShutdownGrace, &cfg.ShutdownGrace},
+		{envReservationTTL, &cfg.ReservationTTL},
+		{envReadinessTimeout, &cfg.ReadinessTimeout},
 		{envClientDeadline, &cfg.RequestBudget.ClientDeadline},
 		{envServerDeadline, &cfg.RequestBudget.ServerDeadline},
 		{envAdmissionCap, &cfg.RequestBudget.AdmissionCap},
@@ -306,6 +333,21 @@ func (c Config) Validate() error {
 		return fmt.Errorf("config: WriteResponseMargin must be positive (got %s)", c.WriteResponseMargin)
 	}
 
+	// ReservationTTL has no relationship to the deadline chain — it bounds a hold that
+	// outlives the request by design — but it must still be positive, because
+	// service.New panics on a non-positive TTL.
+	//
+	// Load already rejects a non-positive ALLOCA_RESERVATION_TTL along with every other
+	// duration override, so this is not the environment path. It closes the
+	// Validate-without-Load path: a Config built in code (config.Default() mutated, or a
+	// future caller assembling one directly) reaches service.New without ever passing
+	// through Load's table. That is the same gap OpenPool was hardened against in PR3,
+	// and the same §8.1 discipline — a constraint is enforced where the value is
+	// consumed, not only at the one gate we happen to remember.
+	if c.ReservationTTL <= 0 {
+		return fmt.Errorf("config: ReservationTTL must be positive (got %s)", c.ReservationTTL)
+	}
+
 	// Write-phase relationship (§8.1 clause 2): the Go context deadline must fire
 	// before the connection-level write timeout, with margin for encoding and writing
 	// the response, so an overrun is a classified timeout_server/timeout_db rather
@@ -317,6 +359,19 @@ func (c Config) Validate() error {
 	// difference against the margin — no addition, no overflow.
 	if c.WriteTimeout <= b.ServerDeadline || c.WriteTimeout-b.ServerDeadline <= c.WriteResponseMargin {
 		return fmt.Errorf("config: WriteTimeout (%s) must be > server_deadline (%s) + WriteResponseMargin (%s)", c.WriteTimeout, b.ServerDeadline, c.WriteResponseMargin)
+	}
+
+	// Readiness relationship; see Config.ReadinessTimeout for why each bound holds.
+	// Comparisons only, never a sum: adding two int64 durations risks the overflow that
+	// would let an unsafe config through (the same rule as the write-phase check above).
+	if c.ReadinessTimeout <= 0 {
+		return fmt.Errorf("config: ReadinessTimeout must be positive (got %s)", c.ReadinessTimeout)
+	}
+	if c.ReadinessTimeout <= b.DBAcquireCap {
+		return fmt.Errorf("config: ReadinessTimeout (%s) must be > db_acquire_cap (%s): the probe acquires a connection and round-trips a statement", c.ReadinessTimeout, b.DBAcquireCap)
+	}
+	if c.ReadinessTimeout > b.ServerDeadline {
+		return fmt.Errorf("config: ReadinessTimeout (%s) must be <= server_deadline (%s)", c.ReadinessTimeout, b.ServerDeadline)
 	}
 
 	return nil

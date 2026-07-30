@@ -652,6 +652,8 @@ docs/
     system-context.md
     measurement-contract.md
     transaction-semantics.md
+    api-surface.md
+    observability.md
     authority-and-sharding.md
     aws-production-slice.md
   decisions/

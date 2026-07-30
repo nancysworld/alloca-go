@@ -292,10 +292,14 @@ operation is then evaluated against the settled state.
 - **Boundary:** a hold is elapsed when `now >= expires_at` (equivalently
   `expires_at <= now`). This boundary is used consistently everywhere expiry is
   evaluated.
-- The background worker (PR5) performs the **same** transition proactively, so
-  abandoned capacity is released promptly and the number of unsettled rows stays
-  bounded. It is an optimisation of *when* settlement happens, **not** a correctness
-  prerequisite.
+- The background worker performs the **same** transition proactively, so abandoned
+  capacity is released promptly and the number of unsettled rows stays bounded. It is an
+  optimisation of *when* settlement happens, **not** a correctness prerequisite. It enters
+  through `Service.SettleSlot`, which runs this same settlement under the same slot lock
+  against the same authoritative post-lock instant — so a hold expired by the worker and
+  one expired by a concurrent request are expired by identical rules. Being an
+  optimisation rather than an authority is why it needs no leader election and no
+  exactly-once machinery: two workers would be wasteful, never wrong.
 - Settling within the lock closes three holes: worker lag can no longer cause an
   artificial sold-out (`reserve` settles first), `confirm` on an elapsed hold refuses
   correctly, and `cancel` cannot succeed on an already-elapsed hold.

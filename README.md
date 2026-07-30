@@ -45,8 +45,8 @@ architecture at a glance, and maps which document owns each detailed decision.
 Tests come in two tiers. The default gate is hermetic and needs no services. The
 **integration** tier proves the properties that only exist against a real PostgreSQL —
 capacity safety under genuinely concurrent transactions, the post-lock decision
-timestamp, and the idempotency-key race — so it is behind the `integration` build tag
-and requires a database:
+timestamp, the idempotency-key race, and the assembled HTTP-to-database path — so it is
+behind the `integration` build tag and requires a database:
 
 ```sh
 make db-up             # start a local PostgreSQL in Docker
@@ -54,11 +54,62 @@ make test-integration  # run the integration tier under -race
 make db-down
 ```
 
-Migrations are applied by a separate binary, never by a serving replica:
+## Running the service
+
+From cold — starts a local PostgreSQL, migrates it, then serves:
 
 ```sh
-DATABASE_URL=... go run ./cmd/alloca-migrate
+make dev
 ```
+
+The steps are also available individually, and `make run` deliberately does **not**
+migrate. Migrations are applied by a separate binary, never by a serving replica, so
+replicas never race the same DDL on startup ([ADR-0002](docs/decisions/0002-postgresql-transactional-authority.md));
+a `run` that quietly migrated would make local development the one place that rule does not
+hold:
+
+```sh
+make db-up     # local PostgreSQL on port 55432
+make migrate   # once, before a new version serves traffic
+make run       # serves on :8080
+make db-down
+```
+
+Every target defaults `DATABASE_URL` to the local container and accepts an override, so
+the same commands work against another database:
+
+```sh
+make run DATABASE_URL='postgres://user:pass@host:5432/alloca?sslmode=require'
+```
+
+### Smoke-testing a running service
+
+```sh
+make dev      # in one terminal
+make smoke    # in another
+```
+
+`make smoke` drives the running binary over a real socket: the operational endpoints, the
+read route, reserve, an idempotent replay with the body fields reordered, each refusal
+shape, then confirm and cancel. It is the one check that exercises the configured
+`http.Server`, its timeouts and the wiring in `cmd/alloca-go` — the integration tests reach
+the handler through `httptest` and never bind a socket.
+
+It seeds its own slot with SQL, because AG-M1 has no slot-creation endpoint, and removes
+its rows afterwards. `BASE` overrides the target service.
+
+`MAX_TIME` is how long each request waits — curl's own patience, which no server-side
+deadline affects. Raise it when the service is paused in a debugger, or every request fails
+with an empty body while you are still reading the stack:
+
+```sh
+make smoke MAX_TIME=600
+```
+
+The HTTP contract — routes, request and response shapes, status mapping, and the
+`/healthz`, `/readyz`, `/meta` operational endpoints — is documented in
+[`docs/design/api-surface.md`](docs/design/api-surface.md). What the service emits about
+itself is in [`docs/design/observability.md`](docs/design/observability.md).
 
 ## Roadmap
 

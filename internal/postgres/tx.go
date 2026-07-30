@@ -284,12 +284,20 @@ func (t *tx) PutBooking(ctx context.Context, b domain.Booking) error {
 // the claim authority was actually acquired, or domain.ErrScheduleConflict when the
 // exclusion constraint rejects it as overlapping an existing claim of the same user.
 //
-// The insert runs inside a savepoint (pgx models a nested Begin as one). A constraint
-// violation aborts the *current* transaction block in PostgreSQL, and this one is not
-// over: the caller still has to record the refusal and commit. Rolling back to the
-// savepoint discards only the failed insert and leaves the surrounding transaction
-// usable, which is what lets a race that loses to a concurrent commit still produce a
-// clean business refusal rather than a fault.
+// The insert runs inside a savepoint (pgx models a nested Begin as one), and what the
+// rollback recovers is not data — the rejected row was never written — but the
+// transaction's *state*. In PostgreSQL an error aborts the whole transaction block, not
+// just the failing statement: every subsequent command then fails with 25P02 and the
+// COMMIT is turned into a ROLLBACK. This transaction is not over, because the caller still
+// has to record the refusal and commit it. Rolling back to the savepoint clears that
+// aborted state and leaves the surrounding transaction usable, which is what turns an
+// insert the exclusion constraint rejected into a clean business refusal rather than a
+// fault — and keeps the idempotency record, without which a retry would re-run instead of
+// replaying.
+//
+// The rejection usually means the user already holds a claim committed long ago; it can
+// equally be one that committed while this insert waited (see below). Neither is a race in
+// any sense that needs recovering from — both are the constraint doing its job.
 //
 // The timestamp comes from RETURNING clock_timestamp() on the insert itself, so it is
 // evaluated once the row is in — including any time spent blocked behind a conflicting

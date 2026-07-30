@@ -4,15 +4,23 @@
 // realisation of docs/design/transaction-semantics.md.
 //
 // Dependency rule (docs/design/project-structure.md §4): this package imports only
-// the standard library. It owns its interfaces (Repository, Tx, Clock, IDGen);
-// adapters such as the in-memory reference store and the future PostgreSQL adapter
-// implement them. No transport (HTTP) or persistence (SQL, pgx) type ever appears
-// here.
+// the standard library. It owns its interfaces (Repository, Tx, IDGen); adapters such as
+// the in-memory reference store and the PostgreSQL adapter implement them. No transport
+// (HTTP) or persistence (SQL, pgx) type ever appears here.
 //
-// The three entities are the Slot (the scarce resource and write authority), the
-// Reservation (a one-unit hold), and the Booking (the durable confirmed
-// commitment), plus a durable IdempotencyRecord. AG-M1 models single-unit holds
-// only; reservation quantities and conserved balances are AG-M6.
+// There is deliberately no Clock port. Authoritative time belongs to the transaction and
+// is established by Tx.LockSlot after the row-lock wait (transaction-semantics §1.5), so
+// a service-level clock would be a second, competing source of semantic time. The
+// in-memory double keeps an injectable clock of its own, which is a property of that
+// double and not of this package.
+//
+// The booking entities are the Slot (the scarce resource and write authority), the
+// Reservation (a one-unit hold), and the Booking (the durable confirmed commitment),
+// plus a durable IdempotencyRecord. Alongside them sit the two relations that make one
+// identity's schedule safe: the user identity that serializes its schedule mutations, and
+// the ScheduleClaim that proves schedule validity — the three-authority model of
+// transaction-semantics §2.2. AG-M1 models single-unit holds only; reservation
+// quantities and conserved balances are AG-M6.
 package domain
 
 // ContractVersion identifies the request/response contract the idempotency request

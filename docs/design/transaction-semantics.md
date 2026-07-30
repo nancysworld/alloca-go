@@ -39,17 +39,22 @@ are normative.
 
 ## 1. Domain model
 
-Three entities plus a durable idempotency record. Single-unit holds
-(implementation-plan §3.1): a reservation holds exactly **one** unit of a slot's
-capacity; capacity is an integer count. Quantities and conserved balances are AG-M6
-and are deliberately absent here.
+Three booking entities, the user identity they are booked for, and two supporting
+relations. Single-unit holds (implementation-plan §3.1): a reservation holds exactly
+**one** unit of a slot's capacity; capacity is an integer count. Quantities and conserved
+balances are AG-M6 and are deliberately absent here.
 
 | Entity | Role | Identity |
 |---|---|---|
 | **Slot** | The scarce resource and its **write authority** (the aggregate root). A time-windowed unit with a capacity. | `(slot_organisation_id, slot_id)` — §1.2 |
+| **User identity** | Whoever or whatever the booked time belongs to, and the **serialization point for that identity's schedule mutations** (§2.2). Carries no schedule state of its own; the row exists so claim-creating transactions for one identity queue rather than meet inside the exclusion index. Created on the identity's first reserve, never deleted. | `(user_organisation_id, user_id)` — §1.1 |
 | **Reservation** | A temporary, expiring hold on one unit of a slot. | server-assigned `reservation_id` |
 | **Booking** | The durable confirmed commitment created when a reservation is confirmed. | server-assigned `booking_id` |
+| **Schedule claim** | The interval one identity has committed to, and the **authority on schedule validity** (§2.2). One row per live claim; the exclusion constraint on it is what refuses an overlap. | keyed by `reservation_id` — §2.2 |
 | **Idempotency record** | A durable record of one logical mutation request and its recorded outcome (§5). | scoped key (§5.1) |
+
+The user identity and the schedule claim are the second and third authorities of the
+[three-authority model](#the-three-authority-model) (§2.2); the slot is the first.
 
 ### 1.1 Identity dimensions
 
@@ -162,11 +167,15 @@ never an API host's clock. A client timestamp may be recorded as a telemetry dim
 but must never decide release eligibility, closure, expiry, confirmation validity, or
 cancellation capacity effects.
 
-**The rule (INV-9).** Each transaction attempt resolves exactly **one** authoritative decision
-timestamp from PostgreSQL, **after acquiring the relevant slot lock**, and uses that
-value for the remainder of the attempt: settling elapsed holds, deciding release and
-closure, computing and validating `expires_at`, stamping entity `created_at`, and
-constructing the idempotency record.
+**The rule (INV-9).** Every time-sensitive decision uses an authoritative timestamp from
+PostgreSQL, resolved **after the authority wait that precedes it** — never a client
+timestamp and never an API host's clock. An attempt resolves its first such instant after
+acquiring the slot lock and uses it for everything decided from there: settling elapsed
+holds, deciding release and closure, computing and validating `expires_at`, stamping entity
+`created_at`, and constructing the idempotency record. Where the attempt goes on to wait for
+a further authority, the instant is re-resolved after that wait and the later value
+supersedes the earlier one for every decision made from then on (see "Every authority wait"
+below).
 
 Two properties make this the right instant, and both are load-bearing:
 
@@ -681,8 +690,9 @@ target — `target_id` lives only in `request_hash` (§5.1):
 
 A well-formed request whose target (§5.1) does not exist is a
 `business_refusal` (`unknown_target`, §4). It has **no slot to lock and no capacity to
-mutate**, but — like every completed request — it still records its terminal outcome, so
-a retry replays it and the key cannot later be silently repurposed for a valid target.
+mutate**, but — like every well-formed mutation request that reaches the domain path — it
+still records its terminal outcome, so a retry replays it and the key cannot later be
+silently repurposed for a valid target.
 The refusal is recorded in a transaction guarded only by the scoped-key **unique
 constraint**:
 
@@ -733,12 +743,26 @@ each expiry **means**.
 
 ## 7. Concurrency and race resolution (normative)
 
-All same-slot operations serialize on the slot's `FOR UPDATE` lock (§2), so every race
-has exactly one winner determined by commit order.
+All same-slot operations serialize on the slot's `FOR UPDATE` lock (§2), so no operation
+ever decides from state a concurrent transaction has not yet committed, and every committed
+state is reachable by some valid commit-ordered sequence of transitions. Where two
+operations compete for the **same unit** or attempt **incompatible transitions** on the same
+entity, exactly one wins and the other observes the committed result — the cases below.
+Operations that are not in competition may all succeed: concurrent reserves against a slot
+with capacity to spare are serialized but not rivals.
 
-- **cancel vs confirm** on one held reservation: both lock the slot; the first commits
-  and defines the terminal transition; the second observes it and returns
-  `business_refusal` (no live unit in the expected state).
+- **cancel vs confirm** on one held reservation: both lock the slot, and the order decides
+  which of two valid sequences occurs.
+  - cancel commits first → the reservation is `cancelled`; confirm then finds no `held`
+    reservation and returns `business_refusal` (`invalid_state`).
+  - confirm commits first → the reservation is `confirmed` and its booking `active`; the
+    cancel that follows is **not** refused, because there is now a live unit to release
+    (§3.3) — it cancels the booking. Both operations returning `admitted_success` is
+    therefore a correct outcome of this race, not a double mutation: it is the ordinary
+    confirm-then-cancel sequence, arrived at concurrently.
+
+  What must never happen is a mutation with no valid predecessor, or neither operation
+  reaching a terminal answer.
 - **confirm vs expiry** on one held reservation: serialized on the slot lock.
   - expiry (worker or lazy settlement) commits first → reservation `expired`; a later
     confirm sees non-`held` → `business_refusal` (`reservation_expired`).
@@ -787,14 +811,24 @@ domain answers and are `business_refusal`; only genuinely malformed input is
 | One idempotency key ⇒ one logical mutation | Scoped-key record written in the mutation's transaction under a unique constraint (§5.1–§5.2) |
 | Replay after a lost response returns the original outcome | Recorded terminal outcome returned with `replay=true` (§5.3–§5.4) |
 | Expiry cannot release confirmed capacity | Expiry acts only on `held` rows and serializes with confirm on the slot lock (§2.1, §3, §7) |
-| Cancellation/confirmation races have one valid winner | Serialized on the slot lock; loser gets `business_refusal` (§7) |
+| Cancellation/confirmation races have one valid winner | Serialized on the slot lock; the order decides which valid sequence occurs, and an incompatible transition gets `business_refusal` (§7) |
+| One identity cannot hold two overlapping active claims | Claim inserted under the identity lock; the exclusion constraint on `user_time_claims` is the check, and refuses an overlap as `schedule_conflict` (§2.2) |
+| Two organisations may own same-named slots without sharing capacity or a lock | Slot identity is the pair `(slot_organisation_id, slot_id)`; every read, lock and foreign key carries both halves (§1.2) |
 | Timed-out / unknown-outcome transactions accounted for explicitly | Per-layer timeout → distinct outcome; unknown → `unknown_replayable`, replay-safe (§4, §6) |
 | Abandoned holds do not permanently consume capacity | Lazy settle-under-lock plus the background worker (§2.1) |
 
-The gates that require *real* concurrent SQL (capacity safety, race winners,
+The gates that require *real* concurrent SQL (capacity safety, race outcomes,
 same-transaction idempotency under contention) are **proven in PR3** against
 PostgreSQL; the state-machine, settlement, and resolution logic is proven in PR2
-against the in-memory repository with a controllable `Clock`.
+against the in-memory repository with a controllable `Clock`. The two identity gates —
+the schedule invariant and composite slot identity — arrive with **PR4**, which is where
+`user_identities`, `user_time_claims` and the exclusion constraint land, and where the
+negative controls for both live. The abandoned-holds gate is completed by **PR5**'s expiry
+worker, which returns capacity nobody is asking for; the settle-under-lock half of it is
+PR2/PR3.
+
+Per-invariant evidence, including what is *not* directly proven, is in
+[Appendix A](#appendix-a--invariant-register).
 
 ---
 
@@ -841,7 +875,7 @@ measurements may assume.
 
 ### Capacity and accounting
 
-| ID | Invariant | Decided in | Proven by |
+| ID | Invariant | Decided in | Evidence / status |
 |---|---|---|---|
 | **INV-1** | `consumed(slot) ≤ slot.capacity` at every committed state | §1.7, §2 | `postgres/concurrency_test.go` — `TestCapacityNeverExceededUnderConcurrentReserves`; `service/service_test.go` — `TestCapacityInvariantUnderRandomOperations` |
 | **INV-2** | Consumed capacity is derived from rows; no denormalised counter exists to drift | §1.7 | By construction — no counter exists. Reconciled against rows by `Repo.SlotCounts` in the concurrency suite |
@@ -852,9 +886,9 @@ measurements may assume.
 
 ### Identity and authority
 
-| ID | Invariant | Decided in | Proven by |
+| ID | Invariant | Decided in | Evidence / status |
 |---|---|---|---|
-| **INV-9** | Every booking decision uses one authoritative instant, resolved from PostgreSQL *after* the lock wait — never a client or API-host clock | §1.5 | `postgres/time_test.go` — `TestDecisionTimestampResolvedAfterLockWait`, `TestNowBeforeLockSlotIsAnError`, `TestHoldExpiringDuringLockWaitIsSettled`. Negative control recorded in the design note: substituting `transaction_timestamp()` fails all five time tests |
+| **INV-9** | Every time-sensitive decision uses an authoritative PostgreSQL instant resolved *after the authority wait that precedes it*; a later wait supersedes the earlier instant. Never a client or API-host clock | §1.5, §2.2 | Slot-lock wait: `postgres/time_test.go` — `TestDecisionTimestampResolvedAfterLockWait`, `TestNowBeforeLockSlotIsAnError`, `TestHoldExpiringDuringLockWaitIsSettled`. Later waits: `postgres/schedule_test.go` — `TestIdentityLockWaitRevalidatesTheSlotWindow`, `TestIdentityLockWaitRecomputesTheHoldTTL`, `TestClaimWaitRevalidatesTheSlotWindow`, `TestClaimWaitRecomputesTheHoldTTL`. Negative control in the design note: substituting `transaction_timestamp()` fails all five slot-lock time tests |
 | **INV-10** | Lock order is slot → user identity → claims; nothing acquires a slot or identity lock *after* touching `user_time_claims` | §2.2 | `postgres/schedule_test.go` — `TestConcurrentSettlementOfOneUserDoesNotDeadlock`. The violating order's deadlock is recorded as design-note control 7, deliberately not kept as a permanent test: per-run deadlock occurrence is probabilistic |
 | **INV-11** | Only user-scoped claim settlement removes an elapsed claim; slot-scoped expiry never does | §2.2 | `postgres/settle_test.go` — `TestSettleSlotReturnsCapacityAndLeavesClaimsAlone`; `postgres/schedule_test.go` — `TestNegativeControlElapsedClaimSurvivesUntilSettled` |
 | **INV-12** | A slot's identity is `(slot_organisation_id, slot_id)`; same-named slots in different organisations share neither capacity nor a lock | §1.2 | `postgres/slot_identity_test.go` — `TestSlotIdentityIsScopedToItsOwningOrganisation`, `TestReservationResolvesToItsOwnSlotNotASameNamedOne` |
@@ -862,22 +896,22 @@ measurements may assume.
 
 ### Idempotency and outcome
 
-| ID | Invariant | Decided in | Proven by |
+| ID | Invariant | Decided in | Evidence / status |
 |---|---|---|---|
 | **INV-5** | One scoped key records exactly one terminal outcome, written in the mutation's own transaction | §5.1, §5.2 | `postgres/concurrency_test.go` — `TestConcurrentDuplicateKeyProducesOneMutation`, `TestConcurrentKeyReuseAcrossSlotsYieldsOneMutation` |
 | **INV-6** | A replay returns the *originally recorded* outcome and never re-runs the mutation | §5.3, §5.4 | `postgres/idempotency_test.go` — `TestReplayReturnsRecordedOutcome`, `TestRefusalIsRecordedAndReplayed` |
-| **INV-7** | Every completed request has a recorded, replayable terminal outcome — including a refusal that never reached a slot | §5.5, §8 | `postgres/idempotency_test.go` — `TestUnknownTargetIsRecordedAndReplayable`, `TestConfirmUnknownReservationIsUnknownTarget` |
+| **INV-7** | Every **well-formed mutation request that reaches the domain path and commits a definite terminal outcome** has that outcome recorded and replayable — including `unknown_target`, which never reaches a slot. Deliberately excluded: `invalid_request` (rejected at the transport edge, and may carry no idempotency key to scope a record by), faults, and `unknown_replayable` (whose commit state is by definition uncertain — §5.4) | §5.5, §8 | `postgres/idempotency_test.go` — `TestUnknownTargetIsRecordedAndReplayable`, `TestConfirmUnknownReservationIsUnknownTarget`, `TestFailedTransactionPersistsNothing` |
 | **INV-15** | A key reused for a different request is refused, never silently repurposed | §5.3 | `postgres/idempotency_test.go` — `TestKeyReusedForDifferentTargetConflicts`; `postgres/migrate_test.go` — `TestIdempotencyScopeIsTheTableIdentity` |
 | **INV-16** | A schedule conflict is a `business_refusal`, never a fault | §2.2, §4 | `postgres/schedule_test.go` — `TestScheduleConflictIsARefusalNotAFault` |
 | **INV-17** | An internal invariant violation is `internal_failure`, never a `business_refusal` (the fault line) | §4, §8 | `service/service_test.go` — `TestCommitInvariantGuard` |
 
 ### State machine
 
-| ID | Invariant | Decided in | Proven by |
+| ID | Invariant | Decided in | Evidence / status |
 |---|---|---|---|
 | **INV-18** | `held` is the only non-terminal reservation state; terminal states are irreversible | §3.1 | `domain/reservation_test.go` — `TestReservationStateTerminal`; `service/service_test.go` — `TestConfirmAlreadyCancelledIsInvalidState`, `TestCancelTwiceIsInvalidState` |
 | **INV-19** | A booking is created only by confirming a held reservation, atomically with that transition | §3.2 | `service/service_test.go` — `TestConfirmSuccessKeepsCapacityConsumed`, `TestConfirmExpiredHold` |
-| **INV-20** | Every same-slot race has exactly one winner, determined by commit order | §7 | `postgres/concurrency_test.go` — `TestConfirmCancelRaceHasOneWinner`; `postgres/schedule_test.go` — `TestReserveRacingCancellationHasOneCommittedOutcome` |
+| **INV-20** | Same-slot operations serialize, so no operation decides from uncommitted state and every committed state is reachable by a valid commit-ordered sequence of transitions. Where two operations compete for the same unit or attempt incompatible transitions, exactly one wins — but non-competing operations may all succeed (confirm-then-cancel is a valid sequence, not a double mutation; so are concurrent reserves against spare capacity) | §7 | `postgres/concurrency_test.go` — `TestConfirmCancelRaceHasOneWinner` (which explicitly admits the confirm-then-cancel both-succeed case); `postgres/schedule_test.go` — `TestReserveRacingCancellationHasOneCommittedOutcome` |
 
 ### Not directly proven
 

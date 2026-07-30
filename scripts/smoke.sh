@@ -28,6 +28,17 @@ set -uo pipefail
 BASE="${BASE:-http://localhost:8080}"
 DSN="${DATABASE_URL:-postgres://alloca:alloca@localhost:55432/alloca?sslmode=disable}"
 
+# How long each request waits for a reply. This is curl's own patience and is unrelated to
+# the service's deadline budget: raising ALLOCA_SERVER_DEADLINE does nothing here, because
+# the client gives up on its own schedule.
+#
+# Ten seconds suits an ordinary run. Raise it when the service is stopped at a breakpoint,
+# or every request fails with exit 28 and an empty body while you are still reading the
+# stack:
+#
+#   make smoke MAX_TIME=600
+MAX_TIME="${MAX_TIME:-10}"
+
 ORG="org-1"
 RUN="smoke-$$"
 SLOT="$RUN"
@@ -59,7 +70,7 @@ trap cleanup EXIT
 check() {
   local label="$1" want_status="$2" want_body="$3"; shift 3
   local out status body
-  out=$(curl -sS -m 10 -w $'\n%{http_code}' "$@" 2>&1)
+  out=$(curl -sS -m "$MAX_TIME" -w $'\n%{http_code}' "$@" 2>&1)
   status="${out##*$'\n'}"
   body="${out%$'\n'*}"
 
@@ -80,13 +91,27 @@ check() {
   LAST_BODY="$body"
 }
 
-json_field() { python3 -c "import sys,json;print(json.load(sys.stdin).get('$1',''))" <<<"$LAST_BODY"; }
+# Returns "" for anything that is not a JSON object, rather than a traceback. The body is
+# whatever the last request produced, which on a transport failure is a curl error string —
+# and a stack trace there buries the message that actually explains the run.
+json_field() {
+  python3 -c "
+import sys, json
+try:
+    v = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+print(v.get('$1', '') if isinstance(v, dict) else '')" <<<"$LAST_BODY"
+}
 
 echo "service:  $BASE"
 echo "run id:   $RUN"
 echo
 
-curl -sS -m 5 -o /dev/null "$BASE/healthz" 2>/dev/null \
+# --connect-timeout, not -m: this asks "is anything listening", not "does it reply quickly".
+# A refused connection fails immediately either way, while a service paused in a debugger
+# still counts as up and is allowed the full MAX_TIME to answer.
+curl -sS --connect-timeout 5 -m "$MAX_TIME" -o /dev/null "$BASE/healthz" 2>/dev/null \
   || { echo "smoke: $BASE is not answering — start it with 'make dev'"; exit 2; }
 
 echo "operational surface"

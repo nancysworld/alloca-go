@@ -98,6 +98,14 @@ the handler through `httptest` and never bind a socket.
 It seeds its own slot with SQL, because AG-M1 has no slot-creation endpoint, and removes
 its rows afterwards. `BASE` overrides the target service.
 
+`MAX_TIME` is how long each request waits — curl's own patience, which no server-side
+deadline affects. Raise it when the service is paused in a debugger, or every request fails
+with an empty body while you are still reading the stack:
+
+```sh
+make smoke MAX_TIME=600
+```
+
 The HTTP contract — routes, request and response shapes, status mapping, and the
 `/healthz`, `/readyz`, `/meta` operational endpoints — is documented in
 [`docs/design/api-surface.md`](docs/design/api-surface.md). What the service emits about

@@ -25,8 +25,11 @@ GOLANGCI_LINT_STAMP   := $(TOOLBIN)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 # exist without one. They are behind the `integration` build tag so the default gate
 # stays hermetic and fast.
 DATABASE_URL ?= postgres://alloca:alloca@localhost:55432/alloca?sslmode=disable
-# Where `make smoke` looks for a running service.
+# Where `make smoke` looks for a running service, and how long each of its requests waits.
+# Raise MAX_TIME when the service is paused in a debugger: it is curl's own patience, so no
+# server-side deadline affects it.
 BASE         ?= http://localhost:8080
+MAX_TIME     ?= 10
 PGCONTAINER  ?= alloca-pg
 PGIMAGE      ?= postgres:16-alpine
 PGPORT       ?= 55432
@@ -133,7 +136,7 @@ dev:
 
 ## smoke: exercise a running service over a real socket (needs `make dev` elsewhere)
 smoke:
-	@BASE="$(BASE)" DATABASE_URL="$(DATABASE_URL)" ./scripts/smoke.sh
+	@BASE="$(BASE)" MAX_TIME="$(MAX_TIME)" DATABASE_URL="$(DATABASE_URL)" ./scripts/smoke.sh
 
 ## tidy: tidy the module graph
 tidy:

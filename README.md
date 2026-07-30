@@ -82,6 +82,22 @@ the same commands work against another database:
 make run DATABASE_URL='postgres://user:pass@host:5432/alloca?sslmode=require'
 ```
 
+### Smoke-testing a running service
+
+```sh
+make dev      # in one terminal
+make smoke    # in another
+```
+
+`make smoke` drives the running binary over a real socket: the operational endpoints, the
+read route, reserve, an idempotent replay with the body fields reordered, each refusal
+shape, then confirm and cancel. It is the one check that exercises the configured
+`http.Server`, its timeouts and the wiring in `cmd/alloca-go` — the integration tests reach
+the handler through `httptest` and never bind a socket.
+
+It seeds its own slot with SQL, because AG-M1 has no slot-creation endpoint, and removes
+its rows afterwards. `BASE` overrides the target service.
+
 The HTTP contract — routes, request and response shapes, status mapping, and the
 `/healthz`, `/readyz`, `/meta` operational endpoints — is documented in
 [`docs/design/api-surface.md`](docs/design/api-surface.md). What the service emits about

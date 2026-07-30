@@ -18,13 +18,15 @@ GOLANGCI_LINT         := $(TOOLBIN)/golangci-lint
 GOLANGCI_LINT_STAMP   := $(TOOLBIN)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 
 .PHONY: all ci fmt fmt-check vet lint build test test-race test-integration \
-        db-up db-down migrate run dev tidy tools clean
+        db-up db-down migrate run dev smoke tidy tools clean
 
 # Integration tests need a real PostgreSQL: the properties they prove (capacity safety
 # under concurrent transactions, post-lock decision time, the scoped-key race) do not
 # exist without one. They are behind the `integration` build tag so the default gate
 # stays hermetic and fast.
 DATABASE_URL ?= postgres://alloca:alloca@localhost:55432/alloca?sslmode=disable
+# Where `make smoke` looks for a running service.
+BASE         ?= http://localhost:8080
 PGCONTAINER  ?= alloca-pg
 PGIMAGE      ?= postgres:16-alpine
 PGPORT       ?= 55432
@@ -128,6 +130,10 @@ dev:
 	$(MAKE) db-up
 	$(MAKE) migrate
 	$(MAKE) run
+
+## smoke: exercise a running service over a real socket (needs `make dev` elsewhere)
+smoke:
+	@BASE="$(BASE)" DATABASE_URL="$(DATABASE_URL)" ./scripts/smoke.sh
 
 ## tidy: tidy the module graph
 tidy:

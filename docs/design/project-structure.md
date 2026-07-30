@@ -21,6 +21,7 @@ before that code lands.
 | `cmd/` | Executable composition roots — `main` packages only. One subdirectory per binary. |
 | `internal/` | All application code. `internal/` prevents import by anything outside this module, keeping the package layout a private implementation detail. |
 | `docs/` | Design docs, decision records, planning, reports, disclosure policy. |
+| `scripts/` | Operator and developer shell scripts invoked from the Makefile. Never application logic: anything a Go test or a Go binary should own belongs in `internal/` or `cmd/`. |
 | `.github/` | CI workflows. |
 | `bin/` | Locally provisioned dev tools (git-ignored); never source. |
 

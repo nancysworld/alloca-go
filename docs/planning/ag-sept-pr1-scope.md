@@ -33,33 +33,42 @@ Deliverable 6 is mandatory and not descopable: `measurement-contract.md` §5.5 r
 control that **fails when response validation is silently disabled**, so a reported success
 cannot be an unchecked `200`.
 
-## 3. Open decisions
+## 3. Decisions (settled 2026-07-31, Nancy's call)
 
-Recorded here rather than settled unilaterally, because each one adds a dependency, a
-binary, or an endpoint.
+Each of these adds a dependency, a binary or an endpoint, so they were decided before
+implementation rather than during it.
 
-### 3.1 Metrics backend
+### 3.1 Metrics backend — `prometheus/client_golang`
 
-`prometheus/client_golang` versus a small in-repo recorder exposing the Prometheus text
-format. The plan calls a Prometheus-compatible recorder "the preferred starting point" while
-leaving the backend an implementation choice (§6.1). The trade is a well-understood
-dependency and free histogram/registry machinery against no new runtime dependency and a
-recorder we own.
+The plan calls a Prometheus-compatible recorder "the preferred starting point" (§6.1), and
+this is the first observability runtime dependency. Chosen over a hand-rolled recorder
+because histogram bucketing and registry machinery are not where PR1's two days should go,
+and because it scrapes cleanly under `kind`/EKS later without a second format.
 
-### 3.2 Where reconciliation reads persisted state
+Label sets stay bounded, per §6.1: `operation`, `outcome`, `replay` and similar closed sets
+only — never user, slot, reservation, organisation, idempotency key, request identifier or
+error text.
 
-The generator must run on separate compute (§6.3), so giving it database credentials
-conflicts with that. Options: a separate verifier binary with database access; a read-only
-verification endpoint on the service; or the generator writing only client totals and a
-local step joining them to a direct database query.
+### 3.2 Reconciliation reads persisted state from a separate verifier binary
 
-### 3.3 Telemetry treatment
+`cmd/alloca-verify` reads the generator's machine-readable client summary, queries the
+database directly, and emits the reconciliation report of §6.5. Chosen so the load generator
+holds **no database credentials** and stays genuinely external, which §6.3 requires for
+publishable runs.
 
-§6.2 accepts a bounded local sink, a bounded asynchronous sink with explicit drop and
-shutdown behaviour, or another measured approach. The asynchronous sink is real design work
-(drop policy, shutdown ordering) that `observability.md` §5.1 deliberately deferred; the
-bounded local sink is nearly free and may be sufficient to show the request path is not
-observation-bound.
+Known wrinkle, carried rather than solved: on AWS the verifier needs network reach to RDS,
+so it runs from wherever that is available rather than alongside the generator. Revisit at
+PR4 if that proves awkward — a read-only service endpoint remains the fallback.
+
+### 3.3 Telemetry — bounded local sink now, asynchronous sink only if measured to matter
+
+§6.2 requires showing observation is not the request-path bottleneck, not that a particular
+mechanism exists. PR1 points structured logs at a bounded local sink and measures request
+latency with logging on versus off, reporting the delta as `[MEASURED]`.
+
+If the delta is material, the bounded asynchronous sink (drop policy plus shutdown flush)
+follows in PR2. If it is not, `observability.md` §5.1 stays deferred — but deferred on
+evidence rather than on assumption, which is the change that matters.
 
 ## 4. Non-goals
 

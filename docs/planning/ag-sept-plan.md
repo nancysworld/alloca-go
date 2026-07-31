@@ -1,6 +1,6 @@
 # AG-Sept — Measured scale-out and distributed authority
 
-**Status:** Draft v0.1  
+**Status:** Draft v0.2  
 **Created:** 31 July 2026  
 **Delivery window:** August 2026  
 **Development budget:** 10 focused development days, followed by 2–3 days for reruns, review, refinement, documentation, and public-release preparation  
@@ -42,7 +42,7 @@ The measurements may reject an initial performance or scaling hypothesis. A nega
 
 ### 3.1 Measure mechanisms before realistic composites
 
-AG-Sept uses simplified controlled workloads inspired by real synchronized-release and hot-resource patterns. It does not reproduce a full product workflow.
+AG-Sept uses simplified controlled workloads inspired by synchronized-release and hot-resource patterns. It does not reproduce a full product workflow.
 
 The controlled workloads isolate one mechanism at a time:
 
@@ -157,15 +157,7 @@ A possible minimal shape is:
 - synchronized reserve attempts;
 - one unique idempotency key per logical request.
 
-The run must distinguish:
-
-- admitted reservations;
-- expected `no_capacity` refusals;
-- database or client timeouts;
-- internal failures;
-- replays, if any.
-
-Expected business refusals are valid completed outcomes but are not counted as successful reservation goodput.
+The run must distinguish admitted reservations, expected `no_capacity` refusals, timeouts, internal failures, and replays. Expected business refusals are valid completed outcomes but are not counted as successful reservation goodput.
 
 ### 5.3 Hot-identity control
 
@@ -185,15 +177,11 @@ A possible minimal shape is:
 - exactly one admitted reservation;
 - remaining domain answers classified as `schedule_conflict`, unless a bounded infrastructure outcome legitimately occurs.
 
-A stronger mixed version may run many independent identities, each producing a small overlapping burst. That version should demonstrate that different identities continue to make progress even though each identity's own mutations serialize.
-
-The hot-identity control is required locally. Repeating it on AWS is desirable but may be reduced to a smaller matrix if the milestone is constrained.
+A stronger mixed version may run many independent identities, each producing a small overlapping burst. The local hot-identity control is required; the AWS rerun is desirable but optional if the milestone is constrained.
 
 ### 5.4 Simplified synchronized release wave
 
-After the three controls work, AG-Sept may add one small composite workload representing a synchronized booking release.
-
-A possible shape is:
+After the controls work, AG-Sept may add one small composite workload:
 
 - around 40 slots released together;
 - fixed capacity per slot;
@@ -201,19 +189,17 @@ A possible shape is:
 - attempts beginning within a short release window;
 - a deliberately skewed distribution so a few slots are hotter than average.
 
-The first version should avoid complex browsing, alternative-choice loops, repeated retries, or fallback activities. Those behaviours can obscure the primary scaling question and turn the generator into a separate product simulation.
-
-This workload is desirable because it shows how independent and hot authorities interact. It is not required if implementing it would displace the controlled baselines or AWS experiment.
+The first version should avoid complex browsing, alternative-choice loops, repeated retries, or fallback activities. The workload is desirable but must not displace the controlled baselines or AWS experiment.
 
 ### 5.5 Explicit workload exclusions
 
 AG-Sept does not require:
 
 - a full fitness-club booking simulation;
-- a full game inventory or shared-chest simulation;
-- domain-specific names or confidential scenario details in public documentation;
-- user-behaviour modelling beyond what is needed to generate the authority distribution;
-- a retry storm model before the baseline timeout and outcome behaviour are understood.
+- a full game inventory or shared-resource simulation;
+- domain-specific names or confidential scenario details;
+- user-behaviour modelling beyond the required authority distribution;
+- a retry-storm model before baseline timeout behaviour is understood.
 
 ## 6. Measurement substrate
 
@@ -225,203 +211,116 @@ Required signals include:
 
 - request count by closed-set terminal outcome;
 - request-latency histogram;
-- timeout and infrastructure-failure counts;
-- business-refusal counts by closed-set reason where useful;
-- database pool acquired, idle, and total connection state;
-- database acquisition duration;
-- expiry-worker iterations, expired records, duration, and failures;
+- timeout, infrastructure-failure, and business-refusal counts;
+- database pool state and acquisition duration;
+- expiry-worker iteration outcomes and duration;
 - process CPU and memory;
-- Go runtime signals relevant to the experiment;
-- replica or instance identity where a bounded distinction is needed.
+- relevant Go runtime signals;
+- bounded replica identity where needed.
 
-Metrics must not label by:
+Metrics must not label by user, slot, reservation, organisation, idempotency key, request identifier, arbitrary error text, or other unbounded request content.
 
-- user, slot, reservation, organisation, or idempotency identifier;
-- request identifier;
-- arbitrary error text;
-- other unbounded request content.
-
-The exact metrics backend is an implementation choice. A Prometheus-compatible recorder is the preferred starting point because it supports local and Kubernetes-based experiments without coupling the domain or handlers to an exporter.
+A Prometheus-compatible recorder is the preferred starting point, but the concrete backend remains an implementation choice.
 
 ### 6.2 Telemetry must not dominate measured latency
 
-AG-M1 deliberately left structured emission synchronous. Before performance claims are made, AG-Sept must show that the observation path is not the primary request bottleneck.
+Before performance claims are made, AG-Sept must show that observation is not the primary request bottleneck.
 
-Acceptable approaches include:
-
-- directing structured logs to a bounded local sink while using in-process metrics for the experiment;
-- introducing a bounded asynchronous log sink with an explicit drop policy and shutdown-flush behaviour;
-- another measured approach that demonstrates low and bounded request-path overhead.
-
-The milestone does not require a general telemetry platform. It requires confidence that the measurement mechanism does not materially create the result being measured.
+Acceptable approaches include a bounded local sink, a bounded asynchronous log sink with explicit drop and shutdown behaviour, or another measured approach demonstrating low and bounded request-path overhead.
 
 ### 6.3 External load generator
 
-The load generator must be able to:
+The load generator must:
 
 - execute the required workload shapes;
 - control concurrency and/or offered rate;
-- synchronize starts where the workload requires a release wave;
-- issue semantically valid idempotent requests;
+- synchronize starts where needed;
+- issue valid idempotent requests;
 - capture client-side latency and terminal outcomes;
-- emit machine-readable run summaries;
-- run on compute separate from the service for publishable capacity claims;
-- expose enough of its own utilisation to rule out generator saturation.
+- emit machine-readable summaries;
+- run separately from the service for publishable claims;
+- expose enough utilisation to rule out generator saturation.
 
-The first implementation may support closed-loop concurrency sweeps. Open-loop offered-rate control is desirable where it materially improves overload analysis, but it must not jeopardize the core milestone.
+Closed-loop sweeps are sufficient initially. Open-loop rate control is desirable where it materially improves overload analysis.
 
 ### 6.4 Run manifest
 
-Every quotable run must record enough provenance to reproduce or compare it.
-
-Required fields include:
+Every quotable run must record:
 
 - commit SHA and image tag;
 - Go version and observed `GOMAXPROCS`;
-- replica count;
-- application CPU and memory configuration;
-- PostgreSQL version and relevant instance/configuration identity;
-- database pool size per replica and aggregate expected pool capacity;
-- workload shape and data-set parameters;
+- replica count and application resources;
+- PostgreSQL version and configuration identity;
+- pool size per replica and aggregate expected pool capacity;
+- workload and dataset parameters;
 - offered rate and/or concurrency;
-- run duration and warm-up interval;
-- timeout budget;
-- reservation TTL;
-- generator location, resource configuration, and utilisation;
-- deployment topology;
-- experiment timestamp and environment name.
+- duration and warm-up;
+- timeout budget and reservation TTL;
+- generator location, resources, and utilisation;
+- deployment topology and timestamp.
 
-Secrets and private endpoints must not be recorded in committed manifests.
+Secrets and private endpoints must not be committed.
 
 ## 7. Single-instance baseline
 
-### 7.1 Purpose
+The one-replica run is the control for every scale-out claim.
 
-The one-replica run is the control for every horizontal-scaling claim. AG-Sept must not jump directly to a multi-replica AWS graph.
+A bounded sweep should cover the most informative combinations of request concurrency or offered rate, PostgreSQL pool size, application CPU, and authority distribution.
 
-### 7.2 Sweep dimensions
-
-The implementation should choose a bounded matrix covering the most informative dimensions, including some combination of:
-
-- request concurrency;
-- offered rate;
-- PostgreSQL pool size;
-- application CPU allocation;
-- workload authority distribution.
-
-The matrix should be small enough to complete and repeat. Broad exploratory sweeps may identify the frontier; a smaller decisive set should be rerun for the report.
-
-### 7.3 Required outputs
-
-For each selected configuration, report at least:
+Required outputs include:
 
 - offered requests;
 - completed throughput;
-- successful reservation goodput;
+- successful goodput;
 - expected business refusals;
-- p50, p95, and p99 client-visible latency;
-- client and database timeout rates;
-- unknown and internal-failure rates;
-- application CPU and memory utilisation;
-- database connection and acquisition behaviour;
+- p50, p95, and p99 latency;
+- timeout, unknown, and internal-failure rates;
+- application and database utilisation;
 - generator utilisation;
 - correctness reconciliation.
 
-Where practical, database transaction or lock-wait evidence should be added when it helps attribute the frontier. AG-Sept does not require a tracing platform before such evidence can be collected.
+Reports must distinguish:
 
-### 7.4 Capacity terms
+- **peak observed throughput**;
+- **SLO-safe capacity**;
+- **recommended operating capacity**.
 
-The report must distinguish:
-
-- **peak observed throughput:** the highest throughput seen in the selected runs;
-- **SLO-safe capacity:** the highest sustained load satisfying the provisional latency, timeout, correctness, saturation, and headroom gates;
-- **recommended operating capacity:** a conservative level below SLO-safe capacity, preserving operational headroom.
-
-The provisional SLO values may be challenged by the experiment. The capacity definitions must remain stable even if the numeric thresholds change through an explicit documented decision.
+The provisional SLO values may be challenged, but the capacity definitions must remain stable.
 
 ## 8. Local multi-instance scale-out
 
-### 8.1 Topology
+Run 1, 2, and 4 stateless replicas against the same PostgreSQL authority through a local load-balancing path.
 
-Run 1, 2, and 4 stateless application replicas against the same PostgreSQL transactional authority. A local load balancer or reverse proxy distributes requests.
+For dispersed traffic, determine whether throughput and goodput increase, how scale efficiency changes, and where PostgreSQL or pool acquisition becomes dominant.
 
-Docker Compose is sufficient for the first topology proof. A local Kubernetes cluster may follow when it contributes directly to the AWS deployment path.
+For hot-slot traffic, determine whether replicas improve useful throughput or merely add waiters, refusals, and timeout pressure, while confirming unrelated authorities still progress.
 
-### 8.2 Questions for dispersed traffic
+For hot-identity traffic, confirm contention is scoped to the identity and unrelated identities continue to progress.
 
-- Does completed throughput and goodput increase with replica count?
-- How does scale efficiency change from 1 to 2 to 4 replicas?
-- Does application CPU cease to be the limiting resource?
-- At what point does PostgreSQL, pool acquisition, or another shared dependency dominate?
-- Are per-replica pools multiplying the aggregate database connection demand?
+### 8.1 Connection-budget control
 
-### 8.3 Questions for a hot slot
+Compare:
 
-- Does adding replicas improve successful reservation goodput?
-- Does it only increase concurrent waiters, refusals, or timeout pressure?
-- Is the slot-row authority visible as the limiting boundary?
-- Are unrelated slots still able to progress when the hot slot is saturated?
+1. a roughly constant aggregate database connection budget as replicas increase; and
+2. the original full pool size multiplied per replica.
 
-### 8.4 Questions for a hot identity
-
-- Is contention contained to the identity being mutated?
-- Do unrelated identities continue to scale?
-- Does the identity lock create bounded queueing without causing global collapse?
-- Are schedule-conflict outcomes reconciled with persisted claims?
-
-### 8.5 Connection-budget control
-
-At least one comparison must test the difference between:
-
-1. holding the aggregate database connection budget roughly constant while increasing replica count; and
-2. naively multiplying the same per-replica pool size across all replicas.
-
-This control should reveal whether apparent scaling or degradation is caused by application compute or by changing pressure on the shared database admission boundary.
+This separates application-compute scaling from changed pressure on the shared database admission boundary.
 
 ## 9. Container and Kubernetes path
 
 ### 9.1 Container gate
 
-The service must have a production-shaped container image with:
-
-- a reproducible multi-stage build or equivalent small runtime image;
-- immutable tagging by commit SHA for experiments;
-- non-root execution where practical;
-- environment-driven configuration;
-- liveness and readiness support;
-- graceful termination behaviour;
-- no development-only tooling in the runtime image.
+The service must have a reproducible, production-shaped image with immutable experiment tagging, environment-driven configuration, health probes, graceful termination, and no development-only runtime tooling.
 
 ### 9.2 Local Kubernetes gate
 
-If Kubernetes is used, first prove the execution model locally with a small cluster such as `kind` or `k3d`.
+When Kubernetes is used, first prove the execution model locally. Useful scope includes Deployment, Service or ingress, probes, resource requests and limits, replica changes, rolling replacement, graceful termination, and basic metrics scraping.
 
-The useful scope is:
+### 9.3 Scope ceiling
 
-- Deployment;
-- Service or ingress/load-balancing path;
-- liveness and readiness probes;
-- resource requests and limits;
-- replica-count changes;
-- rolling replacement and graceful termination;
-- basic metrics scraping where straightforward;
-- configuration and secret boundaries appropriate to an experiment.
+AG-Sept does not require a service mesh, custom operators, multi-cluster management, GitOps platform, custom-metric autoscaling, elaborate Helm framework, production secret platform, PostgreSQL in Kubernetes, or a full tracing stack.
 
-### 9.3 Kubernetes scope ceiling
-
-AG-Sept does not require:
-
-- a service mesh;
-- custom operators;
-- multi-cluster management;
-- a GitOps platform;
-- custom-metric autoscaling;
-- an elaborate Helm framework;
-- a production secret-management system;
-- PostgreSQL running inside Kubernetes;
-- a full tracing stack.
-
-Amazon RDS remains the preferred PostgreSQL deployment because the experiment concerns application scale against a shared transactional authority, not stateful Kubernetes operations.
+Amazon RDS remains the preferred database target.
 
 ## 10. AWS deployment
 
@@ -429,14 +328,14 @@ Amazon RDS remains the preferred PostgreSQL deployment because the experiment co
 
 The preferred target is:
 
-- container image in Amazon ECR;
-- Alloca application replicas on Amazon EKS;
+- image in Amazon ECR;
+- Alloca replicas on Amazon EKS;
 - Amazon RDS for PostgreSQL;
 - an AWS load-balancing path;
-- the load generator on separate EC2 compute;
-- metrics collection sufficient to explain application and database behaviour.
+- separate EC2 generator compute;
+- metrics sufficient to explain application and database behaviour.
 
-The exact region, instance classes, and resource sizes are experiment inputs, not plan commitments.
+The exact region, instance classes, and sizes are experiment inputs.
 
 ### 10.2 EKS decision gate
 
@@ -444,28 +343,26 @@ EKS must not consume the experiment.
 
 By the end of the first focused AWS deployment day:
 
-- if the cluster, application, database connectivity, load-balancing path, and basic metrics are operational, continue with EKS;
-- if incidental EKS setup is preventing the measurement work, switch to a simpler AWS runtime such as ECS/Fargate or EC2-hosted containers and complete the scale-out experiment.
+- continue with EKS if the cluster, application, database connectivity, load-balancing path, and basic metrics are operational;
+- otherwise switch to a simpler AWS runtime such as ECS/Fargate or EC2-hosted containers and complete the scale-out experiment.
 
-A local Kubernetes deployment may still demonstrate Kubernetes understanding when AWS uses a simpler orchestration path.
+A local Kubernetes deployment may still demonstrate the execution model when AWS uses a simpler orchestration path.
 
-The portfolio value comes primarily from measuring horizontal scaling against shared authority and explaining the result, not from spending several days resolving cluster plumbing.
+The evidence value comes from measuring horizontal scaling against shared authority and explaining the result, not from spending several days resolving cluster plumbing.
 
 ### 10.3 AWS smoke gate
 
 Before capacity runs:
 
-- migrations complete successfully;
+- migrations complete;
 - readiness withholds traffic until dependencies are available;
 - one end-to-end reservation workflow succeeds;
-- one expected business refusal is observed correctly;
-- metrics and client outcome totals are visible;
+- one expected refusal is observed correctly;
+- metrics and outcome totals are visible;
 - the generator reaches the service from separate compute;
 - no private connection data enters committed logs or reports.
 
 ## 11. AWS experiment matrix
-
-The final AWS matrix should be deliberately small and decisive.
 
 A recommended minimum is:
 
@@ -475,77 +372,31 @@ A recommended minimum is:
 | Hot slot | 1, 4 |
 | Hot identity or mixed identities | 1, 4 where time permits |
 
-The simplified synchronized release wave may replace the AWS hot-identity rerun if it provides greater portfolio value after the local identity result is established.
+The simplified synchronized release wave may replace the AWS hot-identity rerun if it provides greater evidence value after the local identity result is established.
 
-### 11.1 Horizontal scale efficiency
+Scale efficiency must compare like-for-like SLO-safe goodput, or another clearly named like-for-like point when SLO-safe capacity cannot be established precisely.
 
-For replica count `N`:
-
-```text
-scale efficiency at N replicas =
-    measured SLO-safe goodput at N replicas
-    ----------------------------------------
-    N × measured SLO-safe goodput at 1 replica
-```
-
-If the available matrix cannot establish SLO-safe capacity precisely for every workload, the report may use another clearly named like-for-like throughput point. It must not silently mix peak throughput, goodput, or different SLO conditions.
-
-### 11.2 Required interpretation
-
-Each result must state which mechanism is believed to limit the run and what evidence supports that interpretation.
-
-Possible boundaries include:
-
-- application CPU;
-- application memory or throttling;
-- database pool acquisition;
-- PostgreSQL connection capacity;
-- transaction or lock wait;
-- one slot authority;
-- one identity authority;
-- telemetry overhead;
-- load-generator saturation;
-- network or load-balancer behaviour.
-
-Interpretation must be separated from measured facts and derived calculations according to the measurement contract.
+Each result must state the believed limiting mechanism and supporting evidence. Possible boundaries include application CPU, database pool acquisition, PostgreSQL connection capacity, transaction or lock wait, one slot authority, one identity authority, telemetry overhead, generator saturation, and network or load-balancer behaviour.
 
 ## 12. Negative controls
 
 ### 12.1 Generator bottleneck control
 
-Deliberately constrain or under-provision the generator and show how the apparent service frontier changes. The publishable run must then demonstrate adequate generator headroom.
-
-This control prevents a client-limited plateau from being reported as server capacity.
+Deliberately constrain the generator and show how the apparent frontier changes. Publishable runs must then demonstrate adequate generator headroom.
 
 ### 12.2 Connection-pool multiplication control
 
-Compare a controlled aggregate database connection budget with a configuration where each added replica receives the original full pool size.
-
-This control demonstrates whether the replica-count result is partly a database-admission experiment.
+Compare a controlled aggregate connection budget with a configuration where each added replica receives the original full pool size.
 
 ### 12.3 Resource-limit control
 
-Where time permits, constrain application CPU and show that the observed frontier or latency changes predictably.
-
-This is useful evidence that the harness can detect a known bottleneck. It is desirable, not mandatory when the first two controls and decisive runs already consume the available budget.
+Where time permits, constrain application CPU and confirm that the observed frontier changes predictably.
 
 ## 13. Architecture conclusion
 
-### 13.1 Current distributed shape
+The final architecture document should show external clients and generator, load balancing, stateless API replicas, PostgreSQL authority, expiry workers, metrics, and deployment boundaries.
 
-The final architecture document should show:
-
-- external clients and load generator;
-- load-balancing boundary;
-- stateless Alloca API replicas;
-- PostgreSQL as shared transactional authority;
-- expiry workers;
-- metrics and reporting path;
-- deployment and configuration boundaries.
-
-### 13.2 Authority model
-
-The document must connect measured behaviour to AG-M1's three-authority model:
+It must connect measured behaviour to AG-M1's authority model:
 
 ```text
 slot row            owns capacity
@@ -553,211 +404,101 @@ user identity row   serializes schedule mutation
 claim relation      proves schedule validity
 ```
 
-It should explain:
+It should explain what remains safe across replicas, why a hot slot is not parallelized by more API instances, why one identity serializes while unrelated identities remain independent, and which boundaries are only process-local optimizations.
 
-- which state and invariants remain safe across multiple application replicas;
-- why one hot slot cannot be parallelized merely by adding API instances;
-- why one identity's mutations serialize while unrelated identities remain independent;
-- why the exclusion constraint remains the final validity authority even when the identity row serializes cooperating writers;
-- which boundaries are process-local optimizations rather than cross-node authorities.
+Potential future components may include asynchronous event publication, reporting/read models, notifications, telemetry ingestion, authority-aware admission, and maintenance for elapsed claims. For each candidate, record its consistency requirements, failure semantics, evidence for separation, and operational cost.
 
-### 13.3 Future component candidates
+### 13.1 Optional service split
 
-Potential future components may include:
+Do not split the reservation transaction merely to claim microservices.
 
-- asynchronous event publication;
-- reporting or read models;
-- notifications;
-- load generation;
-- telemetry ingestion;
-- authority-aware admission or routing;
-- maintenance for elapsed claims that never receive another identity-scoped operation.
+The most defensible optional extraction is an asynchronous event or reporting consumer fed through a transactional outbox, demonstrating at-least-once delivery, idempotent consumption, and independent failure and scaling. Implementation is a stretch goal; a complete design is sufficient when measurements consume the budget.
 
-For each candidate discussed, state:
-
-- the reason it could be deployed independently;
-- whether it participates in the correctness transaction;
-- expected delivery and failure semantics;
-- whether AG-Sept evidence supports separation now;
-- what new operational cost the split introduces.
-
-### 13.4 Optional service split
-
-AG-Sept must not split the reservation write transaction merely to claim a microservice architecture.
-
-The most defensible optional extraction is an asynchronous event or reporting consumer fed by a transactional outbox. Such a boundary would demonstrate:
-
-- separation of correctness-critical mutation from non-critical downstream processing;
-- at-least-once delivery;
-- idempotent consumption;
-- independent failure and scaling behaviour;
-- a service boundary with a real consistency contract.
-
-Implementation is a stretch goal. A complete design may satisfy this part of the milestone when the core measurements consume the development budget.
-
-The expiry worker is not an automatic microservice candidate. It uses the same domain and transactional rules, and duplicate workers are already correctness-safe. Deployment separation without an authority, scaling, or failure reason would add operational surface without strengthening the architecture.
+The expiry worker is not an automatic microservice candidate because it shares the same domain and transaction rules and duplicate workers are already correctness-safe.
 
 ## 14. Proposed PR sequence
 
-The PR boundaries may be adjusted as implementation knowledge improves, but the milestone should avoid one large ten-day PR.
-
 ### PR1 — Measurement substrate and load harness
 
-Indicative budget: 2 days.
-
-Possible contents:
-
-- aggregated metrics recorder;
-- runtime and pool signals;
-- measured treatment of synchronous telemetry overhead;
-- load-generator foundation;
-- run-manifest format;
-- one short reconciliation smoke run.
-
-Exit gate:
-
-> One controlled local run produces machine-readable client and server totals that reconcile, while generator and telemetry behaviour are observable.
+Indicative budget: 2 days. Exit when one controlled local run produces reconcilable machine-readable client and server totals with observable generator and telemetry behaviour.
 
 ### PR2 — Single-instance frontier
 
-Indicative budget: 2 days.
-
-Possible contents:
-
-- dispersed, hot-slot, and hot-identity fixtures;
-- sweep automation;
-- generator negative control;
-- first single-instance measurement report;
-- recommended operating point or explicit explanation of why the provisional SLO prevents one.
-
-Exit gate:
-
-> Each controlled workload has a repeatable one-instance result and an identified or bounded limiting mechanism.
+Indicative budget: 2 days. Exit when each controlled workload has a repeatable one-instance result and an identified or bounded limiting mechanism.
 
 ### PR3 — Container and local scale-out
 
-Indicative budget: 1.5–2 days.
-
-Possible contents:
-
-- runtime container;
-- local load-balancing topology;
-- optional local Kubernetes manifests;
-- 1/2/4 replica comparison;
-- connection-budget control;
-- local scale-efficiency report.
-
-Exit gate:
-
-> Dispersed and hot-authority traffic are compared across replica counts without changing the correctness model.
+Indicative budget: 1.5–2 days. Exit when dispersed and hot-authority traffic are compared across replica counts without changing the correctness model.
 
 ### PR4 — AWS deployment
 
-Indicative budget: 2 days.
-
-Possible contents:
-
-- ECR image publication;
-- EKS deployment or documented fallback runtime;
-- RDS connectivity and migration path;
-- probes, resource configuration, and graceful shutdown;
-- external-generator smoke test;
-- reproducible deployment instructions or infrastructure definition.
-
-Exit gate:
-
-> The end-to-end service runs on AWS and accepts a controlled workload from separate generator compute with visible outcomes and metrics.
+Indicative budget: 2 days. Exit when the service runs on AWS and accepts a controlled workload from separate generator compute with visible outcomes and metrics.
 
 ### PR5 — AWS experiment and architecture decision
 
-Indicative budget: 2 days.
-
-Possible contents:
-
-- final AWS matrix;
-- result tables and graphs;
-- limitations and negative controls;
-- current and intended architecture diagrams;
-- service-boundary decision;
-- concise cost inputs where useful and reproducible;
-- portfolio-facing README summary.
-
-Exit gate:
-
-> A reviewer can reproduce the topology, distinguish measured facts from interpretation, and understand why replicas help or do not help for each authority distribution.
+Indicative budget: 2 days. Exit when a reviewer can reproduce the topology, distinguish measured facts from interpretation, and understand why replicas help or do not help for each authority distribution.
 
 ## 15. Priority tiers
 
-### 15.1 P0 — required for AG-Sept completion
+### P0 — required
 
 - reproducible external load harness;
-- aggregated metrics adequate to explain the experiment;
+- aggregated metrics;
 - one-instance baseline;
-- dispersed-authority and hot-slot controls;
+- dispersed and hot-slot controls;
 - local hot-identity control;
-- multi-instance comparison against shared PostgreSQL;
-- generator separation for publishable results;
-- meaningful AWS deployment and measured run;
-- architecture conclusion derived from evidence;
-- clear limitations and negative controls;
-- correctness reconciliation.
+- multi-instance shared-PostgreSQL comparison;
+- separate generator for publishable runs;
+- meaningful AWS deployment and measurement;
+- evidence-led architecture conclusion;
+- negative controls and correctness reconciliation.
 
-### 15.2 P1 — strongly desirable
+### P1 — strongly desirable
 
-- local Kubernetes deployment before AWS;
-- EKS as the AWS runtime;
+- local Kubernetes before AWS;
+- EKS runtime;
 - explicit aggregate-connection-budget experiment;
-- mixed-identity scaling run;
+- mixed-identity run;
 - recommended operating capacity;
 - simplified synchronized release wave;
 - basic dated AWS cost record;
-- polished architecture and results diagrams.
+- polished architecture and result diagrams.
 
-### 15.3 P2 — only after the decisive evidence is complete
+### P2 — only after decisive evidence
 
 - transactional outbox implementation;
 - independently deployed consumer;
-- autoscaling experiment;
+- autoscaling;
 - fault injection;
 - distributed tracing;
-- richer Grafana dashboards;
-- more extensive cost optimization.
+- richer dashboards;
+- extensive cost optimization.
 
-### 15.4 Explicitly out of scope
+### Explicitly out of scope
 
 - decomposing the reservation transaction;
 - sharding or multiple transactional databases;
 - multi-region writes;
-- Kafka or another broker solely to claim event-driven architecture;
+- a broker solely to claim event-driven architecture;
 - service mesh;
 - complete production authentication and authorization;
 - sophisticated Kubernetes platform engineering;
 - eliminating the hot-authority serialization frontier;
 - reproducing a full commercial workload.
 
-The hot-authority frontier is something to demonstrate, measure, and explain. AG-Sept does not need to remove a serialization requirement that exists to preserve correctness.
-
 ## 16. Descope order
 
 If time slips, remove work in this order:
 
-1. transactional-outbox implementation;
+1. outbox implementation;
 2. autoscaling;
 3. dashboard polish;
 4. detailed cost comparison;
 5. AWS hot-identity rerun;
 6. simplified synchronized release wave;
-7. local Kubernetes, when a working AWS runtime already provides the required orchestration experiment.
+7. local Kubernetes when a working AWS runtime already provides the required orchestration experiment.
 
-Do not descope:
-
-- the one-instance control;
-- dispersed versus hot-slot comparison;
-- multi-instance shared-authority experiment;
-- generator separation;
-- measurement validity;
-- correctness reconciliation;
-- the architecture report.
+Do not descope the one-instance control, dispersed-versus-hot-slot comparison, multi-instance shared-authority experiment, separate generator, measurement validity, correctness reconciliation, or architecture report.
 
 ## 17. Final deliverables
 
@@ -766,36 +507,29 @@ The public-ready milestone should leave:
 1. a runnable containerized service;
 2. a reproducible external load generator;
 3. aggregated service and runtime metrics;
-4. a single-instance measurement report;
-5. a local multi-instance scale-out report;
+4. a single-instance report;
+5. a local multi-instance report;
 6. an AWS deployment guide or infrastructure definition;
 7. a measured AWS scale-out report;
 8. current and intended architecture diagrams;
-9. an authority and bottleneck analysis;
+9. authority and bottleneck analysis;
 10. a service-boundary decision record;
-11. a concise portfolio-facing repository summary;
+11. a concise public repository summary;
 12. explicit limitations, evidence labels, and negative-control results.
 
-Together these deliverables should answer:
-
-- What is correct?
-- What is fast, under which workload and resource configuration?
-- Where does horizontal scaling help?
-- Where does one shared authority remain the frontier?
-- Which shared dependency becomes limiting as replicas are added?
-- What should be separated next, and what should deliberately remain together?
+Together these should answer what is correct, what is fast under which workload, where scale-out helps, where shared authority remains the frontier, which dependency becomes limiting, and what should be separated next.
 
 ## 18. Completion gate
 
-AG-Sept is complete when all of the following are true:
+AG-Sept is complete when:
 
-- the required controlled workloads run reproducibly;
-- single-instance and multi-instance results are available;
-- at least one meaningful AWS capacity comparison has been completed;
-- the load generator has been ruled out as the bottleneck for quoted results;
-- request outcomes and persisted state reconcile;
-- the database connection and authority boundaries are visible in the analysis;
-- measured facts, derived calculations, and interpretations are separated;
-- the architecture document reflects the evidence rather than the desired presentation;
-- Kubernetes and service decomposition have remained means rather than milestone goals;
+- required workloads run reproducibly;
+- single- and multi-instance results are available;
+- at least one meaningful AWS comparison is complete;
+- the generator is ruled out as the bottleneck for quoted results;
+- outcomes and persisted state reconcile;
+- database connection and authority boundaries are visible;
+- measured facts, calculations, and interpretation are separated;
+- architecture reflects evidence rather than desired presentation;
+- Kubernetes and decomposition remain means rather than goals;
 - the repository is suitable for public review under the disclosure policy.

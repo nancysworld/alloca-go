@@ -265,13 +265,46 @@ func ClaimDatabase(dsn string) (release func(), err error) {
 	}, nil
 }
 
+// truncateStatementTimeout bounds the truncate itself, deliberately generously.
+//
+// It is not derived from the request budget: emptying six tables is control-plane work
+// whose duration has nothing to do with what a booking request is allowed to take. It is
+// still bounded rather than unlimited, so a truncate blocked behind another session's lock
+// fails with a clear timeout instead of hanging a test run.
+const truncateStatementTimeout = 30 * time.Second
+
 // Truncate empties every domain table. It exists so an integration test starts from a
 // known world; it is never called by the service.
+//
+// It overrides the session's statement_timeout for the duration of the truncate, because
+// the pool's session default comes from the caller's RequestBudget (see OpenPool) and some
+// tests deliberately choose a tiny one to exercise timeout behaviour. Without this, such a
+// test applies its own 200ms bound to its *setup*, and a loaded machine turns that into a
+// flake: TRUNCATE ... CASCADE on six tables is occasionally slower than a bound chosen to
+// make a lock wait trip.
+//
+// That is exactly what failed once in CI, in TestTransactionTimeoutsDoNotLeakAcrossTransactions
+// of all places — the setup truncate timed out, not the property under test, which made a
+// harness problem read as the leak the test exists to disprove.
 func (r *Repo) Truncate(ctx context.Context) error {
-	_, err := r.pool.Exec(ctx,
-		`TRUNCATE user_time_claims, user_identities, idempotency_records, bookings, reservations, slots RESTART IDENTITY CASCADE`)
+	tx, err := r.pool.Begin(ctx)
 	if err != nil {
+		return fmt.Errorf("postgres: truncate: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// SET LOCAL scopes the override to this transaction, so the pooled connection is
+	// returned with the session default intact — the same discipline the request path uses.
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`SET LOCAL statement_timeout = '%dms'`,
+		truncateStatementTimeout.Milliseconds())); err != nil {
+		return fmt.Errorf("postgres: truncate: set statement_timeout: %w", err)
+	}
+	if _, err := tx.Exec(ctx,
+		`TRUNCATE user_time_claims, user_identities, idempotency_records, bookings, reservations, slots RESTART IDENTITY CASCADE`); err != nil {
 		return fmt.Errorf("postgres: truncate: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("postgres: truncate: commit: %w", err)
 	}
 	return nil
 }

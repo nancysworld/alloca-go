@@ -112,7 +112,9 @@ The ten-day development allocation is a planning constraint:
 | AWS and Kubernetes deployment path | up to 2.0 | up to 20% |
 | AWS scale-out experiments | up to 1.5 | up to 15% |
 | Architecture conclusions and one justified boundary | 1.0 | 10% |
-| Contingency returned from AWS when needed | up to 3.5 | up to 35% |
+| **Total allocated budget** | **10.0** | **100%** |
+
+**AWS reallocation rule:** The 3.5 days assigned to AWS are conditional, not additional contingency. If the AWS path threatens completion of the measurement harness, single-instance baseline, local multi-instance experiment, or architecture report, some or all of that budget is reassigned to those local P0 outcomes. The implementation evidence determines whether returned time is spent on stronger reruns, generator validation, local scale-out, observability, or documentation.
 
 A further 2–3 days are reserved for:
 

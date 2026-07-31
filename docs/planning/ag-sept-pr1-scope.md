@@ -70,6 +70,34 @@ If the delta is material, the bounded asynchronous sink (drop policy plus shutdo
 follows in PR2. If it is not, `observability.md` §5.1 stays deferred — but deferred on
 evidence rather than on assumption, which is the change that matters.
 
+#### Result — the asynchronous sink stays deferred
+
+`[MEASURED]` — `go test ./internal/telemetry/ -bench Recorder -benchmem -run '^$'`, from
+`internal/telemetry/overhead_test.go`. Linux/WSL2, `GOMAXPROCS=10`, Go 1.26.
+
+| Recorder | ns/op | B/op | allocs/op |
+|---|---:|---:|---:|
+| `Nop` (call floor) | 0.20 | 0 | 0 |
+| `SlogRecorder` → bounded sink | 843 | 88 | 2 |
+| Prometheus recorder | 145 | 0 | 0 |
+| **`Tee` (what the service runs)** | **1033** | 88 | 2 |
+| `Tee`, parallel | 228 | 88 | 2 |
+
+`[DERIVED]` — the request path's own budget is milliseconds, so one observation costs
+roughly **0.1% of a 1 ms request** and less of a slower one. Observation is not the
+request-path bottleneck at any load this milestone will reach, so the bounded asynchronous
+sink is **not built in PR1**, and `observability.md` §5.1 stays deferred on evidence rather
+than on the assumption it was deferred on originally.
+
+**What this does not show, and it is the part that matters.** These numbers measure a sink
+that never blocks (`io.Discard`). The risk §5.1 actually names is *backpressure* — a stalled
+reader holding the request after its transaction has committed — and no benchmark of a
+healthy sink can bound that. What is now established is narrower than "synchronous emission
+is safe": it is that emission is not *inherently* expensive, so if a later run shows latency
+the observation path explains, the cause is a stalled sink and the fix is the asynchronous
+one, not a cheaper encoder. Revisit at the first remote sink, which is when a stall stops
+being hypothetical.
+
 ## 4. Non-goals
 
 Sweeps, capacity claims, replica counts and any published number belong to PR2 and later.

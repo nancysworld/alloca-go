@@ -112,6 +112,41 @@ the observation path explains, the cause is a stalled sink and the fix is the as
 one, not a cheaper encoder. Revisit at the first remote sink, which is when a stall stops
 being hypothetical.
 
+## 3.4 Exit gate — discharged
+
+`[MEASURED]` — artifacts in [`docs/measurements/pr1-smoke-run/`](../measurements/pr1-smoke-run/):
+`run.json` (generator report), `verdict.json` (reconciliation), `metrics.txt` (server scrape).
+Local PostgreSQL 16, one replica, dispersed workload, 20 slots, capacity 5, concurrency 8,
+60 iterations.
+
+The gate has three clauses, and each is discharged by a separate artifact rather than by one
+run that passed:
+
+**1. Client, server and persisted-state totals reconcile.** All three independently say 60:
+
+| Source | Value |
+|---|---|
+| Client (`run.json`) | `completed_requests: 60`, `successful_mutation_goodput: 60` |
+| Server (`metrics.txt`) | `alloca_requests_total{operation="reserve",outcome="admitted_success",replay="false"} 60` |
+| Persisted (`verdict.json`) | 60 live reservations, 60 idempotency records, 60 live claims |
+
+All four §6.5 checks pass, each naming its invariant: INV-1, INV-5, INV-4, INV-7.
+
+**2. The response-validation control passes.** End-to-end, not only in unit tests:
+`-validate=false` against the live service produced a run marked not quotable, `alloca-load`
+exited 1, and `alloca-verify` also exited 1 — the generator's refusal is carried forward
+rather than overridden by a clean reconciliation.
+
+**3. Generator and telemetry behaviour are observable.** The generator reports its own CPU
+utilisation (0.02 per core here — nowhere near saturation, so this run is not
+client-limited), and the server exposes request, pool and expiry-worker series on a separate
+listener.
+
+**What this run is not.** It is a smoke run: 60 requests at concurrency 8 on one host, with
+the generator and service sharing a machine. It proves the substrate works end to end; it
+establishes no capacity, and no number in it may be quoted as one. That is PR2's work, with
+the generator on separate compute.
+
 ## 4. Non-goals
 
 Sweeps, capacity claims, replica counts and any published number belong to PR2 and later.

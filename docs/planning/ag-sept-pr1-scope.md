@@ -72,22 +72,36 @@ evidence rather than on assumption, which is the change that matters.
 
 #### Result — the asynchronous sink stays deferred
 
-`[MEASURED]` — `go test ./internal/telemetry/ -bench Recorder -benchmem -run '^$'`, from
-`internal/telemetry/overhead_test.go`. Linux/WSL2, `GOMAXPROCS=10`, Go 1.26.
+`[MEASURED]` — raw results:
+[`docs/measurements/pr1-telemetry-overhead/raw.txt`](../measurements/pr1-telemetry-overhead/raw.txt),
+environment: [`environment.txt`](../measurements/pr1-telemetry-overhead/environment.txt).
+Source `internal/telemetry/overhead_test.go`; reproduce with:
 
-| Recorder | ns/op | B/op | allocs/op |
-|---|---:|---:|---:|
-| `Nop` (call floor) | 0.20 | 0 | 0 |
-| `SlogRecorder` → bounded sink | 843 | 88 | 2 |
-| Prometheus recorder | 145 | 0 | 0 |
-| **`Tee` (what the service runs)** | **1033** | 88 | 2 |
-| `Tee`, parallel | 228 | 88 | 2 |
+```console
+$ go test ./internal/telemetry/ -bench Recorder -benchmem -run '^$' -count 5
+```
 
-`[DERIVED]` — the request path's own budget is milliseconds, so one observation costs
-roughly **0.1% of a 1 ms request** and less of a slower one. Observation is not the
-request-path bottleneck at any load this milestone will reach, so the bounded asynchronous
-sink is **not built in PR1**, and `observability.md` §5.1 stays deferred on evidence rather
-than on the assumption it was deferred on originally.
+Five runs, so the figures below are the **median with the observed range**, not one sample.
+Quoted from the artifact rather than from a terminal, per `measurement-contract` §5.3.
+
+| Recorder | ns/op (median) | range | B/op | allocs/op |
+|---|---:|---:|---:|---:|
+| `Nop` (call floor) | 0.20 | 0.196–0.213 | 0 | 0 |
+| `SlogRecorder` → bounded sink | 792 | 787–803 | 88 | 2 |
+| Prometheus recorder | 138 | 135–142 | 0 | 0 |
+| **`Tee` (what the service runs)** | **994** | 980–1004 | 88 | 2 |
+| `Tee`, parallel | 228 | 221–229 | 88 | 2 |
+
+`[DERIVED]` — median `Tee` cost 994 ns against a request budget in milliseconds is
+**≈0.1% of a 1 ms request** (994 ns ÷ 1 ms), and less of a slower one. Observation is not
+the request-path bottleneck at any load this milestone will reach, so the bounded
+asynchronous sink is **not built in PR1**, and `observability.md` §5.1 stays deferred on
+evidence rather than on the assumption it was deferred on originally.
+
+The spread is worth noting for what it says about method rather than about telemetry: the
+five `Tee` samples span 980–1004 ns, and an earlier single run of this benchmark produced
+1033 ns — outside that range. One sample would have been quoted as fact. It would not have
+changed this conclusion, but the habit it represents is the one that eventually does.
 
 **What this does not show, and it is the part that matters.** These numbers measure a sink
 that never blocks (`io.Discard`). The risk §5.1 actually names is *backpressure* — a stalled

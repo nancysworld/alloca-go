@@ -1,6 +1,6 @@
 # AG-Sept — Measured scale-out and distributed authority
 
-**Status:** Draft v0.2  
+**Status:** Draft v0.3  
 **Created:** 31 July 2026  
 **Delivery window:** August 2026  
 **Development budget:** 10 focused development days, followed by 2–3 days for reruns, review, refinement, documentation, and public-release preparation  
@@ -21,7 +21,7 @@ The intended progression is:
 1. establish a reproducible single-instance capacity baseline;
 2. run multiple stateless application replicas against the same PostgreSQL authority;
 3. compare dispersed traffic with traffic concentrated on one transactional authority;
-4. deploy and repeat a meaningful subset of the experiment on AWS;
+4. attempt to deploy and repeat a meaningful subset of the experiment on AWS without displacing the local evidence;
 5. identify the database, connection, compute, or authority boundary that limits each workload;
 6. document the distributed-system shape implied by the measurements;
 7. extract a service only if doing so demonstrates a real consistency, failure, or scaling boundary.
@@ -34,7 +34,9 @@ AG-Sept proves how Alloca's correctness authorities behave under load and horizo
 
 At completion, the repository should support the following evidence-backed statement:
 
-> Alloca began as a modular monolith because its central problem is transactional correctness, not service decomposition. After proving the invariants, the project measured one application instance, then scaled stateless instances against a shared PostgreSQL authority. Dispersed and hot-authority workloads were measured separately, so improvements from additional compute are not confused with the serialization limit of one slot or one identity. The same architecture was deployed on AWS, and the results were used to decide which future boundaries justify independent deployment.
+> Alloca began as a modular monolith because its central problem is transactional correctness, not service decomposition. After proving the invariants, the project measured one application instance, then scaled stateless instances against a shared PostgreSQL authority. Dispersed and hot-authority workloads were measured separately, so improvements from additional compute are not confused with the serialization limit of one slot or one identity. The results were then used to decide which future boundaries justify independent deployment.
+
+An AWS deployment and rerun strengthen this story but must not consume the local measurement work that establishes it.
 
 The measurements may reject an initial performance or scaling hypothesis. A negative or surprising result is a valid milestone outcome when the experiment is reproducible, the generator is ruled out as the bottleneck, correctness remains intact, and the limiting mechanism is identified.
 
@@ -75,6 +77,8 @@ AG-Sept therefore reports scale efficiency separately for:
 - one hot slot authority;
 - one hot identity authority or a mixed-identity workload.
 
+The normative capacity and scale-efficiency definitions remain owned by [measurement-contract.md](../design/measurement-contract.md) §3 and §3.1. For one indivisible hot authority, efficiency approaching `1/N` at `N` replicas is the expected serialization ceiling, not evidence that the whole system fails to scale.
+
 No single headline number may be presented as "Alloca scales by X" across these different mechanisms.
 
 ### 3.4 Implementation remains evidence-led
@@ -92,19 +96,23 @@ This plan defines questions, gates, workload shapes, required evidence, and scop
 
 Implementation PRs should choose the smallest mechanism that satisfies the relevant gate and leaves the experiment reproducible.
 
+### 3.5 Evidence labels for plan parameters
+
+All proposed workload sizes, replica matrices, durations, and resource values in this plan are `[HYPOTHESIS]` until measured, unless they are explicitly identified as a fixed planning budget or required test shape. Implementation reports must replace or retain that label according to the evidence convention in [measurement-contract.md](../design/measurement-contract.md) §2.
+
 ## 4. Time budget and priority
 
-The ten development days are allocated approximately as follows:
+The ten-day development allocation is a planning constraint:
 
 | Workstream | Days | Weight |
 |---|---:|---:|
 | Measurement harness and observability | 2.0 | 20% |
 | Single-instance capacity baseline | 2.0 | 20% |
 | Containerisation and local multi-instance experiment | 1.5 | 15% |
-| AWS and Kubernetes deployment path | 2.0 | 20% |
-| AWS scale-out experiments | 1.5 | 15% |
+| AWS and Kubernetes deployment path | up to 2.0 | up to 20% |
+| AWS scale-out experiments | up to 1.5 | up to 15% |
 | Architecture conclusions and one justified boundary | 1.0 | 10% |
-| **Total** | **10.0** | **100%** |
+| Contingency returned from AWS when needed | up to 3.5 | up to 35% |
 
 A further 2–3 days are reserved for:
 
@@ -130,7 +138,7 @@ Purpose:
 - measure the benefit of additional stateless replicas when transactions can proceed mostly independently;
 - identify compute, pool, connection, or database saturation before one business authority dominates the run.
 
-A possible synthetic shape is:
+A possible `[HYPOTHESIS]` synthetic shape is:
 
 - approximately 1,000 slots;
 - hundreds or thousands of users;
@@ -150,14 +158,16 @@ Purpose:
 - separate useful throughput from waits, business refusals, and timeouts;
 - show why adding stateless API replicas cannot remove one shared transactional authority.
 
-A possible minimal shape is:
+A possible `[HYPOTHESIS]` minimal shape is:
 
 - one slot with capacity 20;
 - 50–100 distinct users;
 - synchronized reserve attempts;
 - one unique idempotency key per logical request.
 
-The run must distinguish admitted reservations, expected `no_capacity` refusals, timeouts, internal failures, and replays. Expected business refusals are valid completed outcomes but are not counted as successful reservation goodput.
+The run must distinguish admitted reservations, expected `no_capacity` refusals, timeouts, and internal failures using the closed outcome model in [measurement-contract.md](../design/measurement-contract.md) §4. `replay` is an orthogonal flag and must be reported without modelling it as a peer terminal outcome.
+
+Expected business refusals are valid completed outcomes but are not counted as successful reservation goodput. Goodput follows [observability.md](../design/observability.md) §3.1 and covers the mutation surface rather than informational reads such as `list_slots`.
 
 ### 5.3 Hot-identity control
 
@@ -169,7 +179,7 @@ Purpose:
 - demonstrate that serialization is scoped to one identity rather than global;
 - distinguish identity-lock queueing from slot-capacity contention.
 
-A possible minimal shape is:
+A possible `[HYPOTHESIS]` minimal shape is:
 
 - one user identity;
 - 20 overlapping slots;
@@ -177,11 +187,13 @@ A possible minimal shape is:
 - exactly one admitted reservation;
 - remaining domain answers classified as `schedule_conflict`, unless a bounded infrastructure outcome legitimately occurs.
 
+Every hot-identity run must begin from a deterministic reset or fresh seed and assert that the tested identities have zero live claims before load starts. Confirmed claims are not expiry-reaped, so reusing contaminated fixtures can produce a plausible but meaningless all-conflict rerun.
+
 A stronger mixed version may run many independent identities, each producing a small overlapping burst. The local hot-identity control is required; the AWS rerun is desirable but optional if the milestone is constrained.
 
 ### 5.4 Simplified synchronized release wave
 
-After the controls work, AG-Sept may add one small composite workload:
+After the controls work, AG-Sept may add one small composite workload with `[HYPOTHESIS]` parameters such as:
 
 - around 40 slots released together;
 - fixed capacity per slot;
@@ -189,7 +201,7 @@ After the controls work, AG-Sept may add one small composite workload:
 - attempts beginning within a short release window;
 - a deliberately skewed distribution so a few slots are hotter than average.
 
-The first version should avoid complex browsing, alternative-choice loops, repeated retries, or fallback activities. The workload is desirable but must not displace the controlled baselines or AWS experiment.
+The first version should avoid complex browsing, alternative-choice loops, repeated retries, or fallback activities. The workload is desirable but must not displace the controlled baselines or the local scale-out experiment.
 
 ### 5.5 Explicit workload exclusions
 
@@ -261,6 +273,17 @@ Every quotable run must record:
 
 Secrets and private endpoints must not be committed.
 
+### 6.5 Correctness reconciliation
+
+PR1 must establish a self-check used by every later measured run. At minimum it must reconcile:
+
+- consumed slot capacity against admitted reservation mutations;
+- distinct logical idempotency keys against committed mutations and replays;
+- live claims against admitted reservations per identity and interval;
+- every completed request against the closed terminal-outcome set, with `replay` folded in as an orthogonal flag rather than double-counted.
+
+A run with unreconciled client totals, server totals, or persisted state is not quotable.
+
 ## 7. Single-instance baseline
 
 The one-replica run is the control for every scale-out claim.
@@ -271,7 +294,7 @@ Required outputs include:
 
 - offered requests;
 - completed throughput;
-- successful goodput;
+- successful goodput as defined by [observability.md](../design/observability.md) §3.1;
 - expected business refusals;
 - p50, p95, and p99 latency;
 - timeout, unknown, and internal-failure rates;
@@ -279,21 +302,17 @@ Required outputs include:
 - generator utilisation;
 - correctness reconciliation.
 
-Reports must distinguish:
-
-- **peak observed throughput**;
-- **SLO-safe capacity**;
-- **recommended operating capacity**.
+Peak observed throughput, SLO-safe capacity, recommended operating capacity, and scale efficiency use the normative definitions in [measurement-contract.md](../design/measurement-contract.md) §3 and §3.1 rather than local restatements.
 
 The provisional SLO values may be challenged, but the capacity definitions must remain stable.
 
 ## 8. Local multi-instance scale-out
 
-Run 1, 2, and 4 stateless replicas against the same PostgreSQL authority through a local load-balancing path.
+Run `[HYPOTHESIS]` replica counts of 1, 2, and 4 against the same PostgreSQL authority through a local load-balancing path.
 
 For dispersed traffic, determine whether throughput and goodput increase, how scale efficiency changes, and where PostgreSQL or pool acquisition becomes dominant.
 
-For hot-slot traffic, determine whether replicas improve useful throughput or merely add waiters, refusals, and timeout pressure, while confirming unrelated authorities still progress.
+For hot-slot traffic, determine whether replicas improve useful throughput or merely add waiters, refusals, and timeout pressure, while confirming unrelated authorities still progress. For one indivisible hot slot, scale efficiency approaching `1/N` is the expected correct result.
 
 For hot-identity traffic, confirm contention is scoped to the identity and unrelated identities continue to progress.
 
@@ -320,7 +339,7 @@ When Kubernetes is used, first prove the execution model locally. Useful scope i
 
 AG-Sept does not require a service mesh, custom operators, multi-cluster management, GitOps platform, custom-metric autoscaling, elaborate Helm framework, production secret platform, PostgreSQL in Kubernetes, or a full tracing stack.
 
-Amazon RDS remains the preferred database target.
+Amazon RDS remains the preferred AWS database target.
 
 ## 10. AWS deployment
 
@@ -335,18 +354,25 @@ The preferred target is:
 - separate EC2 generator compute;
 - metrics sufficient to explain application and database behaviour.
 
-The exact region, instance classes, and sizes are experiment inputs.
+The exact region, instance classes, and sizes are `[HYPOTHESIS]` experiment inputs.
 
-### 10.2 EKS decision gate
+### 10.2 AWS decision gates
 
-EKS must not consume the experiment.
+AWS must not consume the experiment.
 
 By the end of the first focused AWS deployment day:
 
 - continue with EKS if the cluster, application, database connectivity, load-balancing path, and basic metrics are operational;
-- otherwise switch to a simpler AWS runtime such as ECS/Fargate or EC2-hosted containers and complete the scale-out experiment.
+- otherwise switch to a simpler AWS runtime such as ECS/Fargate or EC2-hosted containers.
 
-A local Kubernetes deployment may still demonstrate the execution model when AWS uses a simpler orchestration path.
+After at most two focused AWS development days:
+
+- continue to the AWS measurement matrix if the end-to-end path is stable and observable;
+- otherwise stop AWS work and return the remaining budget to decisive local reruns, architecture analysis, and public documentation.
+
+A complete, reconciled single-instance and local multi-instance evidence set is a valid AG-Sept completion. AWS is a preferred extension, not permission to weaken or delay the core evidence.
+
+A local Kubernetes deployment may still demonstrate the execution model when AWS uses a simpler orchestration path or is stopped at the decision gate.
 
 The evidence value comes from measuring horizontal scaling against shared authority and explaining the result, not from spending several days resolving cluster plumbing.
 
@@ -364,7 +390,7 @@ Before capacity runs:
 
 ## 11. AWS experiment matrix
 
-A recommended minimum is:
+When AWS passes the decision gates, a recommended `[HYPOTHESIS]` minimum is:
 
 | Workload | Replica counts |
 |---|---|
@@ -372,7 +398,7 @@ A recommended minimum is:
 | Hot slot | 1, 4 |
 | Hot identity or mixed identities | 1, 4 where time permits |
 
-The simplified synchronized release wave may replace the AWS hot-identity rerun if it provides greater evidence value after the local identity result is established.
+The simplified synchronized release wave may replace the AWS hot-identity rerun after the local identity result is established.
 
 Scale efficiency must compare like-for-like SLO-safe goodput, or another clearly named like-for-like point when SLO-safe capacity cannot be established precisely.
 
@@ -380,15 +406,21 @@ Each result must state the believed limiting mechanism and supporting evidence. 
 
 ## 12. Negative controls
 
-### 12.1 Generator bottleneck control
+### 12.1 Response-validation control — mandatory
+
+Deliberately supply an invalid HTTP-status and domain-outcome combination and prove that the load harness rejects the response and invalidates the run.
+
+This control is required by [measurement-contract.md](../design/measurement-contract.md) §5 and is not descopable. It proves that response validation is active before goodput or capacity can be quoted.
+
+### 12.2 Generator bottleneck control — mandatory
 
 Deliberately constrain the generator and show how the apparent frontier changes. Publishable runs must then demonstrate adequate generator headroom.
 
-### 12.2 Connection-pool multiplication control
+### 12.3 Connection-pool multiplication control — mandatory
 
 Compare a controlled aggregate connection budget with a configuration where each added replica receives the original full pool size.
 
-### 12.3 Resource-limit control
+### 12.4 Resource-limit control — desirable
 
 Where time permits, constrain application CPU and confirm that the observed frontier changes predictably.
 
@@ -420,7 +452,7 @@ The expiry worker is not an automatic microservice candidate because it shares t
 
 ### PR1 — Measurement substrate and load harness
 
-Indicative budget: 2 days. Exit when one controlled local run produces reconcilable machine-readable client and server totals with observable generator and telemetry behaviour.
+Indicative budget: 2 days. Exit when one controlled local run produces reconcilable machine-readable client, server, and persisted-state totals; the mandatory response-validation control passes; and generator and telemetry behaviour are observable.
 
 ### PR2 — Single-instance frontier
 
@@ -428,15 +460,15 @@ Indicative budget: 2 days. Exit when each controlled workload has a repeatable o
 
 ### PR3 — Container and local scale-out
 
-Indicative budget: 1.5–2 days. Exit when dispersed and hot-authority traffic are compared across replica counts without changing the correctness model.
+Indicative budget: 1.5–2 days. Exit when dispersed and hot-authority traffic are compared across replica counts without changing the correctness model, including the connection-budget control.
 
-### PR4 — AWS deployment
+### PR4 — AWS deployment, conditional
 
-Indicative budget: 2 days. Exit when the service runs on AWS and accepts a controlled workload from separate generator compute with visible outcomes and metrics.
+Indicative budget: no more than 2 days before the AWS stop gate. Exit when the service runs on AWS and accepts a controlled workload from separate generator compute with visible outcomes and metrics, or when the stop decision is documented and the remaining budget returns to local evidence.
 
-### PR5 — AWS experiment and architecture decision
+### PR5 — Final experiment and architecture decision
 
-Indicative budget: 2 days. Exit when a reviewer can reproduce the topology, distinguish measured facts from interpretation, and understand why replicas help or do not help for each authority distribution.
+Indicative budget: up to 2 days. Use AWS results when available; otherwise use decisive local reruns. Exit when a reviewer can reproduce the topology, distinguish measured facts from interpretation, and understand why replicas help or do not help for each authority distribution.
 
 ## 15. Priority tiers
 
@@ -444,20 +476,22 @@ Indicative budget: 2 days. Exit when a reviewer can reproduce the topology, dist
 
 - reproducible external load harness;
 - aggregated metrics;
+- response-validation negative control;
+- correctness reconciliation;
 - one-instance baseline;
 - dispersed and hot-slot controls;
-- local hot-identity control;
+- local hot-identity control with clean-start assertion;
 - multi-instance shared-PostgreSQL comparison;
+- connection-budget control;
 - separate generator for publishable runs;
-- meaningful AWS deployment and measurement;
 - evidence-led architecture conclusion;
-- negative controls and correctness reconciliation.
+- explicit AWS attempt/stop decision.
 
 ### P1 — strongly desirable
 
+- meaningful AWS deployment and measurement;
 - local Kubernetes before AWS;
 - EKS runtime;
-- explicit aggregate-connection-budget experiment;
 - mixed-identity run;
 - recommended operating capacity;
 - simplified synchronized release wave;
@@ -496,9 +530,10 @@ If time slips, remove work in this order:
 4. detailed cost comparison;
 5. AWS hot-identity rerun;
 6. simplified synchronized release wave;
-7. local Kubernetes when a working AWS runtime already provides the required orchestration experiment.
+7. local Kubernetes when a working AWS runtime already provides the required orchestration experiment;
+8. remaining AWS implementation or reruns after the AWS stop gate.
 
-Do not descope the one-instance control, dispersed-versus-hot-slot comparison, multi-instance shared-authority experiment, separate generator, measurement validity, correctness reconciliation, or architecture report.
+Do not descope the response-validation control, one-instance control, dispersed-versus-hot-slot comparison, local hot-identity clean-start control, multi-instance shared-authority experiment, connection-budget control, separate generator, measurement validity, correctness reconciliation, or architecture report.
 
 ## 17. Final deliverables
 
@@ -509,13 +544,12 @@ The public-ready milestone should leave:
 3. aggregated service and runtime metrics;
 4. a single-instance report;
 5. a local multi-instance report;
-6. an AWS deployment guide or infrastructure definition;
-7. a measured AWS scale-out report;
-8. current and intended architecture diagrams;
-9. authority and bottleneck analysis;
-10. a service-boundary decision record;
-11. a concise public repository summary;
-12. explicit limitations, evidence labels, and negative-control results.
+6. an AWS deployment guide, measured AWS result, or documented stop decision;
+7. current and intended architecture diagrams;
+8. authority and bottleneck analysis;
+9. a service-boundary decision record;
+10. a concise public repository summary;
+11. explicit limitations, evidence labels, and negative-control results.
 
 Together these should answer what is correct, what is fast under which workload, where scale-out helps, where shared authority remains the frontier, which dependency becomes limiting, and what should be separated next.
 
@@ -523,13 +557,13 @@ Together these should answer what is correct, what is fast under which workload,
 
 AG-Sept is complete when:
 
-- required workloads run reproducibly;
-- single- and multi-instance results are available;
-- at least one meaningful AWS comparison is complete;
-- the generator is ruled out as the bottleneck for quoted results;
+- required workloads run reproducibly from clean fixtures;
+- single- and local multi-instance results are available;
+- response validation, generator headroom, and connection-budget controls have been demonstrated;
 - outcomes and persisted state reconcile;
 - database connection and authority boundaries are visible;
 - measured facts, calculations, and interpretation are separated;
 - architecture reflects evidence rather than desired presentation;
+- an AWS measurement is available or the bounded AWS stop decision is documented;
 - Kubernetes and decomposition remain means rather than goals;
 - the repository is suitable for public review under the disclosure policy.

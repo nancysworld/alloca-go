@@ -130,6 +130,55 @@ type Summary struct {
 	NotQuotableBecause string `json:"not_quotable_because,omitempty"`
 }
 
+// AdmittedFor counts admitted successes for one operation, across both replay
+// dispositions. Reconciliation joins client totals to persisted rows, and the row exists
+// whether the client learned of it fresh or by replay — so folding the two together is
+// what makes the comparison correct rather than a convenience.
+func (s Summary) AdmittedFor(operation string) int {
+	n := 0
+	for _, t := range s.Totals {
+		if t.Operation == operation && t.Outcome == domain.OutcomeAdmittedSuccess {
+			n += t.Count
+		}
+	}
+	return n
+}
+
+// FreshMutations counts non-replay mutation requests that reached a terminal domain
+// answer, which is the population an idempotency record is written for.
+//
+// Replays are excluded because a replay returns a recorded outcome without writing a new
+// record; counting them would demand one record per replay and fail a correct service.
+// invalid_request is excluded too: it stops at the transport edge and may carry no key to
+// scope a record by (transaction-semantics §5.5, INV-7).
+func (s Summary) FreshMutations() int {
+	n := 0
+	for _, t := range s.Totals {
+		switch {
+		case t.Replay,
+			!domain.Operation(t.Operation).IsKnown(),
+			t.Outcome == domain.OutcomeInvalidRequest,
+			!isDefiniteTerminal(t.Outcome):
+			continue
+		}
+		n += t.Count
+	}
+	return n
+}
+
+// isDefiniteTerminal reports whether an outcome definitely committed one way or the other.
+// unknown_replayable is by definition uncertain, and the timeout and failure outcomes may
+// or may not have committed — none of them can be required to have a durable record
+// (INV-7's named exclusions).
+func isDefiniteTerminal(o domain.Outcome) bool {
+	switch o {
+	case domain.OutcomeAdmittedSuccess, domain.OutcomeBusinessRefusal:
+		return true
+	default:
+		return false
+	}
+}
+
 // Total is one (operation, outcome, reason, replay) cell.
 type Total struct {
 	Operation string         `json:"operation"`

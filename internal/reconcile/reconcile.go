@@ -146,16 +146,16 @@ func capacityCheck(ctx context.Context, q Querier, org domain.OrganisationID, s 
 		return c, nil
 	}
 
-	admitted := s.AdmittedFor(string(domain.OpReserve))
+	admitted := s.FreshAdmittedFor(string(domain.OpReserve))
 	if live > admitted {
-		c.Detail = fmt.Sprintf("%d live reservations persisted but only %d reserves were "+
-			"admitted: the database holds units the client was never told about",
+		c.Detail = fmt.Sprintf("%d live reservations persisted but only %d fresh reserves "+
+			"were admitted: the database holds units the client was never told about",
 			live, admitted)
 		return c, nil
 	}
 
 	c.OK = true
-	c.Detail = fmt.Sprintf("%d live reservations, %d admitted reserves, no slot over capacity",
+	c.Detail = fmt.Sprintf("%d live reservations, %d fresh admitted reserves, no slot over capacity",
 		live, admitted)
 	return c, nil
 }
@@ -226,15 +226,15 @@ func claimsCheck(ctx context.Context, q Querier, org domain.OrganisationID, s lo
 		return c, nil
 	}
 
-	admitted := s.AdmittedFor(string(domain.OpReserve))
+	admitted := s.FreshAdmittedFor(string(domain.OpReserve))
 	if claims < admitted {
-		c.Detail = fmt.Sprintf("%d live claims for %d admitted reserves: the client was "+
-			"told about holds the schedule does not record", claims, admitted)
+		c.Detail = fmt.Sprintf("%d live claims for %d fresh admitted reserves: the client "+
+			"was told about holds the schedule does not record", claims, admitted)
 		return c, nil
 	}
 
 	c.OK = true
-	c.Detail = fmt.Sprintf("%d live claims, no overlapping pair, %d admitted reserves",
+	c.Detail = fmt.Sprintf("%d live claims, no overlapping pair, %d fresh admitted reserves",
 		claims, admitted)
 	return c, nil
 }

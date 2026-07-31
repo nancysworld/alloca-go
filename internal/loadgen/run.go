@@ -130,14 +130,17 @@ type Summary struct {
 	NotQuotableBecause string `json:"not_quotable_because,omitempty"`
 }
 
-// AdmittedFor counts admitted successes for one operation, across both replay
-// dispositions. Reconciliation joins client totals to persisted rows, and the row exists
-// whether the client learned of it fresh or by replay — so folding the two together is
-// what makes the comparison correct rather than a convenience.
-func (s Summary) AdmittedFor(operation string) int {
+// FreshAdmittedFor counts admitted successes for one operation, excluding replays.
+//
+// Replays are excluded because a replay re-reports a mutation that already happened: it
+// returns the originally recorded outcome and creates no new reservation, claim or record.
+// Counting it would compare N+R client admissions against N persisted rows and fail a
+// service behaving exactly as the idempotency contract requires — which is what an earlier
+// version of this did, caught by the integration suite rather than by reading.
+func (s Summary) FreshAdmittedFor(operation string) int {
 	n := 0
 	for _, t := range s.Totals {
-		if t.Operation == operation && t.Outcome == domain.OutcomeAdmittedSuccess {
+		if t.Operation == operation && t.Outcome == domain.OutcomeAdmittedSuccess && !t.Replay {
 			n += t.Count
 		}
 	}

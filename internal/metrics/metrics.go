@@ -7,22 +7,30 @@
 //
 // # Label discipline
 //
-// telemetry's observation types are drawn from closed sets by construction, which removes
-// the *accidental* unbounded label. The deliberate one is removed by a rule that package
-// states and this one obeys: **labels are never derived from request context.** The ctx
-// arguments below are accepted to satisfy the interface and are deliberately unused —
-// ctx carries RequestID, which is unbounded and belongs in a log, never in a label
-// (ag-sept-plan §6.1).
+// Two things could give this package an unbounded series count, and neither is prevented
+// by the types alone.
 //
-// Every label value here is either a closed set (operation, outcome, reason) or a boolean.
-// Reason is closed by domain.Reason and empty for non-refusals, which is itself a fixed
-// value rather than an open one.
+// First, the context. telemetry.Recorder is handed the ctx, and ctx carries RequestID,
+// which is unbounded by construction. The rule is that **labels are never derived from
+// request context**; the methods below take `_ context.Context` so the compiler keeps it.
+//
+// Second, the observation's own strings. Operation is a plain string and Outcome and
+// Reason are string-backed, so `Outcome("GET /slots/1")` compiles and telemetry's closed-set
+// rule for them is documentation, not enforcement. A caller's discipline is the wrong place
+// to hold a guarantee that protects publishable runs, so this package does not rely on it:
+// every label is normalised through the closed-set predicates that own each vocabulary —
+// telemetry.IsKnownOperation, domain.Outcome.IsKnown, domain.Reason.IsKnown — and anything
+// outside collapses to LabelUnknown.
 //
 // # Cardinality
 //
-// The request counter's series count is bounded by
-// operations × outcomes × reasons × 2, and the duration histogram omits reason to keep its
-// bucket count down. Both are constants of the domain, not of the traffic.
+// The result is a bound this package enforces rather than inherits: the request counter
+// cannot exceed (operations+1) × (outcomes+1) × (reasons+2) × 2 series regardless of what
+// it is handed, and the duration histogram omits reason to keep its bucket count down.
+// Every factor is a constant of the contract, none of the traffic.
+//
+// The bound is enforced here, so it is not a claim about callers and does not weaken when
+// a new caller appears.
 package metrics
 
 import (
@@ -30,6 +38,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/nancysworld/alloca-go/internal/domain"
 	"github.com/nancysworld/alloca-go/internal/telemetry"
 )
 
@@ -118,20 +127,59 @@ var requestBuckets = []float64{
 // interesting failure is a long iteration rather than a slow one.
 var expiryBuckets = []float64{0.01, 0.05, 0.1, 0.5, 1, 5, 15, 60}
 
+// LabelUnknown is the single series every out-of-vocabulary label value collapses to.
+//
+// Collapsing rather than dropping is deliberate: a dropped observation would make the
+// totals stop reconciling, and §6.5 makes an unreconciled run unquotable. An observation
+// with a label this recorder does not recognise is still a completed request, so it is
+// counted — under a value that says the vocabulary was violated and where to look.
+const LabelUnknown = "unknown"
+
 // RecordRequest aggregates one completed request.
 //
-// ctx is unused by design — see the package comment. Deriving a label from it is the one
-// way this package could produce an unbounded series.
+// ctx is unused by design — see the package comment. Deriving a label from it is one of
+// the two ways this package could produce an unbounded series; the other is trusting the
+// observation's own strings, which normalise below.
 func (r *Recorder) RecordRequest(_ context.Context, obs telemetry.RequestObservation) {
-	outcome := string(obs.Outcome)
+	operation := normaliseOperation(obs.Operation)
+	outcome := normaliseOutcome(obs.Outcome)
+
 	r.requests.WithLabelValues(
-		obs.Operation,
+		operation,
 		outcome,
-		string(obs.Reason),
+		normaliseReason(obs.Reason),
 		boolLabel(obs.Replay),
 	).Inc()
 
-	r.duration.WithLabelValues(obs.Operation, outcome).Observe(obs.Duration.Seconds())
+	r.duration.WithLabelValues(operation, outcome).Observe(obs.Duration.Seconds())
+}
+
+// normaliseOperation admits the observation vocabulary — the three mutations plus the
+// read route — and collapses everything else.
+func normaliseOperation(op string) string {
+	if telemetry.IsKnownOperation(op) {
+		return op
+	}
+	return LabelUnknown
+}
+
+// normaliseOutcome admits the closed terminal-outcome set of measurement-contract §4.
+func normaliseOutcome(o domain.Outcome) string {
+	if o.IsKnown() {
+		return string(o)
+	}
+	return LabelUnknown
+}
+
+// normaliseReason admits the closed refusal-reason set, plus the empty reason that a
+// non-refusal legitimately carries. Empty stays empty rather than becoming "unknown":
+// "this request was not a refusal" and "this reason is not in the vocabulary" are
+// different facts, and collapsing them would hide the second behind the commonest value.
+func normaliseReason(reason domain.Reason) string {
+	if reason == "" || reason.IsKnown() {
+		return string(reason)
+	}
+	return LabelUnknown
 }
 
 // RecordExpiry aggregates one expiry worker iteration.

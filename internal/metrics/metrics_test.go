@@ -46,6 +46,102 @@ func TestRequestIDNeverBecomesALabel(t *testing.T) {
 	}
 }
 
+// TestOutOfVocabularyLabelsCollapseToUnknown is the discriminating test for the label
+// firewall. telemetry documents operation/outcome/reason as closed sets, but Operation is
+// a plain string and Outcome and Reason are string-backed, so a caller can hand this
+// recorder a URL path or an error string and the compiler will not object.
+//
+// Three hundred observations, each with a distinct invalid value in all three positions,
+// must produce exactly one series. Remove any of the three normalise* calls and this fails
+// with 300 — which is what a benchmark substrate must not do to a Prometheus mid-run.
+func TestOutOfVocabularyLabelsCollapseToUnknown(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	rec := metrics.New(reg)
+
+	const bogus = 300
+	for i := range bogus {
+		n := strconv.Itoa(i)
+		rec.RecordRequest(context.Background(), telemetry.RequestObservation{
+			Operation: "GET /slots/" + n,                      // a path, not an operation
+			Outcome:   domain.Outcome("boom-" + n),            // not in the closed set
+			Reason:    domain.Reason("connection reset " + n), // error text, not a reason
+			Duration:  time.Millisecond,
+		})
+	}
+
+	if got := countSeries(t, reg, "alloca_requests_total"); got != 1 {
+		t.Fatalf("%d observations with distinct invalid labels produced %d series, want 1: "+
+			"the label firewall is not normalising", bogus, got)
+	}
+
+	body := gather(t, reg)
+	for _, want := range []string{
+		`operation="` + metrics.LabelUnknown + `"`,
+		`outcome="` + metrics.LabelUnknown + `"`,
+		`reason="` + metrics.LabelUnknown + `"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("exposition missing %s\n%s", want, body)
+		}
+	}
+
+	// Collapsed, not dropped: an unreconciled total makes a run unquotable (§6.5).
+	if got := counterValue(t, reg, "alloca_requests_total"); got != bogus {
+		t.Fatalf("counter = %v, want %d: observations were dropped rather than collapsed",
+			got, bogus)
+	}
+}
+
+// TestKnownVocabularySurvivesNormalisation guards the other direction: a firewall that
+// collapsed everything would pass the test above while destroying the measurement.
+func TestKnownVocabularySurvivesNormalisation(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	rec := metrics.New(reg)
+
+	for _, op := range []string{
+		string(domain.OpReserve), string(domain.OpConfirm), string(domain.OpCancel),
+		telemetry.OperationListSlots,
+	} {
+		rec.RecordRequest(context.Background(), telemetry.RequestObservation{
+			Operation: op,
+			Outcome:   domain.OutcomeAdmittedSuccess,
+			Duration:  time.Millisecond,
+		})
+	}
+
+	body := gather(t, reg)
+	for _, op := range []string{"reserve", "confirm", "cancel", "list_slots"} {
+		if !strings.Contains(body, `operation="`+op+`"`) {
+			t.Errorf("known operation %q was collapsed\n%s", op, body)
+		}
+	}
+	if strings.Contains(body, metrics.LabelUnknown) {
+		t.Errorf("known vocabulary produced an %q series\n%s", metrics.LabelUnknown, body)
+	}
+}
+
+// TestNonRefusalReasonStaysEmpty pins the distinction normaliseReason exists to keep:
+// "not a refusal" is the empty reason, not the unknown one.
+func TestNonRefusalReasonStaysEmpty(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	rec := metrics.New(reg)
+
+	rec.RecordRequest(context.Background(), telemetry.RequestObservation{
+		Operation: string(domain.OpReserve),
+		Outcome:   domain.OutcomeAdmittedSuccess,
+		Duration:  time.Millisecond,
+	})
+
+	body := gather(t, reg)
+	if !strings.Contains(body, `reason=""`) {
+		t.Errorf("non-refusal reason should stay empty\n%s", body)
+	}
+	if strings.Contains(body, `reason="`+metrics.LabelUnknown+`"`) {
+		t.Errorf("non-refusal reason collapsed to %q, hiding real violations\n%s",
+			metrics.LabelUnknown, body)
+	}
+}
+
 // TestReplayIsALabelNotAnOutcome pins measurement-contract §4: a replay carries the
 // originally recorded terminal outcome and is distinguished by an orthogonal flag. If
 // replay were folded into the outcome, both requests below would land on different

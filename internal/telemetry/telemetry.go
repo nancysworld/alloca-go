@@ -71,6 +71,17 @@ type ExpiryObservation struct {
 // take their names from domain.Operation, so there is nothing to redeclare for them.
 const OperationListSlots = "list_slots"
 
+// IsKnownOperation reports whether op is a member of the observation vocabulary: the
+// three domain mutations plus the read route.
+//
+// Operation is a plain string on RequestObservation, so a caller can pass a URL path.
+// That is a documented rule rather than a compiler-enforced one, and a rule protecting
+// an aggregate needs something that can *check* it — an aggregating Recorder normalises
+// through this rather than trusting what it is handed (ag-sept-plan §6.1).
+func IsKnownOperation(op string) bool {
+	return op == OperationListSlots || domain.Operation(op).IsKnown()
+}
+
 // Recorder consumes observations. Implementations must be safe for concurrent use.
 //
 // They execute **on the request path** and must remain bounded; remote export must not

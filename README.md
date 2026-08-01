@@ -106,6 +106,13 @@ with an empty body while you are still reading the stack:
 make smoke MAX_TIME=600
 ```
 
+### Running a measurement run
+
+`make smoke` checks that the service works. The AG-Sept load harness measures it: a seeded
+fixture, an external generator holding no database credentials, and a reconciliation of
+client, server and persisted-state totals. The procedure is in
+[`docs/operations/load-harness.md`](docs/operations/load-harness.md).
+
 The HTTP contract — routes, request and response shapes, status mapping, and the
 `/healthz`, `/readyz`, `/meta` operational endpoints — is documented in
 [`docs/design/api-surface.md`](docs/design/api-surface.md). What the service emits about

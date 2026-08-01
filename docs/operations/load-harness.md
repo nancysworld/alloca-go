@@ -41,7 +41,7 @@ listener on `:9090`. Wait for `{"msg":"metrics listener starting"}` before conti
 
 ```sh
 # terminal 2
-export DATABASE_URL='postgres://alloca:alloca@localhost:55432/alloca?sslmode=disable'
+export DATABASE_URL='postgres://alloca:alloca@localhost:15432/alloca?sslmode=disable'
 
 # 1. fixture + clean-start assertion
 go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
@@ -56,6 +56,11 @@ go run ./cmd/alloca-verify -run run.json -org load-org
 Each step exits non-zero when its result is not quotable, so `&&`-chaining them is safe:
 a broken run stops the pipeline instead of handing you numbers from it.
 
+To run it a second time, restart the service (`make dev` in terminal 1) rather than only
+re-seeding. `-reset` returns the database to a clean fixture but cannot touch the server's
+in-process counters, and those keep accumulating across runs — see §4. `make db-down` is
+not part of this: `db-up` already removes any existing container before starting one.
+
 Keep `-slots` the same across seed and load. The generator has no way to discover the
 dataset, so a mismatch quietly aims traffic at slots that were never seeded.
 
@@ -63,19 +68,40 @@ dataset, so a mismatch quietly aims traffic at slots that were never seeded.
 
 The exit gate is that **three independent counts agree**. Client and persisted state come
 out of steps 2 and 3; the server's own total is the third, and it is the one that is easy
-to forget:
+to forget. Only the server count prints as a bare number — the other two are fields inside
+JSON, so here is how to read each of them:
 
 ```sh
-curl -s http://localhost:9090/metrics | grep '^alloca_requests_total'
+# client — written by step 2
+jq '.summary.completed_requests, .summary.successful_mutation_goodput' run.json
+
+# server — read the replay="false" series, not the sum of both
+# needs the service still running; nothing persists this after a restart, and nothing
+# resets it either, so a second run against the same process reads 120, not 60
+curl -s http://localhost:9090/metrics | grep '^alloca_requests_total.*replay="false"'
+
+# persisted — step 3 again, this time reading the counts it reconciled against
+go run ./cmd/alloca-verify -run run.json -org load-org | jq -r '.checks[].detail'
 ```
 
 For the run above, all three say 60:
 
-| Source | Where |
-|---|---|
-| Client | `run.json` → `completed_requests`, `successful_mutation_goodput` |
-| Server | `alloca_requests_total{operation="reserve",outcome="admitted_success",...}` |
-| Persisted | `alloca-verify` verdict → four checks, each naming its invariant |
+| Source | Reads | Says |
+|---|---|---|
+| Client | `run.json` → `completed_requests`, `successful_mutation_goodput` | `60`, `60` |
+| Server | `alloca_requests_total{...,replay="false"}` | `60` |
+| Persisted | `alloca-verify` → the counts quoted in each check's `detail` | `60` live claims, `60` records |
+
+The `replay` label is what makes a second run legible. A `replay="true"` series is not a
+failure — those requests reached the service and were correctly answered from the
+idempotency record without committing anything, so they belong in neither the client's
+goodput nor the persisted rows. Summing the two series and comparing that to 60 is the
+mistake the gate is built to catch.
+
+The persisted count has no field of its own: it is stated inside each check's `detail`
+prose (`"60 live claims, no overlapping pair, ..."`). `ok` and `quotable` are the
+machine-readable verdict; the numbers are there for you to compare against the other two
+by eye.
 
 `alloca-verify` prints one check per §6.5 rule (INV-1, INV-5, INV-4, INV-7) and a
 top-level `"quotable"`. Both binaries write their JSON even when they fail — you need to
@@ -122,17 +148,42 @@ leftover rows returns zero admitted and all `schedule_conflict`: a result that b
 invariant, passes every gate, and measures nothing. This bites hardest after a `-confirm`
 run, which leaves permanent rows by design.
 
-**`ports are not available` from `make db-up`** — the host has 55432 reserved (common on
-WSL2). Pick another port, and remember it is two overrides, not one:
+**`ports are not available ... /forwards/expose returned unexpected status: 500`** — the
+host has the port reserved, and on Windows that is usually not another process holding it.
+Hyper-V and WSL2 reserve blocks inside the dynamic port range (49152–65535) at boot, and
+Docker cannot bind anything inside one. Confirm before guessing:
 
 ```sh
-make db-up PGPORT=5433
-export DATABASE_URL='postgres://alloca:alloca@localhost:5433/alloca?sslmode=disable'
-make migrate && make run   # both read DATABASE_URL from the environment
+netsh.exe interface ipv4 show excludedportrange protocol=tcp   # from WSL, note the .exe
 ```
 
-`PGPORT` only moves the container; the default `DATABASE_URL` still points at 55432, so
-skipping the second line leaves everything connecting to nothing.
+If the port falls in a listed range, pick one below 49152 — the default `PGPORT` is 15432
+for exactly this reason. Reservations only reshuffle on reboot, so a port in that range
+that works today can fail tomorrow with no local change.
+
+`DATABASE_URL` derives from `PGPORT`, so moving the container is one override:
+
+```sh
+make db-up PGPORT=15433
+make migrate PGPORT=15433 && make run PGPORT=15433
+```
+
+Setting `DATABASE_URL` explicitly still overrides both, which is what points the same
+targets at a database that is not the local container.
+
+**A run reports goodput but the database does not move** — check `replay` in the totals:
+
+```sh
+jq '.summary.totals' run.json     # "replay": true on everything means nothing committed
+```
+
+Idempotency keys are `workload-seq-step` with no per-run nonce (`internal/loadgen/workload.go:39`),
+so re-running the same `-workload` re-sends the keys the previous run already used and the
+server correctly replays each recorded outcome instead of committing. The run then passes
+reconciliation — no invariant is broken — while measuring nothing, which is the §5.3 trap
+in a different costume. Re-seed with `-reset` between runs (it truncates
+`idempotency_records`), or change `-workload`. The clean-start assertion does not cover
+this: it guards the seed, not the load.
 
 **Every request refused with `no_capacity` on `dispersed`** — the dataset is smaller than
 you think, or the fixture was never reset. Check `-slots` matches between seed and load.

@@ -69,7 +69,7 @@ a `run` that quietly migrated would make local development the one place that ru
 hold:
 
 ```sh
-make db-up     # local PostgreSQL on port 55432
+make db-up     # local PostgreSQL on port 15432
 make migrate   # once, before a new version serves traffic
 make run       # serves on :8080
 make db-down

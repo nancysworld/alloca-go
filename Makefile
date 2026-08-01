@@ -24,7 +24,7 @@ GOLANGCI_LINT_STAMP   := $(TOOLBIN)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 # under concurrent transactions, post-lock decision time, the scoped-key race) do not
 # exist without one. They are behind the `integration` build tag so the default gate
 # stays hermetic and fast.
-DATABASE_URL ?= postgres://alloca:alloca@localhost:55432/alloca?sslmode=disable
+DATABASE_URL ?= postgres://alloca:alloca@localhost:$(PGPORT)/alloca?sslmode=disable
 # Where `make smoke` looks for a running service, and how long each of its requests waits.
 # Raise MAX_TIME when the service is paused in a debugger: it is curl's own patience, so no
 # server-side deadline affects it.
@@ -32,7 +32,13 @@ BASE         ?= http://localhost:8080
 MAX_TIME     ?= 10
 PGCONTAINER  ?= alloca-pg
 PGIMAGE      ?= postgres:16-alpine
-PGPORT       ?= 55432
+# Deliberately below 49152, the start of the Windows dynamic port range. Hyper-V and WSL2
+# reserve blocks inside that range at boot, and a reserved port makes `docker run -p` fail
+# with "ports are not available ... /forwards/expose returned unexpected status: 500" until
+# the next reboot reshuffles the blocks. A port above 49152 therefore works or not by luck
+# of the boot; this one is stable. `netsh interface ipv4 show excludedportrange protocol=tcp`
+# lists the current reservations.
+PGPORT       ?= 15432
 
 all: ci
 

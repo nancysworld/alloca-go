@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"os"
 	"testing"
 	"time"
 
@@ -14,14 +15,17 @@ import (
 	"github.com/nancysworld/alloca-go/internal/telemetry"
 )
 
-// These benchmarks discharge ag-sept-plan §6.2: before any performance claim, AG-Sept must
-// show that observation is not the primary request bottleneck.
+// These benchmarks price one observation, which is what ag-sept-plan §6.2's *decision*
+// turns on: measure first, and build the bounded asynchronous sink only if the measurement
+// says it is needed. observability.md §5.1 deferred that sink on the argument that "one line
+// to a local stderr, at AG-M1 load, is not a plausible stall"; these turn the argument into
+// a number.
 //
-// The decision recorded in the PR1 scope note is to measure first and build the bounded
-// asynchronous sink only if the measurement says it is needed — so this is the measurement
-// that decides it, not a formality. observability.md §5.1 deferred the async sink on the
-// argument that "one line to a local stderr, at AG-M1 load, is not a plausible stall";
-// these benchmarks turn that argument into a number.
+// They do not discharge §6.2 on their own, and PR1 does not claim they do. Showing that
+// telemetry is not the request-path bottleneck *under load* needs a workload-level
+// comparison — telemetry on versus off, same dataset and concurrency, reporting the
+// throughput and p99 delta — which is scoped to PR2. A per-call cost bounds that comparison;
+// it does not replace it.
 //
 // Run with:
 //
@@ -62,6 +66,58 @@ func BenchmarkRecorderNop(b *testing.B) {
 func BenchmarkRecorderSlogBoundedSink(b *testing.B) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	rec := telemetry.NewSlogRecorder(logger)
+	ctx := context.Background()
+	obs := observation()
+	b.ReportAllocs()
+	for b.Loop() {
+		rec.RecordRequest(ctx, obs)
+	}
+}
+
+// BenchmarkRecorderSlogFileSink writes to a real file, and exists because every other
+// benchmark here writes to io.Discard.
+//
+// io.Discard measures formatting, allocation and fan-out with the sink removed, which is the
+// right isolation for "is emission inherently expensive" and the wrong one for "is the
+// service's actual write cheap". The running service writes to a descriptor — a file, a
+// pipe, a container's stdout — and that write is a syscall this package's synchronous
+// emission holds the request through. A temporary file is the bounded local stand-in: not
+// the slowest sink a deployment might have, but a real one, and the difference between this
+// row and the io.Discard row is the part io.Discard cannot show.
+//
+// It is still a microbenchmark. It bounds the per-call cost of a healthy sink; it does not
+// establish the end-to-end §6.2 claim, which needs a workload-level comparison of throughput
+// and p99 with telemetry on versus off. That comparison belongs with the sweeps in PR2.
+func BenchmarkRecorderSlogFileSink(b *testing.B) {
+	f, err := os.CreateTemp(b.TempDir(), "telemetry-*.log")
+	if err != nil {
+		b.Fatalf("creating sink: %v", err)
+	}
+	b.Cleanup(func() { _ = f.Close() })
+
+	rec := telemetry.NewSlogRecorder(slog.New(slog.NewJSONHandler(f, nil)))
+	ctx := context.Background()
+	obs := observation()
+	b.ReportAllocs()
+	for b.Loop() {
+		rec.RecordRequest(ctx, obs)
+	}
+}
+
+// BenchmarkRecorderTeeFileSink is the service's own configuration against a real sink: both
+// recorders, one observation, a descriptor at the end of it. Compared against
+// BenchmarkRecorderTee it prices the write that io.Discard removes.
+func BenchmarkRecorderTeeFileSink(b *testing.B) {
+	f, err := os.CreateTemp(b.TempDir(), "telemetry-*.log")
+	if err != nil {
+		b.Fatalf("creating sink: %v", err)
+	}
+	b.Cleanup(func() { _ = f.Close() })
+
+	rec := metrics.Tee{
+		telemetry.NewSlogRecorder(slog.New(slog.NewJSONHandler(f, nil))),
+		metrics.New(prometheus.NewRegistry()),
+	}
 	ctx := context.Background()
 	obs := observation()
 	b.ReportAllocs()

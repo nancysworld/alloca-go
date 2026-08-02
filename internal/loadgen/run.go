@@ -310,20 +310,29 @@ func percentiles(v []float64) Percentiles {
 	}
 	sort.Float64s(v)
 	return Percentiles{
-		P50: quantile(v, 0.50),
-		P95: quantile(v, 0.95),
-		P99: quantile(v, 0.99),
+		P50: quantile(v, 50),
+		P95: quantile(v, 95),
+		P99: quantile(v, 99),
 		Max: v[len(v)-1],
 	}
 }
 
-func quantile(sorted []float64, q float64) float64 {
-	if len(sorted) == 0 {
+// quantile returns the nearest-rank value for the pth percentile: the smallest observation
+// whose rank is at least ⌈p·n/100⌉, one-based, which is index ⌈p·n/100⌉-1 zero-based.
+//
+// p is an integer percentile rather than a float fraction, and the ceiling is computed in
+// integer arithmetic, because the float form is wrong in a way that hides. `int(q*n)`
+// truncates, which returns the *next* observation whenever q·n is integral — p95 of 60
+// samples becomes the 58th rather than the 57th, and p50 of two becomes the larger value —
+// so it overstates every reported percentile at exactly the round sample sizes a sweep
+// tends to use. `ceil(q*n)-1` in floating point fixes those cases but only because 0.95 and
+// 0.99 happen to be stored slightly below their decimal value; a quantile that landed
+// slightly above would shift the rank up again. Integers cannot land either way.
+func quantile(sorted []float64, p int) float64 {
+	n := len(sorted)
+	if n == 0 {
 		return 0
 	}
-	i := int(q * float64(len(sorted)))
-	if i >= len(sorted) {
-		i = len(sorted) - 1
-	}
-	return sorted[i]
+	rank := min(max((p*n+99)/100, 1), n) // ⌈p·n/100⌉, clamped into [1, n]
+	return sorted[rank-1]
 }

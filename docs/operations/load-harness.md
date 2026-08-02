@@ -21,7 +21,7 @@ later move to separate compute without changing anything.
 | `cmd/alloca-go` | the service under test; also serves `/metrics` on its own port | yes |
 | `cmd/alloca-seed` | builds the fixture and asserts the §5.3 clean start | yes |
 | `cmd/alloca-load` | the external generator; writes the run report | **no** |
-| `cmd/alloca-verify` | reconciles the report against persisted state (§6.5) | yes |
+| `cmd/alloca-verify` | reconciles the report against the metrics scrape and persisted state (§6.5) | yes |
 
 ## 2. Prerequisites
 
@@ -50,12 +50,24 @@ go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
 # 2. the run itself
 go run ./cmd/alloca-load -workload dispersed -concurrency 8 -n 60 -slots 20 -out test/results/run.json
 
-# 3. reconcile client totals against persisted state
-go run ./cmd/alloca-verify -run test/results/run.json -org load-org
+# 3. capture the server's own count, before anything else touches the service
+curl -s http://localhost:9090/metrics > test/results/metrics.txt
+
+# 4. reconcile client, server and persisted totals
+go run ./cmd/alloca-verify -run test/results/run.json -metrics test/results/metrics.txt \
+  -org load-org -out test/results/verdict.json
 ```
 
 Each step exits non-zero when its result is not quotable, so `&&`-chaining them is safe:
 a broken run stops the pipeline instead of handing you numbers from it.
+
+`-metrics` is what makes the verdict a three-way agreement rather than a two-way one. Without
+it the verifier still runs, but the client/server check fails and the run is **not quotable**
+— deliberately, because §6.5 requires client totals, server totals and persisted state to
+reconcile, and a gate that silently certified two of the three would be the weaker gate
+wearing the stronger gate's name. The scrape is a file rather than a URL the verifier fetches
+so that the numbers being reconciled are the ones taken at the end of the run, not whatever
+the service reports whenever the verifier happens to run.
 
 To run it a second time, restart the service (`make dev` in terminal 1) rather than only
 re-seeding. `-reset` returns the database to a clean fixture but cannot touch the server's
@@ -67,7 +79,7 @@ dataset, so a mismatch quietly aims traffic at slots that were never seeded.
 
 ### The other two workloads
 
-Same three steps; only step 2 changes. Each one needs its own seed — `-reset` before every
+Same four steps; only step 2 changes. Each one needs its own seed — `-reset` before every
 run, and between workloads as much as between repeats of one (§7).
 
 ```sh
@@ -75,7 +87,9 @@ run, and between workloads as much as between repeats of one (§7).
 go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
 go run ./cmd/alloca-load -workload hot-slot -concurrency 8 -n 60 -slots 20 -slot slot-0 \
   -out test/results/hot-slot.json
-go run ./cmd/alloca-verify -run test/results/hot-slot.json -org load-org
+curl -s http://localhost:9090/metrics > test/results/hot-slot-metrics.txt
+go run ./cmd/alloca-verify -run test/results/hot-slot.json \
+  -metrics test/results/hot-slot-metrics.txt -org load-org
 ```
 
 ```sh
@@ -83,7 +97,9 @@ go run ./cmd/alloca-verify -run test/results/hot-slot.json -org load-org
 go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
 go run ./cmd/alloca-load -workload hot-identity -concurrency 8 -n 60 -slots 20 -user user-0 \
   -out test/results/hot-identity.json
-go run ./cmd/alloca-verify -run test/results/hot-identity.json -org load-org
+curl -s http://localhost:9090/metrics > test/results/hot-identity-metrics.txt
+go run ./cmd/alloca-verify -run test/results/hot-identity.json \
+  -metrics test/results/hot-identity-metrics.txt -org load-org
 ```
 
 `-slot` and `-user` already carry these defaults. They are written out because the contended
@@ -96,22 +112,21 @@ dataset that was never seeded. Pass it on all three.
 
 ## 4. Reading the result
 
-The exit gate is that **three independent counts agree**. Client and persisted state come
-out of steps 2 and 3; the server's own total is the third, and it is the one that is easy
-to forget. Only the server count prints as a bare number — the other two are fields inside
-JSON, so here is how to read each of them:
+The exit gate is that **three independent counts agree**, and step 4 now checks that rather
+than leaving it to you: the client/server comparison is a check in the verdict like any
+other. What follows is how to read the same three numbers yourself, which is what you want
+when a check has failed and you need to see which way.
 
 ```sh
+# every check and its numbers, including the client/server comparison
+jq -r '.checks[] | "\(.ok)\t\(.name)\t\(.detail)"' test/results/verdict.json
+
 # client — written by step 2
 jq '.summary.completed_requests, .summary.successful_mutation_goodput' test/results/run.json
 
 # server — read the replay="false" series only; never add the replay="true" one to it
-# needs the service still running; nothing persists this after a restart, and nothing
-# resets it either, so a second run against the same process reads 120, not 60
-curl -s http://localhost:9090/metrics | grep '^alloca_requests_total.*replay="false"'
-
-# persisted — step 3 again, this time reading the counts it reconciled against
-go run ./cmd/alloca-verify -run test/results/run.json -org load-org | jq -r '.checks[].detail'
+# nothing resets these counters, so a scrape taken across two runs reads 120, not 60
+grep '^alloca_requests_total.*replay="false"' test/results/metrics.txt
 ```
 
 For the `dispersed` run above, all three say 60:
@@ -130,12 +145,18 @@ mistake the gate is built to catch.
 
 The persisted count has no field of its own: it is stated inside each check's `detail`
 prose (`"60 live claims, no overlapping pair, ..."`). `ok` and `quotable` are the
-machine-readable verdict; the numbers are there for you to compare against the other two
-by eye.
+machine-readable verdict; the numbers are there for when you need to see how a check
+reached it.
 
-`alloca-verify` prints one check per §6.5 rule (INV-1, INV-5, INV-4, INV-7) and a
-top-level `"quotable"`. Both binaries write their JSON even when they fail — you need to
-see *why*, not just that.
+`alloca-verify` prints five checks — one per §6.5 database rule (INV-1, INV-5, INV-4,
+INV-7) and the client/server comparison, which carries no invariant because it is a
+statement about instrumentation rather than about the domain. Both binaries write their
+JSON even when they fail — you need to see *why*, not just that.
+
+A scrape taken without restarting the service is the common way to fail the new check: the
+counters are cumulative, so the scrape carries every run the process has served while
+`run.json` describes one. The check's `detail` says so when the totals differ, because that
+is the first thing to suspect and not the last.
 
 ### Reading a contended workload
 
@@ -197,12 +218,21 @@ when response validation is off, so a reported success cannot be an unchecked `2
 ```sh
 go run ./cmd/alloca-load -workload dispersed -concurrency 8 -n 20 -slots 20 \
   -validate=false -out test/results/control.json
+curl -s http://localhost:9090/metrics > test/results/control-metrics.txt
+go run ./cmd/alloca-verify -run test/results/control.json \
+  -metrics test/results/control-metrics.txt -org load-org
 ```
 
 Expect exit 1 from `alloca-load`, and exit 1 again from `alloca-verify` on `control.json`
 — the generator's refusal is carried forward rather than overridden by a reconciliation
 that happens to be clean. If either exits 0, the control has stopped controlling anything;
 that is a bug in the harness, not a run you may quote.
+
+Pass `-metrics` here too, even though the verifier would exit 1 without it. A control that
+fails for the wrong reason is not a control: the point is to watch the generator's verdict
+survive a *clean* reconciliation, and omitting the scrape would fail the run on a missing
+input before that verdict is ever tested. Check `not_quotable_because` names the generator,
+not the scrape.
 
 ## 7. When it goes wrong
 

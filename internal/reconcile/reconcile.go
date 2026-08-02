@@ -34,7 +34,10 @@ type Querier interface {
 type Check struct {
 	Name string `json:"name"`
 	// Invariant names the AG-M1 invariant this check exercises, so a failure points at
-	// the property that broke rather than only at the arithmetic.
+	// the property that broke rather than only at the arithmetic. It is empty for a check
+	// that exercises a measurement rule rather than a domain invariant — the client/server
+	// comparison is a statement about instrumentation, and citing an invariant it does not
+	// test would misdirect whoever reads the failure.
 	Invariant string `json:"invariant"`
 	OK        bool   `json:"ok"`
 	Detail    string `json:"detail"`
@@ -73,11 +76,16 @@ func RunClientChecks(ctx context.Context, s loadgen.Summary) (Result, error) {
 	return res, nil
 }
 
-// Run executes every check of §6.5 against the summary and the database.
+// Run executes every check of §6.5 against the summary, the metrics scrape and the
+// database — the three independent counts the rule requires to agree.
+//
+// server carries the scrape. Passing nil is permitted and produces a failing check rather
+// than a skipped one: §6.5 is a three-way agreement, and a verdict that quietly certified a
+// run on two of the three would be the weaker gate wearing the stronger gate's name.
 //
 // Every check runs even after one fails: an operator debugging a bad run wants the whole
 // picture, and stopping at the first failure hides whether the cause is narrow or broad.
-func Run(ctx context.Context, q Querier, org domain.OrganisationID, s loadgen.Summary) (Result, error) {
+func Run(ctx context.Context, q Querier, org domain.OrganisationID, s loadgen.Summary, server ServerTotals) (Result, error) {
 	var res Result
 
 	for _, check := range []func(context.Context, Querier, domain.OrganisationID, loadgen.Summary) (Check, error){
@@ -92,6 +100,7 @@ func Run(ctx context.Context, q Querier, org domain.OrganisationID, s loadgen.Su
 		}
 		res.Checks = append(res.Checks, c)
 	}
+	res.Checks = append(res.Checks, serverTotalsCheck(s, server))
 
 	// The generator's own verdict is carried forward rather than recomputed. A run whose
 	// responses failed validation cannot become quotable by reconciling — the two gates

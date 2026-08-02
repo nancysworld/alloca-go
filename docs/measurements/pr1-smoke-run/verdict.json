@@ -23,6 +23,12 @@
       "invariant": "INV-7",
       "ok": true,
       "detail": "60 completed requests, all outcomes in the closed set"
+    },
+    {
+      "name": "server totals vs client totals",
+      "invariant": "",
+      "ok": true,
+      "detail": "60 requests, every operation/outcome/reason/replay cell agrees with the client"
     }
   ],
   "quotable": true

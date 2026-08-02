@@ -1,6 +1,6 @@
 {
   "manifest": {
-    "commit_sha": "e64b2c4d4e09dc1ed1221220bbf94b04ca74551f",
+    "commit_sha": "",
     "go_version": "go1.26.5",
     "replica_count": 0,
     "deployment_topology": "",
@@ -14,13 +14,13 @@
     "generator_gomaxprocs": 10,
     "generator_num_cpu": 10,
     "target": "http://localhost:8080",
-    "timestamp": "2026-07-31T14:46:07.525974062Z"
+    "timestamp": "2026-08-02T21:49:02.556226145Z"
   },
   "summary": {
     "workload": "dispersed",
     "concurrency": 8,
     "iterations": 60,
-    "duration_seconds": 0.050018203,
+    "duration_seconds": 0.045271347,
     "warm_up_seconds": 0,
     "warm_up_discarded": 0,
     "totals": [
@@ -34,16 +34,16 @@
     "completed_requests": 60,
     "successful_mutation_goodput": 60,
     "latency_ms": {
-      "p50": 4.558521,
-      "p95": 19.964117,
-      "p99": 23.844062,
-      "max": 23.844062
+      "p50": 4.674711,
+      "p95": 15.009451,
+      "p99": 15.715065,
+      "max": 15.715065
     },
     "generator": {
       "gomaxprocs": 10,
       "goroutines": 19,
-      "cpu_seconds": 0.010217,
-      "cpu_utilisation_per_core": 0.020426563505290266,
+      "cpu_seconds": 0.0088,
+      "cpu_utilisation_per_core": 0.01943834363930015,
       "num_cpu": 10
     },
     "response_validation_enabled": true,

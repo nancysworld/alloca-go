@@ -22,9 +22,9 @@ in the harness needs to read the database after a run.
 | # | Deliverable | Plan reference |
 |---|---|---|
 | 1 | Aggregated metrics recorder on the existing observation boundary, bounded label sets only | §6.1 |
-| 2 | Evidence that synchronous telemetry is not the request-path bottleneck | §6.2 |
+| 2 | Per-call cost of synchronous telemetry against a real sink, deciding whether the asynchronous sink is built now. The end-to-end §6.2 comparison under load is PR2's | §6.2 |
 | 3 | External load generator: workload shapes, closed-loop concurrency, synchronized start, valid idempotent requests, client-side outcome capture, machine-readable summary, own utilisation | §6.3 |
-| 4 | Run manifest emitted with every run | §6.4 |
+| 4 | Run manifest emitted with every run, with every generator- and workload-supplied field populated; the operator-supplied service-shape fields are staged to PR2–PR4 | §6.4 |
 | 5 | Correctness reconciliation used by every later run | §6.5 |
 | 6 | Response-validation-active negative control | §12.1, `measurement-contract.md` §5.5 |
 | 7 | One controlled local smoke run exercising all of the above | §14 PR1 |
@@ -51,10 +51,17 @@ error text.
 
 ### 3.2 Reconciliation reads persisted state from a separate verifier binary
 
-`cmd/alloca-verify` reads the generator's machine-readable client summary, queries the
-database directly, and emits the reconciliation report of §6.5. Chosen so the load generator
-holds **no database credentials** and stays genuinely external, which §6.3 requires for
-publishable runs.
+`cmd/alloca-verify` reads the generator's machine-readable client summary and a saved
+`/metrics` scrape, queries the database directly, and emits the reconciliation report of
+§6.5. Chosen so the load generator holds **no database credentials** and stays genuinely
+external, which §6.3 requires for publishable runs.
+
+The scrape is passed as a file (`-metrics`) rather than fetched by the verifier from the
+service. Two reasons, and the second is the load-bearing one: the verifier would otherwise
+need network reach to the service as well as to the database, and — since these counters are
+cumulative and never reset — a scrape taken whenever the verifier happens to run is not the
+scrape that describes the run being verified. Capturing it as a step of the run makes the
+artifact and the moment it was taken the same thing.
 
 Known wrinkle, carried rather than solved: on AWS the verifier needs network reach to RDS,
 so it runs from wherever that is available rather than alongside the generator. Revisit at
@@ -84,33 +91,56 @@ $ go test ./internal/telemetry/ -bench Recorder -benchmem -run '^$' -count 5
 Five runs, so the figures below are the **median with the observed range**, not one sample.
 Quoted from the artifact rather than from a terminal, per `measurement-contract` §5.3.
 
-| Recorder | ns/op (median) | range | B/op | allocs/op |
-|---|---:|---:|---:|---:|
-| `Nop` (call floor) | 0.20 | 0.196–0.213 | 0 | 0 |
-| `SlogRecorder` → bounded sink | 792 | 787–803 | 88 | 2 |
-| Prometheus recorder | 138 | 135–142 | 0 | 0 |
-| **`Tee` (what the service runs)** | **994** | 980–1004 | 88 | 2 |
-| `Tee`, parallel | 228 | 221–229 | 88 | 2 |
+| Recorder | Sink | ns/op (median) | range | B/op | allocs/op |
+|---|---|---:|---:|---:|---:|
+| `Nop` (call floor) | — | 0.20 | 0.196–0.207 | 0 | 0 |
+| `SlogRecorder` | `io.Discard` | 772 | 762–777 | 88 | 2 |
+| `SlogRecorder` | **file** | 1566 | 1556–1607 | 88 | 2 |
+| Prometheus recorder | — | 136 | 135–138 | 0 | 0 |
+| `Tee` | `io.Discard` | 964 | 961–976 | 88 | 2 |
+| **`Tee` (what the service runs)** | **file** | **1793** | 1743–1900 | 88 | 2 |
+| `Tee`, parallel | `io.Discard` | 227 | 216–231 | 88 | 2 |
 
-`[DERIVED]` — median `Tee` cost 994 ns against a request budget in milliseconds is
-**≈0.1% of a 1 ms request** (994 ns ÷ 1 ms), and less of a slower one. Observation is not
-the request-path bottleneck at any load this milestone will reach, so the bounded
-asynchronous sink is **not built in PR1**, and `observability.md` §5.1 stays deferred on
-evidence rather than on the assumption it was deferred on originally.
+**The sink column is the point.** An earlier revision of this note measured only against
+`io.Discard` and quoted 994 ns as the cost of what the service runs. That removed the one
+part of emission the service cannot avoid: a synchronous write to a descriptor. Pricing it
+against a real file roughly doubles the figure — `Tee` goes from 964 ns to 1793 ns, and the
+write is the whole of the difference. The `io.Discard` rows are kept because isolating
+formatting from the sink is still the right way to see *where* the cost is; they are no
+longer the number the conclusion rests on.
+
+`[DERIVED]` — median `Tee` cost against a real sink is 1793 ns, or **≈0.18% of a 1 ms
+request** (1793 ns ÷ 1 ms), and less of a slower one. Observation is not the request-path
+bottleneck at any load this milestone will reach, so the bounded asynchronous sink is **not
+built in PR1**, and `observability.md` §5.1 stays deferred on evidence rather than on the
+assumption it was deferred on originally. The conclusion survived the correction, which is
+worth stating plainly: the earlier number was wrong by a factor of 1.9 and would have led to
+the same decision, so the reason to fix it is that the next measurement it feeds might not be
+so forgiving.
 
 The spread is worth noting for what it says about method rather than about telemetry: the
 five `Tee` samples span 980–1004 ns, and an earlier single run of this benchmark produced
 1033 ns — outside that range. One sample would have been quoted as fact. It would not have
 changed this conclusion, but the habit it represents is the one that eventually does.
 
-**What this does not show, and it is the part that matters.** These numbers measure a sink
-that never blocks (`io.Discard`). The risk §5.1 actually names is *backpressure* — a stalled
-reader holding the request after its transaction has committed — and no benchmark of a
-healthy sink can bound that. What is now established is narrower than "synchronous emission
-is safe": it is that emission is not *inherently* expensive, so if a later run shows latency
-the observation path explains, the cause is a stalled sink and the fix is the asynchronous
-one, not a cheaper encoder. Revisit at the first remote sink, which is when a stall stops
-being hypothetical.
+**What this does not show, and it is the part that matters.** These are microbenchmarks of a
+*healthy* sink. Two things stay open, and PR1 does not close either.
+
+The risk `observability.md` §5.1 actually names is *backpressure* — a stalled reader holding
+the request after its transaction has committed — and no benchmark of a healthy sink can
+bound that. What is established is narrower than "synchronous emission is safe": emission is
+not *inherently* expensive, so if a later run shows latency the observation path explains,
+the cause is a stalled sink and the fix is the asynchronous one, not a cheaper encoder.
+Revisit at the first remote sink, which is when a stall stops being hypothetical.
+
+The second is the §6.2 claim itself. A per-call cost measured in isolation does not
+demonstrate that telemetry is not the request-path bottleneck under load: that needs a
+workload-level comparison — same dataset, concurrency and environment, telemetry on versus
+off, reporting the throughput and p99 delta. **PR1 does not do that, and does not claim
+§6.2 is discharged.** What PR1 discharges is the decision §6.2 gates — whether to build the
+asynchronous sink now — on the evidence that a healthy sink costs under 0.2% of a request.
+The end-to-end comparison belongs with the sweeps that can run it, and is scoped to PR2 in
+[`ag-sept-plan.md`](ag-sept-plan.md) §14.
 
 ## 3.4 Exit gate — discharged
 
@@ -130,7 +160,17 @@ run that passed:
 | Server (`metrics.txt`) | `alloca_requests_total{operation="reserve",outcome="admitted_success",replay="false"} 60` |
 | Persisted (`verdict.json`) | 60 live reservations, 60 idempotency records, 60 live claims |
 
-All four §6.5 checks pass, each naming its invariant: INV-1, INV-5, INV-4, INV-7.
+All five checks pass. Four name the invariant they exercise — INV-1, INV-5, INV-4, INV-7 —
+and the fifth is the client/server comparison, which names none because it is a statement
+about instrumentation rather than about the domain.
+
+That fifth check is why the first row of this table is evidence rather than an assertion.
+An earlier revision of the verifier consumed only the client report and the database, so the
+server column was compared by eye and the run could have been certified with the scrape
+disagreeing or absent. `alloca-verify` now takes the scrape as an input (`-metrics`), sums
+the `alloca_requests_total` cells, and compares them cell by cell; a run supplied with no
+scrape is **not quotable**, because two counts agreeing out of three is not the rule §6.5
+states.
 
 **2. The response-validation control passes.** End-to-end, not only in unit tests:
 `-validate=false` against the live service produced a run marked not quotable, `alloca-load`
@@ -138,14 +178,15 @@ exited 1, and `alloca-verify` also exited 1 — the generator's refusal is carri
 rather than overridden by a clean reconciliation.
 
 **3. Generator and telemetry behaviour are observable.** The generator reports its own CPU
-utilisation (0.02 per core here — nowhere near saturation, so this run is not
+utilisation (0.019 per core here — nowhere near saturation, so this run is not
 client-limited), and the server exposes request, pool and expiry-worker series on a separate
 listener.
 
 **What this run is not.** It is a smoke run: 60 requests at concurrency 8 on one host, with
 the generator and service sharing a machine. It proves the substrate works end to end; it
-establishes no capacity, and no number in it may be quoted as one. That is PR2's work, with
-the generator on separate compute.
+establishes no capacity, and no number in it may be quoted as one. PR2 measures the
+one-instance frontier, still co-resident and therefore still bounded rather than published;
+separate generator compute arrives with PR4 (`ag-sept-plan.md` §14).
 
 ## 4. Non-goals
 

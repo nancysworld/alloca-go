@@ -9,3 +9,9 @@ import "time"
 func SummariseForTest(responses []Response) Summary {
 	return summarise("test", responses, time.Second, 0, Options{}, true)
 }
+
+// PercentilesForTest exposes the quantile calculation, so the rank it selects can be
+// asserted on a known sample instead of inferred from a run whose latencies vary.
+func PercentilesForTest(v []float64) Percentiles {
+	return percentiles(v)
+}

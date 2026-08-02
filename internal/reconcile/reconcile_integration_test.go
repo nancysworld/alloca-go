@@ -142,6 +142,17 @@ func summaryFor(admitted, refused int, reason domain.Reason) loadgen.Summary {
 	}
 }
 
+// runReconcile verifies s against the fixture's database, supplying the metrics scrape a
+// correctly instrumented service would have produced for s.
+//
+// Deriving the server totals from the client summary is exactly what a test of the *database*
+// rules wants: it holds the client/server comparison satisfied so a failure here names the
+// rule under test. The comparison has its own tests, where the two sides are made to differ
+// on purpose.
+func runReconcile(f *fixture, s loadgen.Summary) (reconcile.Result, error) {
+	return reconcile.Run(context.Background(), f.pool, testOrg, s, reconcile.ServerTotals(s.Totals))
+}
+
 // TestCleanRunReconciles is the positive case, and it has to come first: every negative
 // test below would also pass against a reconciler that rejected everything.
 //
@@ -167,16 +178,16 @@ func TestCleanRunReconciles(t *testing.T) {
 		t.Fatalf("admitted=%d refused=%d, want 2 and 2 for a capacity-2 slot", admitted, refused)
 	}
 
-	res, err := reconcile.Run(context.Background(), f.pool, testOrg,
-		summaryFor(admitted, refused, domain.ReasonNoCapacity))
+	res, err := runReconcile(f, summaryFor(admitted, refused, domain.ReasonNoCapacity))
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 	if !res.Quotable {
 		t.Fatalf("clean run is not quotable: %s\n%+v", res.Because, res.Checks)
 	}
-	if len(res.Checks) != 4 {
-		t.Errorf("ran %d checks, want the 4 of §6.5", len(res.Checks))
+	if len(res.Checks) != 5 {
+		t.Errorf("ran %d checks, want the 4 database rules of §6.5 plus the "+
+			"client/server comparison", len(res.Checks))
 	}
 	for _, c := range res.Checks {
 		if !c.OK {
@@ -196,7 +207,7 @@ func TestUnderreportedAdmissionsAreCaught(t *testing.T) {
 	f.reserve(t, "u-0", "slot-under", "k-0")
 	f.reserve(t, "u-1", "slot-under", "k-1")
 
-	res, err := reconcile.Run(context.Background(), f.pool, testOrg, summaryFor(1, 0, ""))
+	res, err := runReconcile(f, summaryFor(1, 0, ""))
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -218,7 +229,7 @@ func TestOverreportedAdmissionsAreCaughtByClaims(t *testing.T) {
 	f.reserve(t, "u-0", "slot-over", "k-0")
 	f.reserve(t, "u-1", "slot-over", "k-1")
 
-	res, err := reconcile.Run(context.Background(), f.pool, testOrg, summaryFor(3, 0, ""))
+	res, err := runReconcile(f, summaryFor(3, 0, ""))
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -257,8 +268,7 @@ func TestHotIdentityContaminationIsVisible(t *testing.T) {
 	}
 
 	// The honest summary for what just happened reconciles.
-	ok, err := reconcile.Run(context.Background(), f.pool, testOrg,
-		summaryFor(1, 1, domain.ReasonScheduleConflict))
+	ok, err := runReconcile(f, summaryFor(1, 1, domain.ReasonScheduleConflict))
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -270,8 +280,7 @@ func TestHotIdentityContaminationIsVisible(t *testing.T) {
 	// the earlier run is still present. The totals are internally consistent, so this run
 	// is *not* caught here — which is precisely why §5.3 requires a clean-start assertion
 	// before load begins rather than relying on reconciliation to notice afterwards.
-	contaminated, err := reconcile.Run(context.Background(), f.pool, testOrg,
-		summaryFor(0, 2, domain.ReasonScheduleConflict))
+	contaminated, err := runReconcile(f, summaryFor(0, 2, domain.ReasonScheduleConflict))
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -305,7 +314,7 @@ func TestIdempotencyRecordsMatchFreshMutations(t *testing.T) {
 		Completed: 3, Quotable: true, ValidationEnabled: true,
 	}
 
-	res, err := reconcile.Run(context.Background(), f.pool, testOrg, s)
+	res, err := runReconcile(f, s)
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -324,7 +333,7 @@ func TestUnrecordedMutationsAreCaught(t *testing.T) {
 	f.reserve(t, "u-1", "slot-rec", "k-1")
 
 	// Claim three fresh admitted mutations against two records and two claims.
-	res, err := reconcile.Run(context.Background(), f.pool, testOrg, summaryFor(3, 0, ""))
+	res, err := runReconcile(f, summaryFor(3, 0, ""))
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}

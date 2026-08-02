@@ -296,8 +296,12 @@ competing with the thing it measures — `run.json` reports the generator's own 
 precisely so you can see that (0.02 in the PR1 artifact: nowhere near saturation, so that
 run was not client-limited).
 
-It establishes **no capacity**, and no number from it may be quoted as one. Capacity work
-needs the generator on separate compute, which is PR2.
+It establishes **no capacity**, and no number from it may be quoted as one. PR2 measures the
+one-instance frontier, but with the generator still on this machine, so its result is a
+*bounded local* one: the generator-headroom control limits how far the co-resident generator
+can be distorting it. A publishable capacity claim needs the generator on separate compute
+([`ag-sept-plan.md`](../planning/ag-sept-plan.md) §6.3), which arrives with PR4 and only if
+its gate passes (§14).
 
 Two consequences for anything you keep:
 

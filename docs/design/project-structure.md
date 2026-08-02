@@ -21,17 +21,38 @@ before that code lands.
 | `cmd/` | Executable composition roots — `main` packages only. One subdirectory per binary. |
 | `internal/` | All application code. `internal/` prevents import by anything outside this module, keeping the package layout a private implementation detail. |
 | `docs/` | Design docs, decision records, planning, reports, disclosure policy. |
-| `test/scripts/` | Operator and developer shell scripts invoked from the Makefile. Never application logic: anything a Go test or a Go binary should own belongs in `internal/` or `cmd/`. |
+| `test/` | **Manual, local verification only.** Nothing under here runs in CI. See below. |
+| `test/scripts/` | Operator and developer shell scripts invoked by hand from the Makefile. Never application logic: anything a Go test or a Go binary should own belongs in `internal/` or `cmd/`. |
 | `test/results/` | Local load-harness output (git-ignored). Scratch only — a run worth keeping is promoted into `docs/measurements/` deliberately. |
 | `.github/` | CI workflows. |
 | `bin/` | Locally provisioned dev tools (git-ignored); never source. |
 
-`test/` holds no Go tests. Go test files live beside the code they exercise, under
+### `test/` is the manual tier, not the automated one
+
+The name invites two wrong assumptions, so both are answered here.
+
+**It holds no Go tests.** Go test files live beside the code they exercise, under
 `internal/` and `cmd/`, which is where `go test ./...` expects them and where a reader
-looking for a package's tests will look first. `test/` is for the things that exercise the
-service from *outside* the module — an operator smoke script over a real socket, and the
-output of load runs — plus their artifacts. Nothing under it is compiled, and no Go
-tooling treats the name specially (only `testdata/` is special to the toolchain).
+looking for a package's tests will look first. Nothing under `test/` is compiled, and no Go
+tooling treats the name specially — only `testdata/` is special to the toolchain.
+
+**Nothing under it runs in CI.** The automated gates are Go-only: `gofmt`, `go vet`,
+`go build`, `go test ./...`, the race pass, the `-tags=integration` suite against a
+PostgreSQL service, and `golangci-lint`. That is the whole of `.github/workflows/ci.yml`,
+and every one of those targets code under `internal/` and `cmd/`.
+
+The split is by *how a check is run*, not by how much it is worth. A merge gate has to
+reproduce on a clean runner with no operator present. What lives in `test/` needs a service
+somebody started, a database holding a fixture they seeded, and — for a load run — judgement
+about whether the numbers mean anything at all (`../operations/load-harness.md` §8). Those
+are properties of the check, not deficiencies to fix later.
+
+So a red CI run means the code is broken; a green one is silent about whether the service
+answers over a real socket, and silent about every number the harness produces. That is
+what `make smoke` and the harness are for, and why they are invoked by a person.
+
+If something here ever earns a merge gate, wire it into CI deliberately and move it out —
+the directory records where a check runs, never how much it is trusted.
 
 There is no `pkg/` directory: this module publishes no library API for external
 consumers, so everything lives under `internal/`. A `pkg/` tree would be added only

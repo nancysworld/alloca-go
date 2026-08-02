@@ -234,6 +234,7 @@ them all; the entries below **own** their subject and are the authority for it.
 | Predecessor lineage — what Alloca-Go inherits from RuntimeIQ and what it does not | this document §1.1 |
 | Public-release disclosure rules, predecessor naming rule, pre-release checks | [`../public-disclosure-policy.md`](../public-disclosure-policy.md), [`../pre-public-checklist.md`](../pre-public-checklist.md) |
 | How to drive an AG-Sept measurement run locally — the procedure, not the rules | [`../operations/load-harness.md`](../operations/load-harness.md) |
+| Accepted technical debt — what each gap costs and the trigger that ends the acceptance | [`../planning/tech-debts.md`](../planning/tech-debts.md) |
 
 If a design fact you need is not owned by one of these, it is either high-level enough
 to belong in §1–§3 above, or it has no home yet — which is a signal to give it one,

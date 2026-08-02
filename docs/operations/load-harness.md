@@ -264,6 +264,28 @@ with `-reset` before each workload.
 **Every request refused with `no_capacity` on `dispersed`** — the dataset is smaller than
 you think, or the fixture was never reset. Check `-slots` matches between seed and load.
 
+**`listen tcp :8080: bind: address already in use`** (and the same for `:9090`) — an earlier
+service is still running. This is the common way to meet it, because §3 tells you to restart
+the service between runs: the new one is started before the old one is gone, and `make dev`
+reports it only at the last step, after `db-up` has already replaced the container.
+
+Note what that ordering costs. `db-up` removes and recreates the container before `run`
+fails, so the old process is now holding the ports *and* pointing at a database that no
+longer exists. It has to go regardless of the port conflict — and do not let `/healthz`
+reassure you: it is a liveness check that touches nothing, so it answers `200` from a
+process whose pool is pointing at a deleted container. `/readyz` is the one that consults
+the database.
+
+```sh
+ss -ltnp | grep -E ':8080|:9090'   # names the pid holding each port
+kill <pid>                          # then: make run — db-up and migrate already ran
+```
+
+A service started with `&` or `nohup` outlives the terminal that launched it and is
+reparented to `init`, so it will not appear in the job list of the shell you are typing in
+and closing that terminal does not stop it. `ss` is the reliable way to find it; the
+process's parent being `1` is the sign it was detached rather than started by `make dev`.
+
 **Nothing at `:9090`** — `METRICS_ADDR` overrides the listener address; the service logs
 where it bound at startup.
 

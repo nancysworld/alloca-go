@@ -64,6 +64,35 @@ not part of this: `db-up` already removes any existing container before starting
 Keep `-slots` the same across seed and load. The generator has no way to discover the
 dataset, so a mismatch quietly aims traffic at slots that were never seeded.
 
+### The other two workloads
+
+Same three steps; only step 2 changes. Each one needs its own seed — `-reset` before every
+run, and between workloads as much as between repeats of one (§7).
+
+```sh
+# hot-slot — many identities, one slot
+go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
+go run ./cmd/alloca-load -workload hot-slot -concurrency 8 -n 60 -slots 20 -slot slot-0 \
+  -out hot-slot.json
+go run ./cmd/alloca-verify -run hot-slot.json -org load-org
+```
+
+```sh
+# hot-identity — one identity, many slots
+go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
+go run ./cmd/alloca-load -workload hot-identity -concurrency 8 -n 60 -slots 20 -user user-0 \
+  -out hot-identity.json
+go run ./cmd/alloca-verify -run hot-identity.json -org load-org
+```
+
+`-slot` and `-user` already carry these defaults. They are written out because the contended
+authority is the whole point of the run, and reading it off the command beats remembering
+which default applies to which workload.
+
+`-slots` changes nothing about hot-slot's traffic — every request goes to `-slot` — but it is
+recorded in the manifest as `dataset_slots`, so omitting it files the run under a 100-slot
+dataset that was never seeded. Pass it on all three.
+
 ## 4. Reading the result
 
 The exit gate is that **three independent counts agree**. Client and persisted state come
@@ -75,7 +104,7 @@ JSON, so here is how to read each of them:
 # client — written by step 2
 jq '.summary.completed_requests, .summary.successful_mutation_goodput' run.json
 
-# server — read the replay="false" series, not the sum of both
+# server — read the replay="false" series only; never add the replay="true" one to it
 # needs the service still running; nothing persists this after a restart, and nothing
 # resets it either, so a second run against the same process reads 120, not 60
 curl -s http://localhost:9090/metrics | grep '^alloca_requests_total.*replay="false"'
@@ -84,7 +113,7 @@ curl -s http://localhost:9090/metrics | grep '^alloca_requests_total.*replay="fa
 go run ./cmd/alloca-verify -run run.json -org load-org | jq -r '.checks[].detail'
 ```
 
-For the run above, all three say 60:
+For the `dispersed` run above, all three say 60:
 
 | Source | Reads | Says |
 |---|---|---|
@@ -107,6 +136,36 @@ by eye.
 top-level `"quotable"`. Both binaries write their JSON even when they fail — you need to
 see *why*, not just that.
 
+### Reading a contended workload
+
+`dispersed` is the easy case: every request commits, so one number — 60 — appears in all
+three places. Under `hot-slot` and `hot-identity` most requests are refused, goodput is no
+longer the request count, and the gate becomes two comparisons rather than one:
+
+- `completed_requests` against the **sum** of the server's `replay="false"` series, which is
+  now split across several `outcome`/`reason` labels;
+- `successful_mutation_goodput` against the persisted count in the verifier's `detail`.
+
+Both runs above, at `-n 60 -slots 20 -capacity 5`:
+
+| | `hot-slot` | `hot-identity` |
+|---|---|---|
+| Client `completed_requests` | `60` | `60` |
+| Client `successful_mutation_goodput` | `5` | `1` |
+| Client `totals` | 5 `admitted_success`, 55 `no_capacity` | 1 `admitted_success`, 59 `schedule_conflict` |
+| Server, summed over `replay="false"` | `60` | `60` |
+| Persisted (INV-1 / INV-4 `detail`) | `5` live reservations, `5` live claims | `1` live reservation, `1` live claim |
+
+Goodput equals capacity for `hot-slot` and exactly one for `hot-identity`: those are the
+shapes §5 predicts, and a run that misses them measured something other than what its
+`-workload` says. The refusals are not failures — but they are still recorded outcomes, so
+INV-5 reports 60 idempotency records for 60 fresh mutations in both runs, not 5 and 1.
+
+Only the server side needs care. Its counters accumulate across runs and reset only when the
+process restarts, so after the seed→load→verify cycle above the raw scrape holds every run
+the process has served; it is the delta that must equal 60. Restarting the service between
+runs is the way to keep reading it as an absolute.
+
 ## 5. Workload shapes
 
 One mechanism each, and deliberately no combined mode: a composite moves several variables
@@ -120,6 +179,10 @@ at once and cannot be attributed (scope §3.1).
 
 A refusal-heavy result is the workload working, not a failure — `hot-slot` saturating
 capacity is the point of it. What would be a failure is those refusals not reconciling.
+
+The flag takes hyphens; the report writes underscores. A `-workload hot-slot` run records
+`"workload": "hot_slot"` in its manifest, so a `jq select` or a `grep` over committed
+artifacts has to match the underscored form.
 
 Other flags worth knowing: `-warm-up` discards responses completing inside the window (and
 reports how many it dropped), `-timeout` is the per-request client timeout, and
@@ -184,6 +247,18 @@ reconciliation — no invariant is broken — while measuring nothing, which is 
 in a different costume. Re-seed with `-reset` between runs (it truncates
 `idempotency_records`), or change `-workload`. The clean-start assertion does not cover
 this: it guards the seed, not the load.
+
+**`N live reservations persisted but only M fresh reserves were admitted`** — a workload ran
+against the rows the previous one left. Reservations from the earlier run are still held
+until their TTL expires, and confirmed ones never expire at all, so the verifier sees live
+claims the current report never mentions and fails INV-1.
+
+Nothing upstream warns you: `alloca-load` exits 0, and the report it writes already has the
+wrong shape. The `hot-identity` run that produced this line reported 3 `no_capacity`
+refusals from `slot-0` — an outcome `hot-identity` cannot generate on a clean fixture, since
+its 60 requests spread one identity over 20 slots and are refused on the identity, not on
+capacity. Those three came from `hot-slot` having filled `slot-0` minutes earlier. Re-seed
+with `-reset` before each workload.
 
 **Every request refused with `no_capacity` on `dispersed`** — the dataset is smaller than
 you think, or the fixture was never reset. Check `-slots` matches between seed and load.

@@ -14,13 +14,14 @@
     "generator_gomaxprocs": 10,
     "generator_num_cpu": 10,
     "target": "http://localhost:8080",
-    "timestamp": "2026-08-02T21:49:02.556226145Z"
+    "timestamp": "2026-08-02T22:12:27.711531423Z"
   },
   "summary": {
     "workload": "dispersed",
     "concurrency": 8,
     "iterations": 60,
-    "duration_seconds": 0.045271347,
+    "completed_iterations": 60,
+    "duration_seconds": 0.042501435,
     "warm_up_seconds": 0,
     "warm_up_discarded": 0,
     "totals": [
@@ -34,16 +35,16 @@
     "completed_requests": 60,
     "successful_mutation_goodput": 60,
     "latency_ms": {
-      "p50": 4.674711,
-      "p95": 15.009451,
-      "p99": 15.715065,
-      "max": 15.715065
+      "p50": 4.386211,
+      "p95": 13.157247,
+      "p99": 14.071093,
+      "max": 14.071093
     },
     "generator": {
       "gomaxprocs": 10,
       "goroutines": 19,
-      "cpu_seconds": 0.0088,
-      "cpu_utilisation_per_core": 0.01943834363930015,
+      "cpu_seconds": 0.008125,
+      "cpu_utilisation_per_core": 0.01911700157888787,
       "num_cpu": 10
     },
     "response_validation_enabled": true,

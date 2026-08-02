@@ -206,9 +206,16 @@ The flag takes hyphens; the report writes underscores. A `-workload hot-slot` ru
 `"workload": "hot_slot"` in its manifest, so a `jq select` or a `grep` over committed
 artifacts has to match the underscored form.
 
-Other flags worth knowing: `-warm-up` discards responses completing inside the window (and
-reports how many it dropped), `-timeout` is the per-request client timeout, and
+Other flags worth knowing: `-timeout` is the per-request client timeout, and
 `-generator-location` is recorded in the manifest.
+
+`-warm-up` exists but **makes the run not quotable in PR1**, deliberately. It drops responses
+completing inside the window from the client totals while their reservations, claims and
+idempotency records stay in the database, so persisted-state reconciliation would compare all
+the rows against post-warm-up totals and fail a service that did nothing wrong. Refusing the
+run is the honest response to that; reporting one that cannot be reconciled is not. Making
+warm-up quotable needs a separate warm-up phase with a reset between, or per-cell warm-up
+totals carried through to the verifier, and belongs with the sweeps in PR2 that need it.
 
 ## 6. The negative control
 
@@ -241,6 +248,12 @@ Re-run the seed with `-reset`. A confirmed claim is never expiry-reaped, so a re
 leftover rows returns zero admitted and all `schedule_conflict`: a result that breaks no
 invariant, passes every gate, and measures nothing. This bites hardest after a `-confirm`
 run, which leaves permanent rows by design.
+
+**`clean-start assertion failed: N idempotency records already exist`** — the same assertion,
+second half. Zero live claims does not imply a clean fixture: a record outlives the entity it
+describes, on purpose, so that a late retry still replays. A fixture with every hold expired
+or cancelled therefore passes the claim count while still holding the keys that would turn
+the next run into a replay of the last one. `-reset` clears both.
 
 **`ports are not available ... /forwards/expose returned unexpected status: 500`** — the
 host has the port reserved, and on Windows that is usually not another process holding it.
@@ -276,8 +289,12 @@ so re-running the same `-workload` re-sends the keys the previous run already us
 server correctly replays each recorded outcome instead of committing. The run then passes
 reconciliation — no invariant is broken — while measuring nothing, which is the §5.3 trap
 in a different costume. Re-seed with `-reset` between runs (it truncates
-`idempotency_records`), or change `-workload`. The clean-start assertion does not cover
-this: it guards the seed, not the load.
+`idempotency_records`), or change `-workload`.
+
+Seeding first is what prevents this: the clean-start assertion counts idempotency records as
+well as claims, so a contaminated fixture fails at the seed rather than producing a run that
+has to be diagnosed afterwards. You reach this entry by loading against a fixture nobody
+re-seeded — which is why step 1 is not optional even when the database "looks" empty.
 
 **`N live reservations persisted but only M fresh reserves were admitted`** — a workload ran
 against the rows the previous one left. Reservations from the earlier run are still held
@@ -315,6 +332,13 @@ A service started with `&` or `nohup` outlives the terminal that launched it and
 reparented to `init`, so it will not appear in the job list of the shell you are typing in
 and closing that terminal does not stop it. `ss` is the reliable way to find it; the
 process's parent being `1` is the sign it was detached rather than started by `make dev`.
+
+**`run was interrupted: N of M logical iterations completed`** — the run caught SIGINT or
+SIGTERM and stopped early. The report is still written, and still describes what it did; it
+simply may not be quoted, because its duration covers a smaller experiment than its manifest
+claims and every rate derived from it would describe a run that never happened. Note the
+count is *logical iterations*, not requests: a `-confirm` workload issues two requests per
+iteration, so the request total cannot show the shortfall on its own.
 
 **Nothing at `:9090`** — `METRICS_ADDR` overrides the listener address; the service logs
 where it bound at startup.

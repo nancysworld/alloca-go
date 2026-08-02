@@ -2,6 +2,7 @@ package loadgen
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"sort"
 	"sync"
@@ -40,6 +41,7 @@ func NewRunner(c *Client, opts Options) *Runner { return &Runner{client: c, opts
 func (r *Runner) Run(ctx context.Context, w Workload) Summary {
 	var (
 		seq       atomic.Int64
+		finished  atomic.Int64
 		mu        sync.Mutex
 		collected []Response
 		barrier   = make(chan struct{})
@@ -70,6 +72,11 @@ func (r *Runner) Run(ctx context.Context, w Workload) Summary {
 					collected = append(collected, responses[i])
 				}
 				mu.Unlock()
+				// Counted after Do returns, so this is *logical units finished*, not
+				// units started. A workload that issues several requests per unit —
+				// dispersed with -confirm — makes the two different numbers, and it is
+				// this one that says whether the experiment ran to its stated size.
+				finished.Add(1)
 			}
 		}()
 	}
@@ -80,10 +87,23 @@ func (r *Runner) Run(ctx context.Context, w Workload) Summary {
 	elapsed := time.Since(started)
 
 	measured, discarded := applyWarmUp(collected, started, r.opts.WarmUp)
-	s := summarise(w.Name(), measured, elapsed, cpuDelta(startCPU), r.opts, r.client.validate)
-	s.WarmUpDiscarded = discarded
-	s.WarmUpSeconds = r.opts.WarmUp.Seconds()
-	return s
+	return summarise(w.Name(), measured, elapsed, cpuDelta(startCPU), r.opts, r.client.validate,
+		runFacts{
+			completedUnits:  int(finished.Load()),
+			interrupted:     ctx.Err() != nil,
+			warmUpDiscarded: discarded,
+			warmUpWindow:    r.opts.WarmUp,
+		})
+}
+
+// runFacts are what Run observed about the run itself rather than about any response.
+// They are grouped because they share one purpose: each is a way for a run to be shaped
+// differently from the experiment it claims to be, and all three decide quotability.
+type runFacts struct {
+	completedUnits  int
+	interrupted     bool
+	warmUpDiscarded int
+	warmUpWindow    time.Duration
 }
 
 // Summary is the machine-readable run result: the totals a capacity claim is built from,
@@ -92,6 +112,11 @@ type Summary struct {
 	Workload    string `json:"workload"`
 	Concurrency int    `json:"concurrency"`
 	Iterations  int    `json:"iterations"`
+	// CompletedIterations counts logical units of work that finished. It is reported
+	// separately from Completed because Completed counts *requests*: a workload issuing
+	// several requests per unit makes the two different numbers, and only this one can
+	// show that an interrupted run did less work than its manifest claims.
+	CompletedIterations int `json:"completed_iterations"`
 
 	DurationSeconds float64 `json:"duration_seconds"`
 	WarmUpSeconds   float64 `json:"warm_up_seconds"`
@@ -211,14 +236,17 @@ type GeneratorStats struct {
 // summarise folds responses into the reported totals.
 func summarise(
 	workload string, responses []Response, elapsed time.Duration,
-	cpuSeconds float64, opts Options, validated bool,
+	cpuSeconds float64, opts Options, validated bool, facts runFacts,
 ) Summary {
 	s := Summary{
-		Workload:          workload,
-		Concurrency:       opts.Concurrency,
-		Iterations:        opts.Iterations,
-		DurationSeconds:   elapsed.Seconds(),
-		ValidationEnabled: validated,
+		Workload:            workload,
+		Concurrency:         opts.Concurrency,
+		Iterations:          opts.Iterations,
+		CompletedIterations: facts.completedUnits,
+		DurationSeconds:     elapsed.Seconds(),
+		WarmUpSeconds:       facts.warmUpWindow.Seconds(),
+		WarmUpDiscarded:     facts.warmUpDiscarded,
+		ValidationEnabled:   validated,
 	}
 
 	cells := map[Total]int{}
@@ -271,6 +299,25 @@ func summarise(
 			"be counted as goodput (measurement-contract §5.4)"
 	case s.Invalid > 0:
 		s.NotQuotableBecause = "one or more responses failed status/outcome validation"
+	case facts.interrupted || s.CompletedIterations < s.Iterations:
+		// A truncated run still reports — see Run — but it may not be quoted. Its
+		// duration covers a smaller experiment than its manifest describes, so every
+		// rate derived from it is wrong, and nothing downstream could detect that from
+		// the totals alone: they are internally consistent, just for a different run.
+		s.NotQuotableBecause = fmt.Sprintf("run was interrupted: %d of %d logical "+
+			"iterations completed, so the manifest describes a larger experiment than "+
+			"the one that ran", s.CompletedIterations, s.Iterations)
+	case s.WarmUpDiscarded > 0:
+		// The discarded responses left reservations, claims and idempotency records in
+		// the database, and the client totals no longer mention them. Persisted-state
+		// reconciliation would compare all the rows against the post-warm-up totals and
+		// fail a correct service — so PR1 refuses the run rather than reporting one that
+		// cannot be reconciled. Making warm-up quotable needs a separate warm-up phase
+		// with a reset between, or per-cell warm-up totals carried for the verifier;
+		// both belong to PR2 with the sweeps that need them (ag-sept-plan §14).
+		s.NotQuotableBecause = fmt.Sprintf("-warm-up discarded %d responses from the "+
+			"client totals while their rows remain in the database, which persisted-state "+
+			"reconciliation cannot reconcile in PR1 (ag-sept-plan §6.5)", s.WarmUpDiscarded)
 	default:
 		s.Quotable = true
 	}

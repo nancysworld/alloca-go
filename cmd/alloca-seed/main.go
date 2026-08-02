@@ -114,7 +114,28 @@ func run() error {
 				"that measures nothing. Re-run with -reset", claims)
 	}
 
-	fmt.Printf("seeded %d slots (capacity %d) for org %q; clean start asserted: 0 live claims\n",
-		*slots, *capacity, *org)
+	// The second half of the same assertion, and the half that zero live claims does not
+	// imply. Idempotency records outlive the entities they describe — that is their job —
+	// so a fixture can hold no claims at all and still turn the next run into a replay of
+	// the last one, because the workloads derive their keys from workload name and
+	// sequence number with no per-run nonce. Such a run commits nothing, reconciles
+	// cleanly (a replay creates no row and the reconciler correctly excludes it from fresh
+	// counts), breaks no invariant, and measures nothing. It is the §5.3 trap wearing the
+	// costume the claim count cannot see through.
+	records, err := repo.IdempotencyRecordCount(ctx)
+	if err != nil {
+		return fmt.Errorf("counting idempotency records: %w", err)
+	}
+	if records != 0 {
+		return fmt.Errorf(
+			"clean-start assertion failed: %d idempotency records already exist "+
+				"(ag-sept-plan §5.3). The workloads reuse deterministic keys, so the next "+
+				"run would replay these records rather than commit anything: it would "+
+				"report goodput, reconcile cleanly and move no rows. Re-run with -reset",
+			records)
+	}
+
+	fmt.Printf("seeded %d slots (capacity %d) for org %q; clean start asserted: "+
+		"0 live claims, 0 idempotency records\n", *slots, *capacity, *org)
 	return nil
 }

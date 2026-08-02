@@ -209,6 +209,22 @@ func (r *Repo) ClaimCount(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+// IdempotencyRecordCount returns the number of persisted idempotency records.
+//
+// It exists for the clean-start assertion of ag-sept-plan §5.3, which cannot be made from
+// claims alone. Records outlive the reservations they describe — a hold expires, a claim is
+// settled, a booking is cancelled, and the record stays, because its whole purpose is to
+// answer a retry that arrives after the entity is gone. So a fixture can hold zero live
+// claims and still make the next run a replay of the last one, since PR1's workloads derive
+// deterministic keys from the workload name and sequence number.
+func (r *Repo) IdempotencyRecordCount(ctx context.Context) (int, error) {
+	var count int
+	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM idempotency_records`).Scan(&count); err != nil {
+		return 0, fmt.Errorf("postgres: idempotency record count: %w", err)
+	}
+	return count, nil
+}
+
 // suiteLockKey is the integration suites' advisory-lock key: "alloca" in ASCII. The value
 // is arbitrary; what matters is that every suite uses the *same* one, which is why it
 // lives here rather than in one package's test files.

@@ -7,7 +7,9 @@ import "time"
 // responses rather than through a live server that would make the assertion depend on
 // timing.
 func SummariseForTest(responses []Response) Summary {
-	return summarise("test", responses, time.Second, 0, Options{}, true)
+	opts := Options{Iterations: len(responses)}
+	return summarise("test", responses, time.Second, 0, opts, true,
+		runFacts{completedUnits: opts.Iterations})
 }
 
 // PercentilesForTest exposes the quantile calculation, so the rank it selects can be

@@ -142,7 +142,7 @@ dev:
 
 ## smoke: exercise a running service over a real socket (needs `make dev` elsewhere)
 smoke:
-	@BASE="$(BASE)" MAX_TIME="$(MAX_TIME)" DATABASE_URL="$(DATABASE_URL)" ./scripts/smoke.sh
+	@BASE="$(BASE)" MAX_TIME="$(MAX_TIME)" DATABASE_URL="$(DATABASE_URL)" ./test/scripts/smoke.sh
 
 ## tidy: tidy the module graph
 tidy:

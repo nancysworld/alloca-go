@@ -42,15 +42,16 @@ listener on `:9090`. Wait for `{"msg":"metrics listener starting"}` before conti
 ```sh
 # terminal 2
 export DATABASE_URL='postgres://alloca:alloca@localhost:15432/alloca?sslmode=disable'
+mkdir -p test/results   # git-ignored, and absent on a fresh clone
 
 # 1. fixture + clean-start assertion
 go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
 
 # 2. the run itself
-go run ./cmd/alloca-load -workload dispersed -concurrency 8 -n 60 -slots 20 -out run.json
+go run ./cmd/alloca-load -workload dispersed -concurrency 8 -n 60 -slots 20 -out test/results/run.json
 
 # 3. reconcile client totals against persisted state
-go run ./cmd/alloca-verify -run run.json -org load-org
+go run ./cmd/alloca-verify -run test/results/run.json -org load-org
 ```
 
 Each step exits non-zero when its result is not quotable, so `&&`-chaining them is safe:
@@ -73,16 +74,16 @@ run, and between workloads as much as between repeats of one (§7).
 # hot-slot — many identities, one slot
 go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
 go run ./cmd/alloca-load -workload hot-slot -concurrency 8 -n 60 -slots 20 -slot slot-0 \
-  -out hot-slot.json
-go run ./cmd/alloca-verify -run hot-slot.json -org load-org
+  -out test/results/hot-slot.json
+go run ./cmd/alloca-verify -run test/results/hot-slot.json -org load-org
 ```
 
 ```sh
 # hot-identity — one identity, many slots
 go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
 go run ./cmd/alloca-load -workload hot-identity -concurrency 8 -n 60 -slots 20 -user user-0 \
-  -out hot-identity.json
-go run ./cmd/alloca-verify -run hot-identity.json -org load-org
+  -out test/results/hot-identity.json
+go run ./cmd/alloca-verify -run test/results/hot-identity.json -org load-org
 ```
 
 `-slot` and `-user` already carry these defaults. They are written out because the contended
@@ -102,7 +103,7 @@ JSON, so here is how to read each of them:
 
 ```sh
 # client — written by step 2
-jq '.summary.completed_requests, .summary.successful_mutation_goodput' run.json
+jq '.summary.completed_requests, .summary.successful_mutation_goodput' test/results/run.json
 
 # server — read the replay="false" series only; never add the replay="true" one to it
 # needs the service still running; nothing persists this after a restart, and nothing
@@ -110,7 +111,7 @@ jq '.summary.completed_requests, .summary.successful_mutation_goodput' run.json
 curl -s http://localhost:9090/metrics | grep '^alloca_requests_total.*replay="false"'
 
 # persisted — step 3 again, this time reading the counts it reconciled against
-go run ./cmd/alloca-verify -run run.json -org load-org | jq -r '.checks[].detail'
+go run ./cmd/alloca-verify -run test/results/run.json -org load-org | jq -r '.checks[].detail'
 ```
 
 For the `dispersed` run above, all three say 60:
@@ -195,7 +196,7 @@ when response validation is off, so a reported success cannot be an unchecked `2
 
 ```sh
 go run ./cmd/alloca-load -workload dispersed -concurrency 8 -n 20 -slots 20 \
-  -validate=false -out control.json
+  -validate=false -out test/results/control.json
 ```
 
 Expect exit 1 from `alloca-load`, and exit 1 again from `alloca-verify` on `control.json`
@@ -237,7 +238,7 @@ targets at a database that is not the local container.
 **A run reports goodput but the database does not move** — check `replay` in the totals:
 
 ```sh
-jq '.summary.totals' run.json     # "replay": true on everything means nothing committed
+jq '.summary.totals' test/results/run.json     # "replay": true on everything means nothing committed
 ```
 
 Idempotency keys are `workload-seq-step` with no per-run nonce (`internal/loadgen/workload.go:39`),
@@ -286,3 +287,7 @@ Two consequences for anything you keep:
 - Committed artifacts live in [`../measurements/`](../measurements/); the PR1 smoke run is
   [`pr1-smoke-run/`](../measurements/pr1-smoke-run/). Quote figures from an artifact, never
   from a terminal (`measurement-contract` §5.3).
+
+`test/results/` is git-ignored scratch, and that is the whole distinction: a run only
+becomes evidence by being copied into `../measurements/` on purpose. Nothing is lost by
+deleting the directory, and nothing in it is quotable while it sits there.

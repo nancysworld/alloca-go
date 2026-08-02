@@ -39,7 +39,11 @@ Thumbs.db
 # Logs and generated benchmark data
 *.log
 /tmp/
-/results/raw/
+
+# Local load-harness output. A run worth keeping is promoted into
+# docs/measurements/ deliberately; everything else is scratch, and leaving it in
+# the repo root is how it ends up committed by accident.
+/test/results/
 
 # Terraform local state and plans
 **/.terraform/*

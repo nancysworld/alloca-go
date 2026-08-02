@@ -21,9 +21,17 @@ before that code lands.
 | `cmd/` | Executable composition roots — `main` packages only. One subdirectory per binary. |
 | `internal/` | All application code. `internal/` prevents import by anything outside this module, keeping the package layout a private implementation detail. |
 | `docs/` | Design docs, decision records, planning, reports, disclosure policy. |
-| `scripts/` | Operator and developer shell scripts invoked from the Makefile. Never application logic: anything a Go test or a Go binary should own belongs in `internal/` or `cmd/`. |
+| `test/scripts/` | Operator and developer shell scripts invoked from the Makefile. Never application logic: anything a Go test or a Go binary should own belongs in `internal/` or `cmd/`. |
+| `test/results/` | Local load-harness output (git-ignored). Scratch only — a run worth keeping is promoted into `docs/measurements/` deliberately. |
 | `.github/` | CI workflows. |
 | `bin/` | Locally provisioned dev tools (git-ignored); never source. |
+
+`test/` holds no Go tests. Go test files live beside the code they exercise, under
+`internal/` and `cmd/`, which is where `go test ./...` expects them and where a reader
+looking for a package's tests will look first. `test/` is for the things that exercise the
+service from *outside* the module — an operator smoke script over a real socket, and the
+output of load runs — plus their artifacts. Nothing under it is compiled, and no Go
+tooling treats the name specially (only `testdata/` is special to the toolchain).
 
 There is no `pkg/` directory: this module publishes no library API for external
 consumers, so everything lives under `internal/`. A `pkg/` tree would be added only

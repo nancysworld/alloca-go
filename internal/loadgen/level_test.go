@@ -15,13 +15,22 @@ func soundSummary() loadgen.Summary {
 	return loadgen.Summary{Sound: true}
 }
 
-// localManifest carries exactly the fields the generator can determine for itself — what
-// ag-sept-plan §14 requires of PR1 and no more. Every service-side field is left at its zero
-// value, which is precisely the state PR1's own smoke run is in.
+// localManifest carries what PR1 can establish without an operator: the generator's own
+// identity, and everything the service reports about itself at /meta. The fields no endpoint
+// reports — the database's version, the pool arithmetic, the topology — are left at their
+// zero values, which is precisely the state PR1's own smoke run is in.
+//
+// The two revisions differ on purpose. They are distinct facts about distinct binaries, and a
+// fixture that used one value for both could not fail if the code confused them.
 func localManifest() loadgen.Manifest {
 	return loadgen.Manifest{
-		CommitSHA:           "91818cd7f3a0556371ff4619754323258488ea4a",
-		GoVersion:           "go1.26.5",
+		ServiceCommitSHA:    "aaaa111111111111111111111111111111111111",
+		ServiceGoVersion:    "go1.26.5",
+		ServerGOMAXPROCS:    4,
+		TimeoutBudget:       "lock_timeout=2s statement_timeout=3s txn_budget=3.5s",
+		ReservationTTL:      "2m0s",
+		GeneratorCommitSHA:  "bbbb222222222222222222222222222222222222",
+		GeneratorGoVersion:  "go1.26.5",
 		Workload:            "dispersed",
 		Concurrency:         8,
 		Iterations:          60,
@@ -34,15 +43,12 @@ func localManifest() loadgen.Manifest {
 	}
 }
 
-// capacityManifest adds the service-shape and topology fields PR2 and PR3 supply.
+// capacityManifest adds the fields no endpoint reports, which PR2 and PR3 supply by hand.
 func capacityManifest() loadgen.Manifest {
 	m := localManifest()
 	m.PostgresVersion = "17.2"
 	m.PoolSizePerReplica = 25
 	m.AggregatePoolSize = 25
-	m.ServerGOMAXPROCS = 4
-	m.TimeoutBudget = "lock=2s statement=3s txn=3.5s"
-	m.ReservationTTL = "15m"
 	m.ReplicaCount = 1
 	m.DeploymentTopology = "single-instance-local"
 	m.Environment = "workstation"
@@ -95,19 +101,19 @@ func TestIncompleteManifestCannotBeCertified(t *testing.T) {
 		{
 			// The defect in PR1's committed evidence: `go run` does not stamp VCS data, so
 			// the report carried commit_sha: "".
-			name:    "empty commit SHA cannot reach local",
-			corrupt: func(m *loadgen.Manifest) { m.CommitSHA = "" },
+			name:    "empty service commit SHA cannot reach local",
+			corrupt: func(m *loadgen.Manifest) { m.ServiceCommitSHA = "" },
 			from:    localManifest(),
 			want:    loadgen.LevelNone,
-			mention: "commit_sha",
+			mention: "service_commit_sha",
 		},
 		{
 			// Worse than an empty SHA, because nothing about it looks wrong.
-			name:    "dirty working tree cannot reach local",
-			corrupt: func(m *loadgen.Manifest) { m.SourceModified = true },
+			name:    "dirty service tree cannot reach local",
+			corrupt: func(m *loadgen.Manifest) { m.ServiceSourceModified = true },
 			from:    localManifest(),
 			want:    loadgen.LevelNone,
-			mention: "source_modified",
+			mention: "service_source_modified",
 		},
 		{
 			name:    "missing generator CPU count cannot reach local",

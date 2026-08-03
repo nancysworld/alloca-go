@@ -18,32 +18,48 @@ import (
 // It is emitted with the summary rather than alongside it so a result cannot be separated
 // from the conditions that produced it. A number without its manifest is not a result.
 type Manifest struct {
-	// Identity of the code under test.
+	// Identity of the code under test, read from the service's own /meta.
 	//
-	// SourceModified records whether the working tree carried uncommitted changes when the
-	// generator was built. It is emitted next to the SHA rather than folded into it because
-	// a dirty tree makes the SHA describe something the binary is not — a run stamped with a
-	// clean-looking commit that cannot be checked out and reproduced is worse provenance
-	// than one with no commit at all, since nothing about it looks wrong.
-	CommitSHA      string `json:"commit_sha"`
-	SourceModified bool   `json:"source_modified"`
-	ImageTag       string `json:"image_tag,omitempty"`
-	GoVersion      string `json:"go_version"`
+	// This is the revision §6.4 means by "commit SHA". It is *not* the generator's: a
+	// service left running from one commit while the harness is rebuilt from another is the
+	// ordinary state of a working session, and recording the generator's revision here would
+	// name a commit that was never measured. That is worse than recording nothing, because
+	// the provenance looks trustworthy.
+	//
+	// SourceModified records whether the working tree carried uncommitted changes at build.
+	// A dirty tree makes the SHA describe something the binary is not, so a run stamped with
+	// a clean-looking commit that cannot be checked out and reproduced is worse provenance
+	// than one with no commit at all — again, nothing about it looks wrong.
+	ServiceCommitSHA      string `json:"service_commit_sha"`
+	ServiceSourceModified bool   `json:"service_source_modified"`
+	ServiceGoVersion      string `json:"service_go_version"`
+	ImageTag              string `json:"image_tag,omitempty"`
+
+	// Identity of the harness that produced the numbers. Kept because "which generator ran
+	// this?" is a real question when a run looks anomalous — but kept under names that
+	// cannot be mistaken for the service's.
+	GeneratorCommitSHA      string `json:"generator_commit_sha"`
+	GeneratorSourceModified bool   `json:"generator_source_modified"`
+	GeneratorGoVersion      string `json:"generator_go_version"`
 
 	// Topology.
 	ReplicaCount       int    `json:"replica_count"`
 	DeploymentTopology string `json:"deployment_topology"`
 	Environment        string `json:"environment"`
 
-	// Service-side shape. These are supplied by the operator running the experiment
-	// rather than discovered, because the generator deliberately cannot see the service's
-	// configuration — it is an HTTP client, not a peer.
+	// Service-side shape the service publishes about itself at /meta. Discovered rather
+	// than transcribed: a value the service already reports is one an operator should never
+	// be asked to retype, since a typo there is indistinguishable from a measurement.
+	ServerGOMAXPROCS int    `json:"server_gomaxprocs,omitempty"`
+	TimeoutBudget    string `json:"timeout_budget,omitempty"`
+	ReservationTTL   string `json:"reservation_ttl,omitempty"`
+
+	// Service-side shape the service does not know about itself. These stay operator-
+	// supplied and staged by ag-sept-plan §14 — the database's version and the pool
+	// arithmetic are facts about the deployment, and no endpoint on the service reports them.
 	PostgresVersion    string `json:"postgres_version,omitempty"`
 	PoolSizePerReplica int    `json:"pool_size_per_replica,omitempty"`
 	AggregatePoolSize  int    `json:"aggregate_pool_size,omitempty"`
-	ServerGOMAXPROCS   int    `json:"server_gomaxprocs,omitempty"`
-	TimeoutBudget      string `json:"timeout_budget,omitempty"`
-	ReservationTTL     string `json:"reservation_ttl,omitempty"`
 
 	// Workload and dataset.
 	Workload     string `json:"workload"`
@@ -76,17 +92,31 @@ type Report struct {
 	Quotability Quotability `json:"quotability"`
 }
 
-// NewManifest fills the fields the generator can determine for itself and leaves the
-// service-side fields to the caller.
+// NewManifest joins the two provenances a run has: what the generator knows about itself,
+// and what the service reported about itself at /meta.
 //
-// GoVersion and GOMAXPROCS describe the *generator*; the server reports its own at /meta,
-// and conflating them would misattribute a generator-side constraint to the service.
-func NewManifest(target, workload string, opts Options, location string) Manifest {
+// Every runtime fact is recorded twice under distinct names, never once under a shared one.
+// GOMAXPROCS and the Go version differ between the two processes routinely, and a single
+// field would silently attribute one side's constraint to the other — which is the same class
+// of error as recording the generator's commit as the code under test.
+//
+// A zero ServiceMeta is accepted: the caller passes one when /meta could not be read, and the
+// resulting empty service identity is what the quotability gate refuses. Refusing here would
+// mean no report at all.
+func NewManifest(target, workload string, opts Options, location string, svc ServiceMeta) Manifest {
 	info := buildinfo.Collect(time.Now())
 	return Manifest{
-		CommitSHA:           info.Revision,
-		SourceModified:      info.Modified,
-		GoVersion:           runtime.Version(),
+		ServiceCommitSHA:      svc.Revision,
+		ServiceSourceModified: svc.Modified,
+		ServiceGoVersion:      svc.GoVersion,
+		ServerGOMAXPROCS:      svc.GOMAXPROCS,
+		TimeoutBudget:         svc.TimeoutBudgetString(),
+		ReservationTTL:        svc.ReservationTTL,
+
+		GeneratorCommitSHA:      info.Revision,
+		GeneratorSourceModified: info.Modified,
+		GeneratorGoVersion:      runtime.Version(),
+
 		Workload:            workload,
 		Concurrency:         opts.Concurrency,
 		Iterations:          opts.Iterations,
@@ -120,13 +150,28 @@ func (m Manifest) Validate(level Level) []string {
 	}
 
 	if level.AtLeast(LevelLocal) {
-		// Generator-determinable. Nothing here needs an operator, so nothing here has an
-		// excuse to be empty — see NewManifest.
-		add(m.CommitSHA == "", "commit_sha is empty: the generator was built without VCS "+
-			"stamping (`go run` does not stamp; build the binary with `go build`)")
-		add(m.SourceModified, "source_modified is true: the generator was built from a tree "+
-			"with uncommitted changes, so commit_sha does not describe the binary that ran")
-		add(m.GoVersion == "", "go_version is empty")
+		// Identity of the code under test. This is the one the level exists to protect: a
+		// run that cannot say which service binary answered it measures an unknown.
+		add(m.ServiceCommitSHA == "", "service_commit_sha is empty: the service reported no "+
+			"revision at /meta, or /meta could not be read. A service started with `go run` "+
+			"or `make dev` carries no VCS stamp — build it with `go build` and restart it")
+		add(m.ServiceSourceModified, "service_source_modified is true: the service was built "+
+			"from a tree with uncommitted changes, so service_commit_sha does not describe "+
+			"the binary that answered the requests")
+		add(m.ServiceGoVersion == "", "service_go_version is empty: /meta was not read")
+		add(m.ServerGOMAXPROCS < 1, "server_gomaxprocs is not positive: /meta was not read")
+		add(m.TimeoutBudget == "", "timeout_budget is empty: /meta was not read")
+		add(m.ReservationTTL == "", "reservation_ttl is empty: /meta was not read")
+
+		// Identity of the harness. Generator-determinable, so nothing here has an excuse to
+		// be empty — see NewManifest.
+		add(m.GeneratorCommitSHA == "", "generator_commit_sha is empty: the generator was "+
+			"built without VCS stamping (`go run` does not stamp; build it with `go build`)")
+		add(m.GeneratorSourceModified, "generator_source_modified is true: the generator was "+
+			"built from a tree with uncommitted changes, so generator_commit_sha does not "+
+			"describe the binary that ran")
+		add(m.GeneratorGoVersion == "", "generator_go_version is empty")
+
 		add(m.Workload == "", "workload is empty")
 		add(m.Concurrency < 1, "concurrency is not positive")
 		add(m.Iterations < 1, "iterations is not positive")
@@ -140,13 +185,13 @@ func (m Manifest) Validate(level Level) []string {
 	}
 
 	if level.AtLeast(LevelCapacity) {
-		// Service shape — PR2 supplies these.
+		// Service shape the service cannot report about itself — PR2 supplies these. The
+		// other three service-shape fields are checked at `local`, because /meta hands them
+		// over for free and a field that costs nothing to record should not gate a
+		// higher tier than a field that costs an operator's attention.
 		add(m.PostgresVersion == "", "postgres_version is empty (operator-supplied, PR2)")
 		add(m.PoolSizePerReplica < 1, "pool_size_per_replica is not positive (operator-supplied, PR2)")
 		add(m.AggregatePoolSize < 1, "aggregate_pool_size is not positive (operator-supplied, PR2)")
-		add(m.ServerGOMAXPROCS < 1, "server_gomaxprocs is not positive (operator-supplied, PR2)")
-		add(m.TimeoutBudget == "", "timeout_budget is empty (operator-supplied, PR2)")
-		add(m.ReservationTTL == "", "reservation_ttl is empty (operator-supplied, PR2)")
 
 		// Topology — PR3 supplies these.
 		add(m.ReplicaCount < 1, "replica_count is not positive (operator-supplied, PR3)")

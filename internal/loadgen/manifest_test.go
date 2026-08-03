@@ -20,6 +20,7 @@ func TestManifestRedactsCredentials(t *testing.T) {
 	m := loadgen.NewManifest(
 		"https://alloca:hunter2@db.internal.example:8443/v1?token=abc123#frag",
 		"hot_slot", loadgen.Options{Concurrency: 1, Iterations: 1}, "local",
+		loadgen.ServiceMeta{},
 	)
 
 	var buf bytes.Buffer
@@ -50,7 +51,8 @@ func TestManifestRedactsCredentials(t *testing.T) {
 // Presence is not the property — population is.
 func TestManifestCarriesRequiredProvenance(t *testing.T) {
 	opts := loadgen.Options{Concurrency: 8, Iterations: 200, WarmUp: 2 * time.Second}
-	m := loadgen.NewManifest("http://localhost:8080", "dispersed", opts, "local")
+	m := loadgen.NewManifest("http://localhost:8080", "dispersed", opts, "local",
+		loadgen.ServiceMeta{GoVersion: "go1.26.5", GOMAXPROCS: 4, ReservationTTL: "2m0s"})
 
 	raw, err := json.Marshal(m)
 	if err != nil {
@@ -61,14 +63,17 @@ func TestManifestCarriesRequiredProvenance(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	// commit_sha is checked by Validate rather than here, and deliberately so: VCS stamping
-	// is a property of how the binary was *built*, and `go test` does not stamp it any more
-	// than `go run` does. Asserting it in this test would fail for every correct build, and
-	// the obvious way to make that green again is to weaken the rule the whole gate rests
-	// on. TestIncompleteManifestCannotBeCertified holds that line against a manifest whose
-	// SHA is set explicitly.
+	// Neither revision is checked here, and for two different reasons. The generator's is a
+	// property of how *this* binary was built, and `go test` does not stamp VCS data any more
+	// than `go run` does — asserting it would fail for every correct build, and the obvious
+	// way to green that again is to weaken the rule the gate rests on. The service's comes
+	// from a live `/meta`, which this test has no server for.
+	//
+	// Both are held elsewhere against explicit values: TestIncompleteManifestCannotBeCertified
+	// for the gate, and TestManifestRecordsTheServiceRevisionNotTheGenerators for the one that
+	// matters most — that the two are never confused.
 	for _, field := range []string{
-		"go_version", "workload", "concurrency", "iterations", "warm_up",
+		"generator_go_version", "workload", "concurrency", "iterations", "warm_up",
 		"generator_location", "generator_gomaxprocs", "generator_num_cpu",
 		"target", "timestamp",
 	} {
@@ -100,12 +105,14 @@ func TestManifestCarriesRequiredProvenance(t *testing.T) {
 	}
 }
 
-// TestManifestRecordsWhetherTheTreeWasDirty pins that source_modified is carried from the
-// build info rather than dropped. A dirty tree stamped with a clean-looking SHA is the
-// provenance failure that cannot be spotted by reading the report.
-func TestManifestRecordsWhetherTheTreeWasDirty(t *testing.T) {
+// TestManifestRecordsWhetherEitherTreeWasDirty pins that both dirty-tree flags survive into
+// the JSON. A dirty tree stamped with a clean-looking SHA is the provenance failure that
+// cannot be spotted by reading the report, and it can happen on either side independently —
+// the service and the generator are separate builds.
+func TestManifestRecordsWhetherEitherTreeWasDirty(t *testing.T) {
 	raw, err := json.Marshal(loadgen.NewManifest("http://localhost:8080", "dispersed",
-		loadgen.Options{Concurrency: 1, Iterations: 1}, "local"))
+		loadgen.Options{Concurrency: 1, Iterations: 1}, "local",
+		loadgen.ServiceMeta{Modified: true}))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -113,8 +120,13 @@ func TestManifestRecordsWhetherTheTreeWasDirty(t *testing.T) {
 	if err := json.Unmarshal(raw, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if _, ok := got["source_modified"]; !ok {
-		t.Error("manifest does not record whether the working tree was modified, so a " +
-			"commit_sha that does not describe the binary cannot be detected")
+	for _, field := range []string{"service_source_modified", "generator_source_modified"} {
+		if _, ok := got[field]; !ok {
+			t.Errorf("manifest does not record %q, so a commit SHA that does not describe "+
+				"the binary cannot be detected", field)
+		}
+	}
+	if got["service_source_modified"] != true {
+		t.Error("the service's dirty-tree flag was not carried from /meta")
 	}
 }

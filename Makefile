@@ -18,7 +18,7 @@ GOLANGCI_LINT         := $(TOOLBIN)/golangci-lint
 GOLANGCI_LINT_STAMP   := $(TOOLBIN)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 
 .PHONY: all ci fmt fmt-check vet lint build test test-race test-integration \
-        db-up db-down migrate run dev smoke tidy tools clean
+        db-up db-down migrate run dev dev-measured smoke tidy tools clean
 
 # Integration tests need a real PostgreSQL: the properties they prove (capacity safety
 # under concurrent transactions, post-lock decision time, the scoped-key race) do not
@@ -135,10 +135,28 @@ run:
 # place that rule does not hold, which is how the rule stops being believed.
 #
 # Recursive $(MAKE) rather than prerequisites, so the order holds under `make -j`.
+#
+# NOTE: this serves via `go run`, whose binary carries no VCS stamp, so /meta reports no
+# revision and a load run against it cannot be certified. Use `dev-measured` for that.
 dev:
 	$(MAKE) db-up
 	$(MAKE) migrate
 	$(MAKE) run
+
+## dev-measured: like `dev`, but serves a built binary so /meta reports a revision
+#
+# `go run` does not stamp VCS data, so a service started by `dev` cannot say which commit it
+# is. The load harness reads that from /meta and records it as the identity of the code under
+# test, so an unstamped service makes every run against it uncertifiable (level `none`).
+#
+# This exists as a separate target rather than as a change to `dev` because `go run` is the
+# right default for ordinary development — it rebuilds on every start with no artifact to go
+# stale — and the stamp only matters when a run's provenance will be recorded.
+dev-measured:
+	$(MAKE) db-up
+	$(MAKE) migrate
+	$(GO) build -o $(TOOLBIN)/$(BINARY) $(CMD)
+	DATABASE_URL="$(DATABASE_URL)" $(TOOLBIN)/$(BINARY)
 
 ## smoke: exercise a running service over a real socket (needs `make dev` elsewhere)
 smoke:

@@ -82,10 +82,22 @@ func run() error {
 		Iterations:  *iterations,
 		WarmUp:      *warmUp,
 	}
+	// Read the service's own provenance before driving load. It identifies the binary that
+	// is about to answer the requests, which is what §6.4 means by "commit SHA" — the
+	// generator's own revision answers a different question and is recorded separately.
+	//
+	// A failure here does not stop the run. The manifest keeps an empty service identity, the
+	// quotability gate refuses it with a reason, and the operator gets a report explaining
+	// what could not be established. Aborting would leave no artifact at all.
+	svc, metaErr := loadgen.FetchServiceMeta(ctx, *target, *timeout)
+	if metaErr != nil {
+		fmt.Fprintln(os.Stderr, "alloca-load: could not read service /meta:", metaErr)
+	}
+
 	client := loadgen.NewClient(*target, *timeout, *validate)
 	summary := loadgen.NewRunner(client, opts).Run(ctx, workload)
 
-	manifest := loadgen.NewManifest(*target, workload.Name(), opts, *location)
+	manifest := loadgen.NewManifest(*target, workload.Name(), opts, *location, svc)
 	manifest.DatasetSlots = *slots
 
 	report := loadgen.Report{Manifest: manifest, Summary: summary}

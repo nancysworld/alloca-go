@@ -33,18 +33,25 @@ Two terminals. The first holds the service; the rest is the run.
 
 ```sh
 # terminal 1 — database, schema, service
-make dev
+make dev-measured
 ```
 
-`make dev` starts PostgreSQL, migrates it, then serves on `:8080` with the metrics
-listener on `:9090`. Wait for `{"msg":"metrics listener starting"}` before continuing.
+`make dev-measured` starts PostgreSQL, migrates it, **builds** the service, and serves it on
+`:8080` with the metrics listener on `:9090`. Wait for `{"msg":"metrics listener starting"}`
+before continuing.
+
+**Not `make dev`.** That one serves via `go run`, which stamps no VCS data, so `/meta` reports
+no revision — and the generator reads the identity of the code under test from `/meta`. A run
+against a `go run` service cannot say which binary answered it, and is refused at level
+`none`. `make dev` remains the right target for ordinary development, where nothing records
+provenance.
 
 ```sh
 # terminal 2
 export DATABASE_URL='postgres://alloca:alloca@localhost:15432/alloca?sslmode=disable'
 mkdir -p test/results   # git-ignored, and absent on a fresh clone
 
-# 0. build the generator — see "Why the generator is built, not `go run`" below
+# 0. build the generator — see "Why both the service and the generator are built" below
 go build -o bin/alloca-load ./cmd/alloca-load
 
 # 1. fixture + clean-start assertion
@@ -78,11 +85,12 @@ accumulate from process start — see §4. `make db-down` is not part of this: `
 removes any existing container before starting one.
 
 The trap is not only a previous load run. **Anything** the service answered since it started
-counts, and the natural thing to do after `make dev` is the natural thing that breaks this:
+counts, and the natural thing to do after starting the service is the natural thing that
+breaks this:
 
 ```sh
-make dev     # terminal 1
-make smoke   # ← 13 requests, and the scrape will carry all of them
+make dev-measured   # terminal 1
+make smoke          # ← 13 requests, and the scrape will carry all of them
 ```
 
 `make smoke` issues 13 counted requests across reserve, confirm, cancel and `list_slots`. A
@@ -97,29 +105,68 @@ listener and is not itself counted.
 Keep `-slots` the same across seed and load. The generator has no way to discover the
 dataset, so a mismatch quietly aims traffic at slots that were never seeded.
 
-### Why the generator is built, not `go run`
+### Why both the service and the generator are built, not `go run`
 
-**`go run` does not stamp VCS information into the binary.** `go build` does. The manifest
-reads its `commit_sha` from that stamp, so a run driven by `go run` records an *empty* commit
-SHA — and a result whose code identity is unknown cannot be reproduced or compared, which is
-the whole point of §6.4.
+**`go run` does not stamp VCS information into the binary.** `go build` does. Two different
+fields depend on that stamp, and they are not the same field:
 
-This is not theoretical: it is how `commit_sha: ""` reached PR1's first committed evidence.
-Nothing complained, because an empty string is a perfectly valid JSON value.
+| Manifest field | Comes from | Answers |
+|---|---|---|
+| `service_commit_sha` | the service's `/meta` | **which code was measured** |
+| `generator_commit_sha` | the generator's own build | which harness produced the numbers |
 
-`alloca-load` now refuses such a run outright — level `none`, exit 1 — so the failure is
-loud. Build it once per change and re-run:
+`service_commit_sha` is the one §6.4 means by "commit SHA". The generator reads it from
+`/meta` over the same HTTP-only boundary it already uses, so the §6.3 separation is untouched
+— it asks the service to describe itself rather than sharing state with it.
+
+**Why they are separate.** A service left running from one commit while the harness is rebuilt
+from another is the ordinary state of a working session:
 
 ```sh
-go build -o bin/alloca-load ./cmd/alloca-load
+make dev-measured                              # service at commit A
+# ... edit, rebuild the generator ...
+go build -o bin/alloca-load ./cmd/alloca-load  # generator at commit B
+./bin/alloca-load ...                          # measures A, not B
 ```
 
-The same applies to a **dirty working tree**. The manifest records `source_modified`, and a
-true value fails the gate: a SHA that does not describe the binary that ran is worse
-provenance than no SHA at all, because nothing about it looks wrong. Commit or stash before a
-run whose numbers you intend to keep.
+An earlier version recorded the generator's revision as the identity of the code under test,
+which in that sequence names commit B for a run that measured commit A. That is worse than an
+empty field: the provenance is populated, clean-looking and wrong.
+
+So build both, and rebuild each after changing it:
+
+```sh
+go build -o bin/alloca-load ./cmd/alloca-load   # generator
+make dev-measured                               # service (builds it for you)
+```
+
+The same applies to a **dirty working tree**, on either side. The manifest records
+`service_source_modified` and `generator_source_modified`, and a true value fails the gate: a
+SHA that does not describe the binary that ran is worse provenance than no SHA at all, because
+nothing about it looks wrong. Commit or stash before a run whose numbers you intend to keep.
 
 `alloca-seed` and `alloca-verify` stay on `go run` — neither writes a manifest.
+
+### What else `/meta` supplies
+
+The same fetch populates the service-side fields the service already knows about itself, so
+nobody has to retype them — a transcription error there is indistinguishable from a
+measurement:
+
+| Manifest field | `/meta` |
+|---|---|
+| `service_go_version` | `go_version` |
+| `server_gomaxprocs` | `gomaxprocs` |
+| `timeout_budget` | `request_budget` (rendered as sorted `key=value` pairs) |
+| `reservation_ttl` | `reservation_ttl` |
+
+`postgres_version`, `pool_size_per_replica` and `aggregate_pool_size` are *not* on `/meta` —
+they are facts about the deployment that the service does not know — so those stay
+operator-supplied and staged to PR2, along with topology (PR3) and environment (PR4).
+
+If `/meta` cannot be read at all, the run still executes and still writes its report; it is
+refused at level `none` with the reason naming the missing service identity. A run that cannot
+say what it measured is exactly what the level exists to catch.
 
 ### The other two workloads
 
@@ -204,9 +251,9 @@ Both binaries record a level instead:
 
 | Level | Means | Reached when |
 |---|---|---|
-| `none` | The run measured nothing usable | validation off or failed, run interrupted, warm-up rows unreconciled, reconciliation failed, or required generator provenance missing |
-| `local` | A sound observation about this machine | every field the generator determines for itself is populated |
-| `capacity` | May back a capacity claim about that topology | + PostgreSQL version, pool sizes, server `GOMAXPROCS`, timeout budget, reservation TTL, replica count, deployment topology, environment |
+| `none` | The run measured nothing usable | validation off or failed, run interrupted, warm-up rows unreconciled, reconciliation failed, or the identity of the service or generator missing |
+| `local` | A sound observation about this machine | both revisions recorded from clean trees, plus everything `/meta` reports about the service |
+| `capacity` | May back a capacity claim about that topology | + PostgreSQL version, pool sizes, replica count, deployment topology, environment — the fields no endpoint reports |
 | `publishable` | Satisfies §6.3's provenance requirement | + `-generator-location` names a host separate from the service |
 
 ```sh

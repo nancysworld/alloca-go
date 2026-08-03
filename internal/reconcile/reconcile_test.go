@@ -28,8 +28,13 @@ func reportOf(s loadgen.Summary) loadgen.Report {
 
 func localManifest() loadgen.Manifest {
 	return loadgen.Manifest{
-		CommitSHA:           "91818cd7f3a0556371ff4619754323258488ea4a",
-		GoVersion:           "go1.26.5",
+		ServiceCommitSHA:    "aaaa111111111111111111111111111111111111",
+		ServiceGoVersion:    "go1.26.5",
+		ServerGOMAXPROCS:    4,
+		TimeoutBudget:       "lock_timeout=2s",
+		ReservationTTL:      "2m0s",
+		GeneratorCommitSHA:  "bbbb222222222222222222222222222222222222",
+		GeneratorGoVersion:  "go1.26.5",
 		Workload:            "dispersed",
 		Concurrency:         8,
 		Iterations:          60,

@@ -1,21 +1,26 @@
 # AG-Sept PR1 — Measurement substrate and load harness (scope)
 
-**Status:** Draft — open decisions listed in §3, nothing implemented yet
+**Status:** Complete — every decision in §3 settled, exit gate discharged in §3.6
 **Budget:** 2 development days ([AG-Sept plan](ag-sept-plan.md) §14)
 **Owner doc:** [ag-sept-plan.md](ag-sept-plan.md) §6 is normative for what this PR builds; this
-note records only how PR1 discharges it and which choices are still open.
+note records only how PR1 discharges it and the choices settled along the way.
 
 ## 1. Exit gate
 
 From the plan, unchanged:
 
 > One controlled local run produces reconcilable machine-readable client, server, and
-> persisted-state totals; the mandatory response-validation control passes; and generator
-> and telemetry behaviour are observable.
+> persisted-state totals; the mandatory response-validation control passes; the manifest
+> carries every field the generator can determine for itself; and generator and telemetry
+> behaviour are observable.
 
-Three things have to be true together, and the third is the one that constrains the design:
-the run must reconcile **client totals, server totals, and persisted state**, so something
-in the harness needs to read the database after a run.
+Four things have to be true together. The first is what constrains the design: the run must
+reconcile **client totals, server totals, and persisted state**, so something in the harness
+needs to read the database after a run.
+
+The third clause was missing from an earlier revision of this quote, which is worth recording
+rather than silently correcting — it is the clause the review round of 2026-08-03 turned on,
+and a scope note that misquotes its own exit gate cannot be used to check the gate.
 
 ## 2. What PR1 delivers
 
@@ -24,7 +29,7 @@ in the harness needs to read the database after a run.
 | 1 | Aggregated metrics recorder on the existing observation boundary, bounded label sets only | §6.1 |
 | 2 | Per-call cost of synchronous telemetry against a real sink, deciding whether the asynchronous sink is built now. The end-to-end §6.2 comparison under load is PR2's | §6.2 |
 | 3 | External load generator: workload shapes, closed-loop concurrency, synchronized start, valid idempotent requests, client-side outcome capture, machine-readable summary, own utilisation | §6.3 |
-| 4 | Run manifest emitted with every run, with every generator- and workload-supplied field populated and **enforced**; the operator-supplied service-shape fields are staged to PR2–PR4 | §6.4 |
+| 4 | Run manifest emitted with every run and **enforced**: every field the generator determines for itself, plus everything the service reports at `/meta`. The fields no endpoint reports stay operator-supplied and staged to PR2–PR4 | §6.4 |
 | 5 | Correctness reconciliation used by every later run | §6.5 |
 | 6 | Response-validation-active negative control | §12.1, `measurement-contract.md` §5.5 |
 | 7 | One controlled local smoke run exercising all of the above | §14 PR1 |
@@ -33,10 +38,12 @@ Deliverable 6 is mandatory and not descopable: `measurement-contract.md` §5.5 r
 control that **fails when response validation is silently disabled**, so a reported success
 cannot be an unchecked `200`.
 
-## 3. Decisions (settled 2026-07-31, Nancy's call)
+## 3. Decisions (Nancy's call)
 
-Each of these adds a dependency, a binary or an endpoint, so they were decided before
-implementation rather than during it.
+§3.1–3.3 were settled 2026-07-31, before implementation, because each adds a dependency, a
+binary or an endpoint. §3.4 and §3.5 were settled 2026-08-03 during review, and each carries
+its own date — both changed a schema the later PRs consume, so they are recorded here rather
+than left in a thread.
 
 ### 3.1 Metrics backend — `prometheus/client_golang`
 
@@ -119,9 +126,15 @@ the same decision, so the reason to fix it is that the next measurement it feeds
 so forgiving.
 
 The spread is worth noting for what it says about method rather than about telemetry: the
-five `Tee` samples span 980–1004 ns, and an earlier single run of this benchmark produced
-1033 ns — outside that range. One sample would have been quoted as fact. It would not have
-changed this conclusion, but the habit it represents is the one that eventually does.
+five `Tee`/`io.Discard` samples span 961–976 ns and the five file-sink samples span
+1743–1900 ns, so a single sample from either could be quoted several percent away from the
+median. One sample would have been quoted as fact. It would not have changed this conclusion,
+but the habit it represents is the one that eventually does.
+
+The numbers in this paragraph were themselves wrong until 2026-08-03 — it claimed a span of
+980–1004 ns, which matches neither row of the table above nor the artifact both are drawn
+from. Left recorded rather than quietly corrected, because a paragraph arguing against
+quoting from memory is the worst place to quote from memory.
 
 **What this does not show, and it is the part that matters.** These are microbenchmarks of a
 *healthy* sink. Two things stay open, and PR1 does not close either.
@@ -147,7 +160,7 @@ The end-to-end comparison belongs with the sweeps that can run it, and is scoped
 The harness first recorded `quotable: true|false`. That field could not be answered honestly,
 because §6.4 gates a *capacity* claim on topology provenance and §6.3 gates a *publishable*
 one on the generator running off the service host — so "is this quotable?" has no answer
-until the claim is named. A PR1 smoke run with an empty `commit_sha` and no service-shape
+until the claim is named. A PR1 smoke run with an empty commit SHA and no service-shape
 fields nonetheless reported `quotable: true`, which is what surfaced the problem.
 
 Reports now carry `quotability.level` — `none`, `local`, `capacity`, `publishable` — with the
@@ -161,20 +174,56 @@ Levels are named for the claim rather than for the PR that first reaches them. A
 `docs/measurements/` outlives the schedule, and `"PR1"` would oblige a later reader to
 reconstruct this PR's scope before knowing what the number is good for.
 
-**PR1 runs reach `local`, which is the intended outcome.** What PR1 newly *enforces* is the
-half of §6.4 it owns: a run whose `commit_sha` is empty, or built from a modified working
-tree, is now `none` and exits non-zero. Both were reachable before — the documented operator
-path used `go run`, which does not stamp VCS data — and the manifest test checked that each
-JSON key was present rather than populated, so an empty string passed.
+**PR1 runs reach `local`, which is the intended outcome.** What PR1 newly *enforces* is every
+field obtainable without an operator: a run is `none`, and exits non-zero, when either
+binary's revision is missing or either was built from a modified working tree. Both were
+reachable before — the documented operator path used `go run`, which does not stamp VCS data —
+and the manifest test checked that each JSON key was present rather than populated, so an
+empty string passed.
 
-## 3.5 Exit gate — discharged
+### 3.5 Service provenance is read from `/meta`, not from the generator (settled 2026-08-03)
+
+The manifest's commit SHA was read from `buildinfo.Collect` inside `alloca-load`, so the field
+documented as the identity of the code under test named the *generator's* binary. A service
+left running from one commit while the harness is rebuilt from another — the ordinary state of
+a working session — then produces a report naming a commit that was never measured. That is
+worse than the empty SHA §3.4 fixed, because the value is populated and looks trustworthy, and
+§3.4 had just made it load-bearing.
+
+The service publishes its own revision at `/meta`, so the generator reads it there. This does
+not weaken §6.3: the generator gains no credentials and no shared state, it asks the service to
+describe itself over the contract it already uses to drive load. `internal/buildinfo` says this
+is what `/meta` is for.
+
+The two provenances are now recorded under names that cannot be confused —
+`service_commit_sha` / `generator_commit_sha`, and likewise for the dirty-tree flag and the Go
+version. `local` requires the service's, from a clean tree.
+
+**This moved three fields out of the staging.** `server_gomaxprocs`, `timeout_budget` and
+`reservation_ttl` come from the same `/meta` fetch, so they are discovered rather than
+transcribed and PR2 no longer supplies them: a value the service already reports is one nobody
+should retype, since a typo there is indistinguishable from a measurement. `postgres_version`
+and the pool arithmetic stay operator-supplied — no endpoint reports them — along with topology
+(PR3) and environment (PR4).
+
+**Consequence for the operator path.** `make dev` serves via `go run`, so `/meta` reports no
+revision and no run against it can be certified. `make dev-measured` builds the service first;
+`dev` is deliberately unchanged, because `go run` is the right default for development, where
+nothing records provenance.
+
+The limitation this leaves is recorded as **DEBT-3** in
+[`tech-debts.md`](tech-debts.md): `/meta` is read once before the run, so the identity means
+"the service behind the target when the run began" rather than a proof that one binary served
+the whole sample.
+
+### 3.6 Exit gate — discharged
 
 `[MEASURED]` — artifacts in [`docs/measurements/pr1-smoke-run/`](../measurements/pr1-smoke-run/):
 `run.json` (generator report), `verdict.json` (reconciliation), `metrics.txt` (server scrape).
 Local PostgreSQL 16, one replica, dispersed workload, 20 slots, capacity 5, concurrency 8,
 60 iterations.
 
-The gate has three clauses, and each is discharged by a separate artifact rather than by one
+The gate has four clauses, and each is discharged by a separate artifact rather than by one
 run that passed:
 
 **1. Client, server and persisted-state totals reconcile.** All three independently say 60:

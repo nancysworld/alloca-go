@@ -18,13 +18,13 @@ GOLANGCI_LINT         := $(TOOLBIN)/golangci-lint
 GOLANGCI_LINT_STAMP   := $(TOOLBIN)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 
 .PHONY: all ci fmt fmt-check vet lint build test test-race test-integration \
-        db-up db-down migrate run dev smoke tidy tools clean
+        db-up db-down migrate run dev dev-measured smoke tidy tools clean
 
 # Integration tests need a real PostgreSQL: the properties they prove (capacity safety
 # under concurrent transactions, post-lock decision time, the scoped-key race) do not
 # exist without one. They are behind the `integration` build tag so the default gate
 # stays hermetic and fast.
-DATABASE_URL ?= postgres://alloca:alloca@localhost:55432/alloca?sslmode=disable
+DATABASE_URL ?= postgres://alloca:alloca@localhost:$(PGPORT)/alloca?sslmode=disable
 # Where `make smoke` looks for a running service, and how long each of its requests waits.
 # Raise MAX_TIME when the service is paused in a debugger: it is curl's own patience, so no
 # server-side deadline affects it.
@@ -32,7 +32,13 @@ BASE         ?= http://localhost:8080
 MAX_TIME     ?= 10
 PGCONTAINER  ?= alloca-pg
 PGIMAGE      ?= postgres:16-alpine
-PGPORT       ?= 55432
+# Deliberately below 49152, the start of the Windows dynamic port range. Hyper-V and WSL2
+# reserve blocks inside that range at boot, and a reserved port makes `docker run -p` fail
+# with "ports are not available ... /forwards/expose returned unexpected status: 500" until
+# the next reboot reshuffles the blocks. A port above 49152 therefore works or not by luck
+# of the boot; this one is stable. `netsh interface ipv4 show excludedportrange protocol=tcp`
+# lists the current reservations.
+PGPORT       ?= 15432
 
 all: ci
 
@@ -129,14 +135,32 @@ run:
 # place that rule does not hold, which is how the rule stops being believed.
 #
 # Recursive $(MAKE) rather than prerequisites, so the order holds under `make -j`.
+#
+# NOTE: this serves via `go run`, whose binary carries no VCS stamp, so /meta reports no
+# revision and a load run against it cannot be certified. Use `dev-measured` for that.
 dev:
 	$(MAKE) db-up
 	$(MAKE) migrate
 	$(MAKE) run
 
+## dev-measured: like `dev`, but serves a built binary so /meta reports a revision
+#
+# `go run` does not stamp VCS data, so a service started by `dev` cannot say which commit it
+# is. The load harness reads that from /meta and records it as the identity of the code under
+# test, so an unstamped service makes every run against it uncertifiable (level `none`).
+#
+# This exists as a separate target rather than as a change to `dev` because `go run` is the
+# right default for ordinary development — it rebuilds on every start with no artifact to go
+# stale — and the stamp only matters when a run's provenance will be recorded.
+dev-measured:
+	$(MAKE) db-up
+	$(MAKE) migrate
+	$(GO) build -o $(TOOLBIN)/$(BINARY) $(CMD)
+	DATABASE_URL="$(DATABASE_URL)" $(TOOLBIN)/$(BINARY)
+
 ## smoke: exercise a running service over a real socket (needs `make dev` elsewhere)
 smoke:
-	@BASE="$(BASE)" MAX_TIME="$(MAX_TIME)" DATABASE_URL="$(DATABASE_URL)" ./scripts/smoke.sh
+	@BASE="$(BASE)" MAX_TIME="$(MAX_TIME)" DATABASE_URL="$(DATABASE_URL)" ./test/scripts/smoke.sh
 
 ## tidy: tidy the module graph
 tidy:

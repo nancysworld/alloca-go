@@ -69,7 +69,7 @@ a `run` that quietly migrated would make local development the one place that ru
 hold:
 
 ```sh
-make db-up     # local PostgreSQL on port 55432
+make db-up     # local PostgreSQL on port 15432
 make migrate   # once, before a new version serves traffic
 make run       # serves on :8080
 make db-down
@@ -105,6 +105,13 @@ with an empty body while you are still reading the stack:
 ```sh
 make smoke MAX_TIME=600
 ```
+
+### Running a measurement run
+
+`make smoke` checks that the service works. The AG-Sept load harness measures it: a seeded
+fixture, an external generator holding no database credentials, and a reconciliation of
+client, server and persisted-state totals. The procedure is in
+[`docs/operations/load-harness.md`](docs/operations/load-harness.md).
 
 The HTTP contract — routes, request and response shapes, status mapping, and the
 `/healthz`, `/readyz`, `/meta` operational endpoints — is documented in

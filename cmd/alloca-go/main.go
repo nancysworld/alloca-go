@@ -22,13 +22,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/nancysworld/alloca-go/internal/buildinfo"
 	"github.com/nancysworld/alloca-go/internal/config"
 	"github.com/nancysworld/alloca-go/internal/httpapi"
 	"github.com/nancysworld/alloca-go/internal/ids"
 	"github.com/nancysworld/alloca-go/internal/postgres"
 	"github.com/nancysworld/alloca-go/internal/service"
-	"github.com/nancysworld/alloca-go/internal/telemetry"
 	"github.com/nancysworld/alloca-go/internal/worker"
 )
 
@@ -67,7 +68,13 @@ func run(logger *slog.Logger) error {
 
 	repo := postgres.New(pool, cfg.RequestBudget)
 	svc := service.New(repo, ids.Random{}, cfg.ReservationTTL)
-	recorder := telemetry.NewSlogRecorder(logger)
+
+	// A private registry rather than the default: the default is package-global, so a
+	// duplicate registration anywhere in the process would panic at startup and a test
+	// binary importing this package would inherit whatever else had registered.
+	registry := prometheus.NewRegistry()
+	recorder := buildRecorder(registry, pool, logger)
+	shutdownMetrics := serveMetrics(metricsAddr(), registry, logger)
 
 	startedAt := time.Now()
 	metaSource := func() buildinfo.Info { return buildinfo.Collect(startedAt) }
@@ -117,6 +124,7 @@ func run(logger *slog.Logger) error {
 		// Serving failed on its own. Stop the worker before returning, or the process
 		// would exit with it still mid-transaction.
 		stop()
+		_ = shutdownMetrics(context.Background())
 		workers.Wait()
 		return err
 	case <-ctx.Done():
@@ -129,6 +137,9 @@ func run(logger *slog.Logger) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownGrace)
 	defer cancel()
 	shutdownErr := httpServer.Shutdown(shutdownCtx)
+	// The metrics listener drains last: a scrape taken during the drain is exactly the
+	// observation an experiment wants of a shutting-down replica.
+	_ = shutdownMetrics(shutdownCtx)
 	workers.Wait()
 	if shutdownErr != nil {
 		return shutdownErr

@@ -1,0 +1,39 @@
+{
+  "checks": [
+    {
+      "name": "consumed capacity vs admitted reserves",
+      "invariant": "INV-1",
+      "ok": true,
+      "detail": "60 live reservations, 60 fresh admitted reserves, no slot over capacity"
+    },
+    {
+      "name": "idempotency keys vs committed mutations",
+      "invariant": "INV-5",
+      "ok": true,
+      "detail": "60 records, all keys distinct, 60 fresh mutations reported"
+    },
+    {
+      "name": "live claims vs admitted reserves per identity",
+      "invariant": "INV-4",
+      "ok": true,
+      "detail": "60 live claims, no overlapping pair, 60 fresh admitted reserves"
+    },
+    {
+      "name": "outcomes within the closed set, replay orthogonal",
+      "invariant": "INV-7",
+      "ok": true,
+      "detail": "60 completed requests, all outcomes in the closed set"
+    },
+    {
+      "name": "server totals vs client totals",
+      "invariant": "",
+      "ok": true,
+      "detail": "60 requests, every operation/outcome/reason/replay cell agrees with the client"
+    }
+  ],
+  "quotability": {
+    "level": "local",
+    "blocked_from": "capacity",
+    "blocked_because": "manifest is incomplete for a capacity claim: postgres_version is empty (operator-supplied, PR2); pool_size_per_replica is not positive (operator-supplied, PR2); aggregate_pool_size is not positive (operator-supplied, PR2); replica_count is not positive (operator-supplied, PR3); deployment_topology is empty (operator-supplied, PR3); environment is empty (operator-supplied, PR4)"
+  }
+}

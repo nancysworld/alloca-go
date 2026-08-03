@@ -1,0 +1,66 @@
+{
+  "manifest": {
+    "service_commit_sha": "62050a0c5bf190f916b643d8c68adbe70a52f6bc",
+    "service_source_modified": false,
+    "service_go_version": "go1.26.5",
+    "generator_commit_sha": "62050a0c5bf190f916b643d8c68adbe70a52f6bc",
+    "generator_source_modified": false,
+    "generator_go_version": "go1.26.5",
+    "replica_count": 0,
+    "deployment_topology": "",
+    "environment": "",
+    "server_gomaxprocs": 10,
+    "timeout_budget": "admission_cap=250ms client_deadline=6s db_acquire_cap=500ms lock_timeout=2s server_deadline=5s statement_timeout=3s txn_budget=3.5s",
+    "reservation_ttl": "2m0s",
+    "workload": "dispersed",
+    "concurrency": 8,
+    "iterations": 60,
+    "warm_up": "0s",
+    "dataset_slots": 20,
+    "generator_location": "local",
+    "generator_gomaxprocs": 10,
+    "generator_num_cpu": 10,
+    "target": "http://localhost:8080",
+    "timestamp": "2026-08-03T10:35:17.96542096Z"
+  },
+  "summary": {
+    "workload": "dispersed",
+    "concurrency": 8,
+    "iterations": 60,
+    "completed_iterations": 60,
+    "duration_seconds": 0.042610496,
+    "warm_up_seconds": 0,
+    "warm_up_discarded": 0,
+    "totals": [
+      {
+        "operation": "reserve",
+        "outcome": "admitted_success",
+        "replay": false,
+        "count": 60
+      }
+    ],
+    "completed_requests": 60,
+    "successful_mutation_goodput": 60,
+    "latency_ms": {
+      "p50": 4.090902,
+      "p95": 14.804346,
+      "p99": 15.649824,
+      "max": 15.649824
+    },
+    "generator": {
+      "gomaxprocs": 10,
+      "goroutines": 21,
+      "cpu_seconds": 0.01683,
+      "cpu_utilisation_per_core": 0.03949731070954913,
+      "num_cpu": 10
+    },
+    "response_validation_enabled": true,
+    "invalid_responses": 0,
+    "measurement_sound": true
+  },
+  "quotability": {
+    "level": "local",
+    "blocked_from": "capacity",
+    "blocked_because": "manifest is incomplete for a capacity claim: postgres_version is empty (operator-supplied, PR2); pool_size_per_replica is not positive (operator-supplied, PR2); aggregate_pool_size is not positive (operator-supplied, PR2); replica_count is not positive (operator-supplied, PR3); deployment_topology is empty (operator-supplied, PR3); environment is empty (operator-supplied, PR4)"
+  }
+}

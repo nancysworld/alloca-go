@@ -1,6 +1,6 @@
 # AG-Sept — Measured scale-out and distributed authority
 
-**Status:** Draft v0.3  
+**Status:** Draft v0.4  
 **Created:** 31 July 2026  
 **Delivery window:** August 2026  
 **Development budget:** 10 focused development days, followed by 2–3 days for reruns, review, refinement, documentation, and public-release preparation  
@@ -104,17 +104,20 @@ All proposed workload sizes, replica matrices, durations, and resource values in
 
 The ten-day development allocation is a planning constraint:
 
-| Workstream | Days | Weight |
-|---|---:|---:|
-| Measurement harness and observability | 2.0 | 20% |
-| Single-instance capacity baseline | 2.0 | 20% |
-| Containerisation and local multi-instance experiment | 1.5 | 15% |
-| AWS and Kubernetes deployment path | up to 2.0 | up to 20% |
-| AWS scale-out experiments | up to 1.5 | up to 15% |
-| Architecture conclusions and one justified boundary | 1.0 | 10% |
-| **Total allocated budget** | **10.0** | **100%** |
+| Workstream | PR | Days | Weight |
+|---|---|---:|---:|
+| Measurement harness and load generator | PR1 | 2.0 | 20% |
+| Single-instance frontier, with the diagnostic time-series minimum | PR2 | 2.5 | 25% |
+| Containerisation and local multi-instance experiment | PR3 | 2.0 | 20% |
+| AWS and Kubernetes deployment path, conditional | PR4 | up to 2.0 | up to 20% |
+| Architecture conclusions and one justified boundary | PR5 | 1.5 | 15% |
+| **Total allocated budget** | | **10.0** | **100%** |
 
-**AWS reallocation rule:** The 3.5 days assigned to AWS are conditional, not additional contingency. If the AWS path threatens completion of the measurement harness, single-instance baseline, local multi-instance experiment, or architecture report, some or all of that budget is reassigned to those local P0 outcomes. The implementation evidence determines whether returned time is spent on stronger reruns, generator validation, local scale-out, observability, or documentation.
+**AWS scale-out experiments are outside this table.** The §11 matrix needs roughly a further 1.5 days, and there is no room for them in the ten once the local work is funded at what it actually costs. They are reachable from underspend or from the reserve below, and from nowhere else. Planning them inside the base allocation would mean planning to overrun by 15% on day one.
+
+**AWS reallocation rule:** The days assigned to AWS are conditional, not additional contingency. If the AWS path threatens completion of the measurement harness, single-instance baseline, local multi-instance experiment, or architecture report, some or all of that budget is reassigned to those local P0 outcomes. The implementation evidence determines whether returned time is spent on stronger reruns, generator validation, local scale-out, observability, or documentation.
+
+**Why observability moved.** The retention path and diagnostic panels were bundled with the harness workstream, and they are scoped into PR2 because that is the first PR whose conclusions depend on reading a time series rather than a total. The half day follows the work; PR1 keeps 2.0 for the harness alone, which is what it consumed.
 
 A further 2–3 days are reserved for:
 
@@ -452,25 +455,123 @@ The expiry worker is not an automatic microservice candidate because it shares t
 
 ## 14. Proposed PR sequence
 
+This section assigns the requirements above to implementation PRs. The earlier sections remain normative for the technical details; these scopes make ownership, evidence, and exit conditions explicit so required work does not fall between PRs.
+
 ### PR1 — Measurement substrate and load harness
 
-Indicative budget: 2 days. Exit when one controlled local run produces reconcilable machine-readable client, server, and persisted-state totals; the mandatory response-validation control passes; and generator and telemetry behaviour are observable.
+**Indicative budget:** 2 days.
+
+**Scope:**
+
+- add the bounded aggregated metrics recorder and separate metrics listener described in §6.1;
+- measure telemetry overhead and decide whether an asynchronous sink is justified under §6.2;
+- implement deterministic reset and seed tooling, including the hot-identity clean-start assertion;
+- implement the external generator for dispersed, hot-slot, and hot-identity workloads, including synchronized starts, response validation, client-side latency and outcome capture, machine-readable summaries, and generator utilisation;
+- emit the run manifest structure of §6.4, with every generator- and workload-supplied field populated: commit identity, generator Go version and `GOMAXPROCS`, workload and dataset parameters, concurrency, duration and warm-up, generator location and utilisation, target, and timestamp;
+- implement the separate persisted-state verifier and all reconciliation checks in §6.5;
+- implement the mandatory response-validation negative control;
+- document the local operator path from service start through seed, load, metrics scrape, and verification.
+
+**Evidence:** one controlled local smoke run with its client report, server metrics scrape, reconciliation verdict, telemetry-overhead result, and response-validation control.
+
+**Exit:** one controlled local run produces reconcilable machine-readable client, server, and persisted-state totals; the mandatory response-validation control passes; the manifest carries every field the generator can determine for itself; and generator and telemetry behaviour are observable.
+
+**Not in PR1:** capacity claims, parameter sweeps, retained time-series storage, dashboards, containers, or replica comparisons.
+
+**Manifest completion is staged, and the stages are named.** The generator is an HTTP client and cannot discover the service's shape, so the remaining §6.4 fields are supplied by the operator in the PR that first has something to say: service shape in PR2, topology and image identity in PR3, environment in PR4. The rule that survives the staging is §6.4's own — **no run may be quoted as a capacity claim while a field its topology requires is unpopulated.** PR1 is exempt because it quotes nothing.
 
 ### PR2 — Single-instance frontier
 
-Indicative budget: 2 days. Exit when each controlled workload has a repeatable one-instance result and an identified or bounded limiting mechanism.
+**Indicative budget:** 2.5 days — 1.0 for the retention path and diagnostic panels, 1.5 for the sweeps, controls, and report.
+
+**Scope:**
+
+- establish a minimal reproducible Prometheus retention path and compact diagnostic dashboard for throughput, successful mutation goodput, p95 and p99 latency, outcomes, database-pool pressure, process CPU and memory, relevant Go runtime signals, and generator utilisation;
+- keep the queries and small panel set version-controlled and reproducible without building a general observability platform;
+- populate the §6.4 service-shape fields, which are the ones needed to interpret this PR's own numbers: PostgreSQL version, pool size per replica, server `GOMAXPROCS`, timeout budget, and reservation TTL;
+- run bounded one-instance sweeps for dispersed, hot-slot, and hot-identity workloads;
+- discharge §6.2 end to end, which PR1 deliberately did not: compare throughput and p99 with telemetry enabled against the same workload with it disabled, at the same dataset, concurrency and environment, and report the delta as measured evidence. PR1 established only the per-call cost against a real sink, which bounds this comparison without standing in for it;
+- perform the mandatory generator-bottleneck control and demonstrate generator headroom for quotable runs;
+- vary concurrency or offered rate, pool size, and application resources only as needed to identify or tightly bound the frontier;
+- report peak observed throughput, SLO-safe capacity, and recommended operating capacity according to the measurement contract, or document why a value remains unresolved;
+- retain run reports, reconciliation verdicts, environment details, and the time-series exports or snapshots needed to support the interpretation.
+
+**Evidence:** repeatable reconciled one-instance results for all three controlled workloads, diagnostic time series, the generator control, and a report identifying or bounding each limiting mechanism.
+
+**Exit:** each controlled workload has a repeatable one-instance result; the generator is ruled out; the time series expose or tightly bound the limiting mechanism; and the recommended operating point is reported or explicitly deferred with evidence.
+
+**Not in PR2:** replica scaling, Kubernetes, AWS, rich dashboards, alerting, or the optional synchronized release wave.
+
+**The generator stays on the service host, and that bounds what PR2 may claim.** §6.3 requires the generator to run separately from the service for a publishable claim, and no second machine is assigned before PR4. So PR2's frontier is a *bounded local* result: the §12.2 headroom control is what limits how much the co-resident generator can be distorting it, and every figure carries that limitation. Publishable capacity requires the separate generator compute of §10, which arrives with PR4 and only if its gate passes. If that gate fails, AG-Sept closes with a bounded local frontier and no published capacity number — an outcome the descope order already accepts, and a more honest one than promoting a co-resident measurement.
 
 ### PR3 — Container and local scale-out
 
-Indicative budget: 1.5–2 days. Exit when dispersed and hot-authority traffic are compared across replica counts without changing the correctness model, including the connection-budget control.
+**Indicative budget:** 2 days.
+
+**Scope:**
+
+- build the reproducible production-shaped image required by §9.1;
+- populate the §6.4 topology and image-identity fields that first become meaningful here: replica count, deployment topology, image tag, and a build-stamped commit SHA;
+- provide the smallest reproducible local load-balancing or orchestration path for one, two, and four replicas against one PostgreSQL authority;
+- reuse PR2's Prometheus and dashboard path, adding bounded replica identity and only the per-replica and aggregate views needed for scale-out diagnosis;
+- compare dispersed, hot-slot, and local hot-identity workloads across replica counts;
+- perform the mandatory connection-budget control in §8.1 and §12.3;
+- confirm unrelated authorities continue to progress while one slot or identity serializes;
+- calculate like-for-like scale efficiency and distinguish application-compute gains from increased pressure on the shared database admission boundary;
+- preserve complete manifests, reconciliation verdicts, topology, and diagnostic time-series evidence for quoted runs;
+- run the desirable resource-limit control of §12.4 here if the replica work leaves room, since container CPU and memory limits are the first place it can be applied cheaply. It is the one control that may be dropped without a stop decision.
+
+**Evidence:** a local multi-instance report containing the replica matrix, connection-budget control, per-workload scale efficiency, correctness verdicts, and supporting frontier evidence.
+
+**Exit:** dispersed and hot-authority traffic are compared across replica counts without changing the correctness model; pool multiplication is explained; the hot-authority result is correctly scoped; and all quoted runs remain reproducible and reconciled.
+
+**Not in PR3:** AWS, autoscaling, production Kubernetes platform engineering, a service mesh, or an attempt to eliminate the hot-authority serialization frontier.
 
 ### PR4 — AWS deployment, conditional
 
-Indicative budget: no more than 2 days before the AWS stop gate. Exit when the service runs on AWS and accepts a controlled workload from separate generator compute with visible outcomes and metrics, or when the stop decision is documented and the remaining budget returns to local evidence.
+**Indicative budget:** no more than 2 focused deployment days before the AWS stop gate. The further 1.5 measurement days §4 assigns to AWS experiments are **not** inside the base ten once PR2 and PR3 are funded honestly — they are available only from underspend in PR2, PR3 or PR5, or from the 2–3 day reserve. If neither materialises, the post-gate matrix shrinks to its §11 minimum, or the stop decision is taken. This is the reallocation rule of §4 running in the direction it was always going to run.
+
+**Scope before the gate:**
+
+- publish the immutable service image to ECR;
+- populate the remaining §6.4 field, environment, and the aggregate pool capacity the deployed topology implies;
+- establish the application runtime, load-balancing path, RDS database, migrations, readiness, graceful shutdown, metrics collection, and separate EC2 generator described in §10;
+- prefer EKS, switching to ECS/Fargate or EC2-hosted containers at the first-day gate when necessary;
+- pass the AWS smoke gate in §10.3;
+- record topology, resources, region, versions, pool budget, and a dated basic cost snapshot without secrets or private endpoints.
+
+**Scope after the gate:**
+
+- run the minimum AWS matrix in §11: dispersed traffic at one, two, and four replicas and hot-slot traffic at one and four;
+- run hot identity or mixed identities only where time permits;
+- reuse the local measurement, reconciliation, evidence, and visualization contracts;
+- compare local conclusions with any network, load-balancer, cloud-compute, or managed-database boundary visible in AWS.
+
+**Evidence:** either a reproducible AWS deployment with reconciled measurements and a basic cost record, or a dated stop-decision report describing the failed gate and how the remaining budget is reassigned.
+
+**Exit:** the service accepts a controlled workload from separate generator compute with visible outcomes and metrics and the minimum useful subset is measured, or the bounded stop decision is documented early enough for PR5 to strengthen local evidence.
+
+**Not in PR4:** multi-region operation, production security completeness, managed-observability expansion, custom autoscaling, or prolonged EKS troubleshooting.
 
 ### PR5 — Final experiment and architecture decision
 
-Indicative budget: up to 2 days. Use AWS results when available; otherwise use decisive local reruns. Exit when a reviewer can reproduce the topology, distinguish measured facts from interpretation, and understand why replicas help or do not help for each authority distribution.
+**Indicative budget:** 1.5 focused development days, followed by the reserved 2–3 days for reruns, review, refinement, documentation, and public-release preparation. The split is deliberate: the analysis, the tables, and the boundary decision are development work; the polishing of prose, diagrams, and the repository entry point is what the reserve exists for, and moving it into the base allocation is how the reserve quietly becomes contingency.
+
+**Scope:**
+
+- use AWS results when available; otherwise spend returned AWS budget on decisive local reruns, stronger controls, or narrower uncertainty bounds;
+- add the simplified synchronized release wave only when the controlled story is complete and the composite adds explanatory value;
+- resolve contradictory or unstable measurements through targeted reruns;
+- produce the final one-instance, local scale-out, and optional AWS comparison tables and only the charts needed to explain decisive findings;
+- update the architecture diagrams and connect each frontier to the slot-row, identity-row, and claim-relation authority model;
+- record the service-boundary decision, including why the reservation transaction remains together and whether an asynchronous event or reporting boundary is justified;
+- update the repository entry point, reproduction instructions, limitations, evidence labels, negative controls, cost notes, and public-disclosure checks.
+
+**Evidence:** a public-ready set in which raw artifacts support every reported result and architecture claim, with explicit limitations and no scale claim crossing incomparable workload shapes.
+
+**Exit:** a reviewer can reproduce the topology and decisive runs, distinguish measured facts from calculations and interpretation, understand why replicas help or do not help for each authority distribution, and follow the evidence to the architecture decision.
+
+**Not in PR5:** feature expansion for presentation value, speculative decomposition, rich dashboard work unrelated to a finding, or reopening settled measurement definitions.
 
 ## 15. Priority tiers
 
@@ -478,6 +579,7 @@ Indicative budget: up to 2 days. Use AWS results when available; otherwise use d
 
 - reproducible external load harness;
 - aggregated metrics;
+- minimal reproducible time-series retention and diagnostic dashboard;
 - response-validation negative control;
 - correctness reconciliation;
 - one-instance baseline;
@@ -485,7 +587,7 @@ Indicative budget: up to 2 days. Use AWS results when available; otherwise use d
 - local hot-identity control with clean-start assertion;
 - multi-instance shared-PostgreSQL comparison;
 - connection-budget control;
-- separate generator for publishable runs;
+- the separate-generator rule: a co-resident run is reported as a bounded local frontier and never as a published capacity claim. The *rule* is required; the separate compute that would satisfy it arrives with the conditional PR4, so the rule is honoured by labelling when the machine does not exist;
 - evidence-led architecture conclusion;
 - explicit AWS attempt/stop decision.
 
@@ -528,14 +630,14 @@ If time slips, remove work in this order:
 
 1. outbox implementation;
 2. autoscaling;
-3. dashboard polish;
+3. dashboard polish beyond the diagnostic minimum;
 4. detailed cost comparison;
 5. AWS hot-identity rerun;
 6. simplified synchronized release wave;
 7. local Kubernetes when a working AWS runtime already provides the required orchestration experiment;
 8. remaining AWS implementation or reruns after the AWS stop gate.
 
-Do not descope the response-validation control, one-instance control, dispersed-versus-hot-slot comparison, local hot-identity clean-start control, multi-instance shared-authority experiment, connection-budget control, separate generator, measurement validity, correctness reconciliation, or architecture report.
+Do not descope the response-validation control, one-instance control, dispersed-versus-hot-slot comparison, local hot-identity clean-start control, multi-instance shared-authority experiment, connection-budget control, the separate-generator rule for published capacity, minimal diagnostic time-series visibility, measurement validity, correctness reconciliation, or architecture report.
 
 ## 17. Final deliverables
 
@@ -544,14 +646,15 @@ The public-ready milestone should leave:
 1. a runnable containerized service;
 2. a reproducible external load generator;
 3. aggregated service and runtime metrics;
-4. a single-instance report;
-5. a local multi-instance report;
-6. an AWS deployment guide, measured AWS result, or documented stop decision;
-7. current and intended architecture diagrams;
-8. authority and bottleneck analysis;
-9. a service-boundary decision record;
-10. a concise public repository summary;
-11. explicit limitations, evidence labels, and negative-control results.
+4. a minimal reproducible time-series retention path and diagnostic dashboard;
+5. a single-instance report;
+6. a local multi-instance report;
+7. an AWS deployment guide, measured AWS result, or documented stop decision;
+8. current and intended architecture diagrams;
+9. authority and bottleneck analysis;
+10. a service-boundary decision record;
+11. a concise public repository summary;
+12. explicit limitations, evidence labels, and negative-control results.
 
 Together these should answer what is correct, what is fast under which workload, where scale-out helps, where shared authority remains the frontier, which dependency becomes limiting, and what should be separated next.
 
@@ -563,7 +666,7 @@ AG-Sept is complete when:
 - single- and local multi-instance results are available;
 - response validation, generator headroom, and connection-budget controls have been demonstrated;
 - outcomes and persisted state reconcile;
-- database connection and authority boundaries are visible;
+- database connection and authority boundaries are visible in retained measurements and diagnostic time series;
 - measured facts, calculations, and interpretation are separated;
 - architecture reflects evidence rather than desired presentation;
 - an AWS measurement is available or the bounded AWS stop decision is documented;

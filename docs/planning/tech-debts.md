@@ -35,6 +35,7 @@ code comment or a PR description can cite one and still be right in a year.
 |---|---|---|---|---|
 | [**DEBT-1**](#3-debt-1--no-reaper-for-abandoned-schedule-claims) | Elapsed `user_time_claims` rows are reclaimed only by their owner's next reserve, so an identity that never returns leaves its row indefinitely | schedule claims | 2026-08-02, AG-Sept PR1 | open |
 | [**DEBT-2**](#4-debt-2--no-retention-policy-for-durable-rows) | No durable row is ever deleted and no retention policy exists; `idempotency_records` is the instance with no product reason to keep it | data lifecycle | 2026-08-02, AG-Sept PR1 | open |
+| [**DEBT-3**](#5-debt-3--service-identity-is-sampled-only-before-a-run) | The load harness records service provenance before load starts but does not prove the same service identity remained behind the target for the whole run | measurement provenance | 2026-08-03, AG-Sept PR1 | open |
 
 ## 3. DEBT-1 — no reaper for abandoned schedule claims
 
@@ -225,3 +226,91 @@ Confirmed on 2026-08-02 by exhaustive search: the only `DELETE` statements outsi
 target `user_time_claims` (`internal/postgres/tx.go:386`, `:401`); the only other row remover
 is the reset `TRUNCATE` (`internal/postgres/control.go:303`), which serves the integration
 suites and `alloca-seed -reset`; and `grep "ON DELETE"` over the migrations returns nothing.
+
+## 5. DEBT-3 — service identity is sampled only before a run
+
+### What it is
+
+`alloca-load` reads `/meta` once, immediately before it starts the workload, and records that
+service revision and runtime shape in the run manifest. It does not read `/meta` again after
+the workload completes, nor does each request carry a replica/build identity in its response.
+
+The recorded identity therefore means **the service behind the target when the run began**.
+It does not prove that every request in a long run reached that same binary. A restart,
+rolling replacement, load-balancer target change, or mixed-version replica set could make
+part of the run execute on different code while the manifest still names only the initial
+service.
+
+### Why it is this way
+
+PR1 measures a short controlled local run against one explicitly started service process.
+Within that boundary, a single pre-run read is the smallest mechanism that fixes the real
+provenance defect: recording the generator's revision as the code under test.
+
+Adding post-run checks, per-response build identity, or replica-aware provenance would expand
+PR1 into deployment orchestration before the project has replicas or long retained sweeps.
+That cost is not justified by the current topology.
+
+### Why it is acceptable today
+
+The PR1 procedure starts one local service with `make dev-measured`, performs a short run,
+and saves one metrics scrape from the same process. There is no orchestrator replacing the
+service and no load balancer routing across versions.
+
+A restart during this run would usually also reset `alloca_requests_total`, causing the
+client/server reconciliation check to fail rather than silently certifying the result. That
+is useful protection, but it is incidental rather than a complete identity proof: a new
+process could restore or expose compatible totals, and a mixed-replica topology would not
+necessarily reset the aggregate.
+
+### Trigger — when it stops being acceptable
+
+Any one of:
+
+- **PR2** introduces long-running sweeps where an unattended service restart becomes
+  plausible during one measured run;
+- **PR3** introduces multiple replicas or a load balancer, especially if replicas can run
+  different revisions;
+- deployment automation performs rolling replacement while experiments may be active;
+- a retained or published result must prove that one code identity served the whole sample,
+  rather than merely recording the identity observed at its start.
+
+PR3 is the hard trigger: once more than one replica can answer, one pre-run `/meta` response
+cannot describe the set of binaries that served the run.
+
+### What a fix must preserve
+
+- The generator remains an external HTTP-only client with no database or deployment-control
+  credentials.
+- A failed identity check must leave a machine-readable report explaining the failure rather
+  than discard the run artifact.
+- Provenance checks must not add per-request high-cardinality metric labels.
+- A check must distinguish an intentional homogeneous restart from a mixed-version run; merely
+  observing that *some* revision changed is not enough to describe which requests saw which
+  code.
+
+### Options, none decided
+
+1. Fetch `/meta` before and after each run and require the service revision and relevant
+   runtime fields to match. Smallest extension and likely sufficient for PR2's single-instance
+   sweeps.
+2. Expose a bounded build-information metric per replica and retain the scrape alongside the
+   run. Suitable once PR3 introduces replica identity, provided the label set remains bounded
+   by deployment size rather than request traffic.
+3. Return a build/revision identifier in a response header and have the generator record the
+   set seen during the run. This directly proves which identities answered requests, but adds
+   bytes and parsing to every measured response.
+4. Have the experiment orchestrator pin and record an immutable image digest for every target
+   replica, then verify the target set did not change during the run. Strongest deployment-
+   level answer, but belongs with PR3/PR4 orchestration rather than the HTTP client alone.
+
+Options 1 and 2 compose: pre/post checking detects single-instance replacement, while the
+replica metric describes a multi-instance target set.
+
+### Evidence
+
+Raised during review of AG-Sept PR1 commit `62050a0`, which correctly changed the manifest to
+read `service_commit_sha` from the service's `/meta`. The implementation fetches that value
+before `Runner.Run`; there is no corresponding post-run fetch. This is deliberate and sound
+for PR1's one-process local procedure, but the guarantee narrows as soon as run duration or
+replica count grows.

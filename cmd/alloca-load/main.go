@@ -121,8 +121,28 @@ func run() error {
 	client := loadgen.NewClient(*target, *timeout, *validate)
 	summary := loadgen.NewRunner(client, opts).Run(ctx, workload)
 
+	// Read /meta again and compare. A pre-run read establishes only "the service behind the
+	// target when the run began" (DEBT-3); this is what turns that into a claim about the
+	// whole sample. A restart, a rolling replacement or a config change mid-run all leave the
+	// totals internally consistent while describing something other than one experiment.
+	//
+	// A failed post-run read is itself drift: the service that answered the workload is not
+	// answering now, and a run that cannot confirm what it measured must not certify itself.
+	after, afterErr := loadgen.FetchServiceMeta(ctx, *target, *timeout)
+	drift := ""
+	switch {
+	case metaErr != nil:
+		// The pre-run read already failed; the manifest has no identity to compare against
+		// and the gate refuses on the empty fields rather than on drift.
+	case afterErr != nil:
+		drift = "the service did not answer /meta after the run: " + afterErr.Error()
+	default:
+		drift = after.DriftFrom(svc)
+	}
+
 	manifest := loadgen.NewManifest(*target, workload.Name(), opts, *location, svc)
 	manifest.DatasetSlots = *slots
+	manifest.ServiceIdentityDrift = drift
 
 	report := loadgen.Report{Manifest: manifest, Summary: summary}
 	report.Quotability = loadgen.Certify(manifest, summary)

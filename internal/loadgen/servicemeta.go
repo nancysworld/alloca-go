@@ -42,6 +42,62 @@ type ServiceMeta struct {
 	// is what lets §6.2's comparison identify its own arms, and what makes an unobservable
 	// run refuse itself rather than reconcile against a server count that does not exist.
 	TelemetryMode string `json:"telemetry_mode"`
+
+	// StartedAt is when the process began, and it is the field that makes this struct a
+	// *process* identity rather than a build identity. A service restarted onto the same
+	// commit has an identical revision, so nothing else here would change — and a restart
+	// mid-run is precisely DEBT-3's hazard.
+	StartedAt string `json:"started_at"`
+}
+
+// DriftFrom names how the service changed between two reads of /meta, or returns "" when it
+// did not. It is the check DEBT-3 asks for: a run's identity is claimed from a read taken
+// before the workload, and nothing until now proved the same service was still behind the
+// target when it ended.
+//
+// Every field is compared rather than the revision alone. A restart onto the same commit
+// leaves the revision identical while discarding the warm state a cell depends on, and a
+// configuration change — a different timeout budget, a different pool ceiling, telemetry
+// switched — changes what was measured without changing what was built.
+func (m ServiceMeta) DriftFrom(before ServiceMeta) string {
+	switch {
+	case m.StartedAt != before.StartedAt:
+		return fmt.Sprintf("the service restarted during the run: it reported start time %s "+
+			"before and %s after, so part of the workload ran against a process that is gone "+
+			"and whatever warm state the measurement assumed went with it",
+			before.StartedAt, m.StartedAt)
+	case m.Revision != before.Revision:
+		return fmt.Sprintf("the service revision changed during the run, from %s to %s: the "+
+			"manifest can name only one, and neither describes the whole sample",
+			before.Revision, m.Revision)
+	case m.Modified != before.Modified:
+		return "the service's source-modified flag changed during the run"
+	case m.GoVersion != before.GoVersion:
+		return fmt.Sprintf("the service's Go version changed during the run, from %s to %s",
+			before.GoVersion, m.GoVersion)
+	case m.GOMAXPROCS != before.GOMAXPROCS:
+		return fmt.Sprintf("the service's GOMAXPROCS changed during the run, from %d to %d: "+
+			"the compute available to it was not constant across the measurement",
+			before.GOMAXPROCS, m.GOMAXPROCS)
+	case m.TelemetryMode != before.TelemetryMode:
+		return fmt.Sprintf("the service's telemetry mode changed during the run, from %q to "+
+			"%q, so the observation cost was not constant", before.TelemetryMode, m.TelemetryMode)
+	case m.ReservationTTL != before.ReservationTTL:
+		return fmt.Sprintf("the reservation TTL changed during the run, from %s to %s: it "+
+			"decides how long each admitted reserve holds capacity, so the contention the "+
+			"workload produced was not constant", before.ReservationTTL, m.ReservationTTL)
+	case m.TimeoutBudgetString() != before.TimeoutBudgetString():
+		return "the service's timeout budget changed during the run"
+	case m.Database.Version != before.Database.Version:
+		return fmt.Sprintf("the database version changed during the run, from %q to %q",
+			before.Database.Version, m.Database.Version)
+	case m.Database.PoolMaxConns != before.Database.PoolMaxConns:
+		return fmt.Sprintf("the pool ceiling changed during the run, from %d to %d: it is one "+
+			"of the admission boundaries a frontier is read against",
+			before.Database.PoolMaxConns, m.Database.PoolMaxConns)
+	default:
+		return ""
+	}
 }
 
 // TimeoutBudgetString renders the deadline chain as one deterministic line for the manifest.

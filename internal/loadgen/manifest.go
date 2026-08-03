@@ -63,6 +63,12 @@ type Manifest struct {
 	// replica count. It stays operator-supplied and staged to PR3 with the topology.
 	AggregatePoolSize int `json:"aggregate_pool_size,omitempty"`
 
+	// ServiceIdentityDrift is empty when /meta reported the same service before and after the
+	// run, and otherwise says how it changed. DEBT-3 recorded that a single pre-run read
+	// establishes only "the service behind the target when the run began"; this is the
+	// post-run half of that claim.
+	ServiceIdentityDrift string `json:"service_identity_drift,omitempty"`
+
 	// TelemetryMode records which recorder served the run (full | metrics_only | off). It is
 	// provenance, not configuration: a throughput figure measured with logging disabled is
 	// not comparable to one measured with it on, and without this field nothing downstream
@@ -191,6 +197,8 @@ func (m Manifest) Validate(level Level) []string {
 			"run cannot be reconciled. It is a \u00a76.2 control, not a measurement")
 		add(m.TelemetryMode == "", "telemetry_mode is empty: /meta was not read, so nothing "+
 			"records which recorder produced these numbers")
+		add(m.ServiceIdentityDrift != "", "the service did not stay the same across the run: "+
+			m.ServiceIdentityDrift)
 
 		// Identity of the harness. Generator-determinable, so nothing here has an excuse to
 		// be empty — see NewManifest.

@@ -9,11 +9,6 @@ global:
   # signal the frontier is read from. The cost is storage, which the retention window bounds.
   scrape_interval: 1s
   scrape_timeout: 900ms
-  # Labels attached to every series this Prometheus stores, so a retained snapshot still says
-  # what it was measuring once it is separated from the run directory.
-  external_labels:
-    milestone: ag-sept
-    topology: single-instance-local
 
 scrape_configs:
   - job_name: alloca-go
@@ -34,3 +29,21 @@ scrape_configs:
     file_sd_configs:
       - files: ['/etc/prometheus/targets/*.json']
         refresh_interval: 10s
+
+    # Attached to every sample this job stores, so a retained TSDB snapshot still says what it
+    # was measuring once it is separated from the run directory that explains it.
+    #
+    # relabel_configs rather than external_labels, which is what this originally used and got
+    # wrong: external_labels are applied when Prometheus talks to *external* systems — remote
+    # write, federation, alerting — and are not attached to locally ingested samples. The
+    # snapshot would not have carried them, while the config claimed it did.
+    #
+    # Here rather than in the generated file_sd JSON because these are properties of the
+    # experiment, not of the machine: obs-target.sh owns the address, this file owns what the
+    # address means. The run manifest remains the authoritative environment identity — these
+    # labels make an orphaned snapshot self-describing, they do not replace it.
+    relabel_configs:
+      - target_label: milestone
+        replacement: ag-sept
+      - target_label: topology
+        replacement: single-instance-local

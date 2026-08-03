@@ -66,7 +66,18 @@ runtime signals. PR1 registered all three — `collectors.NewGoCollector`,
 rather than adding instrumentation, which is where the 1.0-day estimate for the retention path
 becomes plausible.
 
-The one signal PR2 must still add is on the *generator* side — see §4.2.
+The one required output with no Prometheus series behind it is **generator utilisation**. The
+generator is a short-lived process per cell with no scrape endpoint, so its CPU is a scalar in
+`run.json` rather than a time series. PR2 exports it into the cell's CSVs from the report
+rather than adding a push path — a pushgateway for one number per cell would be more
+observability platform than §14 allows.
+
+Two other §7 outputs are worth naming as gaps rather than quietly redefining: **offered
+requests** is likewise generator-side and comes from the report, and **database utilisation**
+— as distinct from pool pressure — has no source at all, since the service exposes pool state
+but nothing about the PostgreSQL process. §14 PR2's own wording says "database-pool pressure",
+so this is a place where the plan's two sections disagree about what is required; it needs a
+decision when the exporter lands.
 
 ## 4. Obligations PR1 deferred into this PR
 
@@ -82,7 +93,7 @@ them".
 
 Sweeps need warm-up: a cold pool and an unwarmed process put their startup cost in the first
 cell of every sweep, which is exactly where a frontier curve is read. So PR2 must make warm-up
-reconcilable, not merely allowed. Two mechanisms are viable and §6 records which is chosen.
+reconcilable, not merely allowed. The mechanism is settled in §5.4.
 
 ### 4.2 DEBT-3's trigger fires here
 
@@ -122,7 +133,7 @@ emitting one directory of artifacts per cell.
 size across sweep cells needs no code and no new environment variable. This also keeps the
 value the manifest records and the value the pool actually used the same string.
 
-### 5.3 Grafana is the diagnostic view; CSVs and a retained snapshot are the evidence (Nancy's call, 2026-08-04)
+### 5.3 Grafana is the diagnostic view; CSVs and a retained snapshot are the evidence (Nancy's call, 2026-08-03)
 
 Both, with different jobs, because they answer different questions.
 
@@ -142,7 +153,41 @@ view.
 The two share one query source, so the panel you looked at and the number you quoted cannot
 drift apart.
 
-### 5.4 Every figure is labelled against its artifact
+### 5.4 Warm-up is a separate phase, and the fixture is reset without restarting the service (Nancy's call, 2026-08-03)
+
+The cell sequence is:
+
+```text
+seed  →  start/restart service  →  warm up  →  reset fixture (service keeps running)
+      →  measured load  →  export  →  verify
+```
+
+Warm-up traffic never reaches reconciliation, because the reset clears the rows it created
+before the measured phase begins. So `Report`'s schema and `alloca-verify` are untouched, which
+is what makes this the cheaper of the two mechanisms — the alternative carried per-cell warm-up
+totals through to the verifier and changed the schema every retained artifact is read with.
+
+**The service is deliberately not restarted after warm-up**, and that is the point of the
+sequence rather than an omission. Restarting would discard exactly what warm-up establishes: a
+filled connection pool, a settled heap, and whatever the runtime has already optimised. A
+warm-up followed by a restart measures a cold service again.
+
+**What that costs, and the change it forces.** Prometheus counters are cumulative and only a
+process restart zeroes them, so a scrape taken after the measured phase carries the warm-up
+requests too — while `run.json` describes the measured phase alone. `serverTotalsCheck` compares
+those two and would fail every warmed cell, reporting a correct service as unreconciled.
+
+So the client/server comparison must move from an absolute count to a **delta between two
+scrapes**: one captured after the reset and before the measured load, one after. That is a
+change to `alloca-verify`'s interface — a second scrape argument — and to the arithmetic of the
+check, and it is the price of keeping the service warm.
+
+It is also an improvement beyond warm-up. PR1's operator guide has to insist on restarting the
+service before *every* run precisely because the check reads absolute counters; a delta removes
+that requirement and with it the whole class of contaminated-scrape failures the guide's §7
+catalogues.
+
+### 5.5 Every figure is labelled against its artifact
 
 `measurement-contract.md` §2 and §5.3 already require this, and PR1's own scope note still
 managed to quote a range that matched neither its table nor its artifact. PR2's report
@@ -151,14 +196,12 @@ of the deliverable.
 
 ## 6. Open — these need Nancy before or during implementation
 
-Listed so they are decided rather than discovered. §6.1 and §6.2 block work; the rest can be
-defaulted and revisited.
+Listed so they are decided rather than discovered. The warm-up mechanism blocked
+implementation of the sweep runner and is now settled in §5.4; the remaining choices can be
+defaulted after the first ranging cells.
 
-1. ~~**Panel form**~~ — settled 2026-08-04, see §5.3.
-2. **Warm-up mechanism** — a separate warm-up phase followed by a fixture reset, or per-cell
-   warm-up totals carried through to the verifier. The first is simpler and discards the
-   warm-up traffic entirely; the second keeps it reconcilable but changes the report schema
-   the verifier consumes.
+1. ~~**Panel form**~~ — settled 2026-08-03, see §5.3.
+2. ~~**Warm-up mechanism**~~ — settled 2026-08-03, see §5.4.
 3. **Sweep matrix size** — the budget is 1.5 days for sweeps, controls *and* report. A
    proposed bounded matrix is in §7; it needs a sanity check against how long one cell
    actually takes before it is trusted.
@@ -184,5 +227,5 @@ if the budget bites.
 ## 8. Not in PR2
 
 Replica scaling, Kubernetes, AWS, rich dashboards, alerting, and the optional synchronized
-release wave (§5.4) — all per the plan. Also not in PR2: any published capacity number, which
+release wave (plan §5.4) — all per the plan. Also not in PR2: any published capacity number, which
 requires the separate generator compute of §10.

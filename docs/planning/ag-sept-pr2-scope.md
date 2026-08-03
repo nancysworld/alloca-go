@@ -1,6 +1,7 @@
 # AG-Sept PR2 — Single-instance frontier (scope)
 
-**Status:** Draft — §5 lists what is decided and §6 what is not
+**Status:** Complete — every decision in §5 settled, nothing open in §6. Results and the
+frontier report are in [`../measurements/pr2-frontier/`](../measurements/pr2-frontier/)
 **Budget:** 2.5 development days ([AG-Sept plan](ag-sept-plan.md) §14) — 1.0 for the retention
 path and diagnostic panels, 1.5 for the sweeps, controls, and report
 **Owner doc:** [ag-sept-plan.md](ag-sept-plan.md) §7 and §12.2 are normative for what this PR
@@ -337,6 +338,24 @@ application resources **only as needed** to identify or tightly bound the fronti
 
 Application-CPU variation (§12.4) is *desirable*, not mandatory, and is the first thing to drop
 if the budget bites.
+
+## 8. Exit gate — how it stands
+
+| Clause | Status |
+|---|---|
+| each controlled workload has a repeatable one-instance result | **met** — dispersed, hot_slot and hot_identity each run twice, spreads reported |
+| the generator is ruled out | **met** — §12.2 control, throughput flat across a 10x change in generator compute |
+| the time series expose or tightly bound the limiting mechanism | **met** — pool saturation identified and confirmed by a pool-size ladder |
+| the recommended operating point is reported **or explicitly deferred with evidence** | **deferred with evidence** — §5.6 and the frontier report §5 |
+
+The fourth clause is discharged by its second branch, which the plan explicitly allows. Two
+things stopped a number being defensible, and both are stated rather than worked around: at one
+replica only one of the margin's three components is meaningful, and §4 of the frontier report
+shows the environment moving throughput by ~2x for reasons outside the harness.
+
+The honest summary is that PR2 identified *what* limits this deployment and bounded *how much*,
+but did not resolve a capacity figure — which is the outcome the exit gate was written to
+permit.
 
 ## 8. Not in PR2
 

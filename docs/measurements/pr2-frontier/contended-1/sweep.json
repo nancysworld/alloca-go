@@ -1,0 +1,78 @@
+[
+  {
+    "workload": "hot_identity",
+    "concurrency": 16,
+    "window_seconds": 30.034606617,
+    "throughput_per_s": 525.6,
+    "goodput_per_s": 0.0,
+    "latency_ms": {
+      "p50": 29.88529,
+      "p95": 35.823231,
+      "p99": 40.171174,
+      "max": 48.16299
+    },
+    "generator_cpu_per_core": 0.0070133663705378045,
+    "level": "local",
+    "load_ok": true,
+    "verify_ok": true,
+    "fixture_units": 389000,
+    "notes": []
+  },
+  {
+    "workload": "hot_identity",
+    "concurrency": 64,
+    "window_seconds": 30.130856632,
+    "throughput_per_s": 532.1,
+    "goodput_per_s": 0.0,
+    "latency_ms": {
+      "p50": 116.570587,
+      "p95": 135.801803,
+      "p99": 176.755091,
+      "max": 196.507986
+    },
+    "generator_cpu_per_core": 0.007068584295535934,
+    "level": "local",
+    "load_ok": true,
+    "verify_ok": true,
+    "fixture_units": 1541000,
+    "notes": []
+  },
+  {
+    "workload": "hot_slot",
+    "concurrency": 16,
+    "window_seconds": 30.035431147,
+    "throughput_per_s": 623.4,
+    "goodput_per_s": 1.7,
+    "latency_ms": {
+      "p50": 25.042885,
+      "p95": 29.587808,
+      "p99": 38.019112,
+      "max": 52.941485
+    },
+    "generator_cpu_per_core": 0.008318805173034995,
+    "level": "local",
+    "load_ok": true,
+    "verify_ok": true,
+    "fixture_units": 389000,
+    "notes": []
+  },
+  {
+    "workload": "hot_slot",
+    "concurrency": 64,
+    "window_seconds": 30.193621676,
+    "throughput_per_s": 436.4,
+    "goodput_per_s": 1.7,
+    "latency_ms": {
+      "p50": 148.227181,
+      "p95": 187.209432,
+      "p99": 195.845518,
+      "max": 214.487244
+    },
+    "generator_cpu_per_core": 0.00581005491432786,
+    "level": "local",
+    "load_ok": true,
+    "verify_ok": true,
+    "fixture_units": 1541000,
+    "notes": []
+  }
+]

@@ -1,0 +1,19 @@
+{
+  "workload": "hot_identity",
+  "concurrency": 16,
+  "window_seconds": 30.030773406,
+  "throughput_per_s": 530.6,
+  "goodput_per_s": 0.0,
+  "latency_ms": {
+    "p50": 29.401879,
+    "p95": 34.792532,
+    "p99": 39.72151,
+    "max": 52.685007
+  },
+  "generator_cpu_per_core": 0.007158580203500469,
+  "level": "local",
+  "load_ok": true,
+  "verify_ok": true,
+  "fixture_units": 389000,
+  "notes": []
+}

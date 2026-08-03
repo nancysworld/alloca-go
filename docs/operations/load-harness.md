@@ -72,10 +72,27 @@ wearing the stronger gate's name. The scrape is a file rather than a URL the ver
 so that the numbers being reconciled are the ones taken at the end of the run, not whatever
 the service reports whenever the verifier happens to run.
 
-To run it a second time, restart the service (`make dev` in terminal 1) rather than only
-re-seeding. `-reset` returns the database to a clean fixture but cannot touch the server's
-in-process counters, and those keep accumulating across runs — see §4. `make db-down` is
-not part of this: `db-up` already removes any existing container before starting one.
+**Restart the service before *every* run, not just the second one.** `-reset` returns the
+database to a clean fixture but cannot touch the server's in-process counters, and those
+accumulate from process start — see §4. `make db-down` is not part of this: `db-up` already
+removes any existing container before starting one.
+
+The trap is not only a previous load run. **Anything** the service answered since it started
+counts, and the natural thing to do after `make dev` is the natural thing that breaks this:
+
+```sh
+make dev     # terminal 1
+make smoke   # ← 13 requests, and the scrape will carry all of them
+```
+
+`make smoke` issues 13 counted requests across reserve, confirm, cancel and `list_slots`. A
+`-n 60` run against that service then scrapes 73, and `alloca-verify` fails the client/server
+check — correctly, since `run.json` describes 60 of them. A hand-rolled `curl` against
+`/v1/slots` does the same thing one request at a time.
+
+So the order is: smoke-test if you want to, then **restart the service**, then seed, load and
+scrape. The `curl` in step 3 is safe because it hits `:9090/metrics`, which is a separate
+listener and is not itself counted.
 
 Keep `-slots` the same across seed and load. The generator has no way to discover the
 dataset, so a mismatch quietly aims traffic at slots that were never seeded.
@@ -226,6 +243,19 @@ A scrape taken without restarting the service is the common way to fail the new 
 counters are cumulative, so the scrape carries every run the process has served while
 `run.json` describes one. The check's `detail` says so when the totals differ, because that
 is the first thing to suspect and not the last.
+
+To confirm it rather than assume it, subtract your client totals from the scrape and look at
+what is left:
+
+```sh
+grep '^alloca_requests_total' test/results/metrics.txt
+```
+
+A residual that is only `reserve`/`admitted_success` is an earlier load run. A residual
+carrying `confirm`, `cancel`, `list_slots` and a spread of refusal reasons is `make smoke`,
+which contributes exactly 13. Either way the fix is the same — restart the service and re-run
+from the seed — but knowing which tells you whether anything else on the machine is talking
+to the service.
 
 ### Reading a contended workload
 

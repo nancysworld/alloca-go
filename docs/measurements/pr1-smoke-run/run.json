@@ -1,6 +1,7 @@
 {
   "manifest": {
-    "commit_sha": "",
+    "commit_sha": "d7659373c034c74f8f812123e8a0612383502b89",
+    "source_modified": false,
     "go_version": "go1.26.5",
     "replica_count": 0,
     "deployment_topology": "",
@@ -14,14 +15,14 @@
     "generator_gomaxprocs": 10,
     "generator_num_cpu": 10,
     "target": "http://localhost:8080",
-    "timestamp": "2026-08-02T22:12:27.711531423Z"
+    "timestamp": "2026-08-03T08:27:27.554504204Z"
   },
   "summary": {
     "workload": "dispersed",
     "concurrency": 8,
     "iterations": 60,
     "completed_iterations": 60,
-    "duration_seconds": 0.042501435,
+    "duration_seconds": 0.062491074,
     "warm_up_seconds": 0,
     "warm_up_discarded": 0,
     "totals": [
@@ -35,20 +36,25 @@
     "completed_requests": 60,
     "successful_mutation_goodput": 60,
     "latency_ms": {
-      "p50": 4.386211,
-      "p95": 13.157247,
-      "p99": 14.071093,
-      "max": 14.071093
+      "p50": 3.565785,
+      "p95": 12.823793,
+      "p99": 62.345561,
+      "max": 62.345561
     },
     "generator": {
       "gomaxprocs": 10,
       "goroutines": 19,
-      "cpu_seconds": 0.008125,
-      "cpu_utilisation_per_core": 0.01911700157888787,
+      "cpu_seconds": 0.006306,
+      "cpu_utilisation_per_core": 0.010091041162134612,
       "num_cpu": 10
     },
     "response_validation_enabled": true,
     "invalid_responses": 0,
-    "quotable": true
+    "measurement_sound": true
+  },
+  "quotability": {
+    "level": "local",
+    "blocked_from": "capacity",
+    "blocked_because": "manifest is incomplete for a capacity claim: postgres_version is empty (operator-supplied, PR2); pool_size_per_replica is not positive (operator-supplied, PR2); aggregate_pool_size is not positive (operator-supplied, PR2); server_gomaxprocs is not positive (operator-supplied, PR2); timeout_budget is empty (operator-supplied, PR2); reservation_ttl is empty (operator-supplied, PR2); replica_count is not positive (operator-supplied, PR3); deployment_topology is empty (operator-supplied, PR3); environment is empty (operator-supplied, PR4)"
   }
 }

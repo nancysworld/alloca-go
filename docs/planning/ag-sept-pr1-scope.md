@@ -203,9 +203,15 @@ exited 1, and `alloca-verify` also exited 1 — the generator's refusal is carri
 rather than overridden by a clean reconciliation.
 
 **3. Generator and telemetry behaviour are observable.** The generator reports its own CPU
-utilisation (0.019 per core here — nowhere near saturation, so this run is not
+utilisation (0.010 per core here — nowhere near saturation, so this run is not
 client-limited), and the server exposes request, pool and expiry-worker series on a separate
 listener.
+
+**4. The run says what it may back.** `quotability.level` is `local`, and `blocked_because`
+names each field standing between it and `capacity` together with the PR that supplies it.
+That is the intended outcome for PR1, not a shortfall — see §3.4. The manifest's
+`commit_sha` matches the commit this evidence was generated from, with `source_modified`
+false, so the run is reproducible from its own record.
 
 **What this run is not.** It is a smoke run: 60 requests at concurrency 8 on one host, with
 the generator and service sharing a machine. It proves the substrate works end to end; it

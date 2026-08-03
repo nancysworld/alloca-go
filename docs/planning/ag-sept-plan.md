@@ -222,7 +222,7 @@ AG-Sept does not require:
 
 ### 6.1 Aggregated service metrics
 
-The AG-M1 observation boundary should gain a minimal aggregated recorder suitable for capacity experiments.
+AG-Sept should extend the observation boundary AG-M1 established (§1) with a minimal aggregated recorder suitable for capacity experiments.
 
 Required signals include:
 

@@ -75,13 +75,14 @@ func RunClientChecks(ctx context.Context, r loadgen.Report) (Result, error) {
 // Run executes every check of §6.5 against the summary, the metrics scrape and the
 // database — the three independent counts the rule requires to agree.
 //
-// server carries the scrape. Passing nil is permitted and produces a failing check rather
-// than a skipped one: §6.5 is a three-way agreement, and a verdict that quietly certified a
-// run on two of the three would be the weaker gate wearing the stronger gate's name.
+// scrapes carries the server-side counters. A zero Scrapes is permitted and produces a
+// failing check rather than a skipped one: §6.5 is a three-way agreement, and a verdict that
+// quietly certified a run on two of the three would be the weaker gate wearing the stronger
+// gate's name. Its optional Baseline is what lets a warmed cell keep its process — see Scrapes.
 //
 // Every check runs even after one fails: an operator debugging a bad run wants the whole
 // picture, and stopping at the first failure hides whether the cause is narrow or broad.
-func Run(ctx context.Context, q Querier, org domain.OrganisationID, r loadgen.Report, server ServerTotals) (Result, error) {
+func Run(ctx context.Context, q Querier, org domain.OrganisationID, r loadgen.Report, scrapes Scrapes) (Result, error) {
 	var res Result
 
 	for _, check := range []func(context.Context, Querier, domain.OrganisationID, loadgen.Summary) (Check, error){
@@ -96,7 +97,7 @@ func Run(ctx context.Context, q Querier, org domain.OrganisationID, r loadgen.Re
 		}
 		res.Checks = append(res.Checks, c)
 	}
-	res.Checks = append(res.Checks, serverTotalsCheck(r.Summary, server))
+	res.Checks = append(res.Checks, serverTotalsCheck(r.Summary, scrapes))
 	res.Quotability = verdict(r, res.Checks)
 	return res, nil
 }

@@ -195,9 +195,9 @@ func idempotencyCheck(ctx context.Context, q Querier, org domain.OrganisationID,
 		return c, nil
 	}
 
-	// A replay must not create a record, so fresh (non-replay) mutations are what the
-	// record count is compared against. Folding replays in would demand a record per
-	// replay and fail a correct service.
+	// A replay must not create a record, so fresh (non-replay) mutations are what the record
+	// count is compared against. Folding replays in would demand a record per replay and
+	// fail a correct service.
 	fresh := s.FreshMutations()
 	if records < fresh {
 		c.Detail = fmt.Sprintf("%d idempotency records for %d fresh mutations the client "+
@@ -206,9 +206,25 @@ func idempotencyCheck(ctx context.Context, q Querier, org domain.OrganisationID,
 		return c, nil
 	}
 
+	// The other direction, which used to pass silently. A record the client never asked for
+	// means either a contaminated fixture or a replay that wrote one — and the second is the
+	// failure this check exists to catch, since a replay that records its own outcome has
+	// performed the mutation §4.2 says it must not.
+	//
+	// Equality is only assertable because alloca-seed refuses to start against a fixture
+	// holding records (§5.3). Before that assertion existed, a leftover record was the
+	// commoner explanation and this comparison would have failed correct services.
+	if records > fresh {
+		c.Detail = fmt.Sprintf("%d idempotency records for %d fresh mutations: %d record(s) "+
+			"the client never committed. Either the fixture was not re-seeded, or a replay "+
+			"wrote a record instead of returning the recorded outcome (INV-5, §4.2)",
+			records, fresh, records-fresh)
+		return c, nil
+	}
+
 	c.OK = true
-	c.Detail = fmt.Sprintf("%d records, all keys distinct, %d fresh mutations reported",
-		records, fresh)
+	c.Detail = fmt.Sprintf("%d records, all keys distinct, %d fresh mutations reported, "+
+		"%d replays wrote none", records, fresh, s.ReplayedMutations)
 	return c, nil
 }
 

@@ -17,3 +17,11 @@ func SummariseForTest(responses []Response) Summary {
 func PercentilesForTest(v []float64) Percentiles {
 	return percentiles(v)
 }
+
+// ReplayDefectForTest exposes the §4.2 replay rule, so the branch that must *not* fire — a
+// first attempt that established no recorded outcome — can be driven directly. Reaching it
+// through a server would need one that fails the first request and replays the second, which
+// is a fixture describing no real service.
+func ReplayDefectForTest(first, second Response) string {
+	return replayDefect(first, second)
+}

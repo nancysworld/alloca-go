@@ -131,9 +131,24 @@ type Summary struct {
 	// Completed counts every request that reached a terminal classification. Goodput
 	// counts only successful *mutations* — summed over the three mutation operations,
 	// never over all requests, since a successful listing is not a booking
-	// (observability §3.1).
-	Completed int `json:"completed_requests"`
-	Goodput   int `json:"successful_mutation_goodput"`
+	// (observability §3.1) — and only *fresh* ones.
+	//
+	// Replays are excluded because measurement-contract §3 defines goodput as useful domain
+	// operations completed, and §4.2 defines a replay as one that "returned the originally
+	// recorded terminal outcome rather than performing a new mutation". A replay is a
+	// correct response that commits nothing; counting it would both overstate the work done
+	// and count one logical booking twice, since its original was already counted. It is
+	// also the definition the database agrees with — reconciliation compares persisted rows
+	// against FreshAdmittedFor, which has always excluded replays.
+	//
+	// ReplayedMutations is the same population that goodput now leaves out, reported rather
+	// than dropped. An excluded quantity that appears nowhere is indistinguishable from one
+	// that never happened, and a replay is a correctness claim in its own right (INV-5): the
+	// service must return the recorded outcome without re-running the mutation. The `replay`
+	// workload exists to exercise and check that claim.
+	Completed         int `json:"completed_requests"`
+	Goodput           int `json:"successful_mutation_goodput"`
+	ReplayedMutations int `json:"replayed_mutations"`
 
 	LatencyMS Percentiles `json:"latency_ms"`
 
@@ -263,7 +278,11 @@ func summarise(
 		latencies = append(latencies, float64(r.Latency)/float64(time.Millisecond))
 
 		if r.Outcome == domain.OutcomeAdmittedSuccess && isMutation(r.Operation) {
-			s.Goodput++
+			if r.Replay {
+				s.ReplayedMutations++
+			} else {
+				s.Goodput++
+			}
 		}
 		if r.Invalid != "" {
 			s.Invalid++

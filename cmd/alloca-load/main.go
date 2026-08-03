@@ -40,7 +40,7 @@ func main() {
 func run() error {
 	var (
 		target       = flag.String("target", "http://localhost:8080", "service base URL")
-		workloadName = flag.String("workload", "dispersed", "dispersed | hot-slot | hot-identity")
+		workloadName = flag.String("workload", "dispersed", "dispersed | hot-slot | hot-identity | replay")
 		concurrency  = flag.Int("concurrency", 10, "concurrent workers (closed loop)")
 		iterations   = flag.Int("n", 100, "logical units of work")
 		warmUp       = flag.Duration("warm-up", 0, "discard responses completing inside this window")
@@ -158,7 +158,12 @@ func buildWorkload(name, org, slotID, userID string, slots int, confirm bool) (l
 			User:  loadgen.User{OrganisationID: orgID, UserID: domain.UserID(userID)},
 			Slots: dataset,
 		}, nil
+	case "replay":
+		// The disposition control (measurement-contract §4.2). It issues two requests per
+		// logical unit, so -n counts logical units here as everywhere: a run of -n 60 sends
+		// 120 requests and expects 60 of them to be replays.
+		return loadgen.Replay{Org: orgID, Slots: dataset}, nil
 	default:
-		return nil, fmt.Errorf("unknown workload %q: want dispersed, hot-slot or hot-identity", name)
+		return nil, fmt.Errorf("unknown workload %q: want dispersed, hot-slot, hot-identity or replay", name)
 	}
 }

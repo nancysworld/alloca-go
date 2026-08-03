@@ -27,6 +27,9 @@ func localManifest() loadgen.Manifest {
 		ServiceCommitSHA:    "aaaa111111111111111111111111111111111111",
 		ServiceGoVersion:    "go1.26.5",
 		ServerGOMAXPROCS:    4,
+		PostgresVersion:     "16.4",
+		PoolSizePerReplica:  25,
+		TelemetryMode:       "full",
 		TimeoutBudget:       "lock_timeout=2s statement_timeout=3s txn_budget=3.5s",
 		ReservationTTL:      "2m0s",
 		GeneratorCommitSHA:  "bbbb222222222222222222222222222222222222",
@@ -43,11 +46,11 @@ func localManifest() loadgen.Manifest {
 	}
 }
 
-// capacityManifest adds the fields no endpoint reports, which PR2 and PR3 supply by hand.
+// capacityManifest adds the fields no endpoint reports. After PR2 extended /meta these are
+// only the deployment-wide ones: the aggregate pool needs a replica count, and topology and
+// environment are facts about a deployment rather than about a process.
 func capacityManifest() loadgen.Manifest {
 	m := localManifest()
-	m.PostgresVersion = "17.2"
-	m.PoolSizePerReplica = 25
 	m.AggregatePoolSize = 25
 	m.ReplicaCount = 1
 	m.DeploymentTopology = "single-instance-local"
@@ -123,11 +126,22 @@ func TestIncompleteManifestCannotBeCertified(t *testing.T) {
 			mention: "generator_num_cpu",
 		},
 		{
-			name:    "missing PostgreSQL version stops at local",
+			// Now a local-level field, since /meta reports it: a run whose authority is
+			// unidentified is not an observation about this machine either.
+			name:    "unidentified PostgreSQL cannot reach local",
 			corrupt: func(m *loadgen.Manifest) { m.PostgresVersion = "" },
 			from:    capacityManifest(),
-			want:    loadgen.LevelLocal,
+			want:    loadgen.LevelNone,
 			mention: "postgres_version",
+		},
+		{
+			// The §6.2 control refuses itself: with no aggregate series there is no
+			// server-side count, so §6.5's three-way agreement cannot be reached.
+			name:    "telemetry off cannot reach local",
+			corrupt: func(m *loadgen.Manifest) { m.TelemetryMode = "off" },
+			from:    capacityManifest(),
+			want:    loadgen.LevelNone,
+			mention: "telemetry_mode is off",
 		},
 		{
 			name:    "missing replica count stops at local",

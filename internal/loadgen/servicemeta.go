@@ -27,6 +27,21 @@ type ServiceMeta struct {
 	Modified       bool              `json:"modified"`
 	RequestBudget  map[string]string `json:"request_budget"`
 	ReservationTTL string            `json:"reservation_ttl"`
+
+	// Database is the authority the service is bound to. Supplying these here rather than as
+	// operator flags is the same argument PR1 settled for the runtime fields: a value the
+	// service already knows should never be retyped, because a typo in a transcribed version
+	// string is indistinguishable from a measurement.
+	Database struct {
+		Version      string `json:"version"`
+		PoolMaxConns int    `json:"pool_max_conns"`
+	} `json:"database"`
+
+	// TelemetryMode names which recorder the service is running. Two runs under different
+	// observation settings are not comparable, and nothing in the totals would say so — this
+	// is what lets §6.2's comparison identify its own arms, and what makes an unobservable
+	// run refuse itself rather than reconcile against a server count that does not exist.
+	TelemetryMode string `json:"telemetry_mode"`
 }
 
 // TimeoutBudgetString renders the deadline chain as one deterministic line for the manifest.

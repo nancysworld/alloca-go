@@ -73,17 +73,24 @@ func run(logger *slog.Logger) error {
 	// duplicate registration anywhere in the process would panic at startup and a test
 	// binary importing this package would inherit whatever else had registered.
 	registry := prometheus.NewRegistry()
-	recorder := buildRecorder(registry, pool, logger)
+	mode, err := telemetryMode()
+	if err != nil {
+		return err
+	}
+	recorder := buildRecorder(registry, pool, logger, mode)
+	dbMeta := databaseMeta(ctx, pool, logger)
 	shutdownMetrics := serveMetrics(metricsAddr(), registry, logger)
 
 	startedAt := time.Now()
 	metaSource := func() buildinfo.Info { return buildinfo.Collect(startedAt) }
 
 	srv := httpapi.New(cfg, metaSource, httpapi.Options{
-		Service:  svc,
-		Slots:    repo,
-		Recorder: recorder,
-		Logger:   logger,
+		Service:       svc,
+		Slots:         repo,
+		Recorder:      recorder,
+		Logger:        logger,
+		Database:      dbMeta,
+		TelemetryMode: mode,
 		// Readiness is the database check: this service cannot answer a booking request
 		// without it, so reporting ready while it is unreachable would just move the
 		// failure from the probe to every request.

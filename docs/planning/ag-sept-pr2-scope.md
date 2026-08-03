@@ -54,8 +54,17 @@ missing any of them. Building operator flags for those now would add a second, h
 source for values the service already reports, which is the transcription risk PR1's §3.5
 removed.
 
-**What is actually left is two fields**, neither of which any endpoint reports:
-`postgres_version` and the pool arithmetic (`pool_size_per_replica`, `aggregate_pool_size`).
+**What was left was two fields** — and PR2 removed the operator from both (Nancy's call,
+2026-08-03). The service holds the connection, so it can report its own `server_version` and
+pool ceiling; `/meta` now carries a `database` block and the manifest fills
+`postgres_version` and `pool_size_per_replica` from it.
+
+That takes PR2's operator-supplied field count to **zero**. The version is read once at
+startup rather than per request — it cannot change under a live pool, and a `/meta` that issued
+a database round trip would fail exactly when the database is the thing under pressure.
+
+`aggregate_pool_size` is the one pool fact that remains, and it is not one a process can know:
+the aggregate needs a replica count. It stays with the topology in PR3.
 
 ### 3.2 §6.1's signal list is already complete
 
@@ -107,15 +116,32 @@ for an unnoticed identity change is wider here than in PR1's single run. DEBT-3'
 fetch `/meta` before *and* after each run and require the identity to match — is the smallest
 fix, stays inside the HTTP-only boundary, and is in scope for PR2.
 
-### 4.3 §6.2 needs a service-side switch that does not exist
+### 4.3 §6.2's service-side switch — added, with three modes
 
 Discharging §6.2 end to end means running the same workload with telemetry enabled and
-disabled. `buildRecorder` currently always returns `Tee{slog, prometheus}` with no way to turn
-it off, so the comparison cannot be run at all today. PR2 adds that switch.
+disabled, and `buildRecorder` had no way to turn it off. `ALLOCA_TELEMETRY` now selects one of
+three (Nancy's call, 2026-08-03):
 
-It must be a *service* switch, not a generator one, and it must be recorded in the manifest —
-a run with telemetry disabled is not comparable to one without, and nothing downstream could
-tell them apart from the totals.
+| Mode | Recorder | Reconcilable | What it answers |
+|---|---|---|---|
+| `full` (default) | slog + Prometheus | yes | production shape |
+| `metrics_only` | Prometheus | yes | what the *log sink* costs |
+| `off` | none | **no** | what no observation at all costs |
+
+**`metrics_only` is the arm §6.2's comparison uses**, because PR1 already measured where the
+cost is: 1793 ns for the Tee against a real file, 136 ns for the Prometheus recorder alone. The
+log write is essentially all of it, so this arm isolates the cost that matters while leaving
+the run reconcilable.
+
+**`off` refuses itself, deliberately.** With no aggregate series there is no server-side count,
+so §6.5's three-way agreement has only two — and a verdict reached on two of three is the
+weaker gate wearing the stronger one's name. The manifest gate rejects `telemetry_mode: off`
+with that reason rather than letting it surface as a confusing "server counted 0". It is a
+control, not a measurement, which is exactly how `-validate=false` is treated.
+
+The mode is recorded in the manifest as provenance: a throughput figure measured with logging
+disabled is not comparable to one measured with it on, and without the field nothing
+downstream could tell them apart.
 
 ## 5. Decisions taken
 

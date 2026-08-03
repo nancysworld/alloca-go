@@ -48,10 +48,12 @@ func registerRoutes(
 	svc BookingService,
 	slots SlotLister,
 	recorder telemetry.Recorder,
+	db DatabaseMeta,
+	telemetryMode string,
 ) {
 	mux.HandleFunc(pathHealthz, handleHealthz)
 	mux.HandleFunc(pathReadyz, handleReadyz(ready, cfg.ReadinessTimeout, logger))
-	mux.HandleFunc(pathMeta, handleMeta(metaSource, cfg))
+	mux.HandleFunc(pathMeta, handleMeta(metaSource, cfg, db, telemetryMode))
 
 	if svc != nil {
 		h := &bookingHandlers{svc: svc, recorder: recorder, budget: cfg.RequestBudget}

@@ -12,12 +12,26 @@ import (
 	"github.com/nancysworld/alloca-go/internal/domain"
 )
 
-// Options configure one run.
+// Options configure one run. Exactly one of Iterations or Duration bounds it.
 type Options struct {
 	Concurrency int
 	// Iterations bounds the run by logical units of work. Closed-loop by concurrency is
 	// sufficient for PR1 (§6.3); open-loop rate control is a later, optional addition.
+	//
+	// It is the wrong bound for a sweep, which is why Duration exists. A fixed iteration
+	// count makes a cell's length vary *inversely* with throughput: the faster the service
+	// goes the sooner the cell ends, so the fewest samples are collected at exactly the
+	// operating points a frontier is read from, and no two cells cover the same interval.
+	// PR1's 60-iteration smoke run completed in 0.06s, which no rate() window can resolve.
 	Iterations int
+	// Duration bounds the run by wall-clock instead: workers keep pulling units until the
+	// window elapses. Every cell then covers the same interval whatever throughput it
+	// reaches, which is what makes rates comparable across a sweep.
+	//
+	// Zero means bound by Iterations. Both set is a configuration error the caller rejects,
+	// not something resolved silently here — a run bounded by the one the operator did not
+	// mean is a measurement of the wrong thing.
+	Duration time.Duration
 	// WarmUp discards responses completed before this much of the run has elapsed, so
 	// connection setup and JIT-warm effects do not land in the reported percentiles.
 	WarmUp time.Duration
@@ -54,6 +68,19 @@ func (r *Runner) Run(ctx context.Context, w Workload) Summary {
 	// the question.
 	startCPU := cpuSample()
 
+	// In duration mode the window is a deadline the workers watch, not a context timeout.
+	// A context deadline would cancel requests already in flight when it expired, turning
+	// the tail of every cell into artificial timeouts — the run would report faults it
+	// caused itself, at exactly the load where real faults matter. Instead each worker
+	// finishes the unit it is on and then stops, so the cell ends cleanly and slightly
+	// after its nominal window rather than mid-request.
+	//
+	// Written below, after `started`, and read only by workers that have already received
+	// from the barrier. The channel close is what orders the write before every read, so
+	// the deadline is measured from the same instant the run is, not from whenever the last
+	// goroutine happened to be scheduled.
+	var deadline time.Time
+
 	for range r.opts.Concurrency {
 		wg.Add(1)
 		go func() {
@@ -61,7 +88,13 @@ func (r *Runner) Run(ctx context.Context, w Workload) Summary {
 			<-barrier
 			for {
 				n := int(seq.Add(1)) - 1
-				if n >= r.opts.Iterations || ctx.Err() != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				if deadline.IsZero() && n >= r.opts.Iterations {
+					return
+				}
+				if !deadline.IsZero() && !time.Now().Before(deadline) {
 					return
 				}
 				responses := w.Do(ctx, r.client, n)
@@ -82,6 +115,9 @@ func (r *Runner) Run(ctx context.Context, w Workload) Summary {
 	}
 
 	started := time.Now()
+	if r.opts.Duration > 0 {
+		deadline = started.Add(r.opts.Duration)
+	}
 	close(barrier)
 	wg.Wait()
 	elapsed := time.Since(started)
@@ -89,10 +125,13 @@ func (r *Runner) Run(ctx context.Context, w Workload) Summary {
 	measured, discarded := applyWarmUp(collected, started, r.opts.WarmUp)
 	return summarise(w.Name(), measured, elapsed, cpuDelta(startCPU), r.opts, r.client.validate,
 		runFacts{
-			completedUnits:  int(finished.Load()),
-			interrupted:     ctx.Err() != nil,
-			warmUpDiscarded: discarded,
-			warmUpWindow:    r.opts.WarmUp,
+			completedUnits:      int(finished.Load()),
+			interrupted:         ctx.Err() != nil,
+			warmUpDiscarded:     discarded,
+			warmUpWindow:        r.opts.WarmUp,
+			iterationsRequested: r.opts.Iterations,
+			duration:            r.opts.Duration,
+			elapsed:             elapsed,
 		})
 }
 
@@ -104,6 +143,41 @@ type runFacts struct {
 	interrupted     bool
 	warmUpDiscarded int
 	warmUpWindow    time.Duration
+	// iterationsRequested is the unit count asked for, meaningful only when duration is zero.
+	iterationsRequested int
+	// duration is the window the run was bounded by, zero when it was bounded by an
+	// iteration count instead. The two modes fail differently, which is why it is here.
+	duration time.Duration
+	// elapsed is how long the run actually took.
+	elapsed time.Duration
+}
+
+// truncated reports whether the run covered less of the experiment than it was asked to.
+//
+// The test differs by mode, and conflating them is the bug this method exists to prevent. An
+// iteration-bounded run is truncated when it finished fewer units than requested. A
+// duration-bounded run has no requested unit count — completing "few" units is a *result*, not
+// a shortfall, and comparing against Options.Iterations there would refuse every sweep cell at
+// the frontier, where units are largest and slowest.
+//
+// What truncates a duration run is the clock: the window did not elapse, which only happens if
+// the context was cancelled.
+func (f runFacts) truncated() bool {
+	if f.duration > 0 {
+		return f.interrupted || f.elapsed < f.duration
+	}
+	return f.interrupted || f.completedUnits < f.iterationsRequested
+}
+
+func (f runFacts) truncationReason(s Summary) string {
+	if f.duration > 0 {
+		return fmt.Sprintf("run was interrupted after %s of a %s window, so the measured "+
+			"interval is shorter than the one the manifest describes and every rate derived "+
+			"from it is wrong", f.elapsed.Round(time.Millisecond), f.duration)
+	}
+	return fmt.Sprintf("run was interrupted: %d of %d logical iterations completed, so the "+
+		"manifest describes a larger experiment than the one that ran",
+		s.CompletedIterations, f.iterationsRequested)
 }
 
 // Summary is the machine-readable run result: the totals a capacity claim is built from,
@@ -112,6 +186,11 @@ type Summary struct {
 	Workload    string `json:"workload"`
 	Concurrency int    `json:"concurrency"`
 	Iterations  int    `json:"iterations"`
+	// DurationRequestedSeconds is the window a duration-bounded run was asked for, zero when
+	// the run was bounded by Iterations instead. Reported so a reader can tell which bound
+	// applied without inferring it: `iterations: 100` on a duration run is the flag default,
+	// not a request, and reading it as one would misdescribe the experiment.
+	DurationRequestedSeconds float64 `json:"duration_requested_seconds,omitempty"`
 	// CompletedIterations counts logical units of work that finished. It is reported
 	// separately from Completed because Completed counts *requests*: a workload issuing
 	// several requests per unit makes the two different numbers, and only this one can
@@ -260,14 +339,15 @@ func summarise(
 	cpuSeconds float64, opts Options, validated bool, facts runFacts,
 ) Summary {
 	s := Summary{
-		Workload:            workload,
-		Concurrency:         opts.Concurrency,
-		Iterations:          opts.Iterations,
-		CompletedIterations: facts.completedUnits,
-		DurationSeconds:     elapsed.Seconds(),
-		WarmUpSeconds:       facts.warmUpWindow.Seconds(),
-		WarmUpDiscarded:     facts.warmUpDiscarded,
-		ValidationEnabled:   validated,
+		Workload:                 workload,
+		Concurrency:              opts.Concurrency,
+		Iterations:               opts.Iterations,
+		CompletedIterations:      facts.completedUnits,
+		DurationSeconds:          elapsed.Seconds(),
+		DurationRequestedSeconds: facts.duration.Seconds(),
+		WarmUpSeconds:            facts.warmUpWindow.Seconds(),
+		WarmUpDiscarded:          facts.warmUpDiscarded,
+		ValidationEnabled:        validated,
 	}
 
 	cells := map[Total]int{}
@@ -324,14 +404,12 @@ func summarise(
 			"be counted as goodput (measurement-contract §5.4)"
 	case s.Invalid > 0:
 		s.NotSoundBecause = "one or more responses failed status/outcome validation"
-	case facts.interrupted || s.CompletedIterations < s.Iterations:
+	case facts.truncated():
 		// A truncated run still reports — see Run — but it may not be quoted. Its
 		// duration covers a smaller experiment than its manifest describes, so every
 		// rate derived from it is wrong, and nothing downstream could detect that from
 		// the totals alone: they are internally consistent, just for a different run.
-		s.NotSoundBecause = fmt.Sprintf("run was interrupted: %d of %d logical "+
-			"iterations completed, so the manifest describes a larger experiment than "+
-			"the one that ran", s.CompletedIterations, s.Iterations)
+		s.NotSoundBecause = facts.truncationReason(s)
 	case s.WarmUpDiscarded > 0:
 		// The discarded responses left reservations, claims and idempotency records in
 		// the database, and the client totals no longer mention them. Persisted-state

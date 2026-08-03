@@ -42,24 +42,43 @@ func run() error {
 		target       = flag.String("target", "http://localhost:8080", "service base URL")
 		workloadName = flag.String("workload", "dispersed", "dispersed | hot-slot | hot-identity | replay")
 		concurrency  = flag.Int("concurrency", 10, "concurrent workers (closed loop)")
-		iterations   = flag.Int("n", 100, "logical units of work")
-		warmUp       = flag.Duration("warm-up", 0, "discard responses completing inside this window")
-		timeout      = flag.Duration("timeout", 10*time.Second, "per-request client timeout")
-		validate     = flag.Bool("validate", true, "validate responses; false drives the §5.5 control")
-		org          = flag.String("org", "load-org", "organisation for generated identities")
-		slots        = flag.Int("slots", 100, "slots in the dataset (dispersed, hot-identity)")
-		slotID       = flag.String("slot", "slot-0", "the contended slot (hot-slot)")
-		userID       = flag.String("user", "user-0", "the contended identity (hot-identity)")
-		location     = flag.String("generator-location", "local", "where the generator runs")
-		out          = flag.String("out", "", "write the JSON report here (default stdout)")
-		confirm      = flag.Bool("confirm", false, "dispersed: drive reserve→confirm")
-		require      = flag.String("require", string(loadgen.LevelLocal),
+		iterations   = flag.Int("n", 100, "logical units of work (mutually exclusive with -duration)")
+		duration     = flag.Duration("duration", 0,
+			"run for this long instead of a fixed -n; required for sweep cells, whose rates "+
+				"are only comparable when every cell covers the same interval")
+		warmUp   = flag.Duration("warm-up", 0, "discard responses completing inside this window")
+		timeout  = flag.Duration("timeout", 10*time.Second, "per-request client timeout")
+		validate = flag.Bool("validate", true, "validate responses; false drives the §5.5 control")
+		org      = flag.String("org", "load-org", "organisation for generated identities")
+		slots    = flag.Int("slots", 100, "slots in the dataset (dispersed, hot-identity)")
+		slotID   = flag.String("slot", "slot-0", "the contended slot (hot-slot)")
+		userID   = flag.String("user", "user-0", "the contended identity (hot-identity)")
+		location = flag.String("generator-location", "local", "where the generator runs")
+		out      = flag.String("out", "", "write the JSON report here (default stdout)")
+		confirm  = flag.Bool("confirm", false, "dispersed: drive reserve→confirm")
+		require  = flag.String("require", string(loadgen.LevelLocal),
 			"fail unless the run reaches this level: local | capacity | publishable")
 	)
 	flag.Parse()
 
-	if *concurrency < 1 || *iterations < 1 {
-		return fmt.Errorf("concurrency and -n must both be at least 1")
+	if *concurrency < 1 {
+		return fmt.Errorf("-concurrency must be at least 1")
+	}
+
+	// Both bounds set is rejected rather than resolved by precedence. -n has a default, so
+	// "was it set?" cannot be answered from its value — flag.Visit is the only way to tell an
+	// explicit -n from the default, and a run bounded by the one the operator did not mean
+	// measures the wrong thing while looking entirely normal.
+	explicit := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+	switch {
+	case explicit["n"] && explicit["duration"]:
+		return fmt.Errorf("-n and -duration are mutually exclusive: -n bounds the run by " +
+			"logical units, -duration by wall clock, and a run cannot be bounded by both")
+	case *duration < 0:
+		return fmt.Errorf("-duration must not be negative")
+	case *duration == 0 && *iterations < 1:
+		return fmt.Errorf("-n must be at least 1")
 	}
 	want, err := loadgen.ParseLevel(*require)
 	if err != nil {
@@ -80,7 +99,12 @@ func run() error {
 	opts := loadgen.Options{
 		Concurrency: *concurrency,
 		Iterations:  *iterations,
+		Duration:    *duration,
 		WarmUp:      *warmUp,
+	}
+	if *duration > 0 {
+		// Clear the unused bound so nothing downstream reads -n's default as a request.
+		opts.Iterations = 0
 	}
 	// Read the service's own provenance before driving load. It identifies the binary that
 	// is about to answer the requests, which is what §6.4 means by "commit SHA" — the

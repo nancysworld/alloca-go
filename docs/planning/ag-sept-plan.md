@@ -511,6 +511,7 @@ This section assigns the requirements above to implementation PRs. The earlier s
 **Scope:**
 
 - build the reproducible production-shaped image required by §9.1;
+- **report the recommended operating capacity PR2 deferred.** §3 of `measurement-contract.md` defines it as reserving headroom for variance, rolling deployment, and loss of one unit; at one replica only the first is meaningful, so PR2 deferred the number with that as its evidence and reported measured variance as a named component. PR3 is the first PR where a second replica makes the other two computable. See [`ag-sept-pr2-scope.md`](ag-sept-pr2-scope.md) §5.6 for what PR2 hands over;
 - populate the §6.4 topology and image-identity fields that first become meaningful here: replica count, deployment topology, image tag, and a build-stamped commit SHA;
 - provide the smallest reproducible local load-balancing or orchestration path for one, two, and four replicas against one PostgreSQL authority;
 - reuse PR2's Prometheus and dashboard path, adding bounded replica identity and only the per-replica and aggregate views needed for scale-out diagnosis;

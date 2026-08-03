@@ -62,9 +62,13 @@ type Manifest struct {
 	AggregatePoolSize  int    `json:"aggregate_pool_size,omitempty"`
 
 	// Workload and dataset.
-	Workload     string `json:"workload"`
-	Concurrency  int    `json:"concurrency"`
-	Iterations   int    `json:"iterations"`
+	Workload    string `json:"workload"`
+	Concurrency int    `json:"concurrency"`
+	// Exactly one of Iterations or Duration bounds the run, and the manifest records which.
+	// A duration-bounded sweep cell has no requested iteration count, so recording the flag
+	// default here would describe an experiment nobody asked for.
+	Iterations   int    `json:"iterations,omitempty"`
+	Duration     string `json:"duration,omitempty"`
 	WarmUp       string `json:"warm_up"`
 	DatasetSlots int    `json:"dataset_slots,omitempty"`
 	DatasetUsers int    `json:"dataset_users,omitempty"`
@@ -119,7 +123,8 @@ func NewManifest(target, workload string, opts Options, location string, svc Ser
 
 		Workload:            workload,
 		Concurrency:         opts.Concurrency,
-		Iterations:          opts.Iterations,
+		Iterations:          iterationsFor(opts),
+		Duration:            durationFor(opts),
 		WarmUp:              opts.WarmUp.String(),
 		GeneratorLocation:   location,
 		GeneratorGOMAXPROCS: runtime.GOMAXPROCS(0),
@@ -174,7 +179,13 @@ func (m Manifest) Validate(level Level) []string {
 
 		add(m.Workload == "", "workload is empty")
 		add(m.Concurrency < 1, "concurrency is not positive")
-		add(m.Iterations < 1, "iterations is not positive")
+		// One bound or the other, never neither: a run with no stated size cannot be said
+		// to have run the experiment its manifest describes.
+		add(m.Iterations < 1 && m.Duration == "",
+			"neither iterations nor duration is set, so the run states no size")
+		add(m.Iterations > 0 && m.Duration != "",
+			"both iterations and duration are set, so the manifest does not say which "+
+				"bound the run actually used")
 		add(m.WarmUp == "", "warm_up is empty")
 		add(m.GeneratorLocation == "", "generator_location is empty")
 		add(m.GeneratorGOMAXPROCS < 1, "generator_gomaxprocs is not positive")
@@ -241,6 +252,23 @@ func isCoResident(location string) bool {
 	default:
 		return false
 	}
+}
+
+// iterationsFor and durationFor record whichever bound applied and leave the other empty, so
+// the manifest cannot imply a request the operator did not make. Options rejects both-set
+// before it reaches here; these two are what keep the recorded shape unambiguous.
+func iterationsFor(opts Options) int {
+	if opts.Duration > 0 {
+		return 0
+	}
+	return opts.Iterations
+}
+
+func durationFor(opts Options) string {
+	if opts.Duration <= 0 {
+		return ""
+	}
+	return opts.Duration.String()
 }
 
 // redact removes anything credential-shaped from a URL before it is committed.

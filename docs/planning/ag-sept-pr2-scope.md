@@ -187,7 +187,77 @@ service before *every* run precisely because the check reads absolute counters; 
 that requirement and with it the whole class of contaminated-scrape failures the guide's §7
 catalogues.
 
-### 5.5 Every figure is labelled against its artifact
+### 5.5 Sweep cells are bounded by duration, and the fixture is sized to the window (2026-08-03)
+
+`-n` is the wrong bound for a sweep. It makes a cell's length vary *inversely* with
+throughput — the faster the service goes the sooner the cell ends — so the fewest samples land
+at exactly the operating points a frontier is read from, and no two cells cover the same
+interval. PR1's 60-iteration smoke run finished in 0.06s, which no `rate()` window can resolve.
+
+`alloca-load -duration` bounds by wall clock instead. Workers finish the unit they are on and
+then stop, rather than the window cancelling requests in flight — a context deadline would turn
+the tail of every cell into timeouts the harness caused itself, at exactly the load where real
+timeouts matter.
+
+**Measured overhead per cell** (2026-08-03, this workstation, dispersed at concurrency 16):
+
+| Step | Cost |
+|---|---|
+| seed (`-slots 3000 -capacity 50`) | ~2.3s |
+| service restart + readiness | ~1–2s |
+| reset between warm-up and measured phase | ~2.3s |
+| export (14 queries + TSDB snapshot) | ~2–3s |
+| verify | ~1s |
+| **fixed total** | **~9–11s** |
+
+So a cell costs its warm-up plus its window plus ~10s. At 20s warm-up and 60s measured that is
+~90s, and a few hundred cells is hours of unattended machine time rather than days. **The
+binding constraint on matrix size is analysis and report effort, not runtime** — which means
+the matrix should be cut for interpretability, not for wall clock.
+
+**Fixture sizing becomes a sweep parameter, and this is the trap.** A 10s cell at concurrency
+16 completed 24,296 requests but goodput stopped at exactly 10,000 — the fixture's capacity
+(200 slots × 50). The remaining ~60% of the window measured *refusal* throughput, not booking
+throughput, and nothing in the run says so: every check passes, because refusals are a valid
+domain answer.
+
+An iteration-bounded run hid this by being too short to exhaust anything. A duration-bounded
+one will exhaust any fixture that is not sized to `window × expected throughput`, so the seed
+must scale with the cell. Seeding is cheap (150,000 units in ~2.3s), so the rule is to
+over-provision and check: **a cell whose goodput plateaus at exactly the fixture capacity is
+measuring the fixture, not the service**, and the sweep runner should refuse it rather than
+report it.
+
+### 5.6 The recommended-operating-capacity number is deferred to PR3 (Nancy's call, 2026-08-03)
+
+`measurement-contract.md` §3 defines it as "a conservative cap below SLO-safe capacity that
+reserves headroom for **variance, rolling deployment, and loss of one unit**." At one replica,
+two of those three cannot be reserved against at all:
+
+| Component | At N=1 |
+|---|---|
+| Variance | measurable — repeat cells and compute the spread |
+| Rolling deployment | a roll is a full outage; no margin covers it |
+| Loss of one unit | losing the only unit is total loss; no margin covers it |
+
+A single-instance figure could therefore cover one of the three components the definition
+names, while a reader would reasonably take it to cover all three. Choosing a fraction would
+not fix that — it would hide it behind a plausible number, which is the failure this project
+keeps catching.
+
+**PR2 therefore defers the headline number and says why**, which the plan's own exit gate
+allows: "the recommended operating point is reported **or explicitly deferred with evidence**".
+
+**What PR2 still owes PR3**, so this is picked up rather than rediscovered:
+
+- the **measured variance** of repeated cells at the recommended operating point, reported as a
+  named component with its sample count — it is the one component that is meaningful at one
+  replica, and PR3 needs it the moment a second replica makes the other two computable;
+- the **SLO-safe capacity** the margin would be taken from, which PR2 does report;
+- this section, cited from the plan's §14 PR3 scope so the obligation travels with the PR
+  sequence rather than living only here.
+
+### 5.7 Every figure is labelled against its artifact
 
 `measurement-contract.md` §2 and §5.3 already require this, and PR1's own scope note still
 managed to quote a range that matched neither its table nor its artifact. PR2's report
@@ -202,12 +272,13 @@ defaulted after the first ranging cells.
 
 1. ~~**Panel form**~~ — settled 2026-08-03, see §5.3.
 2. ~~**Warm-up mechanism**~~ — settled 2026-08-03, see §5.4.
-3. **Sweep matrix size** — the budget is 1.5 days for sweeps, controls *and* report. A
-   proposed bounded matrix is in §7; it needs a sanity check against how long one cell
-   actually takes before it is trusted.
-4. **Recommended-operating-capacity margin** — `measurement-contract.md` §3 defines it as "a
-   conservative cap below SLO-safe capacity" without fixing the fraction. PR2 has to pick one
-   and label it `[HYPOTHESIS]`, or defer the value with evidence.
+3. ~~**Sweep matrix size**~~ — measured 2026-08-03, see §5.5. Cell cost is ~10s of fixed
+   overhead plus warm-up plus window, so runtime does not bound the matrix; the remaining
+   choice is which cells are worth interpreting, and that is settled once the ranging pass
+   runs.
+4. ~~**Recommended-operating-capacity margin**~~ — deferred to PR3, see §5.6.
+
+Nothing in this list now blocks implementation.
 
 ## 7. Proposed sweep matrix `[HYPOTHESIS]`
 

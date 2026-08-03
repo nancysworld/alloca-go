@@ -134,30 +134,42 @@ func verdict(r loadgen.Report, checks []Check) loadgen.Quotability {
 func capacityCheck(ctx context.Context, q Querier, org domain.OrganisationID, s loadgen.Summary) (Check, error) {
 	c := Check{Name: "consumed capacity vs admitted reserves", Invariant: "INV-1"}
 
+	// Consumption is aggregated once per slot, then joined to capacity.
+	//
+	// The obvious form — a LATERAL subquery counting each reservation's slot-mates — recounts
+	// the same slot once per reservation on it, and the partial index on this table covers
+	// only state = 'held', so a filter on ('held','confirmed') falls back to a sequential
+	// scan *inside* that loop. Measured at 13.6k reservations: 2871ms, quadratic in row
+	// count. This form is 4ms on the same data, and the difference is not cosmetic — a sweep
+	// cell produces tens of thousands of rows and the verifier's own deadline was expiring
+	// before the check returned, which reads as an infrastructure failure rather than as a
+	// query that needs rewriting.
 	var live, overCapacity int
 	err := q.QueryRow(ctx, `
+		WITH live AS (
+		  SELECT slot_organisation_id, slot_id, COUNT(*) AS consumed
+		  FROM reservations
+		  WHERE slot_organisation_id = $1 AND state IN ('held', 'confirmed')
+		  GROUP BY slot_organisation_id, slot_id
+		)
 		SELECT
-		  COUNT(*) FILTER (WHERE r.state IN ('held', 'confirmed')),
-		  COUNT(*) FILTER (WHERE per_slot.consumed > s.capacity)
-		FROM reservations r
+		  COALESCE(SUM(live.consumed), 0),
+		  COUNT(*) FILTER (WHERE live.consumed > s.capacity)
+		FROM live
 		JOIN slots s
-		  ON s.slot_organisation_id = r.slot_organisation_id AND s.slot_id = r.slot_id
-		LEFT JOIN LATERAL (
-		  SELECT COUNT(*) AS consumed
-		  FROM reservations r2
-		  WHERE r2.slot_organisation_id = r.slot_organisation_id
-		    AND r2.slot_id = r.slot_id
-		    AND r2.state IN ('held', 'confirmed')
-		) per_slot ON TRUE
-		WHERE r.slot_organisation_id = $1`, string(org)).Scan(&live, &overCapacity)
+		  ON s.slot_organisation_id = live.slot_organisation_id AND s.slot_id = live.slot_id`,
+		string(org)).Scan(&live, &overCapacity)
 	if err != nil {
 		return c, fmt.Errorf("capacity check: %w", err)
 	}
 
 	if overCapacity > 0 {
-		c.Detail = fmt.Sprintf("%d reservations sit on slots whose consumed capacity "+
-			"exceeds capacity: INV-1 is violated, and no number from this run is usable",
-			overCapacity)
+		// Slots, not reservations. The aggregate form counts the violating slots directly,
+		// which is what INV-1 is about; the previous count of reservations *sitting on* such
+		// slots was a proxy that scaled with slot popularity rather than with the number of
+		// violations.
+		c.Detail = fmt.Sprintf("%d slot(s) hold more live reservations than their capacity "+
+			"allows: INV-1 is violated, and no number from this run is usable", overCapacity)
 		return c, nil
 	}
 

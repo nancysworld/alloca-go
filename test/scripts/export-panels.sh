@@ -30,10 +30,17 @@ mkdir -p "$CELL/panels"
 
 RANGE=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['export_range'])" "$PANELS")
 
-# Step is the resolution of the exported series. Matching it to the range keeps consecutive
-# points independent rather than overlapping windows of the same samples, which would make a
-# CSV look smoother than the measurement actually was.
-STEP="${EXPORT_STEP:-$RANGE}"
+# Step is the resolution of the exported series, and it is deliberately finer than the rate
+# range. Matching step to range would give non-overlapping windows — tidier in principle — but
+# a 60s cell at a 15s range then yields four points, which cannot show the shape the export
+# exists to preserve: a pool saturating before throughput flattens, or latency climbing while
+# goodput holds. The headline scalars come from run.json regardless; these files are for the
+# curve.
+#
+# Consecutive points therefore share samples, which smooths the series. That is a property of
+# the export, not of the measurement, so it is recorded in index.json beside the data rather
+# than left for a reader to infer.
+STEP="${EXPORT_STEP:-5s}"
 
 echo "export: window ${START} .. ${END}, rate range [${RANGE}], step ${STEP}"
 
@@ -77,14 +84,21 @@ for p in panels:
                      "expr": expr, "file": f"panels/{p['key']}.csv",
                      "series": len(series), "points": points})
     if points == 0:
-        print(f"  WARNING {p['key']}: no data in window — a panel returning nothing looks "
-              f"exactly like a service doing nothing")
+        # Some panels are legitimately empty: replay_rate is zero for every workload except
+        # the replay control, since the others derive a unique key per logical request. The
+        # note is still worth printing — a panel returning nothing looks exactly like a
+        # service doing nothing, and which one it is depends on the workload.
+        print(f"  note: {p['key']} returned no data in this window")
 
 # The query set that produced these files, resolved. Without it a CSV is a column of numbers
 # whose meaning has to be reconstructed from a dashboard that may have moved on.
 with open(f"{cell}/panels/index.json", "w") as f:
     json.dump({"window": {"start": start, "end": end},
-               "rate_range": rng, "step": step, "panels": manifest}, f, indent=2)
+               "rate_range": rng, "step": step,
+               "_note": ("step is finer than rate_range, so consecutive points share samples "
+                         "and the series is smoothed; this is a property of the export, not "
+                         "of the measurement"),
+               "panels": manifest}, f, indent=2)
     f.write("\n")
 
 print(f"export: {len(manifest)} panels -> {cell}/panels/")

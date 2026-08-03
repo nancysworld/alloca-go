@@ -6,9 +6,9 @@
     "TestDashboardMatchesCanonicalPanels enforces that. Change an expression here, not in the",
     "dashboard JSON.",
     "",
-    "Scope is ag-sept-plan §14 PR2's list and nothing else: throughput, successful mutation",
+    "Scope is ag-sept-plan \u00a714 PR2's list and nothing else: throughput, successful mutation",
     "goodput, p95/p99 latency, outcomes, database-pool pressure, process CPU and memory, and",
-    "relevant Go runtime signals. Generator utilisation is deliberately absent — see the note",
+    "relevant Go runtime signals. Generator utilisation is deliberately absent \u2014 see the note",
     "in test/scripts/export-panels.sh."
   ],
   "panels": [
@@ -22,7 +22,7 @@
       "key": "goodput",
       "title": "Successful mutation goodput",
       "unit": "req/s",
-      "_note": "Mutations only, never list_slots (observability §3.1), and replay=false only: a replay returns a recorded outcome without performing a mutation (measurement-contract §4.2), so counting it would overstate useful work and count one booking twice. Same definition as Summary.Goodput and as the FreshAdmittedFor count reconciliation compares against persisted rows.",
+      "_note": "Mutations only, never list_slots (observability \u00a73.1), and replay=false only: a replay returns a recorded outcome without performing a mutation (measurement-contract \u00a74.2), so counting it would overstate useful work and count one booking twice. Same definition as Summary.Goodput and as the FreshAdmittedFor count reconciliation compares against persisted rows.",
       "expr": "sum(rate(alloca_requests_total{operation=~\"reserve|confirm|cancel\",outcome=\"admitted_success\",replay=\"false\"}[$__rate_interval]))"
     },
     {
@@ -31,6 +31,13 @@
       "unit": "req/s",
       "_note": "The population goodput excludes, shown rather than dropped. A replay is a correctness claim in its own right (INV-5); the `replay` workload is what verifies it.",
       "expr": "sum(rate(alloca_requests_total{operation=~\"reserve|confirm|cancel\",outcome=\"admitted_success\",replay=\"true\"}[$__rate_interval]))"
+    },
+    {
+      "key": "latency_p50",
+      "title": "Request latency p50",
+      "unit": "s",
+      "_note": "Required by ag-sept-plan \u00a77 and by measurement-contract \u00a76, and it is an SLO gate (\u00a77: p50 <= 50ms). SLO-safe capacity is the highest goodput satisfying *all* latency gates, so a panel set without p50 cannot evaluate one of the three and cannot discharge PR2's own deliverable.",
+      "expr": "histogram_quantile(0.50, sum by (le) (rate(alloca_request_duration_seconds_bucket[$__rate_interval])))"
     },
     {
       "key": "latency_p95",
@@ -48,7 +55,7 @@
       "key": "outcomes",
       "title": "Outcomes",
       "unit": "req/s",
-      "_note": "Business refusals are a valid domain answer and are reported separately here, never folded into a failure rate (measurement-contract §3).",
+      "_note": "Business refusals are a valid domain answer and are reported separately here, never folded into a failure rate (measurement-contract \u00a73).",
       "expr": "sum by (outcome) (rate(alloca_requests_total[$__rate_interval]))"
     },
     {

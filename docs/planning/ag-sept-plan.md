@@ -486,10 +486,10 @@ This section assigns the requirements above to implementation PRs. The earlier s
 
 **Scope:**
 
-- establish a minimal reproducible Prometheus retention path and compact diagnostic dashboard for throughput, successful mutation goodput, p95 and p99 latency, outcomes, database-pool pressure, process CPU and memory, relevant Go runtime signals, and generator utilisation;
+- establish a minimal reproducible Prometheus retention path and compact diagnostic dashboard covering the required outputs of §7 — which include **p50** as well as p95 and p99 latency, since p50 is one of the three latency gates SLO-safe capacity is measured against (`measurement-contract.md` §7) — plus database-pool pressure, process CPU and memory, and relevant Go runtime signals;
 - keep the queries and small panel set version-controlled and reproducible without building a general observability platform;
 - populate the §6.4 service-shape fields, which are the ones needed to interpret this PR's own numbers: PostgreSQL version, pool size per replica, server `GOMAXPROCS`, timeout budget, and reservation TTL;
-- run bounded one-instance sweeps for dispersed, hot-slot, and hot-identity workloads;
+- run the bounded one-instance sweeps of §7 for dispersed, hot-slot, and hot-identity workloads, producing every output §7 requires;
 - discharge §6.2 end to end, which PR1 deliberately did not: compare throughput and p99 with telemetry enabled against the same workload with it disabled, at the same dataset, concurrency and environment, and report the delta as measured evidence. PR1 established only the per-call cost against a real sink, which bounds this comparison without standing in for it;
 - perform the mandatory generator-bottleneck control and demonstrate generator headroom for quotable runs;
 - vary concurrency or offered rate, pool size, and application resources only as needed to identify or tightly bound the frontier;

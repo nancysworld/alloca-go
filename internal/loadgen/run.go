@@ -147,12 +147,18 @@ type Summary struct {
 	Invalid           int      `json:"invalid_responses"`
 	InvalidSamples    []string `json:"invalid_samples,omitempty"`
 
-	// Quotable is the harness's own verdict on whether this run may be quoted. It is false
-	// whenever validation was disabled or any response failed validation — a run cannot
-	// certify itself by staying silent about the checks it skipped
-	// (measurement-contract §5.4).
-	Quotable           bool   `json:"quotable"`
-	NotQuotableBecause string `json:"not_quotable_because,omitempty"`
+	// Sound is the generator's verdict on whether this run measured the experiment its
+	// manifest describes. It is false whenever validation was disabled or any response
+	// failed validation — a run cannot certify itself by staying silent about the checks it
+	// skipped (measurement-contract §5.4) — and also when the run was interrupted or
+	// discarded warm-up responses.
+	//
+	// It is deliberately not called "quotable". Soundness is necessary for quoting a run and
+	// nowhere near sufficient: what a sound run may *back* depends on provenance the summary
+	// cannot see, since the manifest is assembled beside it. Certify joins the two, and its
+	// Level is the field to read. An unsound run is LevelNone whatever its manifest says.
+	Sound           bool   `json:"measurement_sound"`
+	NotSoundBecause string `json:"not_sound_because,omitempty"`
 }
 
 // FreshAdmittedFor counts admitted successes for one operation, excluding replays.
@@ -295,16 +301,16 @@ func summarise(
 
 	switch {
 	case !validated:
-		s.NotQuotableBecause = "response validation was disabled: an unchecked 200 cannot " +
+		s.NotSoundBecause = "response validation was disabled: an unchecked 200 cannot " +
 			"be counted as goodput (measurement-contract §5.4)"
 	case s.Invalid > 0:
-		s.NotQuotableBecause = "one or more responses failed status/outcome validation"
+		s.NotSoundBecause = "one or more responses failed status/outcome validation"
 	case facts.interrupted || s.CompletedIterations < s.Iterations:
 		// A truncated run still reports — see Run — but it may not be quoted. Its
 		// duration covers a smaller experiment than its manifest describes, so every
 		// rate derived from it is wrong, and nothing downstream could detect that from
 		// the totals alone: they are internally consistent, just for a different run.
-		s.NotQuotableBecause = fmt.Sprintf("run was interrupted: %d of %d logical "+
+		s.NotSoundBecause = fmt.Sprintf("run was interrupted: %d of %d logical "+
 			"iterations completed, so the manifest describes a larger experiment than "+
 			"the one that ran", s.CompletedIterations, s.Iterations)
 	case s.WarmUpDiscarded > 0:
@@ -315,11 +321,11 @@ func summarise(
 		// cannot be reconciled. Making warm-up quotable needs a separate warm-up phase
 		// with a reset between, or per-cell warm-up totals carried for the verifier;
 		// both belong to PR2 with the sweeps that need them (ag-sept-plan §14).
-		s.NotQuotableBecause = fmt.Sprintf("-warm-up discarded %d responses from the "+
+		s.NotSoundBecause = fmt.Sprintf("-warm-up discarded %d responses from the "+
 			"client totals while their rows remain in the database, which persisted-state "+
 			"reconciliation cannot reconcile in PR1 (ag-sept-plan §6.5)", s.WarmUpDiscarded)
 	default:
-		s.Quotable = true
+		s.Sound = true
 	}
 	return s
 }

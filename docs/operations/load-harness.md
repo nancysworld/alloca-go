@@ -44,11 +44,14 @@ listener on `:9090`. Wait for `{"msg":"metrics listener starting"}` before conti
 export DATABASE_URL='postgres://alloca:alloca@localhost:15432/alloca?sslmode=disable'
 mkdir -p test/results   # git-ignored, and absent on a fresh clone
 
+# 0. build the generator — see "Why the generator is built, not `go run`" below
+go build -o bin/alloca-load ./cmd/alloca-load
+
 # 1. fixture + clean-start assertion
 go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
 
 # 2. the run itself
-go run ./cmd/alloca-load -workload dispersed -concurrency 8 -n 60 -slots 20 -out test/results/run.json
+./bin/alloca-load -workload dispersed -concurrency 8 -n 60 -slots 20 -out test/results/run.json
 
 # 3. capture the server's own count, before anything else touches the service
 curl -s http://localhost:9090/metrics > test/results/metrics.txt
@@ -77,6 +80,30 @@ not part of this: `db-up` already removes any existing container before starting
 Keep `-slots` the same across seed and load. The generator has no way to discover the
 dataset, so a mismatch quietly aims traffic at slots that were never seeded.
 
+### Why the generator is built, not `go run`
+
+**`go run` does not stamp VCS information into the binary.** `go build` does. The manifest
+reads its `commit_sha` from that stamp, so a run driven by `go run` records an *empty* commit
+SHA — and a result whose code identity is unknown cannot be reproduced or compared, which is
+the whole point of §6.4.
+
+This is not theoretical: it is how `commit_sha: ""` reached PR1's first committed evidence.
+Nothing complained, because an empty string is a perfectly valid JSON value.
+
+`alloca-load` now refuses such a run outright — level `none`, exit 1 — so the failure is
+loud. Build it once per change and re-run:
+
+```sh
+go build -o bin/alloca-load ./cmd/alloca-load
+```
+
+The same applies to a **dirty working tree**. The manifest records `source_modified`, and a
+true value fails the gate: a SHA that does not describe the binary that ran is worse
+provenance than no SHA at all, because nothing about it looks wrong. Commit or stash before a
+run whose numbers you intend to keep.
+
+`alloca-seed` and `alloca-verify` stay on `go run` — neither writes a manifest.
+
 ### The other two workloads
 
 Same four steps; only step 2 changes. Each one needs its own seed — `-reset` before every
@@ -85,7 +112,7 @@ run, and between workloads as much as between repeats of one (§7).
 ```sh
 # hot-slot — many identities, one slot
 go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
-go run ./cmd/alloca-load -workload hot-slot -concurrency 8 -n 60 -slots 20 -slot slot-0 \
+./bin/alloca-load -workload hot-slot -concurrency 8 -n 60 -slots 20 -slot slot-0 \
   -out test/results/hot-slot.json
 curl -s http://localhost:9090/metrics > test/results/hot-slot-metrics.txt
 go run ./cmd/alloca-verify -run test/results/hot-slot.json \
@@ -95,7 +122,7 @@ go run ./cmd/alloca-verify -run test/results/hot-slot.json \
 ```sh
 # hot-identity — one identity, many slots
 go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
-go run ./cmd/alloca-load -workload hot-identity -concurrency 8 -n 60 -slots 20 -user user-0 \
+./bin/alloca-load -workload hot-identity -concurrency 8 -n 60 -slots 20 -user user-0 \
   -out test/results/hot-identity.json
 curl -s http://localhost:9090/metrics > test/results/hot-identity-metrics.txt
 go run ./cmd/alloca-verify -run test/results/hot-identity.json \
@@ -144,9 +171,51 @@ goodput nor the persisted rows. Summing the two series and comparing that to 60 
 mistake the gate is built to catch.
 
 The persisted count has no field of its own: it is stated inside each check's `detail`
-prose (`"60 live claims, no overlapping pair, ..."`). `ok` and `quotable` are the
+prose (`"60 live claims, no overlapping pair, ..."`). `ok` and `quotability.level` are the
 machine-readable verdict; the numbers are there for when you need to see how a check
 reached it.
+
+### What the run may back: `quotability.level`
+
+There is no `quotable: true` field, and deliberately so. Whether a number may be used depends
+on what it is used *for*: §6.4 gates a capacity claim on topology provenance, and §6.3 gates
+a published one on the generator running off the service host. An unqualified boolean cannot
+express that, and the one this replaced invited a co-resident smoke run to be read as
+publishable.
+
+Both binaries record a level instead:
+
+| Level | Means | Reached when |
+|---|---|---|
+| `none` | The run measured nothing usable | validation off or failed, run interrupted, warm-up rows unreconciled, reconciliation failed, or required generator provenance missing |
+| `local` | A sound observation about this machine | every field the generator determines for itself is populated |
+| `capacity` | May back a capacity claim about that topology | + PostgreSQL version, pool sizes, server `GOMAXPROCS`, timeout budget, reservation TTL, replica count, deployment topology, environment |
+| `publishable` | Satisfies §6.3's provenance requirement | + `-generator-location` names a host separate from the service |
+
+```sh
+jq -r '.quotability | "\(.level)\t\(.blocked_because)"' test/results/run.json
+```
+
+**PR1 runs reach `local`, and that is the correct outcome, not a defect.** The generator is
+an HTTP client and cannot discover the service's shape, so the fields above `local` are
+supplied by an operator in the PR that first has something to say about them — service shape
+in PR2, topology and image identity in PR3, environment in PR4 (`ag-sept-plan.md` §14). The
+report says so itself in `blocked_because`, naming each missing field and the PR that owns
+it, so an incomplete manifest reads as scheduled rather than broken.
+
+Both binaries take `-require` to set the bar, defaulting to `local`:
+
+```sh
+./bin/alloca-load -require local ...        # PR1: fails on missing generator provenance
+./bin/alloca-load -require publishable ...  # PR4: additionally fails a co-resident generator
+```
+
+The bar is declared at the call site because only the caller knows what the number is for. A
+run below its `-require` level exits non-zero with the reason, and still writes its report.
+
+One thing `publishable` does *not* mean: that the run is ready to publish. It checks the
+provenance §6.3 requires, which is a declaration in the manifest. The §12.2
+generator-headroom control is evidence rather than provenance, and it arrives with PR4.
 
 `alloca-verify` prints five checks — one per §6.5 database rule (INV-1, INV-5, INV-4,
 INV-7) and the client/server comparison, which carries no invariant because it is a
@@ -223,7 +292,7 @@ Mandatory and not descopable (`measurement-contract.md` §5.5): the harness must
 when response validation is off, so a reported success cannot be an unchecked `200`.
 
 ```sh
-go run ./cmd/alloca-load -workload dispersed -concurrency 8 -n 20 -slots 20 \
+./bin/alloca-load -workload dispersed -concurrency 8 -n 20 -slots 20 \
   -validate=false -out test/results/control.json
 curl -s http://localhost:9090/metrics > test/results/control-metrics.txt
 go run ./cmd/alloca-verify -run test/results/control.json \
@@ -232,14 +301,16 @@ go run ./cmd/alloca-verify -run test/results/control.json \
 
 Expect exit 1 from `alloca-load`, and exit 1 again from `alloca-verify` on `control.json`
 — the generator's refusal is carried forward rather than overridden by a reconciliation
-that happens to be clean. If either exits 0, the control has stopped controlling anything;
-that is a bug in the harness, not a run you may quote.
+that happens to be clean. Both report `quotability.level: "none"`, and soundness is checked
+before provenance, so the reason names the disabled validation rather than whatever else the
+manifest is missing. If either exits 0, the control has stopped controlling anything; that is
+a bug in the harness, not a run you may quote.
 
 Pass `-metrics` here too, even though the verifier would exit 1 without it. A control that
 fails for the wrong reason is not a control: the point is to watch the generator's verdict
 survive a *clean* reconciliation, and omitting the scrape would fail the run on a missing
-input before that verdict is ever tested. Check `not_quotable_because` names the generator,
-not the scrape.
+input before that verdict is ever tested. Check `quotability.blocked_because` names the
+generator, not the scrape.
 
 ## 7. When it goes wrong
 

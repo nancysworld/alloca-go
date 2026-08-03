@@ -41,8 +41,13 @@ func TestManifestRedactsCredentials(t *testing.T) {
 }
 
 // TestManifestCarriesRequiredProvenance checks the fields §6.4 makes mandatory are present
-// and populated, since an absent field is indistinguishable from an unrecorded one once
+// and *populated*, since an absent field is indistinguishable from an unrecorded one once
 // the report is written.
+//
+// The earlier version of this test checked only that each JSON key existed, which is how
+// `commit_sha: ""` reached the committed evidence in docs/measurements/: the key was there,
+// so the test passed, and the field the run most needed to be reproducible was empty.
+// Presence is not the property — population is.
 func TestManifestCarriesRequiredProvenance(t *testing.T) {
 	opts := loadgen.Options{Concurrency: 8, Iterations: 200, WarmUp: 2 * time.Second}
 	m := loadgen.NewManifest("http://localhost:8080", "dispersed", opts, "local")
@@ -56,13 +61,31 @@ func TestManifestCarriesRequiredProvenance(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
+	// commit_sha is checked by Validate rather than here, and deliberately so: VCS stamping
+	// is a property of how the binary was *built*, and `go test` does not stamp it any more
+	// than `go run` does. Asserting it in this test would fail for every correct build, and
+	// the obvious way to make that green again is to weaken the rule the whole gate rests
+	// on. TestIncompleteManifestCannotBeCertified holds that line against a manifest whose
+	// SHA is set explicitly.
 	for _, field := range []string{
 		"go_version", "workload", "concurrency", "iterations", "warm_up",
 		"generator_location", "generator_gomaxprocs", "generator_num_cpu",
 		"target", "timestamp",
 	} {
-		if _, ok := got[field]; !ok {
+		v, ok := got[field]
+		if !ok {
 			t.Errorf("manifest is missing required field %q", field)
+			continue
+		}
+		switch v := v.(type) {
+		case string:
+			if v == "" {
+				t.Errorf("required field %q is present but empty", field)
+			}
+		case float64:
+			if v == 0 {
+				t.Errorf("required field %q is present but zero", field)
+			}
 		}
 	}
 
@@ -74,5 +97,24 @@ func TestManifestCarriesRequiredProvenance(t *testing.T) {
 	}
 	if m.GeneratorNumCPU < 1 {
 		t.Error("generator CPU count not captured, so generator saturation cannot be ruled out")
+	}
+}
+
+// TestManifestRecordsWhetherTheTreeWasDirty pins that source_modified is carried from the
+// build info rather than dropped. A dirty tree stamped with a clean-looking SHA is the
+// provenance failure that cannot be spotted by reading the report.
+func TestManifestRecordsWhetherTheTreeWasDirty(t *testing.T) {
+	raw, err := json.Marshal(loadgen.NewManifest("http://localhost:8080", "dispersed",
+		loadgen.Options{Concurrency: 1, Iterations: 1}, "local"))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, ok := got["source_modified"]; !ok {
+		t.Error("manifest does not record whether the working tree was modified, so a " +
+			"commit_sha that does not describe the binary cannot be detected")
 	}
 }

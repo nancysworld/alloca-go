@@ -43,11 +43,15 @@ type Check struct {
 	Detail    string `json:"detail"`
 }
 
-// Result is the full verdict. Quotable is the whole point of the package.
+// Result is the full verdict. Quotability is the whole point of the package.
 type Result struct {
-	Checks   []Check `json:"checks"`
-	Quotable bool    `json:"quotable"`
-	Because  string  `json:"not_quotable_because,omitempty"`
+	Checks []Check `json:"checks"`
+
+	// Quotability is what the run may back once persisted state has had its say. It can only
+	// be at or below the level the report itself certifies: reconciliation is a veto, never
+	// a promotion — no amount of agreement between three counts can supply a manifest field
+	// that nobody recorded.
+	Quotability loadgen.Quotability `json:"quotability"`
 }
 
 // RunClientChecks executes only the rules that need no database — currently §6.5's fourth,
@@ -57,22 +61,14 @@ type Result struct {
 // be triaged from its report alone before anyone opens a connection. It is never a
 // substitute for Run: a verdict from this function alone says nothing about persisted
 // state, so it does not certify a run as quotable against §6.5.
-func RunClientChecks(ctx context.Context, s loadgen.Summary) (Result, error) {
+func RunClientChecks(ctx context.Context, r loadgen.Report) (Result, error) {
 	var res Result
-	c, err := outcomeClosureCheck(ctx, nil, "", s)
+	c, err := outcomeClosureCheck(ctx, nil, "", r.Summary)
 	if err != nil {
 		return res, err
 	}
 	res.Checks = append(res.Checks, c)
-
-	switch {
-	case !s.Quotable:
-		res.Because = "generator: " + s.NotQuotableBecause
-	case !c.OK:
-		res.Because = "reconciliation failed: " + c.Name + " — " + c.Detail
-	default:
-		res.Quotable = true
-	}
+	res.Quotability = verdict(r, res.Checks)
 	return res, nil
 }
 
@@ -85,7 +81,7 @@ func RunClientChecks(ctx context.Context, s loadgen.Summary) (Result, error) {
 //
 // Every check runs even after one fails: an operator debugging a bad run wants the whole
 // picture, and stopping at the first failure hides whether the cause is narrow or broad.
-func Run(ctx context.Context, q Querier, org domain.OrganisationID, s loadgen.Summary, server ServerTotals) (Result, error) {
+func Run(ctx context.Context, q Querier, org domain.OrganisationID, r loadgen.Report, server ServerTotals) (Result, error) {
 	var res Result
 
 	for _, check := range []func(context.Context, Querier, domain.OrganisationID, loadgen.Summary) (Check, error){
@@ -94,29 +90,38 @@ func Run(ctx context.Context, q Querier, org domain.OrganisationID, s loadgen.Su
 		claimsCheck,
 		outcomeClosureCheck,
 	} {
-		c, err := check(ctx, q, org, s)
+		c, err := check(ctx, q, org, r.Summary)
 		if err != nil {
 			return res, err
 		}
 		res.Checks = append(res.Checks, c)
 	}
-	res.Checks = append(res.Checks, serverTotalsCheck(s, server))
+	res.Checks = append(res.Checks, serverTotalsCheck(r.Summary, server))
+	res.Quotability = verdict(r, res.Checks)
+	return res, nil
+}
 
-	// The generator's own verdict is carried forward rather than recomputed. A run whose
-	// responses failed validation cannot become quotable by reconciling — the two gates
-	// are independent and both must pass.
-	if !s.Quotable {
-		res.Because = "generator: " + s.NotQuotableBecause
-		return res, nil
+// verdict combines the report's own certification with the reconciliation checks.
+//
+// The report's level is carried forward rather than recomputed, and reconciliation can only
+// lower it. A run whose responses failed validation cannot become quotable by reconciling,
+// and one whose manifest is missing its topology cannot acquire that topology from the
+// database — the two gates are independent, and both must pass at the level being claimed.
+func verdict(r loadgen.Report, checks []Check) loadgen.Quotability {
+	q := loadgen.Certify(r.Manifest, r.Summary)
+	if q.Level == loadgen.LevelNone {
+		return q
 	}
-	for _, c := range res.Checks {
+	for _, c := range checks {
 		if !c.OK {
-			res.Because = "reconciliation failed: " + c.Name + " — " + c.Detail
-			return res, nil
+			return loadgen.Quotability{
+				Level:          loadgen.LevelNone,
+				BlockedFrom:    loadgen.LevelLocal,
+				BlockedBecause: "reconciliation failed: " + c.Name + " — " + c.Detail,
+			}
 		}
 	}
-	res.Quotable = true
-	return res, nil
+	return q
 }
 
 // capacityCheck is §6.5's first rule: consumed slot capacity against admitted reservation

@@ -24,7 +24,7 @@ in the harness needs to read the database after a run.
 | 1 | Aggregated metrics recorder on the existing observation boundary, bounded label sets only | §6.1 |
 | 2 | Per-call cost of synchronous telemetry against a real sink, deciding whether the asynchronous sink is built now. The end-to-end §6.2 comparison under load is PR2's | §6.2 |
 | 3 | External load generator: workload shapes, closed-loop concurrency, synchronized start, valid idempotent requests, client-side outcome capture, machine-readable summary, own utilisation | §6.3 |
-| 4 | Run manifest emitted with every run, with every generator- and workload-supplied field populated; the operator-supplied service-shape fields are staged to PR2–PR4 | §6.4 |
+| 4 | Run manifest emitted with every run, with every generator- and workload-supplied field populated and **enforced**; the operator-supplied service-shape fields are staged to PR2–PR4 | §6.4 |
 | 5 | Correctness reconciliation used by every later run | §6.5 |
 | 6 | Response-validation-active negative control | §12.1, `measurement-contract.md` §5.5 |
 | 7 | One controlled local smoke run exercising all of the above | §14 PR1 |
@@ -142,7 +142,32 @@ asynchronous sink now — on the evidence that a healthy sink costs under 0.2% o
 The end-to-end comparison belongs with the sweeps that can run it, and is scoped to PR2 in
 [`ag-sept-plan.md`](ag-sept-plan.md) §14.
 
-## 3.4 Exit gate — discharged
+### 3.4 Quotability is a level, not a boolean (settled 2026-08-03)
+
+The harness first recorded `quotable: true|false`. That field could not be answered honestly,
+because §6.4 gates a *capacity* claim on topology provenance and §6.3 gates a *publishable*
+one on the generator running off the service host — so "is this quotable?" has no answer
+until the claim is named. A PR1 smoke run with an empty `commit_sha` and no service-shape
+fields nonetheless reported `quotable: true`, which is what surfaced the problem.
+
+Reports now carry `quotability.level` — `none`, `local`, `capacity`, `publishable` — with the
+next level up and what blocks it. Both binaries take `-require` so the bar is declared by the
+caller, who is the only one who knows what the number is for. The ladder and the per-level
+field lists are in
+[`../operations/load-harness.md`](../operations/load-harness.md) §4; the staging they
+implement is `ag-sept-plan.md` §14's.
+
+Levels are named for the claim rather than for the PR that first reaches them. A report in
+`docs/measurements/` outlives the schedule, and `"PR1"` would oblige a later reader to
+reconstruct this PR's scope before knowing what the number is good for.
+
+**PR1 runs reach `local`, which is the intended outcome.** What PR1 newly *enforces* is the
+half of §6.4 it owns: a run whose `commit_sha` is empty, or built from a modified working
+tree, is now `none` and exits non-zero. Both were reachable before — the documented operator
+path used `go run`, which does not stamp VCS data — and the manifest test checked that each
+JSON key was present rather than populated, so an empty string passed.
+
+## 3.5 Exit gate — discharged
 
 `[MEASURED]` — artifacts in [`docs/measurements/pr1-smoke-run/`](../measurements/pr1-smoke-run/):
 `run.json` (generator report), `verdict.json` (reconciliation), `metrics.txt` (server scrape).

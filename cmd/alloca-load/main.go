@@ -53,16 +53,22 @@ func run() error {
 		location     = flag.String("generator-location", "local", "where the generator runs")
 		out          = flag.String("out", "", "write the JSON report here (default stdout)")
 		confirm      = flag.Bool("confirm", false, "dispersed: drive reserve→confirm")
+		require      = flag.String("require", string(loadgen.LevelLocal),
+			"fail unless the run reaches this level: local | capacity | publishable")
 	)
 	flag.Parse()
 
 	if *concurrency < 1 || *iterations < 1 {
 		return fmt.Errorf("concurrency and -n must both be at least 1")
 	}
-
-	workload, err := buildWorkload(*workloadName, *org, *slotID, *userID, *slots, *confirm)
+	want, err := loadgen.ParseLevel(*require)
 	if err != nil {
 		return err
+	}
+
+	workload, werr := buildWorkload(*workloadName, *org, *slotID, *userID, *slots, *confirm)
+	if werr != nil {
+		return werr
 	}
 
 	// A run is interruptible and still reports: a truncated run that says what it did
@@ -83,6 +89,7 @@ func run() error {
 	manifest.DatasetSlots = *slots
 
 	report := loadgen.Report{Manifest: manifest, Summary: summary}
+	report.Quotability = loadgen.Certify(manifest, summary)
 
 	w := os.Stdout
 	if *out != "" {
@@ -97,10 +104,17 @@ func run() error {
 		return fmt.Errorf("writing report: %w", err)
 	}
 
-	// A non-quotable run exits non-zero so a script cannot collect numbers from it and
-	// carry on. The report is still written — the operator needs to see why.
-	if !summary.Quotable {
-		return fmt.Errorf("run is not quotable: %s", summary.NotQuotableBecause)
+	// A run that did not reach the level the operator asked for exits non-zero, so a script
+	// cannot collect numbers from it and carry on. The report is still written — the
+	// operator needs to see why.
+	//
+	// The bar is declared at the call site rather than assumed here, because what a run must
+	// satisfy depends on what its numbers are for: PR1's smoke runs want -require local,
+	// and the scripts behind a published claim want -require publishable. A harness that
+	// picked for them would be guessing at the claim.
+	if q := report.Quotability; !q.Level.AtLeast(want) {
+		return fmt.Errorf("run reached level %q, below the required %q: %s",
+			q.Level, want, q.BlockedBecause)
 	}
 	return nil
 }

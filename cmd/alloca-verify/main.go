@@ -43,11 +43,17 @@ func run() error {
 		metricsPath = flag.String("metrics", "", "path to a saved /metrics scrape (required to certify a run)")
 		timeout     = flag.Duration("timeout", 30*time.Second, "overall verification timeout")
 		out         = flag.String("out", "", "write the verdict JSON here (default stdout)")
+		require     = flag.String("require", string(loadgen.LevelLocal),
+			"fail unless the run reaches this level: local | capacity | publishable")
 	)
 	flag.Parse()
 
 	if *runPath == "" {
 		return fmt.Errorf("-run is required")
+	}
+	want, err := loadgen.ParseLevel(*require)
+	if err != nil {
+		return err
 	}
 	if *dsn == "" {
 		return fmt.Errorf("-database-url or DATABASE_URL is required")
@@ -76,7 +82,7 @@ func run() error {
 		return err
 	}
 
-	result, err := reconcile.Run(ctx, pool, domain.OrganisationID(*org), report.Summary, server)
+	result, err := reconcile.Run(ctx, pool, domain.OrganisationID(*org), report, server)
 	if err != nil {
 		return fmt.Errorf("reconciling: %w", err)
 	}
@@ -96,8 +102,9 @@ func run() error {
 		return fmt.Errorf("writing verdict: %w", err)
 	}
 
-	if !result.Quotable {
-		return fmt.Errorf("run is not quotable: %s", result.Because)
+	if q := result.Quotability; !q.Level.AtLeast(want) {
+		return fmt.Errorf("run reached level %q, below the required %q: %s",
+			q.Level, want, q.BlockedBecause)
 	}
 	return nil
 }

@@ -53,7 +53,7 @@ func hotSlotSummary() loadgen.Summary {
 				Reason: domain.ReasonNoCapacity, Count: 55,
 			},
 		},
-		Completed: 60, Quotable: true, ValidationEnabled: true,
+		Completed: 60, Sound: true, ValidationEnabled: true,
 	}
 }
 

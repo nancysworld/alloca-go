@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nancysworld/alloca-go/internal/domain"
 	"github.com/nancysworld/alloca-go/internal/loadgen"
@@ -15,7 +16,30 @@ import (
 // database-backed rules are exercised by the integration suite, which has a schema.
 
 func summary(totals []loadgen.Total, completed int) loadgen.Summary {
-	return loadgen.Summary{Totals: totals, Completed: completed, Quotable: true}
+	return loadgen.Summary{Totals: totals, Completed: completed, Sound: true}
+}
+
+// reportOf wraps a summary in a manifest complete enough to reach LevelLocal, so a verdict
+// that comes back below that level did so for the reason the test is about. A zero manifest
+// would fail every case on missing provenance and prove nothing about reconciliation.
+func reportOf(s loadgen.Summary) loadgen.Report {
+	return loadgen.Report{Manifest: localManifest(), Summary: s}
+}
+
+func localManifest() loadgen.Manifest {
+	return loadgen.Manifest{
+		CommitSHA:           "91818cd7f3a0556371ff4619754323258488ea4a",
+		GoVersion:           "go1.26.5",
+		Workload:            "dispersed",
+		Concurrency:         8,
+		Iterations:          60,
+		WarmUp:              "0s",
+		GeneratorLocation:   "local",
+		GeneratorGOMAXPROCS: 10,
+		GeneratorNumCPU:     10,
+		Target:              "http://localhost:8080",
+		Timestamp:           time.Now().UTC(),
+	}
 }
 
 // TestOutcomeOutsideClosedSetIsNotQuotable covers the case where the service answered with
@@ -26,15 +50,15 @@ func TestOutcomeOutsideClosedSetIsNotQuotable(t *testing.T) {
 		{Operation: "reserve", Outcome: domain.Outcome("probably_fine"), Count: 3},
 	}, 3)
 
-	res, err := reconcile.RunClientChecks(context.Background(), s)
+	res, err := reconcile.RunClientChecks(context.Background(), reportOf(s))
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if res.Quotable {
+	if res.Quotability.Level != loadgen.LevelNone {
 		t.Fatal("run with an undefined outcome is marked quotable")
 	}
-	if !strings.Contains(res.Because, "closed terminal-outcome set") {
-		t.Errorf("verdict does not name the closed-set violation: %q", res.Because)
+	if !strings.Contains(res.Quotability.BlockedBecause, "closed terminal-outcome set") {
+		t.Errorf("verdict does not name the closed-set violation: %q", res.Quotability.BlockedBecause)
 	}
 }
 
@@ -53,15 +77,15 @@ func TestReplayCountedAsPeerOutcomeIsCaught(t *testing.T) {
 		{Operation: "reserve", Outcome: domain.OutcomeAdmittedSuccess, Replay: true, Count: 1},
 	}, 2)
 
-	res, err := reconcile.RunClientChecks(context.Background(), s)
+	res, err := reconcile.RunClientChecks(context.Background(), reportOf(s))
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if res.Quotable {
+	if res.Quotability.Level != loadgen.LevelNone {
 		t.Fatal("run whose totals do not sum to its completed count is marked quotable")
 	}
-	if !strings.Contains(res.Because, "double-counted") {
-		t.Errorf("verdict does not name the double count: %q", res.Because)
+	if !strings.Contains(res.Quotability.BlockedBecause, "double-counted") {
+		t.Errorf("verdict does not name the double count: %q", res.Quotability.BlockedBecause)
 	}
 }
 
@@ -73,11 +97,11 @@ func TestRefusalReasonOnNonRefusalIsCaught(t *testing.T) {
 			Reason: domain.ReasonNoCapacity, Count: 1},
 	}, 1)
 
-	res, err := reconcile.RunClientChecks(context.Background(), s)
+	res, err := reconcile.RunClientChecks(context.Background(), reportOf(s))
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if res.Quotable {
+	if res.Quotability.Level != loadgen.LevelNone {
 		t.Fatal("admitted_success carrying a refusal reason is marked quotable")
 	}
 }
@@ -93,12 +117,12 @@ func TestCleanTotalsReconcile(t *testing.T) {
 			Reason: domain.ReasonNoCapacity, Count: 3},
 	}, 12)
 
-	res, err := reconcile.RunClientChecks(context.Background(), s)
+	res, err := reconcile.RunClientChecks(context.Background(), reportOf(s))
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if !res.Quotable {
-		t.Fatalf("clean totals rejected: %s", res.Because)
+	if res.Quotability.Level == loadgen.LevelNone {
+		t.Fatalf("clean totals rejected: %s", res.Quotability.BlockedBecause)
 	}
 }
 
@@ -108,17 +132,17 @@ func TestGeneratorVerdictIsNotOverridden(t *testing.T) {
 	s := summary([]loadgen.Total{
 		{Operation: "reserve", Outcome: domain.OutcomeAdmittedSuccess, Count: 1},
 	}, 1)
-	s.Quotable = false
-	s.NotQuotableBecause = "response validation was disabled"
+	s.Sound = false
+	s.NotSoundBecause = "response validation was disabled"
 
-	res, err := reconcile.RunClientChecks(context.Background(), s)
+	res, err := reconcile.RunClientChecks(context.Background(), reportOf(s))
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if res.Quotable {
+	if res.Quotability.Level != loadgen.LevelNone {
 		t.Fatal("reconciliation overrode the generator's refusal to certify the run")
 	}
-	if !strings.Contains(res.Because, "validation was disabled") {
-		t.Errorf("verdict loses the generator's reason: %q", res.Because)
+	if !strings.Contains(res.Quotability.BlockedBecause, "validation was disabled") {
+		t.Errorf("verdict loses the generator's reason: %q", res.Quotability.BlockedBecause)
 	}
 }

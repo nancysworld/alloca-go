@@ -58,7 +58,7 @@ func TestResponseValidationActiveControl(t *testing.T) {
 			t.Fatalf("invalid=%d of completed=%d; every response contradicts the contract "+
 				"and every one should have been caught", s.Invalid, s.Completed)
 		}
-		if s.Quotable {
+		if s.Sound {
 			t.Error("run is marked quotable despite failing response validation")
 		}
 		if !strings.Contains(strings.Join(s.InvalidSamples, " "), "contradicts outcome") {
@@ -75,11 +75,11 @@ func TestResponseValidationActiveControl(t *testing.T) {
 		// The run must still refuse to certify itself. This is the half that makes a
 		// disabled check safe: the numbers exist, but the summary says why they may not
 		// be quoted.
-		if s.Quotable {
+		if s.Sound {
 			t.Error("run with validation disabled is marked quotable")
 		}
-		if !strings.Contains(s.NotQuotableBecause, "validation was disabled") {
-			t.Errorf("summary does not say validation was disabled: %q", s.NotQuotableBecause)
+		if !strings.Contains(s.NotSoundBecause, "validation was disabled") {
+			t.Errorf("summary does not say validation was disabled: %q", s.NotSoundBecause)
 		}
 	})
 }
@@ -124,8 +124,8 @@ func TestValidRunIsQuotable(t *testing.T) {
 	if s.Invalid != 0 {
 		t.Fatalf("valid responses were rejected: %v", s.InvalidSamples)
 	}
-	if !s.Quotable {
-		t.Fatalf("clean run is not quotable: %q", s.NotQuotableBecause)
+	if !s.Sound {
+		t.Fatalf("clean run is not quotable: %q", s.NotSoundBecause)
 	}
 	if s.Goodput != s.Completed || s.Completed != 40 {
 		t.Fatalf("goodput=%d completed=%d, want 40 and 40", s.Goodput, s.Completed)

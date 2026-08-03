@@ -138,7 +138,7 @@ func summaryFor(admitted, refused int, reason domain.Reason) loadgen.Summary {
 	}
 	return loadgen.Summary{
 		Totals: totals, Completed: admitted + refused,
-		Quotable: true, ValidationEnabled: true,
+		Sound: true, ValidationEnabled: true,
 	}
 }
 
@@ -150,7 +150,7 @@ func summaryFor(admitted, refused int, reason domain.Reason) loadgen.Summary {
 // rule under test. The comparison has its own tests, where the two sides are made to differ
 // on purpose.
 func runReconcile(f *fixture, s loadgen.Summary) (reconcile.Result, error) {
-	return reconcile.Run(context.Background(), f.pool, testOrg, s, reconcile.ServerTotals(s.Totals))
+	return reconcile.Run(context.Background(), f.pool, testOrg, reportOf(s), reconcile.ServerTotals(s.Totals))
 }
 
 // TestCleanRunReconciles is the positive case, and it has to come first: every negative
@@ -182,8 +182,8 @@ func TestCleanRunReconciles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
-	if !res.Quotable {
-		t.Fatalf("clean run is not quotable: %s\n%+v", res.Because, res.Checks)
+	if res.Quotability.Level == loadgen.LevelNone {
+		t.Fatalf("clean run is not quotable: %s\n%+v", res.Quotability.BlockedBecause, res.Checks)
 	}
 	if len(res.Checks) != 5 {
 		t.Errorf("ran %d checks, want the 4 database rules of §6.5 plus the "+
@@ -211,11 +211,11 @@ func TestUnderreportedAdmissionsAreCaught(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
-	if res.Quotable {
+	if res.Quotability.Level != loadgen.LevelNone {
 		t.Fatal("run is quotable while the database holds units the client was never told about")
 	}
 	if !contains(res.Checks, "consumed capacity vs admitted reserves") {
-		t.Errorf("wrong check failed: %s", res.Because)
+		t.Errorf("wrong check failed: %s", res.Quotability.BlockedBecause)
 	}
 }
 
@@ -233,7 +233,7 @@ func TestOverreportedAdmissionsAreCaughtByClaims(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
-	if res.Quotable {
+	if res.Quotability.Level != loadgen.LevelNone {
 		t.Fatal("run is quotable while claiming more admitted reserves than the schedule records")
 	}
 }
@@ -272,8 +272,8 @@ func TestHotIdentityContaminationIsVisible(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
-	if !ok.Quotable {
-		t.Fatalf("honest hot-identity totals rejected: %s", ok.Because)
+	if ok.Quotability.Level == loadgen.LevelNone {
+		t.Fatalf("honest hot-identity totals rejected: %s", ok.Quotability.BlockedBecause)
 	}
 
 	// A contaminated rerun reports zero admitted and two conflicts, while the claim from
@@ -284,8 +284,8 @@ func TestHotIdentityContaminationIsVisible(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
-	if !contaminated.Quotable {
-		t.Log("contaminated rerun happened to be caught:", contaminated.Because)
+	if contaminated.Quotability.Level == loadgen.LevelNone {
+		t.Log("contaminated rerun happened to be caught:", contaminated.Quotability.BlockedBecause)
 	} else {
 		t.Log("contaminated rerun reconciles cleanly, as expected: reconciliation cannot " +
 			"detect it, and the clean-start assertion of §5.3 is the guard that must")
@@ -311,15 +311,15 @@ func TestIdempotencyRecordsMatchFreshMutations(t *testing.T) {
 			{Operation: string(domain.OpReserve), Outcome: domain.OutcomeAdmittedSuccess,
 				Replay: true, Count: 1},
 		},
-		Completed: 3, Quotable: true, ValidationEnabled: true,
+		Completed: 3, Sound: true, ValidationEnabled: true,
 	}
 
 	res, err := runReconcile(f, s)
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
-	if !res.Quotable {
-		t.Fatalf("a run with one legitimate replay was rejected: %s\n%+v", res.Because, res.Checks)
+	if res.Quotability.Level == loadgen.LevelNone {
+		t.Fatalf("a run with one legitimate replay was rejected: %s\n%+v", res.Quotability.BlockedBecause, res.Checks)
 	}
 }
 
@@ -337,7 +337,7 @@ func TestUnrecordedMutationsAreCaught(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
-	if res.Quotable {
+	if res.Quotability.Level != loadgen.LevelNone {
 		t.Fatal("run claiming more committed mutations than were recorded is quotable")
 	}
 }

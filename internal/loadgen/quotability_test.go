@@ -56,12 +56,12 @@ func TestInterruptedRunIsNotQuotable(t *testing.T) {
 	s := loadgen.NewRunner(client, loadgen.Options{Concurrency: 2, Iterations: 500}).
 		Run(ctx, dispersedOver(4))
 
-	if s.Quotable {
+	if s.Sound {
 		t.Fatalf("interrupted run certified itself: %d of %d iterations",
 			s.CompletedIterations, s.Iterations)
 	}
-	if !strings.Contains(s.NotQuotableBecause, "interrupted") {
-		t.Errorf("reason = %q, want it to name the interruption", s.NotQuotableBecause)
+	if !strings.Contains(s.NotSoundBecause, "interrupted") {
+		t.Errorf("reason = %q, want it to name the interruption", s.NotSoundBecause)
 	}
 	if s.CompletedIterations >= s.Iterations {
 		t.Errorf("completed %d of %d — the run was not actually truncated, so this test "+
@@ -87,8 +87,8 @@ func TestCompleteRunReportsEveryIteration(t *testing.T) {
 	if s.CompletedIterations != 40 {
 		t.Errorf("completed_iterations = %d, want 40", s.CompletedIterations)
 	}
-	if !s.Quotable {
-		t.Errorf("complete run rejected: %s", s.NotQuotableBecause)
+	if !s.Sound {
+		t.Errorf("complete run rejected: %s", s.NotSoundBecause)
 	}
 }
 
@@ -107,12 +107,12 @@ func TestWarmUpRunIsNotQuotable(t *testing.T) {
 	if s.WarmUpDiscarded == 0 {
 		t.Fatal("no responses were discarded, so this test proved nothing about warm-up")
 	}
-	if s.Quotable {
+	if s.Sound {
 		t.Fatalf("warm-up run certified itself after discarding %d responses",
 			s.WarmUpDiscarded)
 	}
-	if !strings.Contains(s.NotQuotableBecause, "warm-up") {
-		t.Errorf("reason = %q, want it to name the warm-up window", s.NotQuotableBecause)
+	if !strings.Contains(s.NotSoundBecause, "warm-up") {
+		t.Errorf("reason = %q, want it to name the warm-up window", s.NotSoundBecause)
 	}
 }
 
@@ -133,11 +133,11 @@ func TestValidationOutranksTheOtherRefusals(t *testing.T) {
 	s := loadgen.NewRunner(client, loadgen.Options{Concurrency: 2, Iterations: 500}).
 		Run(ctx, dispersedOver(4))
 
-	if s.Quotable {
+	if s.Sound {
 		t.Fatal("run with validation disabled certified itself")
 	}
-	if !strings.Contains(s.NotQuotableBecause, "validation was disabled") {
+	if !strings.Contains(s.NotSoundBecause, "validation was disabled") {
 		t.Errorf("reason = %q, want the validation control's reason to win",
-			s.NotQuotableBecause)
+			s.NotSoundBecause)
 	}
 }

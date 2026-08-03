@@ -1,0 +1,97 @@
+[
+  {
+    "workload": "dispersed",
+    "concurrency": 128,
+    "window_seconds": 30.055418547,
+    "throughput_per_s": 2049.1,
+    "goodput_per_s": 2049.1,
+    "latency_ms": {
+      "p50": 60.578628,
+      "p95": 81.479304,
+      "p99": 92.756885,
+      "max": 114.697216
+    },
+    "generator_cpu_per_core": 0.018466057930023344,
+    "level": "local",
+    "load_ok": true,
+    "verify_ok": true,
+    "fixture_units": 3077000,
+    "notes": []
+  },
+  {
+    "workload": "dispersed",
+    "concurrency": 16,
+    "window_seconds": 30.006984859,
+    "throughput_per_s": 2038.2,
+    "goodput_per_s": 2038.2,
+    "latency_ms": {
+      "p50": 7.671573,
+      "p95": 10.892451,
+      "p99": 13.163213,
+      "max": 33.307555
+    },
+    "generator_cpu_per_core": 0.01807620134274551,
+    "level": "local",
+    "load_ok": true,
+    "verify_ok": true,
+    "fixture_units": 389000,
+    "notes": []
+  },
+  {
+    "workload": "dispersed",
+    "concurrency": 32,
+    "window_seconds": 30.015124818,
+    "throughput_per_s": 2053.6,
+    "goodput_per_s": 2053.6,
+    "latency_ms": {
+      "p50": 15.110731,
+      "p95": 20.262932,
+      "p99": 24.031065,
+      "max": 36.217939
+    },
+    "generator_cpu_per_core": 0.018302092805909716,
+    "level": "local",
+    "load_ok": true,
+    "verify_ok": true,
+    "fixture_units": 773000,
+    "notes": []
+  },
+  {
+    "workload": "dispersed",
+    "concurrency": 64,
+    "window_seconds": 30.034048308,
+    "throughput_per_s": 2091.6,
+    "goodput_per_s": 2091.6,
+    "latency_ms": {
+      "p50": 29.657846,
+      "p95": 39.212087,
+      "p99": 46.984065,
+      "max": 76.653309
+    },
+    "generator_cpu_per_core": 0.018447063623202052,
+    "level": "local",
+    "load_ok": true,
+    "verify_ok": true,
+    "fixture_units": 1541000,
+    "notes": []
+  },
+  {
+    "workload": "dispersed",
+    "concurrency": 8,
+    "window_seconds": 30.004160583,
+    "throughput_per_s": 1821.6,
+    "goodput_per_s": 1821.6,
+    "latency_ms": {
+      "p50": 4.119217,
+      "p95": 6.294334,
+      "p99": 8.219565,
+      "max": 21.679565
+    },
+    "generator_cpu_per_core": 0.017416524570131812,
+    "level": "local",
+    "load_ok": true,
+    "verify_ok": true,
+    "fixture_units": 197000,
+    "notes": []
+  }
+]

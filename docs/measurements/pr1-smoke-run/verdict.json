@@ -34,6 +34,6 @@
   "quotability": {
     "level": "local",
     "blocked_from": "capacity",
-    "blocked_because": "manifest is incomplete for a capacity claim: postgres_version is empty (operator-supplied, PR2); pool_size_per_replica is not positive (operator-supplied, PR2); aggregate_pool_size is not positive (operator-supplied, PR2); server_gomaxprocs is not positive (operator-supplied, PR2); timeout_budget is empty (operator-supplied, PR2); reservation_ttl is empty (operator-supplied, PR2); replica_count is not positive (operator-supplied, PR3); deployment_topology is empty (operator-supplied, PR3); environment is empty (operator-supplied, PR4)"
+    "blocked_because": "manifest is incomplete for a capacity claim: postgres_version is empty (operator-supplied, PR2); pool_size_per_replica is not positive (operator-supplied, PR2); aggregate_pool_size is not positive (operator-supplied, PR2); replica_count is not positive (operator-supplied, PR3); deployment_topology is empty (operator-supplied, PR3); environment is empty (operator-supplied, PR4)"
   }
 }

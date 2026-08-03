@@ -1,0 +1,39 @@
+{
+  "checks": [
+    {
+      "name": "consumed capacity vs admitted reserves",
+      "invariant": "INV-1",
+      "ok": true,
+      "detail": "30367 live reservations, 30367 fresh admitted reserves, no slot over capacity"
+    },
+    {
+      "name": "idempotency keys vs committed mutations",
+      "invariant": "INV-5",
+      "ok": true,
+      "detail": "30367 records, all keys distinct, 30367 fresh mutations reported, 0 replays wrote none"
+    },
+    {
+      "name": "live claims vs admitted reserves per identity",
+      "invariant": "INV-4",
+      "ok": true,
+      "detail": "30367 live claims, no overlapping pair, 30367 fresh admitted reserves"
+    },
+    {
+      "name": "outcomes within the closed set, replay orthogonal",
+      "invariant": "INV-7",
+      "ok": true,
+      "detail": "30367 completed requests, all outcomes in the closed set"
+    },
+    {
+      "name": "server totals vs client totals",
+      "invariant": "",
+      "ok": true,
+      "detail": "30367 requests, every operation/outcome/reason/replay cell agrees with the client"
+    }
+  ],
+  "quotability": {
+    "level": "local",
+    "blocked_from": "capacity",
+    "blocked_because": "manifest is incomplete for a capacity claim: aggregate_pool_size is not positive (operator-supplied, PR3); replica_count is not positive (operator-supplied, PR3); deployment_topology is empty (operator-supplied, PR3); environment is empty (operator-supplied, PR4)"
+  }
+}

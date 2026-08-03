@@ -67,7 +67,10 @@ for p in panels:
     series = body["data"]["result"]
     out = f"{cell}/panels/{p['key']}.csv"
     with open(out, "w", newline="") as f:
-        w = csv.writer(f)
+        # LF, not the csv module's default CRLF: these files are committed as evidence, and a
+        # CRLF artifact makes git rewrite them on every checkout and shows the whole file as
+        # changed in a diff that should show one number moving.
+        w = csv.writer(f, lineterminator="\n")
         # Series labels are kept as a column rather than flattened away: `outcomes` returns one
         # series per outcome, and a CSV that dropped the label would silently sum business
         # refusals into failures — the exact conflation measurement-contract §3 forbids.

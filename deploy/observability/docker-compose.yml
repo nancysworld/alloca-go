@@ -1,0 +1,70 @@
+# Prometheus + Grafana for AG-Sept PR2. Brought up by `make obs-up`.
+#
+# Scope, from ag-sept-plan §14: a *minimal reproducible retention path* and a *compact
+# diagnostic dashboard*, not an observability platform. So: two containers, one scrape job,
+# one dashboard, no alerting, no exporters beyond what the service already serves.
+#
+# The service under test deliberately runs on the host rather than in this project. PR2
+# measures a locally built binary (`make dev-measured`), and containerising the service is
+# PR3's scope — putting it here would pull PR3's variable into PR2's numbers.
+
+name: alloca-obs
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: alloca-prometheus
+    # Makes host.docker.internal exist on a plain Linux daemon, where it otherwise does not.
+    # It is the first address obs-target.sh probes, and on a non-WSL host it is usually the
+    # one that works. Under Docker Desktop on WSL2 it resolves to the *Windows* host and the
+    # probe falls through to this distro's own address — see test/scripts/obs-target.sh.
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      # Retention is time- and size-bounded. A 1s scrape interval fills disk faster than the
+      # default assumes, and an unbounded local TSDB is how a workstation runs out of space
+      # mid-sweep — which loses the run *and* the evidence.
+      - '--storage.tsdb.retention.time=15d'
+      - '--storage.tsdb.retention.size=2GB'
+      # Required for /api/v1/admin/tsdb/snapshot, which is how a cell's evidence is retained.
+      # A snapshot is a hard-linked copy of the TSDB blocks, so it is cheap and complete —
+      # the alternative, re-querying later, cannot survive the retention window.
+      - '--web.enable-admin-api'
+    ports:
+      - '9091:9090'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Discovered scrape targets, written by test/scripts/obs-target.sh. Git-ignored: the
+      # address is a property of this machine's WSL networking, not of the project.
+      - ./targets:/etc/prometheus/targets:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    image: grafana/grafana:11.5.1
+    container_name: alloca-grafana
+    depends_on:
+      - prometheus
+    environment:
+      # Anonymous admin access: this is a workstation diagnostic tool reachable only on
+      # localhost, and a login prompt between an operator and a running sweep is friction
+      # with nothing to protect. It must never be how a deployed Grafana is configured.
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: 'true'
+      # Off by default and named here so nobody has to wonder whether the container is
+      # phoning home during a measured run.
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      GF_NEWS_NEWS_FEED_ENABLED: 'false'
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+volumes:
+  # Named rather than a bind mount: the TSDB is Prometheus's own format and nothing in the
+  # repo should be tempted to read it directly. Evidence leaves via the snapshot API.
+  prometheus-data:

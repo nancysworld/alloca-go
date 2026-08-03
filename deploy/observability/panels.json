@@ -1,0 +1,99 @@
+{
+  "_comment": [
+    "Canonical PromQL for AG-Sept PR2. This file is the single source: the Grafana dashboard",
+    "embeds these expressions and the snapshot exporter runs them, so the panel an operator",
+    "watched and the CSV the report quotes cannot drift apart.",
+    "TestDashboardMatchesCanonicalPanels enforces that. Change an expression here, not in the",
+    "dashboard JSON.",
+    "",
+    "Scope is ag-sept-plan §14 PR2's list and nothing else: throughput, successful mutation",
+    "goodput, p95/p99 latency, outcomes, database-pool pressure, process CPU and memory, and",
+    "relevant Go runtime signals. Generator utilisation is deliberately absent — see the note",
+    "in test/scripts/export-panels.sh."
+  ],
+  "panels": [
+    {
+      "key": "throughput",
+      "title": "Completed throughput",
+      "unit": "req/s",
+      "expr": "sum(rate(alloca_requests_total[$__rate_interval]))"
+    },
+    {
+      "key": "goodput",
+      "title": "Successful mutation goodput",
+      "unit": "req/s",
+      "_note": "Mutations only, never list_slots (observability §3.1), and replay=false only: a replay returns a recorded outcome without performing a mutation (measurement-contract §4.2), so counting it would overstate useful work and count one booking twice. Same definition as Summary.Goodput and as the FreshAdmittedFor count reconciliation compares against persisted rows.",
+      "expr": "sum(rate(alloca_requests_total{operation=~\"reserve|confirm|cancel\",outcome=\"admitted_success\",replay=\"false\"}[$__rate_interval]))"
+    },
+    {
+      "key": "replay_rate",
+      "title": "Replayed mutations",
+      "unit": "req/s",
+      "_note": "The population goodput excludes, shown rather than dropped. A replay is a correctness claim in its own right (INV-5); the `replay` workload is what verifies it.",
+      "expr": "sum(rate(alloca_requests_total{operation=~\"reserve|confirm|cancel\",outcome=\"admitted_success\",replay=\"true\"}[$__rate_interval]))"
+    },
+    {
+      "key": "latency_p95",
+      "title": "Request latency p95",
+      "unit": "s",
+      "expr": "histogram_quantile(0.95, sum by (le) (rate(alloca_request_duration_seconds_bucket[$__rate_interval])))"
+    },
+    {
+      "key": "latency_p99",
+      "title": "Request latency p99",
+      "unit": "s",
+      "expr": "histogram_quantile(0.99, sum by (le) (rate(alloca_request_duration_seconds_bucket[$__rate_interval])))"
+    },
+    {
+      "key": "outcomes",
+      "title": "Outcomes",
+      "unit": "req/s",
+      "_note": "Business refusals are a valid domain answer and are reported separately here, never folded into a failure rate (measurement-contract §3).",
+      "expr": "sum by (outcome) (rate(alloca_requests_total[$__rate_interval]))"
+    },
+    {
+      "key": "pool_in_use",
+      "title": "DB pool connections in use",
+      "unit": "conns",
+      "expr": "alloca_db_pool_acquired_connections"
+    },
+    {
+      "key": "pool_max",
+      "title": "DB pool maximum",
+      "unit": "conns",
+      "expr": "alloca_db_pool_max_connections"
+    },
+    {
+      "key": "pool_acquire_wait",
+      "title": "DB pool acquire wait",
+      "unit": "s/s",
+      "_note": "Seconds of wait accumulated per second. It crosses 1 when requests spend more time queueing for a connection than wall-clock elapses, which is the pool becoming the frontier rather than the database.",
+      "expr": "rate(alloca_db_pool_acquire_wait_seconds_total[$__rate_interval])"
+    },
+    {
+      "key": "process_cpu",
+      "title": "Process CPU",
+      "unit": "cores",
+      "expr": "rate(process_cpu_seconds_total[$__rate_interval])"
+    },
+    {
+      "key": "process_memory",
+      "title": "Process resident memory",
+      "unit": "bytes",
+      "expr": "process_resident_memory_bytes"
+    },
+    {
+      "key": "go_goroutines",
+      "title": "Goroutines",
+      "unit": "count",
+      "expr": "go_goroutines"
+    },
+    {
+      "key": "go_gc_pause",
+      "title": "GC pause quantile",
+      "unit": "s",
+      "_note": "The Go collector exports this as a summary, so the series carries its own quantile label rather than needing histogram_quantile.",
+      "expr": "go_gc_duration_seconds{quantile=\"0.75\"}"
+    }
+  ]
+}

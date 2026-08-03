@@ -1,0 +1,18 @@
+# Provisioned so the stack is reproducible from the repo: `make obs-up` yields a working
+# dashboard with no clicking. A datasource added by hand would not survive a teardown, and
+# the panel JSON refers to this uid.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: alloca-prometheus
+    access: proxy
+    # The in-network address, not the published one: Grafana reaches Prometheus over the
+    # compose network, so this stays 9090 even though the host port is 9091.
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      # Must match prometheus.yml's scrape_interval, or Grafana's $__rate_interval computes
+      # a window shorter than the scrape and rate() returns empty for the fastest panels.
+      timeInterval: 1s

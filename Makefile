@@ -18,7 +18,7 @@ GOLANGCI_LINT         := $(TOOLBIN)/golangci-lint
 GOLANGCI_LINT_STAMP   := $(TOOLBIN)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 
 .PHONY: all ci fmt fmt-check vet lint build test test-race test-integration \
-        db-up db-down migrate run dev dev-measured smoke tidy tools clean
+        db-up db-down migrate run dev dev-measured smoke obs-up obs-target obs-down tidy tools clean
 
 # Integration tests need a real PostgreSQL: the properties they prove (capacity safety
 # under concurrent transactions, post-lock decision time, the scoped-key race) do not
@@ -39,6 +39,9 @@ PGIMAGE      ?= postgres:16-alpine
 # of the boot; this one is stable. `netsh interface ipv4 show excludedportrange protocol=tcp`
 # lists the current reservations.
 PGPORT       ?= 15432
+# The PR2 observability stack. Separate from the service so `make dev-measured` and a
+# measured run stay independent of whether anything is scraping.
+OBSCOMPOSE   ?= deploy/observability/docker-compose.yml
 
 all: ci
 
@@ -157,6 +160,36 @@ dev-measured:
 	$(MAKE) migrate
 	$(GO) build -o $(TOOLBIN)/$(BINARY) $(CMD)
 	DATABASE_URL="$(DATABASE_URL)" $(TOOLBIN)/$(BINARY)
+
+## obs-up: start Prometheus + Grafana for a measured run (ag-sept-plan §14 PR2)
+#
+# Prometheus scrapes the service on the *host*, not in this compose project: PR2 measures a
+# locally built binary and containerising the service is PR3's variable, not PR2's.
+#
+# Grafana is provisioned from the repo, so there is nothing to click: the dashboard and its
+# datasource exist on first start. It is the diagnostic view only — the evidence a report
+# quotes is the CSVs and TSDB snapshot the sweep runner retains.
+obs-up:
+	docker compose -f $(OBSCOMPOSE) up -d
+	@# Probe for an address that actually reaches the service, rather than assuming one.
+	@# Tolerated on failure: the stack is still useful with the service down, and the script
+	@# prints what to do. Re-run `make obs-target` once the service is up.
+	@./test/scripts/obs-target.sh || true
+	@echo "prometheus  http://localhost:9091"
+	@echo "grafana     http://localhost:3000/d/alloca-frontier"
+
+## obs-target: re-probe the scrape address (after a WSL restart, or a late service start)
+obs-target:
+	@./test/scripts/obs-target.sh
+
+## obs-down: stop Prometheus + Grafana, keeping the retained TSDB
+#
+# The volume survives on purpose. A sweep's evidence is snapshotted out of it, and tearing
+# the data down with the containers would discard the series a half-finished analysis still
+# needs. `docker compose -f deploy/observability/docker-compose.yml down -v` is the explicit
+# way to discard it.
+obs-down:
+	docker compose -f $(OBSCOMPOSE) down
 
 ## smoke: exercise a running service over a real socket (needs `make dev` elsewhere)
 smoke:

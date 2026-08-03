@@ -1,0 +1,36 @@
+# Prometheus configuration for AG-Sept PR2's single-instance frontier.
+#
+# Deliberately one job. PR2 measures one service process on one host, and a scrape config that
+# enumerated targets it does not have would be the start of the general observability platform
+# ag-sept-plan §14 excludes.
+global:
+  # 1s, not the 15s default. A sweep cell runs for tens of seconds, so a 15s interval would
+  # give a handful of points across the whole measurement and would alias the pool-pressure
+  # signal the frontier is read from. The cost is storage, which the retention window bounds.
+  scrape_interval: 1s
+  scrape_timeout: 900ms
+  # Labels attached to every series this Prometheus stores, so a retained snapshot still says
+  # what it was measuring once it is separated from the run directory.
+  external_labels:
+    milestone: ag-sept
+    topology: single-instance-local
+
+scrape_configs:
+  - job_name: alloca-go
+    # File-based discovery rather than a static target, because the address that reaches the
+    # service is not knowable at commit time.
+    #
+    # The service runs on the host; Prometheus runs in a container. Under Docker Desktop on
+    # WSL2 those are two *different* WSL distros, so neither `host.docker.internal` (which
+    # resolves to the Windows host) nor the compose bridge gateway reaches this one — both
+    # answer "connection refused", which reads exactly like a service that is not running.
+    # What does reach it is this distro's own eth0 address, and that is reassigned whenever
+    # WSL restarts.
+    #
+    # So `make obs-up` probes for an address that actually works and writes it here. The
+    # scrape *configuration* stays version-controlled; only the discovered address does not.
+    # Prometheus re-reads this file without a restart, so a changed address is picked up by
+    # re-running the probe.
+    file_sd_configs:
+      - files: ['/etc/prometheus/targets/*.json']
+        refresh_interval: 10s

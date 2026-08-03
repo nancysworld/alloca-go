@@ -32,7 +32,11 @@ type response struct {
 	Message       string         `json:"message,omitempty"`
 }
 
-// statusForOutcome maps a terminal outcome to its HTTP status.
+// StatusForOutcome maps a terminal outcome to its HTTP status. It is exported because it
+// IS the transport contract: a load generator validating a response must check the pair
+// against the same mapping the server answers with, and a copy in the client would drift
+// silently. The trade is that a bug in this mapping is invisible to that validation --
+// which is what the totality test below exists to catch instead.
 //
 // Refusals are 409 Conflict rather than 422: the request is well-formed and understood,
 // and it is the current state of the slot, the schedule, or the key that prevents it.
@@ -44,7 +48,7 @@ type response struct {
 // contract declares, and discriminates because a fabricated outcome makes it false.
 // Without the flag an unmapped outcome would fall through to a plausible 500 and nothing
 // would ever notice.
-func statusForOutcome(outcome domain.Outcome, reason domain.Reason) (status int, known bool) {
+func StatusForOutcome(outcome domain.Outcome, reason domain.Reason) (status int, known bool) {
 	switch outcome {
 	case domain.OutcomeAdmittedSuccess:
 		// 200 rather than 201 for reserve/confirm. The mapping is keyed by outcome, not
@@ -115,7 +119,7 @@ func messageForOutcome(outcome domain.Outcome) string {
 
 // responseForResult renders a domain answer.
 func responseForResult(r domain.Result) (int, response) {
-	status, _ := statusForOutcome(r.Outcome, r.Reason)
+	status, _ := StatusForOutcome(r.Outcome, r.Reason)
 	return status, response{
 		Outcome:       r.Outcome,
 		Reason:        r.Reason,
@@ -131,7 +135,7 @@ func responseForResult(r domain.Result) (int, response) {
 // a fault means.
 func responseForFault(err error) (int, response) {
 	outcome := domain.ClassifyFault(err)
-	status, _ := statusForOutcome(outcome, "")
+	status, _ := StatusForOutcome(outcome, "")
 	return status, response{
 		Outcome: outcome,
 		Message: messageForOutcome(outcome),

@@ -26,7 +26,7 @@
 set -uo pipefail
 
 BASE="${BASE:-http://localhost:8080}"
-DSN="${DATABASE_URL:-postgres://alloca:alloca@localhost:55432/alloca?sslmode=disable}"
+DSN="${DATABASE_URL:-postgres://alloca:alloca@localhost:15432/alloca?sslmode=disable}"
 
 # How long each request waits for a reply. This is curl's own patience and is unrelated to
 # the service's deadline budget: raising ALLOCA_SERVER_DEADLINE does nothing here, because

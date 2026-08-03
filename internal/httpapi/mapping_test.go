@@ -35,7 +35,7 @@ var contractOutcomes = []domain.Outcome{
 // had reached the transport unclassified.
 func TestStatusForOutcomeIsTotal(t *testing.T) {
 	for _, outcome := range contractOutcomes {
-		if _, known := statusForOutcome(outcome, ""); !known {
+		if _, known := StatusForOutcome(outcome, ""); !known {
 			t.Errorf("outcome %q has no HTTP mapping", outcome)
 		}
 	}
@@ -44,7 +44,7 @@ func TestStatusForOutcomeIsTotal(t *testing.T) {
 // The negative control for the test above: if the mapping claimed to know every outcome
 // it was handed, the totality test would pass vacuously and prove nothing.
 func TestStatusForOutcomeRejectsAnUnknownOutcome(t *testing.T) {
-	status, known := statusForOutcome(domain.Outcome("not_a_real_outcome"), "")
+	status, known := StatusForOutcome(domain.Outcome("not_a_real_outcome"), "")
 	if known {
 		t.Error("mapping reported an invented outcome as known, so the totality test above proves nothing")
 	}
@@ -78,7 +78,7 @@ func TestStatusForOutcome(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, known := statusForOutcome(tc.outcome, tc.reason)
+			got, known := StatusForOutcome(tc.outcome, tc.reason)
 			if !known {
 				t.Fatalf("outcome %q/%q is unmapped", tc.outcome, tc.reason)
 			}

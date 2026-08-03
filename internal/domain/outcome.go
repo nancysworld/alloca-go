@@ -82,3 +82,71 @@ type Result struct {
 func Refusal(reason Reason) Result {
 	return Result{Outcome: OutcomeBusinessRefusal, Reason: reason}
 }
+
+// knownOutcomes is the closed terminal-outcome set of measurement-contract §4, including
+// the outcomes the contract defines but AG-M1 does not yet produce. Membership is about
+// the *contract's* vocabulary, not about which milestone emits which value.
+var knownOutcomes = map[Outcome]struct{}{
+	OutcomeAdmittedSuccess:   {},
+	OutcomeBusinessRefusal:   {},
+	OutcomeInvalidRequest:    {},
+	OutcomeRetryAfter:        {},
+	OutcomeAdmissionRejected: {},
+	OutcomeQueuePosition:     {},
+	OutcomeUnknownReplayable: {},
+	OutcomeTimeoutClient:     {},
+	OutcomeTimeoutServer:     {},
+	OutcomeTimeoutDB:         {},
+	OutcomeTimeoutLB:         {},
+	OutcomeInternalFailure:   {},
+}
+
+// IsKnown reports whether o is a member of the closed terminal-outcome set.
+//
+// Outcome is a string-backed type, so Outcome("whatever") compiles. Anything that turns a
+// completed request into an aggregate — a metric label, a reconciliation tally — needs to
+// answer "is this one of the twelve" rather than trust its caller, and both callers should
+// answer it the same way. That is why this lives beside the constants rather than in each
+// of them (ag-sept-plan §6.5, measurement-contract §4).
+func (o Outcome) IsKnown() bool {
+	_, ok := knownOutcomes[o]
+	return ok
+}
+
+// knownReasons is the closed refusal-reason set. The empty Reason is deliberately absent:
+// it is the valid *absence* of a reason on a non-refusal, which is a different question
+// from membership, and callers that care distinguish the two explicitly.
+var knownReasons = map[Reason]struct{}{
+	ReasonSlotNotReleased:     {},
+	ReasonSlotClosed:          {},
+	ReasonNoCapacity:          {},
+	ReasonScheduleConflict:    {},
+	ReasonOutsideWindow:       {},
+	ReasonReservationExpired:  {},
+	ReasonInvalidState:        {},
+	ReasonUnknownTarget:       {},
+	ReasonIdempotencyConflict: {},
+}
+
+// IsKnown reports whether r is a member of the closed refusal-reason set. The empty
+// Reason returns false; use r == "" to test for a non-refusal.
+func (r Reason) IsKnown() bool {
+	_, ok := knownReasons[r]
+	return ok
+}
+
+// knownOperations is the closed set of mutating operations.
+var knownOperations = map[Operation]struct{}{
+	OpReserve: {},
+	OpConfirm: {},
+	OpCancel:  {},
+}
+
+// IsKnown reports whether op is one of the three mutations. It deliberately excludes the
+// read route: telemetry's operation vocabulary is wider than the domain's, because
+// domain.Operation is the set of mutations the idempotency record accepts and a read is
+// not one (observability §3.1). Callers observing both use telemetry's predicate.
+func (op Operation) IsKnown() bool {
+	_, ok := knownOperations[op]
+	return ok
+}

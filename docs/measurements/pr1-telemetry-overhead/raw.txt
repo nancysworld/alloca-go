@@ -1,0 +1,41 @@
+goos: linux
+goarch: amd64
+pkg: github.com/nancysworld/alloca-go/internal/telemetry
+cpu: Intel(R) Core(TM) i7-14700F
+BenchmarkRecorderNop-10                	1000000000	         0.2001 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRecorderNop-10                	1000000000	         0.1891 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRecorderNop-10                	1000000000	         0.2026 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRecorderNop-10                	1000000000	         0.1928 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRecorderNop-10                	1000000000	         0.1929 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRecorderSlogBoundedSink-10    	 1548445	       776.7 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderSlogBoundedSink-10    	 1555423	       772.1 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderSlogBoundedSink-10    	 1575085	       761.7 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderSlogBoundedSink-10    	 1543458	       773.5 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderSlogBoundedSink-10    	 1568815	       762.7 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderSlogFileSink-10       	  685070	      1607 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderSlogFileSink-10       	  814425	      1566 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderSlogFileSink-10       	  714879	      1556 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderSlogFileSink-10       	  761912	      1580 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderSlogFileSink-10       	  713478	      1563 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderTeeFileSink-10        	  694384	      1900 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderTeeFileSink-10        	  673008	      1818 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderTeeFileSink-10        	  694712	      1793 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderTeeFileSink-10        	  683565	      1772 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderTeeFileSink-10        	  692608	      1743 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderPrometheus-10         	 8875806	       135.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRecorderPrometheus-10         	 9017451	       138.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRecorderPrometheus-10         	 8894522	       135.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRecorderPrometheus-10         	 8999268	       135.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRecorderPrometheus-10         	 9082287	       137.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRecorderTee-10                	 1225563	       975.1 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderTee-10                	 1247649	       964.1 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderTee-10                	 1248994	       962.2 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderTee-10                	 1229679	       976.0 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderTee-10                	 1245268	       961.3 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderTeeParallel-10        	 5409746	       219.8 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderTeeParallel-10        	 5481118	       215.9 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderTeeParallel-10        	 5599353	       227.3 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderTeeParallel-10        	 5331273	       230.6 ns/op	      88 B/op	       2 allocs/op
+BenchmarkRecorderTeeParallel-10        	 5372881	       230.8 ns/op	      88 B/op	       2 allocs/op
+PASS
+ok  	github.com/nancysworld/alloca-go/internal/telemetry	38.447s

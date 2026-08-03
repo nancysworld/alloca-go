@@ -418,10 +418,17 @@ deleted claims, each transaction locked *its own* slot's claim first and then as
 the other's — a cycle, which PostgreSQL breaks by aborting one, turning a valid reserve
 into a fault.
 
-The cost is that `user_time_claims` may briefly hold claims whose holds have elapsed. That
-is harmless: an elapsed claim can only block the user who owns it, and their next reserve
-settles it before any conflict is decided. The relation therefore holds *live claims plus
-a user's own not-yet-settled ones*, never a claim that can wrongly refuse anybody.
+The cost is that `user_time_claims` holds claims whose holds have elapsed until their owner
+reserves again. That is harmless for correctness: an elapsed claim can only block the user
+who owns it, and their next reserve settles it before any conflict is decided. The relation
+therefore holds *live claims plus a user's own not-yet-settled ones*, never a claim that can
+wrongly refuse anybody.
+
+The wait is not bounded, though — an identity that never reserves again leaves its row
+indefinitely, since nothing else is entitled to remove it. Correctness is unaffected; the
+accumulation is recorded as
+[`../planning/tech-debts.md`](../planning/tech-debts.md) **DEBT-1**, with the conditions
+under which it stops being acceptable.
 
 **Post-acquisition time (normative).** The identity lock and the claim acquisition are
 the attempt's later authority waits, and each resolves the instant after its own wait

@@ -1,0 +1,10 @@
+# environment
+captured_at_utc: 2026-08-02T21:28:37Z
+commit: a229ad4114f5a8601fede07d35e7642e15cbb24d
+go_version: go version go1.26.5 linux/amd64
+gomaxprocs_observed: 10
+num_cpu: 10
+gomaxprocs_env_set: <unset>
+kernel: Linux 5.15.167.4-microsoft-standard-WSL2
+cpu_model: Intel(R) Core(TM) i7-14700F
+command: go test ./internal/telemetry/ -bench Recorder -benchmem -run ^$ -count 5

@@ -257,7 +257,24 @@ allows: "the recommended operating point is reported **or explicitly deferred wi
 - this section, cited from the plan's §14 PR3 scope so the obligation travels with the PR
   sequence rather than living only here.
 
-### 5.7 Every figure is labelled against its artifact
+### 5.7 What a sweep cell produced, measured 2026-08-03
+
+A four-cell sweep ran end to end, which is what turned the sequence in §5.4 from a design into
+a verified one. Two things it established that could not be reasoned about:
+
+**The baseline delta is exact.** A warmed cell's scrapes read 11,480 before the measured phase
+and 76,379 after; the client reported 64,899, and 76,379 − 11,480 = 64,899 to the request.
+Without the baseline the check compares 76,379 against 64,899 and fails a correct service, so
+this is the measurement that proves warm-up is reconcilable rather than merely permitted.
+
+**The results are physically sensible, which is the first evidence the harness measures the
+right thing.** `dispersed` reached ~2,200 req/s with goodput equal to throughput; `hot_slot` at
+the same concurrency reached ~630 req/s with goodput of 5/s — the single contended row
+admitting its capacity and refusing the rest, which is §5.2's expected serialization rather
+than a fault. Generator CPU stayed at 0.008–0.019 per core throughout, so nothing here is
+generator-limited; the §12.2 control still has to establish that properly.
+
+### 5.8 Every figure is labelled against its artifact
 
 `measurement-contract.md` §2 and §5.3 already require this, and PR1's own scope note still
 managed to quote a range that matched neither its table nor its artifact. PR2's report

@@ -101,8 +101,11 @@ records the durable authority and technology choices that implement those semant
   [`../measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../measurements/reports/ag-sept-pr2-single-instance-frontier.md) §5 —
   that report owns the number and its caveats, including that it describes an untuned
   container on a developer machine.
-  **The architectural consequence: adding stateless service replicas against one database
-  raises availability, not throughput.** This does not reopen the decision — a single
+  **The architectural consequence: stateless service replicas move throughput only up to
+  the database's frontier.** Additional replicas *can* raise throughput while aggregate
+  database concurrency remains below it — the pool ladder measured 2,074 req/s at ten
+  connections against 3,064 at twenty — but once the shared database is saturated, further
+  replicas cannot raise the saturated ceiling. This does not reopen the decision — a single
   transactional authority is what buys the correctness AG-M1 proved, and the trade was made
   knowingly — but it does mean any future scale claim must name which side of the boundary
   it scales.

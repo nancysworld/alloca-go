@@ -51,11 +51,11 @@ flowchart TB
 
 **External systems**
 - **PostgreSQL** — the transactional source of truth and cross-node serialization
-  authority. It is also **the measured throughput constraint of the whole system**: on the
+  authority. It is also **the measured throughput ceiling of the whole system**: on the
   single-instance baseline throughput stops at a limit inside the database while the Go
-  service still has substantial compute headroom, so scaling the Go tier alone does not raise
-  booking throughput. The
-  figure, its conditions and its caveats live in
+  service still has substantial compute headroom. Scaling the Go tier raises throughput only
+  while aggregate database concurrency stays below that limit — it cannot lift the saturated
+  ceiling past it. The figure, its conditions and its caveats live in
   [`../measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../measurements/reports/ag-sept-pr2-single-instance-frontier.md) §5.
 - **Application Load Balancer** — the network entry point in the AWS slice (AG-M3).
 - **CloudWatch** — telemetry sink for OpenTelemetry-compatible metrics and traces.

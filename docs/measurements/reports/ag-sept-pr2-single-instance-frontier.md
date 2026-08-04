@@ -15,9 +15,11 @@
 > sub-mechanism is **provisional** — the sampling is diagnostic rather than time-weighted
 > (§5.2). *PostgreSQL as the limiting subsystem* is not provisional.
 >
-> **The consequence for PR3: running more alloca-go replicas against this one database
-> will not raise throughput.** The pool ladder already tested that in disguise, and §5.4
-> turns it into a prediction PR3 can falsify.
+> **The consequence for PR3: replicas move throughput only up to the database's frontier,
+> not past it.** Adding alloca-go replicas *can* raise throughput while aggregate database
+> concurrency is still below that frontier; once the shared database is saturated, further
+> replicas cannot raise the ceiling. The pool ladder already tested this in disguise, and
+> §5.4 turns it into a prediction PR3 can falsify.
 >
 > Evidence: [`plateau/`](../pr2-frontier/plateau/) · [`plateau-repeat/`](../pr2-frontier/plateau-repeat/) ·
 > [`postgres-waits/`](../pr2-frontier/postgres-waits/). Full reasoning in [§5](#5-capacity-on-this-machine-the-conclusion).
@@ -387,24 +389,43 @@ runs out of something inside PostgreSQL (§5.2).
 
 ### 5.4 The prediction PR3 must test
 
-**Adding alloca-go replicas against this database is predicted not to raise throughput.**
+**Adding alloca-go replicas raises throughput only up to the database's frontier, and cannot
+lift the ceiling past it.**
 
-The pool ladder already ran the experiment in disguise: from PostgreSQL's side, two replicas
-holding pool 10 each look much like one replica holding pool 20. So §2.1's ladder gives a
+State it precisely, because the loose version — "replicas do not help" — is contradicted by
+this report's own pool ladder:
+
+> Additional replicas **can** increase throughput while aggregate database concurrency remains
+> **below** PostgreSQL's frontier. Once the shared database is **saturated**, further replicas
+> cannot raise the saturated ceiling.
+
+§2.1's ladder is that statement in numbers. Ten connections gave 2074.2 req/s and twenty gave
+3063.8 — a **48% gain** from doubling aggregate concurrency, which is a real improvement and
+not a doubling. Past that the gains collapse: forty gave 3456.9, and eighty 4326.8, approaching
+a ceiling replicas cannot move.
+
+The pool ladder ran the replica experiment in disguise, since from PostgreSQL's side two
+replicas holding pool 10 each look much like one replica holding pool 20. So it yields a
 falsifiable number rather than an opinion —
 
-> **2 replicas × pool 10 should land near 3,060 req/s (the measured pool-20 point), not near
-> 4,148 (2 × the measured pool-10 point).**
+> **2 replicas × pool 10 should land near 3,060 req/s (the measured pool-20 point) — an
+> increase over one replica's 2,074, but well short of 4,148 (2 × the pool-10 point).**
 
-If PR3 measures ~3,060, the constraint is confirmed shared and downstream, and horizontal
-scale-out of the service is the wrong lever on this hardware. If it measures ~4,148, the
+If PR3 measures ~3,060, the constraint is confirmed shared and downstream: replicas buy
+sub-linear gains until the database saturates, then nothing. If it measures ~4,148, the
 pool-ladder reading is wrong and this section is what caught it.
 
+**The operational consequence is a sizing rule, not a prohibition.** Replicas are worth adding
+while the database has headroom, and the pool ladder is how you find out how much is left —
+adding replicas past that point spends money on availability alone. On this workstation the
+useful range ended somewhere between 40 and 80 aggregate connections.
+
 Two caveats to keep attached. Replicas are not purely equivalent to connections — each carries
-its own Go runtime and GC — but at 12% CPU that is not what binds here. And this does **not**
-make PR3 redundant: it still has to prove the non-overlap invariant holds across replicas under
-distributed authority, which is a correctness result independent of throughput, and the two
-deferred headroom components only become computable once there is more than one unit.
+its own Go runtime and GC — but with `alloca-go` at about 1.2 CPU cores that is not what binds
+here. And this does **not** make PR3 redundant: it still has to prove the non-overlap invariant
+holds across replicas under distributed authority, which is a correctness result independent of
+throughput, and the two deferred headroom components only become computable once there is more
+than one unit.
 
 ### 5.5 What this number is not
 
@@ -546,9 +567,9 @@ receives less load. In an open loop, a service that slows below the arrival rate
 backlog that grows for as long as the overload lasts — which is the only way latency grows
 without bound.
 
-**Half of the prototype finding is reproduced already.** Latency grows with concurrency,
-linearly, exactly as a closed loop requires (§2's cells, pool 10). Writing **N** for the number
-of requests inside the service and **X** for completions per second:
+**Half of the prototype finding is reproduced already.** Latency grows with concurrency, and
+the *mean* is predicted exactly by the closed loop (§2's cells, pool 10). Writing **N** for the
+number of requests inside the service and **X** for completions per second:
 
 | c — workers, so **N** | throughput req/s, so **X** | **N ÷ X** predicted mean, ms | p50 measured, ms | p99 ms |
 |---:|---:|---:|---:|---:|
@@ -565,10 +586,18 @@ distribution, not as a separate effect.
 *(Strictly this is the interactive response-time law, `R = N/X − Z`, with think time `Z = 0`
 because the generator has none — Little's Law applied to a closed system.)*
 
-Doubling concurrency multiplies p99 by **1.96** then **1.97**, against 2.00 for exact
-linearity. That is the same shape the prototype showed. **And there is no room in that
-arithmetic for a pathology**: with N fixed by the operator and X flat, latency can only track
-N. Runaway latency needs N itself to grow without bound, and a closed loop cannot do that.
+**`N ÷ X` is a mean-latency relationship and nothing more.** Little's Law relates average
+in-flight work, throughput and *mean* latency under steady-state assumptions; it says nothing
+about a percentile. So it does not predict p99, and the agreement above is with p50.
+
+The p99 behaviour is a **separate measured result**: doubling concurrency multiplies it by
+**1.96** then **1.97**, against 2.00 for exact linearity. That the tail tracks the mean so
+closely is an observation about this distribution, not a consequence of the law — and it is
+the same shape the prototype showed.
+
+**What the arithmetic does rule out** is unbounded growth *at a fixed worker count*: with N
+held by the operator and X flat, mean latency can only track N. A queue that grows over time
+needs N itself to grow, which a closed loop at fixed concurrency cannot do.
 
 **The other half has never occurred.** Across **2,350,742 requests** in every retained run,
 exactly two outcomes appear: 2,218,403 `admitted_success` and 132,339 `business_refusal`.
@@ -614,10 +643,26 @@ Two things follow, and they are the answer to the question as asked:
 
 - **Yes**, pushing concurrency further would produce timeouts — and would be the first time in
   2.35 million requests that the timeout budget did anything.
-- **No**, it would not reproduce the prototype's failure. It would produce a plateau of
+- **Probably not on its own.** A steady closed-loop ladder should produce a plateau of
   *classified refusals* at bounded latency, because the queue stays capped at N and each refusal
-  is an explicit answer rather than an outer deadline expiring. Reproducing the prototype needs
-  the two things deliberately absent here: **open-loop arrivals and retry-on-timeout**.
+  is an explicit answer rather than an outer deadline expiring.
+
+**What is required to reproduce the prototype is narrower than "open-loop", and this report
+should not claim otherwise.** What the current harness demonstrably cannot produce is *queue
+growth over time at a fixed worker count*. Open-loop arrival-rate mode would make that overload
+shape directly testable and is the cleanest route — but it is **not proven to be the only one**.
+
+A sufficiently large **synchronized burst** may also reach the transition: enough simultaneous
+arrivals drive latency linearly upward (§2's cells show that plainly), and once latency crosses
+a **binding client deadline**, timeouts begin and **controlled retry-on-timeout** supplies the
+amplification. That is a burst-plus-deadline-plus-retry route rather than a sustained-overload
+route, and this project already scopes the ingredient it lacks least: a *synchronized release
+wave* is in `ag-sept-plan.md` §3.1 and PR5's scope, and retrying under the same idempotency key
+is the design's own replay path rather than an invented behaviour.
+
+So the honest statement is: **open-loop mode remains a valuable planned experiment, not a proven
+prerequisite.** Both routes are worth trying, and a burst may be reachable sooner because it
+needs no new arrival process — only a bigger N, a deadline that binds, and a retry control.
 
 That experiment is also **not reachable today**: `slots_for()` cannot seed a fixture for c ≥ 256
 (§7), so it needs that fixed first.

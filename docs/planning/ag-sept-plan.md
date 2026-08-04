@@ -596,8 +596,6 @@ rather than to keep appending to PR3:
   already fully committed to the replica matrix. Appending it to PR3 would not have been a plan;
   it would have been a plan to overrun.
 
-The report sections cited are the authority; this is the register, not the reasoning.
-
 Everything PR2 deferred, in one list, so it is picked up rather than rediscovered. The report
 sections cited are the authority; this is the register, not the reasoning.
 
@@ -608,20 +606,31 @@ debt register is where it would quietly stop being anyone's deliverable.
 > `high-level-design.md` §1.1 records, as `[PRIOR-UNREPRODUCED]`, that RuntimeIQ-Alloca saw
 > *"latency grew with concurrency until timeouts became the visible failure, without isolating
 > why"*. **PR2 reproduced the growth and not the failure**, and report §6.3 establishes that
-> the harness cannot produce it: a closed loop caps in-flight requests at the worker count, so
-> the queue is bounded and latency is exactly `N ÷ X`. Across 2,350,742 requests there were
-> **zero timeouts, zero unknown-commits, zero internal failures**.
+> the harness cannot produce **queue growth over time at a fixed worker count**: a closed loop
+> caps in-flight requests at the worker count, so the queue is bounded and *mean* latency is
+> `N ÷ X`. Across 2,350,742 requests there were **zero timeouts, zero unknown-commits, zero
+> internal failures**.
 
-What PR3 should do about it:
+**Two candidate routes, neither proven necessary.** Report §6.3 is careful that open-loop is the
+*cleanest* route and not a demonstrated prerequisite; a large enough synchronized burst against
+a binding client deadline, with retry amplification, may reach the same transition. Try both,
+and note that the burst route may be reachable sooner because it needs no new arrival process.
+
+What the work consists of:
 
 - **build open-loop arrival-rate mode** in the generator (roadmap §"open-loop arrival-rate
   mode", unbuilt; `system-context.md` §1 already draws the generator as open- *and*
-  closed-loop). This is the piece that makes the prototype's failure mode reachable at all —
-  without it, no amount of concurrency produces it, only classified refusals;
+  closed-loop). It makes sustained overload directly testable — the shape a fixed worker count
+  cannot produce;
+- **or drive a synchronized burst large enough to cross a binding client deadline.** §3.1 and
+  PR5 already scope a synchronized release wave, so the workload shape partly exists; what it
+  needs is a burst size that pushes latency past `client_deadline` and a retry control to
+  supply the amplification;
 - **add retry-on-timeout to the generator, as a declared control rather than a default.** The
   amplification loop (timeout → retry → more load → more timeouts) is the other half of the
-  prototype's failure. Retrying under the *same* idempotency key is the design's own replay
-  path, so this tests a supported behaviour rather than inventing one;
+  prototype's failure, and is required by *either* route. Retrying under the *same* idempotency
+  key is the design's own replay path, so this tests a supported behaviour rather than
+  inventing one;
 - **test the `[DERIVED]` prediction of §6.3**: the first *enforced* bound is `db_acquire_cap`
   at 500 ms, predicted to engage near **c ≈ 1,025 at pool 10** and **c ≈ 2,150 at pool 80** —
   roughly 8× the highest concurrency PR2 reached. State whether it held;

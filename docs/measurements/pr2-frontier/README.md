@@ -61,14 +61,39 @@ This control runs first because nothing after it means anything without it: a cl
 harness cannot distinguish its own ceiling from the service's, since both appear as throughput
 that stops rising with concurrency.
 
-**One honest gap in this control, since §5 now leans on it harder than the plan expected.** It
-was run at ~2,150 req/s, and §2.2's plateau is at ~4,300 — twice the rate, so the control's
-operating point is no longer the report's. What is measured at the plateau is the generator's
-own CPU: **0.024 of 10 cores**, against 0.0185 here. That is 2.4% of a single core to drive
-4,345 req/s, so the headroom argument survives comfortably by inspection. But *by inspection*
-is weaker than the `GOMAXPROCS` ladder above, and the honest statement is that the mandatory
-§12.2 control has not been re-run at the operating point the conclusion is drawn from. It
-should be, and it costs four cells.
+### 1.1 The same control, re-run at the plateau `[MEASURED]`
+
+Artifacts: [`../pr2-generator-control-plateau/`](../pr2-generator-control-plateau/), 2026-08-04.
+Dispersed, **concurrency 128, pool 80**, 20s windows.
+
+The control above ran at ~2,150 req/s. §5's conclusion is drawn at ~4,300 — twice the rate — so
+the control was re-run at the operating point the conclusion actually rests on rather than
+being argued across from a different one.
+
+| Generator `GOMAXPROCS` | throughput req/s | generator CPU/core | % of unconstrained |
+|---:|---:|---:|---:|
+| 1 | 4301.8 | 0.0173 | 101.5% |
+| 2 | 4263.2 | 0.0212 | 100.6% |
+| 4 | *1389.3* | *0.0105* | *32.8%* |
+| 10 (all) | 4238.6 | 0.0245 | 100.0% |
+
+**Headroom holds at the plateau**: a generator confined to a *single* core delivers 4301.8
+req/s, matching the unconstrained 4238.6. The `GOMAXPROCS=4` cell is the §4 excursion again —
+its generator CPU *fell* to 0.0105, so the generator was starved alongside everything else
+rather than saturated, which is the opposite of a generator limit.
+
+This also **corroborates the plateau from a third independent path**: the control shares no
+code with the sweep, seeds a much smaller fixture (8,000 slots against 61,540), and still lands
+at 4238.6–4301.8 req/s. Fixture and index size are therefore not what sets the ceiling either.
+
+> **Defect found in this control, not fixed.** The verdict logic in
+> `test/scripts/control-generator.sh` selects the lowest `GOMAXPROCS` among cells within 5% of
+> unconstrained and reports headroom "down to" it — so it printed a **pass** here while one of
+> its own four cells read 32.8%. It cannot distinguish "flat across the ladder" from "flat with
+> a hole in it", and would pass identically if the hole were a genuine generator limit. The
+> conclusion above is still sound, but it is sound because of the CPU reading, not because the
+> script said so. The script should require monotonic non-degradation, or refuse to conclude
+> when any cell falls outside the band.
 
 ---
 
@@ -271,10 +296,16 @@ plans — see §6.
 Spread at a fixed configuration is **5.2%** (c=64/pool=80) and **10.6%** (c=128/pool=80), which
 is the §5.6 variance component measured at the ceiling rather than at the default pool.
 
-An independent corroboration sits in the artifacts and is worth more than any single cell:
-**all eight warm-up phases**, at four different configurations across two passes, ran at
-**3629.5–4832.5 req/s, mean 4325.4** — ten seconds each, before any of the §4 excursions could
-develop. The plateau does not depend on which cells are treated as clean.
+Two independent corroborations sit in the artifacts, and together they are worth more than any
+single cell:
+
+- **All eight warm-up phases**, at four configurations across two passes, ran at
+  **3629.5–4832.5 req/s, mean 4325.4** — ten seconds each, before any §4 excursion could
+  develop. The plateau does not depend on which cells are treated as clean.
+- **The §1.1 generator control**, which shares no code with the sweep and uses a fixture seven
+  times smaller, independently lands at **4238.6–4301.8 req/s**.
+
+Three measurement paths, one answer.
 
 At the default pool of 10 the same machine does 2194.9 / 2074.2 (§2.1), so **pool sizing alone
 is worth roughly 2× on this hardware** — the single most valuable configuration finding in PR2.
@@ -286,8 +317,9 @@ Three candidates are eliminated at the plateau cell itself:
 | candidate | reading at the plateau | verdict |
 |---|---|---|
 | alloca-go compute | 1.2 of 10 cores (**12%**) | not the constraint |
-| the load generator | 0.024 cores, with §1's 10× headroom control | not the constraint |
+| the load generator | §1.1's control **re-run at this operating point**: 4301.8 req/s on one core | not the constraint |
 | the connection pool | acquire-wait **0.0 s/s**, 58–64 of 80 connections in use | **not the constraint at pool 80** |
+| fixture / index size | §1.1 reaches the same rate on 8,000 slots as the sweep does on 61,540 | not the constraint |
 
 The pool ceasing to bind is what makes this a database result rather than a tuning result. And
 inside PostgreSQL the largest single wait, in both clean cells sampled, is
@@ -391,7 +423,12 @@ make db-up && make obs-up
 make dev-measured                         # terminal 1; builds the service so /meta reports a revision
 go build -o bin/alloca-load ./cmd/alloca-load
 
-./test/scripts/control-generator.sh       # §12.2, first
+./test/scripts/control-generator.sh       # §12.2, first (§1)
+
+# §1.1 — the same control at the plateau operating point
+WORKLOAD=dispersed CONCURRENCY=128 WINDOW=20s PROCS="1 2 4 0" SLOTS=8000 \
+  DATABASE_URL="$DATABASE_URL&pool_max_conns=80" \
+  OUT=docs/measurements/pr2-generator-control-plateau ./test/scripts/control-generator.sh
 
 # §2 — the concurrency arm, at the default pool
 WORKLOADS=dispersed CONCURRENCIES="8 16 32 64 128" WINDOW=30s WARMUP=10s \

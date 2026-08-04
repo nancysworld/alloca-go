@@ -50,6 +50,27 @@ fail() { printf '\n!! %s\n' "$*" >&2; exit 1; }
 [ -z "$(git status --porcelain)" ] || fail "working tree is not clean (git status --porcelain is non-empty, and Go stamps untracked files as a modified tree): every cell would be refused at level none, so the sweep would produce nothing quotable"
 curl -sf "$PROM/-/ready" >/dev/null || fail "prometheus is not ready at $PROM — run 'make obs-up'"
 
+# Ready is not the same as scraping, and the difference is a whole sweep of empty evidence.
+#
+# `make obs-up` tolerates a failed obs-target.sh (`|| true`), so Prometheus can be up and
+# healthy with no target for this job at all — the file_sd address is discovered at runtime and
+# is reassigned whenever WSL restarts. Every query then *succeeds* and returns nothing: the
+# exporter writes header-only CSVs, the snapshot is created, and alloca-verify reads the direct
+# $METRICS scrapes rather than Prometheus, so every cell passes and the sweep exits zero having
+# retained no time series whatsoever. A successful empty query is the worst shape of failure
+# there is, because nothing anywhere reports an error.
+PROM_JOB="${PROM_JOB:-alloca-go}"
+assert_scraped() {
+  local n
+  n=$(curl -sfG "$PROM/api/v1/query" --data-urlencode "query=up{job=\"$PROM_JOB\"}==1" \
+      | python3 -c 'import json,sys;print(len(json.load(sys.stdin)["data"]["result"]))' 2>/dev/null) || n=0
+  [ "${n:-0}" -ge 1 ] || return 1
+}
+assert_scraped || fail "prometheus is ready but is not scraping job '$PROM_JOB' (no up==1 series).
+  The target address is discovered at runtime and 'make obs-up' tolerates a failed probe, so
+  this is the state where every panel query succeeds and returns nothing. Run 'make obs-target'
+  with the service running, then re-run this sweep."
+
 mkdir -p "$OUT"
 log "sweep -> $OUT"
 
@@ -136,9 +157,22 @@ for workload in $WORKLOADS; do
       kill -0 "$SERVICE_PID" 2>/dev/null \
         || fail "the service started for this cell is no longer running; see $cell/service.log"
 
-      # 3. warm up. Its report is kept — a warm-up that failed explains a strange cell.
+      # The scrape target survives a service restart only if the address still resolves, and
+      # each cell restarts the service. Re-checked per cell rather than once at preflight,
+      # because a cell that stops being scraped half way through a sweep produces exactly the
+      # empty-but-successful export the preflight exists to prevent.
+      for _ in $(seq 1 20); do assert_scraped && break; sleep 1; done
+      assert_scraped || fail "prometheus is not scraping this cell's service (job '$PROM_JOB');
+  its panel CSVs would be header-only while every other check passed. See $cell/service.log"
+
+      # 3. warm up. Its report is kept — a warm-up that failed explains a strange cell — and
+      #    its failure now refuses the cell: a cell reported as warmed when its warm-up did not
+      #    run has different pool, heap and runtime state from every other cell in the sweep,
+      #    which is precisely the variable warm-up exists to hold constant.
       "$LOAD" -workload "$workload" -concurrency "$conc" -duration "$WARMUP" \
-        -slots "$slots" -org "$ORG" -out "$cell/warmup.json" > "$cell/warmup.log" 2>&1 || true
+        -slots "$slots" -org "$ORG" -out "$cell/warmup.json" > "$cell/warmup.log" 2>&1 \
+        && warmup_ok=yes || warmup_ok=no
+      [ "$warmup_ok" = yes ] || log "  warm-up FAILED; see $cell/warmup.log"
 
       # 4. reset the fixture, leaving the service running: the pool and heap stay warm, and
       #    the rows warm-up created never reach reconciliation.
@@ -173,9 +207,9 @@ for workload in $WORKLOADS; do
       # The plateau check of §5.5. A cell whose goodput equals the fixture's capacity spent
       # part of its window measuring refusals, and nothing else in the pipeline notices —
       # every correctness check passes, because a refusal is a valid domain answer.
-      python3 - "$cell" "$slots" "$CAPACITY" "$load_ok" "$verify_ok" "$export_ok" <<'PY'
+      python3 - "$cell" "$slots" "$CAPACITY" "$load_ok" "$verify_ok" "$export_ok" "$warmup_ok" <<'PY'
 import json, os, sys
-cell, slots, capacity, load_ok, verify_ok, export_ok = sys.argv[1:7]
+cell, slots, capacity, load_ok, verify_ok, export_ok, warmup_ok = sys.argv[1:8]
 r = json.load(open(f"{cell}/run.json"))
 s = r["summary"]
 goodput, window = s["successful_mutation_goodput"], s["duration_seconds"]
@@ -188,6 +222,8 @@ if load_ok != "yes":
     refusals.append("the load generator failed")
 if verify_ok != "yes":
     refusals.append("reconciliation failed")
+if warmup_ok != "yes":
+    refusals.append("the warm-up run failed, so this cell is not comparable to a warmed one")
 if export_ok != "yes":
     refusals.append("evidence export failed: panel CSVs or the TSDB snapshot are missing")
 
@@ -211,6 +247,17 @@ if export_ok == "yes":
         missing = [p["key"] for p in idx["panels"] if not os.path.exists(f"{cell}/{p['file']}")]
         if missing:
             refusals.append(f"evidence export is incomplete: no CSV for {sorted(missing)}")
+        # A file existing is not evidence existing. When Prometheus is up but not scraping this
+        # job, every query succeeds and returns nothing, and the exporter writes a header and
+        # no rows — which passes an existence check while retaining no time series at all.
+        # These three panels have data in any cell whose service was scraped, whatever the
+        # workload did; replay_rate legitimately has none outside the replay control, so the
+        # rule names the panels that must be populated rather than forbidding empty ones.
+        points = {p["key"]: p["points"] for p in idx["panels"]}
+        empty = [k for k in ("throughput", "pool_max", "process_cpu") if points.get(k, 0) == 0]
+        if empty:
+            refusals.append(f"evidence export retained no samples for {sorted(empty)}: "
+                            f"Prometheus was almost certainly not scraping this cell's service")
     snapshot = f"{cell}/tsdb-snapshot"
     if not os.path.isdir(snapshot) or not os.listdir(snapshot):
         refusals.append("evidence export left no TSDB snapshot")

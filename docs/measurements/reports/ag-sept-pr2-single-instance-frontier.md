@@ -514,6 +514,18 @@ Each cell directory holds its own `run.json`, `verdict.json`, both metrics scrap
 CSVs with an `index.json` recording the resolved queries and window, and a Prometheus TSDB
 snapshot. Every figure above can be re-derived from those without re-running anything.
 
+**The cells committed here predate one exporter fix, and their leading points show it.** A
+`rate(x[15s])` evaluated at the measured phase's start reads samples from 15 seconds earlier,
+and the fixture re-seed resets database rows but not the service's counters — so the opening
+points of every committed CSV cover the idle re-seed gap or, had the re-seed been quicker than
+the rate range, warm-up traffic. That is why the first value of every committed series reads
+`0.0` and the next few climb: it is the rate window filling, not the service ramping.
+`export-panels.sh` now begins range queries one full rate range after the window opens, and
+records both windows in `index.json` (`window` for the measured phase, `query_window` for what
+the files cover). Re-exporting the retained cells would change ~460 CSVs and add no evidence,
+so they are left as they are with this note; PR3 re-runs them under the fixed exporter.
+**No figure in this report is affected** — the tables come from `run.json`, not from the CSVs.
+
 **A harness limit found while producing §2.2, and not yet fixed.** `sweep.sh`'s `slots_for()`
 sizes the fixture from an assumption of "up to ~400 admitted units per concurrent worker per
 second". Measured admission is 17–68, so it over-provisions by roughly 48×; at c=256 it asks

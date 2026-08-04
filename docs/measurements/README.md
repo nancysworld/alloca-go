@@ -44,7 +44,7 @@ anything:
 | `cell.json` | the one-line summary the sweep's table is built from |
 | `verdict.json` | the reconciliation checks — including server totals against client totals — that make the run admissible at all |
 | `metrics-baseline.txt`, `metrics.txt` | the two scrapes bracketing the measured window; counters are cumulative, so the delta is the measurement |
-| `panels/*.csv` + `panels/index.json` | the exported time series, with the **resolved** PromQL and window recorded beside the data — a rate over 5s and a rate over 60s are different measurements |
+| `panels/*.csv` + `panels/index.json` | the exported time series, with the **resolved** PromQL and window recorded beside the data — a rate over 5s and a rate over 60s are different measurements. `index.json` records two windows: `window` is the cell's measured phase and the authority for what was measured; `query_window` is what the range queries actually cover, one rate range later, so no exported point can reach back into warm-up |
 | `tsdb-snapshot/` | the Prometheus snapshot, so a series nobody thought to export is still recoverable. **Cumulative, not cell-local** — Prometheus blocks are shared history, so a snapshot carries other cells' windows too. Always bound a query by `panels/index.json`'s `window`. Redesign deferred to PR3; see the frontier report §6.2 |
 | `warmup.json` | the discarded warm-up phase, kept because a warm-up that behaved oddly explains a strange cell — and in PR2 it turned out to be the key diagnostic |
 | `*.log` | seed, service, load, export and verify output. **Git-ignored** — `service.log` alone is ~34 MB per cell at full telemetry |

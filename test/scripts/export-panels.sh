@@ -45,10 +45,40 @@ STEP="${EXPORT_STEP:-5s}"
 echo "export: window ${START} .. ${END}, rate range [${RANGE}], step ${STEP}"
 
 python3 - "$PANELS" "$CELL" "$PROM" "$START" "$END" "$RANGE" "$STEP" <<'PY'
-import csv, json, sys, urllib.parse, urllib.request
+import csv, datetime, json, re, sys, urllib.parse, urllib.request
 
 panels_path, cell, prom, start, end, rng, step = sys.argv[1:8]
 panels = json.load(open(panels_path))["panels"]
+
+
+def seconds(d):
+    m = re.fullmatch(r"(\d+)(ms|s|m)", d)
+    if not m:
+        raise SystemExit(f"cannot parse duration {d!r}")
+    return int(m.group(1)) * {"ms": 0.001, "s": 1, "m": 60}[m.group(2)]
+
+
+# Range queries start one full rate window *after* the measured phase opens.
+#
+# rate(x[15s]) evaluated at T covers [T-15s, T]. Evaluated at the measured phase's start it
+# therefore reads samples from before it — and the fixture re-seed resets database rows, not
+# the service's Prometheus counters, so those samples are warm-up traffic. The opening points
+# of the CSV would describe the warm-up while the file claims to describe the measured phase.
+#
+# Shifting the first evaluation by one range makes every exported point wholly contained in the
+# measured window. It costs the leading points, which were the rate window filling rather than
+# anything the service did — the same artifact that made the first value of every committed
+# series read 0.0.
+#
+# Both windows are recorded below: `window` is the cell's measured phase and stays the
+# authority for what was measured; `query_window` is what these files actually cover.
+query_start = (datetime.datetime.fromisoformat(start.replace("Z", "+00:00"))
+               + datetime.timedelta(seconds=seconds(rng)))
+query_start_s = query_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+if query_start >= datetime.datetime.fromisoformat(end.replace("Z", "+00:00")):
+    raise SystemExit(
+        f"measured window {start}..{end} is shorter than one rate range ({rng}), so no exported "
+        f"point could be free of pre-window samples; lengthen WINDOW or lower export_range")
 
 manifest = []
 for p in panels:
@@ -56,8 +86,10 @@ for p in panels:
     if "$" in expr:
         raise SystemExit(f"panel {p['key']}: unsubstituted variable in {expr}")
 
+    # Instant selectors carry no range, so nothing bleeds in and they keep the full window.
+    q_start = query_start_s if "[" in p["expr"] else start
     url = prom + "/api/v1/query_range?" + urllib.parse.urlencode(
-        {"query": expr, "start": start, "end": end, "step": step}
+        {"query": expr, "start": q_start, "end": end, "step": step}
     )
     with urllib.request.urlopen(url, timeout=30) as r:
         body = json.load(r)
@@ -85,6 +117,7 @@ for p in panels:
 
     manifest.append({"key": p["key"], "title": p["title"], "unit": p.get("unit", ""),
                      "expr": expr, "file": f"panels/{p['key']}.csv",
+                     "queried_from": q_start,
                      "series": len(series), "points": points})
     if points == 0:
         # Some panels are legitimately empty: replay_rate is zero for every workload except
@@ -97,10 +130,19 @@ for p in panels:
 # whose meaning has to be reconstructed from a dashboard that may have moved on.
 with open(f"{cell}/panels/index.json", "w") as f:
     json.dump({"window": {"start": start, "end": end},
+               "query_window": {"start": query_start_s, "end": end},
                "rate_range": rng, "step": step,
                "_note": ("step is finer than rate_range, so consecutive points share samples "
                          "and the series is smoothed; this is a property of the export, not "
                          "of the measurement"),
+               "_query_window_note": (
+                   "window is the measured phase and is the authority for what was measured. "
+                   "Range queries are evaluated only from window.start + rate_range, because "
+                   "rate(x[R]) at time T reads samples from T-R and the fixture re-seed resets "
+                   "database rows but not the service's counters — so earlier evaluations would "
+                   "mix warm-up traffic into a file that claims to describe the measured phase. "
+                   "Instant selectors carry no range and keep the full window; each panel "
+                   "records its own queried_from."),
                "panels": manifest}, f, indent=2)
     f.write("\n")
 

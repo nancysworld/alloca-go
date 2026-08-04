@@ -284,6 +284,27 @@ allows: "the recommended operating point is reported **or explicitly deferred wi
 - this section, cited from the plan's §14 PR3 scope so the obligation travels with the PR
   sequence rather than living only here.
 
+#### 5.6.1 Amended 2026-08-04 (Nancy's call, during review): only the *term* is deferred
+
+The reasoning above stands and the `measurement-contract.md` §3 quantity is still not computable
+at one replica. But as first written, §5.6 let PR2 report a peak and stop — and a report that
+defers its headline is very easy to read as having found nothing. Nancy's correction during
+review: **the deferral covers rolling deployment and loss of one unit; it never covered
+variance, and it must not be allowed to swallow the capacity question itself.**
+
+PR2 therefore now reports, loudly and in its own §5:
+
+- the **measured ceiling of this machine** and the plateau demonstrating it is a ceiling rather
+  than the corner of the grid that had been explored;
+- **what decides that ceiling** — PostgreSQL's write-ahead log, with the service at 12% CPU and
+  the connection pool no longer binding;
+- the **variance component** at that ceiling, which is what §5.6 always owed PR3;
+- the **falsifiable prediction** for PR3's multi-instance work that follows from it.
+
+The contract's *recommended operating capacity* term stays deferred, under its own name, so the
+vocabulary is not quietly redefined to make a number reportable. See
+[`../measurements/pr2-frontier/README.md`](../measurements/pr2-frontier/README.md) §5.4–§5.6.
+
 ### 5.7 What a sweep cell produced, measured 2026-08-03
 
 A four-cell sweep ran end to end, which is what turned the sequence in §5.4 from a design into

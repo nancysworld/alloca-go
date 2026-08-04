@@ -89,6 +89,20 @@ records the durable authority and technology choices that implement those semant
 
 - Mutations targeting one slot serialize at its row lock; a hot slot has a deliberate
   single-authority ceiling.
+- **A second, instance-wide ceiling exists that this ADR did not anticipate, now
+  `[MEASURED]`.** Even with *fully dispersed* slots — no row contention at all — one
+  PostgreSQL instance has one write-ahead log, and durable commits serialise on it. On the
+  2026-08-04 workstation baseline that ceiling is ~4,300 booking req/s, reached while the
+  service uses 12% of the host's CPU and the connection pool has stopped binding; the
+  largest single database wait is `LWLock:WALWrite`. See
+  [`../measurements/pr2-frontier/README.md`](../measurements/pr2-frontier/README.md) §5 —
+  that report owns the number and its caveats, including that it describes an untuned
+  container on a developer machine.
+  **The architectural consequence: adding stateless service replicas against one database
+  raises availability, not throughput.** This does not reopen the decision — a single
+  transactional authority is what buys the correctness AG-M1 proved, and the trade was made
+  knowingly — but it does mean any future scale claim must name which side of the boundary
+  it scales.
 - The authoritative adapter is PostgreSQL-specific and is not portable to another
   database without a new adapter and evidence.
 - Long transactions, inconsistent lock ordering, or work performed while holding the
@@ -115,6 +129,9 @@ Reopen this decision when repository-local evidence shows any of:
 
 - row locking or row-derived capacity accounting prevents the required SLO-safe
   operating point and a tested alternative preserves every correctness gate;
+- the WAL ceiling recorded above becomes binding on a real requirement — the workstation
+  figure is not itself a trigger, since an untuned container on a developer machine says
+  nothing about tuned storage, and the measurement's own §5.5 refuses that reading;
 - PostgreSQL cannot provide the required availability, scale, or deployment topology;
 - a different authority boundary is introduced for shared-resource quantities in
   AG-M6;

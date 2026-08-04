@@ -51,7 +51,11 @@ flowchart TB
 
 **External systems**
 - **PostgreSQL** — the transactional source of truth and cross-node serialization
-  authority.
+  authority. It is also **the measured throughput constraint of the whole system**: on the
+  single-instance baseline the service saturates the database's write-ahead log while using
+  ~12% of the host's CPU, so scaling the Go tier alone does not raise booking throughput. The
+  figure, its conditions and its caveats live in
+  [`../measurements/pr2-frontier/README.md`](../measurements/pr2-frontier/README.md) §5.
 - **Application Load Balancer** — the network entry point in the AWS slice (AG-M3).
 - **CloudWatch** — telemetry sink for OpenTelemetry-compatible metrics and traces.
 

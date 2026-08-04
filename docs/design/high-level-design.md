@@ -249,6 +249,17 @@ core. The current status of each architectural region is tracked in
 [AG-M1 implementation plan](../planning/ag-m1-implementation-plan.md). This document
 does not duplicate that status so it cannot fall out of date against it.
 
+**The load-bearing measured result so far** is the single-instance frontier:
+**PostgreSQL, not the Go service, is what limits booking throughput** — the service
+saturates the database while using a small fraction of its host's CPU, so adding service
+replicas against one database buys availability rather than rate. It is the finding that
+governs how any scale-out work is read, which is why it is signposted here rather than only
+in the milestone tracker. The number, the conditions it was measured under, and what it
+cannot be used to claim are all in
+[`../measurements/pr2-frontier/README.md`](../measurements/pr2-frontier/README.md) §5; the
+architectural consequence is recorded against
+[ADR-0002](../decisions/0002-postgresql-transactional-authority.md).
+
 ## 7. Evidence and disclosure
 
 This document records no `[MEASURED]` number and states no specific SLO or timeout

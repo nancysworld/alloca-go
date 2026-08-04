@@ -99,7 +99,7 @@ This placement keeps the common local case simple without weakening the global s
 
 ### 4.2 Workload assumption and generator gap
 
-One representative domain shape is UK healthcare: a patient is registered with a local GP and usually books with that local GP, which maps to the same-shard path. A GP referral to another hospital maps to the cross-shard path.
+The repository's own representative workload gives the shape. In the fitness-club release, a member is registered with one club and usually books that club's sessions, which maps to the same-shard path. A member booking a session at a different club — a partner site, a network-wide class, a guest booking — maps to the cross-shard path.
 
 For PR3 planning, use **approximately 10% cross-shard bookings** as an explicit scenario assumption. It is not measured Alloca evidence and is not claimed as a universal production rate. The load generator must make the rate configurable so the design can be exercised at least at:
 

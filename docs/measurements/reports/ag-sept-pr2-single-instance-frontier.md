@@ -5,11 +5,11 @@
 > **This machine tops out at ~4,300 booking requests per second, and the limit is
 > PostgreSQL — not alloca-go.**
 >
-> At that rate the service uses **1.2 of 10 cores (12%)**, the connection pool has stopped
-> being the constraint (acquire-wait falls from 53.6 s/s to **0.003** at pool 80), and the
-> largest single wait is **`LWLock:WALWrite`** — backends serialising on the write-ahead
-> log. Throughput is flat from concurrency 64 to 128 while p99 doubles: added load buys
-> queue depth, not work.
+> At that rate the service uses **1.2 of the 10 vCPUs WSL2 is allocated** (on a 20-core
+> host), the connection pool has stopped being the constraint (acquire-wait falls from
+> 53.6 s/s to **0.003** at pool 80), and the largest single wait is **`LWLock:WALWrite`** —
+> backends serialising on the write-ahead log. Throughput is flat from concurrency 64 to 128
+> while p99 doubles: added load buys queue depth, not work.
 >
 > **The consequence for PR3: running more alloca-go replicas against this one database
 > will not raise throughput.** The pool ladder already tested that in disguise, and §5.4
@@ -129,11 +129,17 @@ queue is, which is Little's Law rather than a discovery.
 | `alloca_db_pool_acquired_connections` | 10 |
 | `alloca_db_pool_max_connections` | 10 |
 | `rate(alloca_db_pool_acquire_wait_seconds_total)` | **53.6 s/s** |
-| `rate(process_cpu_seconds_total)` | **1.1 of 10 cores** |
+| `rate(process_cpu_seconds_total)` | **1.1 of 10 vCPUs** |
 
 The pool is pinned at its ceiling, requests accumulate 53.6 seconds of acquire-wait per
-wall-clock second, and the service uses 11% of the machine's CPU. It is not compute-bound; it
-is waiting for connections.
+wall-clock second, and the service uses 1.1 of the 10 vCPUs available to it. It is not
+compute-bound; it is waiting for connections.
+
+**On "cores" in this report.** Every CPU figure is `process_cpu_seconds_total` read inside
+WSL2, whose `.wslconfig` allocates **10 vCPUs** on a **20-core** host — so the denominator is
+the allocation, not the machine. `1.1 cores` is 1.1 of 10, and the host has twice that again.
+Utilisation is quoted against the allocation throughout, because that is what bounds the
+service; see [`../environment.md`](../environment.md).
 
 ### 2.1 The pool hypothesis, tested directly `[MEASURED]`
 
@@ -328,7 +334,7 @@ Three candidates are eliminated at the plateau cell itself:
 
 | candidate | reading at the plateau | verdict |
 |---|---|---|
-| alloca-go compute | 1.2 of 10 cores (**12%**) | not the constraint |
+| alloca-go compute | **1.2 of the 10 vCPUs** allocated to WSL2, on a 20-core host | not the constraint |
 | the load generator | §1.1's control **re-run at this operating point**: 4682.7 req/s on one core, against 4130.1 unconstrained | not the constraint |
 | the connection pool | acquire-wait **0.003 s/s** (53.6 at pool 10), 58–64 of 80 connections in use | **not the constraint at pool 80** |
 | fixture / index size | §1.1 reaches the same rate on 8,000 slots as the sweep does on 61,540 | not the constraint |
@@ -347,9 +353,10 @@ time.
 
 ### 5.3 Where the 4,300 goes
 
-At the plateau, per completed request: **1.2 of 10 host cores** across the whole service, and
-p99 of 34–62 ms against a 500 ms objective. The machine is ~88% idle at its own ceiling. This
-is not a system that runs out of CPU; it is one that runs out of *serialised durable writes*.
+At the plateau the whole service draws **1.2 of the 10 vCPUs WSL2 is allocated**, with p99 of
+34–62 ms against a 500 ms objective. Roughly **88% of the allocation is idle** — and since the
+allocation is half of a 20-core host, the machine as a whole is idler still. This is not a
+system that runs out of CPU; it is one that runs out of *serialised durable writes*.
 
 ### 5.4 The prediction PR3 must test
 
@@ -384,6 +391,12 @@ It is also **not** a claim about PostgreSQL in general. It describes a stock
 (5 min) and `max_wal_size` (1 GB), on a WSL2 workstation whose storage path is Docker Desktop's.
 A tuned database on real storage is a different measurement, and §6 is why this deployment
 cannot say by how much.
+
+**And it is measured against an allocation, not a machine.** The service, the generator and the
+database all share **10 vCPUs assigned to WSL2** out of a 20-core host, with 12 GB of the host's
+32 GB. The full description is [`../environment.md`](../environment.md); the short version is
+that every "cores" figure here has 10 as its denominator, so a reader who reads it against the
+host halves the utilisation and doubles the apparent headroom.
 
 ### 5.6 SLO-safe and recommended operating capacity: still deferred, for narrower reasons
 

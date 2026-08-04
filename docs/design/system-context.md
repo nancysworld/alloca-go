@@ -53,7 +53,8 @@ flowchart TB
 - **PostgreSQL** — the transactional source of truth and cross-node serialization
   authority. It is also **the measured throughput constraint of the whole system**: on the
   single-instance baseline the service saturates the database's write-ahead log while using
-  ~12% of the host's CPU, so scaling the Go tier alone does not raise booking throughput. The
+  a small fraction of the CPU available to it, so scaling the Go tier alone does not raise
+  booking throughput. The
   figure, its conditions and its caveats live in
   [`../measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../measurements/reports/ag-sept-pr2-single-instance-frontier.md) §5.
 - **Application Load Balancer** — the network entry point in the AWS slice (AG-M3).

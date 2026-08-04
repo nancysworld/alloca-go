@@ -93,7 +93,8 @@ records the durable authority and technology choices that implement those semant
   `[MEASURED]`.** Even with *fully dispersed* slots — no row contention at all — one
   PostgreSQL instance has one write-ahead log, and durable commits serialise on it. On the
   2026-08-04 workstation baseline that ceiling is ~4,300 booking req/s, reached while the
-  service uses 12% of the host's CPU and the connection pool has stopped binding; the
+  service uses 1.2 of the 10 vCPUs available to it and the connection pool has stopped
+  binding; the
   largest single database wait is `LWLock:WALWrite`. See
   [`../measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../measurements/reports/ag-sept-pr2-single-instance-frontier.md) §5 —
   that report owns the number and its caveats, including that it describes an untuned

@@ -7,6 +7,9 @@ The split is the point.
 
 - **[`reports/`](reports/)** — the prose. One report per PR that produced a result. This is
   what a reader reads.
+- **[`environment.md`](environment.md)** — the machine every figure was taken on. Read it
+  before quoting a utilisation number: CPU is measured against the **10 vCPUs WSL2 is
+  allocated**, not against the 20-core host, and the two differ by 2×.
 - **Everything else** — one directory per experiment, holding the files a run emitted. This is
   what a reader checks the prose against.
 
@@ -31,7 +34,7 @@ artifact directories are large and are kept anyway: without them a report is an 
 | [`pr2-generator-control-plateau/`](pr2-generator-control-plateau/) | `test/scripts/control-generator.sh` | The same control re-run at the ~4,300 req/s operating point the PR2 conclusion rests on |
 | [`pr2-telemetry/`](pr2-telemetry/) | `test/scripts/sweep.sh` | The §6.2 telemetry comparison: `full` and `metrics_only`, two passes each. §6.2 is **not discharged** — within-mode spread exceeded the between-mode delta, so no overhead figure is claimed |
 | [`pr1-smoke-run/`](pr1-smoke-run/) | `cmd/alloca-load` | PR1's substrate smoke run. Proves the harness works; establishes **no** capacity number |
-| [`pr1-telemetry-overhead/`](pr1-telemetry-overhead/) | `go test -bench` | Per-call cost of the telemetry `Tee` against a real file sink |
+| [`pr1-telemetry-overhead/`](pr1-telemetry-overhead/) | `go test -bench` | Per-call cost of the telemetry `Tee` against a real file sink: `raw.txt` holds the five samples, and [`environment.txt`](pr1-telemetry-overhead/environment.txt) the machine and exact command. It predates the run manifest, which is why it carries its own environment file |
 
 ## What a sweep cell contains
 
@@ -69,6 +72,11 @@ example — see that report's §4.
 **Reports are named for the claim, not the schedule.** `ag-sept-pr2-single-instance-frontier.md`
 says what it establishes; a file called `pr2.md` would make a later reader reconstruct the PR
 sequence to know what the number is good for.
+
+**A utilisation figure names its denominator.** "1.2 cores" means 1.2 of the **10 vCPUs**
+allocated to WSL2, never of the host's 20 — the reports say which, because a reader who assumes
+the host is out by 2× in the flattering direction. [`environment.md`](environment.md) is the
+shared description; each run's own manifest in `run.json` is the authority for that run.
 
 ## Adding a report
 

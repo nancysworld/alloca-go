@@ -117,10 +117,12 @@ client, server and persisted-state totals. The procedure is in
 and the retained artifacts every figure in them is re-derived from. The load-bearing result is
 the [single-instance frontier](docs/measurements/reports/ag-sept-pr2-single-instance-frontier.md):
 on a developer workstation the service reaches ~4,300 booking req/s, and **the limit is
-PostgreSQL's write-ahead log rather than the Go service**, which uses 12% of the host's CPU at
-that rate. So adding service replicas against one database buys availability, not throughput.
-Read that report's §5.5 before quoting the number — it is a workstation measurement against an
-untuned container, not a capacity claim.
+PostgreSQL's write-ahead log rather than the Go service**, which uses about 1.2 of the 10 vCPUs
+available to it at that rate. So adding service replicas against one database buys
+availability, not throughput. Read that report's §5.5 before quoting the number — it is a
+workstation measurement against an untuned container, not a capacity claim, and
+[`docs/measurements/environment.md`](docs/measurements/environment.md) is the machine it was
+taken on.
 
 The HTTP contract — routes, request and response shapes, status mapping, and the
 `/healthz`, `/readyz`, `/meta` operational endpoints — is documented in

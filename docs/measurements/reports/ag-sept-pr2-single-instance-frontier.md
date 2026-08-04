@@ -499,7 +499,7 @@ Buckets are deliberately **not** changed here. Adding boundaries costs cardinali
 labelled histogram, and PR2's latency conclusions do not depend on the panel. If PR3 needs the
 dashboard to be quantitatively trustworthy in that band, insert `0.15` and `0.2` and re-measure
 the telemetry overhead, since bucket count is part of what §6.2 was trying to price. Registered
-in [`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §14 PR3, *Carried in from PR2* group C.
+in [`ag-sept-plan.md`](../../planning/ag-sept-plan.md) under *Deferred from PR2*, group C.
 
 ### 6.2 TSDB snapshots are cumulative, and the redesign is deferred to PR3
 
@@ -520,7 +520,7 @@ re-runs everything on the container path anyway; doing it here means re-exportin
 no new evidence. The shape PR3 should take: one snapshot per *sweep* with cell-specific CSVs and
 windows, or a fresh Prometheus data directory per sweep. It matters more there than here,
 because PR3 multiplies cells by replica count. Registered in
-[`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §14 PR3, *Carried in from PR2* group C.
+[`ag-sept-plan.md`](../../planning/ag-sept-plan.md) under *Deferred from PR2*, group C.
 
 ### 6.3 The prototype's overload failure is still unreproduced, and this harness cannot produce it
 
@@ -618,11 +618,13 @@ the budget would first be visible.
 **Where this goes next.** Nancy's call, 2026-08-04: this is **plan work, not a debt register
 entry** — it is the prototype finding the project was built to resolve, and `tech-debts.md` is
 where it would quietly stop being anyone's deliverable. It is recorded in
-[`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §14 PR3 under *Carried in from PR2*, group
-A, together with everything else PR2 deferred: the open-loop generator mode that makes the
+[`ag-sept-plan.md`](../../planning/ag-sept-plan.md) under *Deferred from PR2*, group A —
+**unassigned**, because where it lands is a re-planning decision rather than a PR3 line item.
+It sits there with everything else PR2 deferred: the open-loop generator mode that makes the
 failure reachable at all, retry-on-timeout, the `slots_for()` fix that unblocks c ≥ 256, the
-timeout-budget negative control, and the `admission_cap` decision. The budget implication is
-flagged there rather than absorbed.
+timeout-budget negative control, and the `admission_cap` decision. That section carries the sizing, and the reason
+re-planning was chosen over appending to PR3: PR2's own result moved the interesting frontier
+from replica count to the database itself.
 
 ---
 

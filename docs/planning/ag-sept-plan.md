@@ -530,85 +530,6 @@ This section assigns the requirements above to implementation PRs. The earlier s
 
 **Not in PR3:** AWS, autoscaling, production Kubernetes platform engineering, a service mesh, or an attempt to eliminate the hot-authority serialization frontier.
 
-#### Carried in from PR2 (added 2026-08-04, during PR2 review)
-
-Everything PR2 deferred, in one list, so it is picked up rather than rediscovered. The report
-sections cited are the authority; this is the register, not the reasoning.
-
-**A. The overload question — Nancy's call, 2026-08-04: this belongs in the plan, not in
-`tech-debts.md`.** It is the prototype finding the whole project was built to resolve, and a
-debt register is where it would quietly stop being anyone's deliverable.
-
-> `high-level-design.md` §1.1 records, as `[PRIOR-UNREPRODUCED]`, that RuntimeIQ-Alloca saw
-> *"latency grew with concurrency until timeouts became the visible failure, without isolating
-> why"*. **PR2 reproduced the growth and not the failure**, and report §6.3 establishes that
-> the harness cannot produce it: a closed loop caps in-flight requests at the worker count, so
-> the queue is bounded and latency is exactly `N ÷ X`. Across 2,350,742 requests there were
-> **zero timeouts, zero unknown-commits, zero internal failures**.
-
-What PR3 should do about it:
-
-- **build open-loop arrival-rate mode** in the generator (roadmap §"open-loop arrival-rate
-  mode", unbuilt; `system-context.md` §1 already draws the generator as open- *and*
-  closed-loop). This is the piece that makes the prototype's failure mode reachable at all —
-  without it, no amount of concurrency produces it, only classified refusals;
-- **add retry-on-timeout to the generator, as a declared control rather than a default.** The
-  amplification loop (timeout → retry → more load → more timeouts) is the other half of the
-  prototype's failure. Retrying under the *same* idempotency key is the design's own replay
-  path, so this tests a supported behaviour rather than inventing one;
-- **test the `[DERIVED]` prediction of §6.3**: the first *enforced* bound is `db_acquire_cap`
-  at 500 ms, predicted to engage near **c ≈ 1,025 at pool 10** and **c ≈ 2,150 at pool 80** —
-  roughly 8× the highest concurrency PR2 reached. State whether it held;
-- **fix `slots_for()` first, or none of the above is reachable.** It assumes ~400 admitted
-  units per worker per second against a measured 17–68, so it over-provisions by ~48× and
-  `alloca-seed` times out at c = 256. **Concurrency above 128 is currently impossible**
-  (report §7);
-- **exercise the timeout budget and prove it.** 2.35 M requests produced no timeout of any
-  kind, so `measurement-contract.md` §8.1's nested deadlines are validated at startup and
-  **never observed doing their job under load**. A negative control showing a request refused
-  at `db_acquire_cap` rather than waiting is the missing piece — the same class of gap as an
-  untested backup;
-- **`admission_cap` is published in every run manifest and enforced nowhere** (report §6.3).
-  It is declared, range-validated and written into `timeout_budget` as `admission_cap=250ms`,
-  but its only non-test consumer is `cmd/alloca-seed`; no serving path applies it, because the
-  admission tier is AG-M2+. Either enforce it or stop publishing it as though it bounds the
-  measured system — a manifest field that does nothing is worse than an absent one.
-
-**B. Instrumentation PR2 could not have.**
-
-- **PostgreSQL exporter** — already required above. PR2 named its bottleneck only from a
-  hand-driven 2-second `pg_stat_activity` poll, which is why report §5.2 holds the
-  sub-mechanism (write-path contention, led by `LWLock:WALWrite`, with substantial
-  `BufferContent`) **provisional** rather than settled. PR3's instrumentation is what decides
-  which bound is actionable.
-- **Node exporter** — also required above, and the only instrument that could see PR2's
-  unexplained ~2× excursions. They slow the service, the database *and* the generator
-  together, and everything on this workstation shares one 10-vCPU WSL2 allocation
-  (`../measurements/environment.md`), so no per-process exporter can distinguish shared-CPU
-  contention from anything else.
-
-**C. Evidence hygiene, cheap to fold into a PR that re-runs everything anyway.**
-
-- **Per-cell TSDB snapshots are cumulative** — 140 block copies of 39 distinct blocks across
-  33 cells, 72% redundant (report §6.2). One snapshot per *sweep*, or a fresh Prometheus data
-  directory per sweep. This matters more in PR3 than it did in PR2, because PR3 multiplies
-  cells by replica count.
-- **The committed PR2 cells predate an exporter fix** and their leading points are rate-window
-  fill (report §7). PR3 re-runs them under the fixed exporter; nothing needs re-exporting
-  before then.
-- **Histogram buckets step 0.1 → 0.25 s**, so `histogram_quantile` over-estimates p99 by up to
-  2× inside that band (report §6.1). Optional: insert `0.15` and `0.2` **only if** PR3 needs
-  the dashboard quantitatively trustworthy there — it costs cardinality on a labelled
-  histogram, and bucket count is part of what §6.2's telemetry comparison was pricing.
-
-**Budget note, flagged rather than absorbed.** PR3's indicative budget is 2.0 days and its
-existing scope already fills it. Group A is a **new experiment with a new generator mode**, not
-a tidy-up, and is realistically a day or more on its own; groups B and C fit inside work PR3 is
-already doing. If the ten-day total is to hold, A needs either its own slot, the reserve, or an
-explicit decision to descope something else — and **that decision is Nancy's**. What must not
-happen is A being nominally in scope and silently dropped when the replica matrix runs long,
-which is precisely the failure `tech-debts.md` would have institutionalised.
-
 ### PR4 — AWS deployment, conditional
 
 **Indicative budget:** no more than 2 focused deployment days before the AWS stop gate. The further 1.5 measurement days §4 assigns to AWS experiments are **not** inside the base ten once PR2 and PR3 are funded honestly — they are available only from underspend in PR2, PR3 or PR5, or from the 2–3 day reserve. If neither materialises, the post-gate matrix shrinks to its §11 minimum, or the stop decision is taken. This is the reallocation rule of §4 running in the direction it was always going to run.
@@ -654,6 +575,112 @@ which is precisely the failure `tech-debts.md` would have institutionalised.
 **Exit:** a reviewer can reproduce the topology and decisive runs, distinguish measured facts from calculations and interpretation, understand why replicas help or do not help for each authority distribution, and follow the evidence to the architecture decision.
 
 **Not in PR5:** feature expansion for presentation value, speculative decomposition, rich dashboard work unrelated to a finding, or reopening settled measurement definitions.
+
+### Deferred from PR2 — unassigned, input to the next planning session
+
+**Status: not assigned to any PR.** Nancy's decision, 2026-08-04: PR2 finishes with what it
+has, and where this work goes is settled in a re-planning session rather than absorbed into
+PR3's remaining budget. Recorded here so nothing is rediscovered, and so the session starts
+from a list rather than from memory.
+
+**Two things changed the shape of the problem while PR2 ran**, and both are reasons to re-plan
+rather than to keep appending to PR3:
+
+- **PR2's own result.** Scaling stateless replicas against one PostgreSQL authority is now
+  measured as *not* the lever — the limiting subsystem is the database, with alloca-go holding
+  substantial compute headroom. The milestone's stated progression (§1, steps 2 and 5) assumed
+  the interesting frontier was replica count; the evidence says it is the authority itself. What
+  follows is a **database-side** question — configuration, storage, write path, possibly
+  partitioning — and that needs telemetry PR2 could not have and PR3 was not scoped for.
+- **The register below is roughly 2.3 days of work** against PR3's 2.0-day allocation, which is
+  already fully committed to the replica matrix. Appending it to PR3 would not have been a plan;
+  it would have been a plan to overrun.
+
+The report sections cited are the authority; this is the register, not the reasoning.
+
+Everything PR2 deferred, in one list, so it is picked up rather than rediscovered. The report
+sections cited are the authority; this is the register, not the reasoning.
+
+**A. The overload question — Nancy's call, 2026-08-04: this belongs in the plan, not in
+`tech-debts.md`.** It is the prototype finding the whole project was built to resolve, and a
+debt register is where it would quietly stop being anyone's deliverable.
+
+> `high-level-design.md` §1.1 records, as `[PRIOR-UNREPRODUCED]`, that RuntimeIQ-Alloca saw
+> *"latency grew with concurrency until timeouts became the visible failure, without isolating
+> why"*. **PR2 reproduced the growth and not the failure**, and report §6.3 establishes that
+> the harness cannot produce it: a closed loop caps in-flight requests at the worker count, so
+> the queue is bounded and latency is exactly `N ÷ X`. Across 2,350,742 requests there were
+> **zero timeouts, zero unknown-commits, zero internal failures**.
+
+What PR3 should do about it:
+
+- **build open-loop arrival-rate mode** in the generator (roadmap §"open-loop arrival-rate
+  mode", unbuilt; `system-context.md` §1 already draws the generator as open- *and*
+  closed-loop). This is the piece that makes the prototype's failure mode reachable at all —
+  without it, no amount of concurrency produces it, only classified refusals;
+- **add retry-on-timeout to the generator, as a declared control rather than a default.** The
+  amplification loop (timeout → retry → more load → more timeouts) is the other half of the
+  prototype's failure. Retrying under the *same* idempotency key is the design's own replay
+  path, so this tests a supported behaviour rather than inventing one;
+- **test the `[DERIVED]` prediction of §6.3**: the first *enforced* bound is `db_acquire_cap`
+  at 500 ms, predicted to engage near **c ≈ 1,025 at pool 10** and **c ≈ 2,150 at pool 80** —
+  roughly 8× the highest concurrency PR2 reached. State whether it held;
+- **fix `slots_for()` first, or none of the above is reachable.** It assumes ~400 admitted
+  units per worker per second against a measured 17–68, so it over-provisions by ~48× and
+  `alloca-seed` times out at c = 256. **Concurrency above 128 is currently impossible**
+  (report §7);
+- **exercise the timeout budget and prove it.** 2.35 M requests produced no timeout of any
+  kind, so `measurement-contract.md` §8.1's nested deadlines are validated at startup and
+  **never observed doing their job under load**. A negative control showing a request refused
+  at `db_acquire_cap` rather than waiting is the missing piece — the same class of gap as an
+  untested backup;
+- **`admission_cap` is published in every run manifest and enforced nowhere** (report §6.3).
+  It is declared, range-validated and written into `timeout_budget` as `admission_cap=250ms`,
+  but its only non-test consumer is `cmd/alloca-seed`; no serving path applies it, because the
+  admission tier is AG-M2+. Either enforce it or stop publishing it as though it bounds the
+  measured system — a manifest field that does nothing is worse than an absent one.
+
+**B. Instrumentation PR2 could not have.** Both are currently written into PR3's scope above,
+and both should be re-confirmed rather than assumed by the session — if the next step is a
+database-side investigation, they stop being supporting work for a replica matrix and become
+the primary instrument.
+
+- **PostgreSQL exporter.** PR2 named its bottleneck only from a hand-driven 2-second
+  `pg_stat_activity` poll, which is why report §5.2 holds the sub-mechanism (write-path
+  contention, led by `LWLock:WALWrite`, with substantial `BufferContent`) **provisional**
+  rather than settled. Deciding which bound is actionable — and therefore what a database-side
+  fix would even target — needs time-weighted instrumentation plus storage-level metrics.
+- **Node exporter.** The only instrument that could see PR2's unexplained ~2× excursions. They
+  slow the service, the database *and* the generator together, and everything on this
+  workstation shares one 10-vCPU WSL2 allocation
+  ([`../measurements/environment.md`](../measurements/environment.md)), so no per-process
+  exporter can distinguish shared-CPU contention from anything else. Until this exists, every
+  figure from this machine carries a ±2× caveat.
+
+**C. Evidence hygiene, cheap to fold into a PR that re-runs everything anyway.**
+
+- **Per-cell TSDB snapshots are cumulative** — 140 block copies of 39 distinct blocks across
+  33 cells, 72% redundant (report §6.2). One snapshot per *sweep*, or a fresh Prometheus data
+  directory per sweep. This matters more in PR3 than it did in PR2, because PR3 multiplies
+  cells by replica count.
+- **The committed PR2 cells predate an exporter fix** and their leading points are rate-window
+  fill (report §7). PR3 re-runs them under the fixed exporter; nothing needs re-exporting
+  before then.
+- **Histogram buckets step 0.1 → 0.25 s**, so `histogram_quantile` over-estimates p99 by up to
+  2× inside that band (report §6.1). Optional: insert `0.15` and `0.2` **only if** PR3 needs
+  the dashboard quantitatively trustworthy there — it costs cardinality on a labelled
+  histogram, and bucket count is part of what §6.2's telemetry comparison was pricing.
+
+**Sizing, so the session starts from numbers.** Estimates, not measurements: group A ≈ 1.5 days
+(open-loop mode ~0.75–1.0, retry control ~0.25, `slots_for()` ~0.1, timeout-budget control
+~0.25, `admission_cap` ~0.1); group B ≈ 0.5 day; group C ≈ 0.35 day. Total ≈ **2.3 days**.
+
+**One framing worth putting on the table.** Group A is *load-harness* work — the same family as
+PR1 — that surfaced during PR2; it is not scale-out work, which is why it fits PR3 badly. §4's
+AWS reallocation rule already permits the conditional AWS budget to return to local P0 outcomes,
+and `high-level-design.md` §1.1 makes the unreproduced overload question a founding one. That is
+a real trade between the overload experiment and the AWS slice, and it is the kind of decision
+the session exists to take.
 
 ## 15. Priority tiers
 

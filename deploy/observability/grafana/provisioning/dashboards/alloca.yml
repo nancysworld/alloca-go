@@ -1,0 +1,13 @@
+# Loads every dashboard JSON from the mounted directory. There is exactly one, and PR2 keeps
+# it that way (ag-sept-plan §14 excludes rich dashboards).
+apiVersion: 1
+
+providers:
+  - name: alloca
+    type: file
+    # Edits made in the UI are not written back to the repo, so the JSON on disk stays the
+    # single source. Treat the UI as read-only and change the file.
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

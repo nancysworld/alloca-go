@@ -1,0 +1,78 @@
+{
+  "manifest": {
+    "service_commit_sha": "58f2cea9317477373955c92a435d98fb500ea1c1",
+    "service_source_modified": false,
+    "service_go_version": "go1.26.5",
+    "generator_commit_sha": "58f2cea9317477373955c92a435d98fb500ea1c1",
+    "generator_source_modified": false,
+    "generator_go_version": "go1.26.5",
+    "replica_count": 0,
+    "deployment_topology": "",
+    "environment": "",
+    "server_gomaxprocs": 10,
+    "timeout_budget": "admission_cap=250ms client_deadline=6s db_acquire_cap=500ms lock_timeout=2s server_deadline=5s statement_timeout=3s txn_budget=3.5s",
+    "reservation_ttl": "2m0s",
+    "postgres_version": "16.14",
+    "pool_size_per_replica": 10,
+    "telemetry_mode": "full",
+    "workload": "hot_slot",
+    "concurrency": 16,
+    "duration": "30s",
+    "warm_up": "0s",
+    "dataset_slots": 7780,
+    "generator_location": "local",
+    "generator_gomaxprocs": 10,
+    "generator_num_cpu": 10,
+    "target": "http://localhost:8080",
+    "timestamp": "2026-08-03T22:05:15.326732767Z"
+  },
+  "summary": {
+    "workload": "hot_slot",
+    "concurrency": 16,
+    "iterations": 0,
+    "duration_requested_seconds": 30,
+    "completed_iterations": 19027,
+    "duration_seconds": 30.023471122,
+    "warm_up_seconds": 0,
+    "warm_up_discarded": 0,
+    "totals": [
+      {
+        "operation": "reserve",
+        "outcome": "admitted_success",
+        "replay": false,
+        "count": 50
+      },
+      {
+        "operation": "reserve",
+        "outcome": "business_refusal",
+        "reason": "no_capacity",
+        "replay": false,
+        "count": 18977
+      }
+    ],
+    "completed_requests": 19027,
+    "successful_mutation_goodput": 50,
+    "replayed_mutations": 0,
+    "latency_ms": {
+      "p50": 24.73425,
+      "p95": 28.518954,
+      "p99": 31.283839,
+      "max": 49.06257
+    },
+    "generator": {
+      "gomaxprocs": 10,
+      "goroutines": 37,
+      "cpu_seconds": 2.482375,
+      "cpu_utilisation_per_core": 0.008268114602448532,
+      "num_cpu": 10
+    },
+    "response_validation_enabled": true,
+    "invalid_responses": 0,
+    "measurement_sound": true
+  },
+  "quotability": {
+    "level": "local",
+    "blocked_from": "capacity",
+    "blocked_because": "manifest is incomplete for a capacity claim: aggregate_pool_size is not positive (operator-supplied, PR3); replica_count is not positive (operator-supplied, PR3); deployment_topology is empty (operator-supplied, PR3); environment is empty (operator-supplied, PR4)"
+  }
+}

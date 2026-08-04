@@ -1,0 +1,15 @@
+timestamp,labels,value
+1785794769,outcome=admitted_success,0
+1785794774,outcome=admitted_success,3.571428571428571
+1785794779,outcome=admitted_success,3.571428571428571
+1785794784,outcome=admitted_success,1.1429387813415244
+1785794789,outcome=admitted_success,0
+1785794794,outcome=admitted_success,0
+1785794799,outcome=admitted_success,0
+1785794769,outcome=business_refusal,0
+1785794774,outcome=business_refusal,162.14285714285714
+1785794779,outcome=business_refusal,384.71428571428567
+1785794784,outcome=business_refusal,616.5440388599186
+1785794789,outcome=business_refusal,651.2824176609273
+1785794794,outcome=business_refusal,655.7833821533186
+1785794799,outcome=business_refusal,658.426805744088

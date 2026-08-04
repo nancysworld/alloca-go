@@ -150,7 +150,7 @@ func summaryFor(admitted, refused int, reason domain.Reason) loadgen.Summary {
 // rule under test. The comparison has its own tests, where the two sides are made to differ
 // on purpose.
 func runReconcile(f *fixture, s loadgen.Summary) (reconcile.Result, error) {
-	return reconcile.Run(context.Background(), f.pool, testOrg, reportOf(s), reconcile.ServerTotals(s.Totals))
+	return reconcile.Run(context.Background(), f.pool, testOrg, reportOf(s), reconcile.Scrapes{After: reconcile.ServerTotals(s.Totals)})
 }
 
 // TestCleanRunReconciles is the positive case, and it has to come first: every negative

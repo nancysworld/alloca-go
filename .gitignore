@@ -58,3 +58,6 @@ terraform.rc
 # Local secrets
 *.pem
 *.key
+
+# Discovered Prometheus scrape targets: a property of the machine, not the project.
+/deploy/observability/targets/*.json

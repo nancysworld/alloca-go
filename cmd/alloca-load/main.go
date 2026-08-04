@@ -40,26 +40,45 @@ func main() {
 func run() error {
 	var (
 		target       = flag.String("target", "http://localhost:8080", "service base URL")
-		workloadName = flag.String("workload", "dispersed", "dispersed | hot-slot | hot-identity")
+		workloadName = flag.String("workload", "dispersed", "dispersed | hot-slot | hot-identity | replay")
 		concurrency  = flag.Int("concurrency", 10, "concurrent workers (closed loop)")
-		iterations   = flag.Int("n", 100, "logical units of work")
-		warmUp       = flag.Duration("warm-up", 0, "discard responses completing inside this window")
-		timeout      = flag.Duration("timeout", 10*time.Second, "per-request client timeout")
-		validate     = flag.Bool("validate", true, "validate responses; false drives the §5.5 control")
-		org          = flag.String("org", "load-org", "organisation for generated identities")
-		slots        = flag.Int("slots", 100, "slots in the dataset (dispersed, hot-identity)")
-		slotID       = flag.String("slot", "slot-0", "the contended slot (hot-slot)")
-		userID       = flag.String("user", "user-0", "the contended identity (hot-identity)")
-		location     = flag.String("generator-location", "local", "where the generator runs")
-		out          = flag.String("out", "", "write the JSON report here (default stdout)")
-		confirm      = flag.Bool("confirm", false, "dispersed: drive reserve→confirm")
-		require      = flag.String("require", string(loadgen.LevelLocal),
+		iterations   = flag.Int("n", 100, "logical units of work (mutually exclusive with -duration)")
+		duration     = flag.Duration("duration", 0,
+			"run for this long instead of a fixed -n; required for sweep cells, whose rates "+
+				"are only comparable when every cell covers the same interval")
+		warmUp   = flag.Duration("warm-up", 0, "discard responses completing inside this window")
+		timeout  = flag.Duration("timeout", 10*time.Second, "per-request client timeout")
+		validate = flag.Bool("validate", true, "validate responses; false drives the §5.5 control")
+		org      = flag.String("org", "load-org", "organisation for generated identities")
+		slots    = flag.Int("slots", 100, "slots in the dataset (dispersed, hot-identity)")
+		slotID   = flag.String("slot", "slot-0", "the contended slot (hot-slot)")
+		userID   = flag.String("user", "user-0", "the contended identity (hot-identity)")
+		location = flag.String("generator-location", "local", "where the generator runs")
+		out      = flag.String("out", "", "write the JSON report here (default stdout)")
+		confirm  = flag.Bool("confirm", false, "dispersed: drive reserve→confirm")
+		require  = flag.String("require", string(loadgen.LevelLocal),
 			"fail unless the run reaches this level: local | capacity | publishable")
 	)
 	flag.Parse()
 
-	if *concurrency < 1 || *iterations < 1 {
-		return fmt.Errorf("concurrency and -n must both be at least 1")
+	if *concurrency < 1 {
+		return fmt.Errorf("-concurrency must be at least 1")
+	}
+
+	// Both bounds set is rejected rather than resolved by precedence. -n has a default, so
+	// "was it set?" cannot be answered from its value — flag.Visit is the only way to tell an
+	// explicit -n from the default, and a run bounded by the one the operator did not mean
+	// measures the wrong thing while looking entirely normal.
+	explicit := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+	switch {
+	case explicit["n"] && explicit["duration"]:
+		return fmt.Errorf("-n and -duration are mutually exclusive: -n bounds the run by " +
+			"logical units, -duration by wall clock, and a run cannot be bounded by both")
+	case *duration < 0:
+		return fmt.Errorf("-duration must not be negative")
+	case *duration == 0 && *iterations < 1:
+		return fmt.Errorf("-n must be at least 1")
 	}
 	want, err := loadgen.ParseLevel(*require)
 	if err != nil {
@@ -80,7 +99,12 @@ func run() error {
 	opts := loadgen.Options{
 		Concurrency: *concurrency,
 		Iterations:  *iterations,
+		Duration:    *duration,
 		WarmUp:      *warmUp,
+	}
+	if *duration > 0 {
+		// Clear the unused bound so nothing downstream reads -n's default as a request.
+		opts.Iterations = 0
 	}
 	// Read the service's own provenance before driving load. It identifies the binary that
 	// is about to answer the requests, which is what §6.4 means by "commit SHA" — the
@@ -97,8 +121,28 @@ func run() error {
 	client := loadgen.NewClient(*target, *timeout, *validate)
 	summary := loadgen.NewRunner(client, opts).Run(ctx, workload)
 
+	// Read /meta again and compare. A pre-run read establishes only "the service behind the
+	// target when the run began" (DEBT-3); this is what turns that into a claim about the
+	// whole sample. A restart, a rolling replacement or a config change mid-run all leave the
+	// totals internally consistent while describing something other than one experiment.
+	//
+	// A failed post-run read is itself drift: the service that answered the workload is not
+	// answering now, and a run that cannot confirm what it measured must not certify itself.
+	after, afterErr := loadgen.FetchServiceMeta(ctx, *target, *timeout)
+	drift := ""
+	switch {
+	case metaErr != nil:
+		// The pre-run read already failed; the manifest has no identity to compare against
+		// and the gate refuses on the empty fields rather than on drift.
+	case afterErr != nil:
+		drift = "the service did not answer /meta after the run: " + afterErr.Error()
+	default:
+		drift = after.DriftFrom(svc)
+	}
+
 	manifest := loadgen.NewManifest(*target, workload.Name(), opts, *location, svc)
 	manifest.DatasetSlots = *slots
+	manifest.ServiceIdentityDrift = drift
 
 	report := loadgen.Report{Manifest: manifest, Summary: summary}
 	report.Quotability = loadgen.Certify(manifest, summary)
@@ -158,7 +202,12 @@ func buildWorkload(name, org, slotID, userID string, slots int, confirm bool) (l
 			User:  loadgen.User{OrganisationID: orgID, UserID: domain.UserID(userID)},
 			Slots: dataset,
 		}, nil
+	case "replay":
+		// The disposition control (measurement-contract §4.2). It issues two requests per
+		// logical unit, so -n counts logical units here as everywhere: a run of -n 60 sends
+		// 120 requests and expects 60 of them to be replays.
+		return loadgen.Replay{Org: orgID, Slots: dataset}, nil
 	default:
-		return nil, fmt.Errorf("unknown workload %q: want dispersed, hot-slot or hot-identity", name)
+		return nil, fmt.Errorf("unknown workload %q: want dispersed, hot-slot, hot-identity or replay", name)
 	}
 }

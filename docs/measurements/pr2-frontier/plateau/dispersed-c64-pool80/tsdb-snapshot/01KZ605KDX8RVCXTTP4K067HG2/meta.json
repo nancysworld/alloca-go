@@ -1,0 +1,17 @@
+{
+	"ulid": "01KZ605KDX8RVCXTTP4K067HG2",
+	"minTime": 1785794400799,
+	"maxTime": 1785801600000,
+	"stats": {
+		"numSamples": 82680,
+		"numSeries": 104,
+		"numChunks": 819
+	},
+	"compaction": {
+		"level": 1,
+		"sources": [
+			"01KZ605KDX8RVCXTTP4K067HG2"
+		]
+	},
+	"version": 1
+}

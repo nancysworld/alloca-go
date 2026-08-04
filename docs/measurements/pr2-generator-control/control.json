@@ -1,0 +1,51 @@
+{
+  "rows": [
+    {
+      "gomaxprocs": 1,
+      "throughput_per_s": 2294.6,
+      "goodput_per_s": 2294.6,
+      "p99_ms": 11.840814,
+      "generator_cpu_per_core": 0.0127,
+      "level": "local",
+      "pct_of_unconstrained": 106.7
+    },
+    {
+      "gomaxprocs": 2,
+      "throughput_per_s": 2122.1,
+      "goodput_per_s": 2122.1,
+      "p99_ms": 15.114553,
+      "generator_cpu_per_core": 0.0163,
+      "level": "local",
+      "pct_of_unconstrained": 98.7
+    },
+    {
+      "gomaxprocs": 5,
+      "throughput_per_s": 2053.7,
+      "goodput_per_s": 2053.7,
+      "p99_ms": 15.319601,
+      "generator_cpu_per_core": 0.0177,
+      "level": "local",
+      "pct_of_unconstrained": 95.5
+    },
+    {
+      "gomaxprocs": 10,
+      "throughput_per_s": 2151.0,
+      "goodput_per_s": 2151.0,
+      "p99_ms": 12.452224,
+      "generator_cpu_per_core": 0.0185,
+      "level": "local",
+      "pct_of_unconstrained": 100.0
+    }
+  ],
+  "requested": [
+    "1",
+    "2",
+    "5",
+    "0"
+  ],
+  "require": "local",
+  "refusals": [],
+  "verdict": [
+    "throughput is within 5% of unconstrained at EVERY level tested, down to GOMAXPROCS=1, so at this operating point the generator had at least 10x the compute it needed and is not the binding constraint"
+  ]
+}

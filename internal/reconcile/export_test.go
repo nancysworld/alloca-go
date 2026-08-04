@@ -8,5 +8,11 @@ import "github.com/nancysworld/alloca-go/internal/loadgen"
 // needs neither, and testing it through Run would make a comparison of two in-memory totals
 // depend on a running PostgreSQL — which is how a cheap test becomes one nobody runs.
 func RunServerCheckForTest(s loadgen.Summary, server ServerTotals) Check {
-	return serverTotalsCheck(s, server)
+	return serverTotalsCheck(s, Scrapes{After: server})
+}
+
+// RunServerCheckWithBaselineForTest exposes the warmed-cell form: the comparison against the
+// delta between two scrapes rather than against absolute counters.
+func RunServerCheckWithBaselineForTest(s loadgen.Summary, baseline, after ServerTotals) Check {
+	return serverTotalsCheck(s, Scrapes{Baseline: baseline, After: after})
 }

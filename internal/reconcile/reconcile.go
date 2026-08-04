@@ -75,13 +75,14 @@ func RunClientChecks(ctx context.Context, r loadgen.Report) (Result, error) {
 // Run executes every check of §6.5 against the summary, the metrics scrape and the
 // database — the three independent counts the rule requires to agree.
 //
-// server carries the scrape. Passing nil is permitted and produces a failing check rather
-// than a skipped one: §6.5 is a three-way agreement, and a verdict that quietly certified a
-// run on two of the three would be the weaker gate wearing the stronger gate's name.
+// scrapes carries the server-side counters. A zero Scrapes is permitted and produces a
+// failing check rather than a skipped one: §6.5 is a three-way agreement, and a verdict that
+// quietly certified a run on two of the three would be the weaker gate wearing the stronger
+// gate's name. Its optional Baseline is what lets a warmed cell keep its process — see Scrapes.
 //
 // Every check runs even after one fails: an operator debugging a bad run wants the whole
 // picture, and stopping at the first failure hides whether the cause is narrow or broad.
-func Run(ctx context.Context, q Querier, org domain.OrganisationID, r loadgen.Report, server ServerTotals) (Result, error) {
+func Run(ctx context.Context, q Querier, org domain.OrganisationID, r loadgen.Report, scrapes Scrapes) (Result, error) {
 	var res Result
 
 	for _, check := range []func(context.Context, Querier, domain.OrganisationID, loadgen.Summary) (Check, error){
@@ -96,7 +97,7 @@ func Run(ctx context.Context, q Querier, org domain.OrganisationID, r loadgen.Re
 		}
 		res.Checks = append(res.Checks, c)
 	}
-	res.Checks = append(res.Checks, serverTotalsCheck(r.Summary, server))
+	res.Checks = append(res.Checks, serverTotalsCheck(r.Summary, scrapes))
 	res.Quotability = verdict(r, res.Checks)
 	return res, nil
 }
@@ -133,30 +134,42 @@ func verdict(r loadgen.Report, checks []Check) loadgen.Quotability {
 func capacityCheck(ctx context.Context, q Querier, org domain.OrganisationID, s loadgen.Summary) (Check, error) {
 	c := Check{Name: "consumed capacity vs admitted reserves", Invariant: "INV-1"}
 
+	// Consumption is aggregated once per slot, then joined to capacity.
+	//
+	// The obvious form — a LATERAL subquery counting each reservation's slot-mates — recounts
+	// the same slot once per reservation on it, and the partial index on this table covers
+	// only state = 'held', so a filter on ('held','confirmed') falls back to a sequential
+	// scan *inside* that loop. Measured at 13.6k reservations: 2871ms, quadratic in row
+	// count. This form is 4ms on the same data, and the difference is not cosmetic — a sweep
+	// cell produces tens of thousands of rows and the verifier's own deadline was expiring
+	// before the check returned, which reads as an infrastructure failure rather than as a
+	// query that needs rewriting.
 	var live, overCapacity int
 	err := q.QueryRow(ctx, `
+		WITH live AS (
+		  SELECT slot_organisation_id, slot_id, COUNT(*) AS consumed
+		  FROM reservations
+		  WHERE slot_organisation_id = $1 AND state IN ('held', 'confirmed')
+		  GROUP BY slot_organisation_id, slot_id
+		)
 		SELECT
-		  COUNT(*) FILTER (WHERE r.state IN ('held', 'confirmed')),
-		  COUNT(*) FILTER (WHERE per_slot.consumed > s.capacity)
-		FROM reservations r
+		  COALESCE(SUM(live.consumed), 0),
+		  COUNT(*) FILTER (WHERE live.consumed > s.capacity)
+		FROM live
 		JOIN slots s
-		  ON s.slot_organisation_id = r.slot_organisation_id AND s.slot_id = r.slot_id
-		LEFT JOIN LATERAL (
-		  SELECT COUNT(*) AS consumed
-		  FROM reservations r2
-		  WHERE r2.slot_organisation_id = r.slot_organisation_id
-		    AND r2.slot_id = r.slot_id
-		    AND r2.state IN ('held', 'confirmed')
-		) per_slot ON TRUE
-		WHERE r.slot_organisation_id = $1`, string(org)).Scan(&live, &overCapacity)
+		  ON s.slot_organisation_id = live.slot_organisation_id AND s.slot_id = live.slot_id`,
+		string(org)).Scan(&live, &overCapacity)
 	if err != nil {
 		return c, fmt.Errorf("capacity check: %w", err)
 	}
 
 	if overCapacity > 0 {
-		c.Detail = fmt.Sprintf("%d reservations sit on slots whose consumed capacity "+
-			"exceeds capacity: INV-1 is violated, and no number from this run is usable",
-			overCapacity)
+		// Slots, not reservations. The aggregate form counts the violating slots directly,
+		// which is what INV-1 is about; the previous count of reservations *sitting on* such
+		// slots was a proxy that scaled with slot popularity rather than with the number of
+		// violations.
+		c.Detail = fmt.Sprintf("%d slot(s) hold more live reservations than their capacity "+
+			"allows: INV-1 is violated, and no number from this run is usable", overCapacity)
 		return c, nil
 	}
 
@@ -195,9 +208,9 @@ func idempotencyCheck(ctx context.Context, q Querier, org domain.OrganisationID,
 		return c, nil
 	}
 
-	// A replay must not create a record, so fresh (non-replay) mutations are what the
-	// record count is compared against. Folding replays in would demand a record per
-	// replay and fail a correct service.
+	// A replay must not create a record, so fresh (non-replay) mutations are what the record
+	// count is compared against. Folding replays in would demand a record per replay and
+	// fail a correct service.
 	fresh := s.FreshMutations()
 	if records < fresh {
 		c.Detail = fmt.Sprintf("%d idempotency records for %d fresh mutations the client "+
@@ -206,9 +219,25 @@ func idempotencyCheck(ctx context.Context, q Querier, org domain.OrganisationID,
 		return c, nil
 	}
 
+	// The other direction, which used to pass silently. A record the client never asked for
+	// means either a contaminated fixture or a replay that wrote one — and the second is the
+	// failure this check exists to catch, since a replay that records its own outcome has
+	// performed the mutation §4.2 says it must not.
+	//
+	// Equality is only assertable because alloca-seed refuses to start against a fixture
+	// holding records (§5.3). Before that assertion existed, a leftover record was the
+	// commoner explanation and this comparison would have failed correct services.
+	if records > fresh {
+		c.Detail = fmt.Sprintf("%d idempotency records for %d fresh mutations: %d record(s) "+
+			"the client never committed. Either the fixture was not re-seeded, or a replay "+
+			"wrote a record instead of returning the recorded outcome (INV-5, §4.2)",
+			records, fresh, records-fresh)
+		return c, nil
+	}
+
 	c.OK = true
-	c.Detail = fmt.Sprintf("%d records, all keys distinct, %d fresh mutations reported",
-		records, fresh)
+	c.Detail = fmt.Sprintf("%d records, all keys distinct, %d fresh mutations reported, "+
+		"%d replays wrote none", records, fresh, s.ReplayedMutations)
 	return c, nil
 }
 

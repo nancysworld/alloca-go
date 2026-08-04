@@ -113,6 +113,18 @@ fixture, an external generator holding no database credentials, and a reconcilia
 client, server and persisted-state totals. The procedure is in
 [`docs/operations/load-harness.md`](docs/operations/load-harness.md).
 
+**What it has found so far** lives in [`docs/measurements/`](docs/measurements/) — the reports
+and the retained artifacts every figure in them is re-derived from. The load-bearing result is
+the [single-instance frontier](docs/measurements/reports/ag-sept-pr2-single-instance-frontier.md):
+on a developer workstation the service reaches ~4,300 booking req/s, and **the limit is
+PostgreSQL rather than the Go service** — `alloca-go` still has substantial compute headroom at
+that rate, using about 1.2 CPU cores of a 10-vCPU allocation. So adding service replicas raises
+throughput only while aggregate database concurrency is below that limit, and cannot lift the
+saturated ceiling beyond it. Read that report's §5.5 before quoting the
+number — it is a workstation measurement against an untuned container, not a capacity claim, and
+[`docs/measurements/environment.md`](docs/measurements/environment.md) is the machine it was
+taken on.
+
 The HTTP contract — routes, request and response shapes, status mapping, and the
 `/healthz`, `/readyz`, `/meta` operational endpoints — is documented in
 [`docs/design/api-surface.md`](docs/design/api-surface.md). What the service emits about

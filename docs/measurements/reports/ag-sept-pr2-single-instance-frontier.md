@@ -404,7 +404,9 @@ host halves the utilisation and doubles the apparent headroom.
 `measurement-contract.md` §7's provisional gates every cell passes comfortably — the worst p99
 anywhere in the plateau set is 61.6 ms against a 500 ms objective, and no timeouts or unknown
 outcomes occurred at any point. The latency gates are **not binding**, so SLO-safe capacity is
-not bounded by them. What now bounds the exploration is throughput saturation rather than
+not bounded by them. **§6.3 explains why, and where they would start to bind** — the harness is
+closed-loop, so its queue is capped by the worker count, and the first enforced deadline is
+`[DERIVED]` to engage around 8× the highest concurrency tested. What now bounds the exploration is throughput saturation rather than
 missing cells: past c=128 at pool 80 the queue grows and the rate does not.
 
 **Recommended operating capacity: deferred to PR3**, per the scope note §5.6 and the plan's §14
@@ -490,6 +492,99 @@ re-runs everything on the container path anyway; doing it here means re-exportin
 no new evidence. The shape PR3 should take: one snapshot per *sweep* with cell-specific CSVs and
 windows, or a fresh Prometheus data directory per sweep. It matters more there than here,
 because PR3 multiplies cells by replica count.
+
+### 6.3 The prototype's overload failure is still unreproduced, and this harness cannot produce it
+
+Asked during review: **why does none of this show the long latency the predecessor prototype
+showed, and would more concurrency reveal it?**
+
+The prototype finding is recorded as `[PRIOR-UNREPRODUCED]` in
+[`high-level-design.md`](../../design/high-level-design.md) §1.1 — *"latency grew with
+concurrency until timeouts became the visible failure, without isolating why"* — and resolving
+that "why" is a large part of what this project exists to do. So the question deserves a
+straight answer rather than a caveat.
+
+**Half of it is reproduced already.** Latency grows with concurrency, linearly, exactly as
+Little's Law requires of a closed loop (§2's cells, pool 10):
+
+| c | throughput req/s | p99 ms | N ÷ X (mean, ms) |
+|---:|---:|---:|---:|
+| 32 | 2053.6 | 24.0 | 15.6 |
+| 64 | 2091.6 | 47.0 | 30.6 |
+| 128 | 2049.1 | 92.8 | 62.5 |
+
+Doubling concurrency multiplies p99 by **1.96** then **1.97**, against 2.00 for exact
+linearity. That is the same shape.
+
+**The other half has never occurred.** Across **2,350,742 requests** in every retained run,
+exactly two outcomes appear: 2,218,403 `admitted_success` and 132,339 `business_refusal`.
+**Zero timeouts, zero unknown-commits, zero internal failures.** Not one, at any concurrency,
+pool size or workload.
+
+#### Why the failure does not appear
+
+Three reasons, and the first is structural rather than a matter of degree.
+
+**1. A closed loop cannot run away.** The generator holds at most `-concurrency` requests in
+flight (`internal/loadgen/run.go`), so the queue is bounded by that number and latency is
+exactly `N ÷ X`. Latency rises only when *the operator* adds workers. The prototype's failure is
+the signature of **open-loop** arrival — requests arriving independently of completions — where
+an arrival rate above the service rate makes the queue grow without bound and latency grow *with
+time* rather than with N. This harness cannot generate that shape; `run.go` says as much, and
+open-loop arrival-rate mode is listed as unbuilt in the roadmap.
+
+**2. The timeout budget converts waiting into an explicit refusal.** `measurement-contract.md`
+§8.1's nested deadlines (`lock < statement ≤ txn < server < client`) are validated at startup. A
+request that would otherwise wait seconds for a connection is refused at `db_acquire_cap`
+instead. *"Timeouts became the visible failure"* is what happens when waits accumulate until the
+**outermost** client deadline fires — the exact arrangement this nesting exists to prevent.
+
+**3. Nothing retries.** The generator issues each unit once, and ADR-0002 rejects unconstrained
+retries after commit ambiguity. The amplification loop — timeout, retry, more load, more
+timeouts — is absent by construction.
+
+#### Where more concurrency *would* take it `[DERIVED]`
+
+Not measured: extrapolated from the measured plateaus by `N = X × L`, and labelled accordingly.
+The first budget that is actually **enforced** in the serving path is `db_acquire_cap`
+(`internal/postgres/postgres.go:69`, wrapping `pool.Acquire`):
+
+| Enforced bound | Limit | c at pool 10 (X≈2,050) | c at pool 80 (X≈4,300) |
+|---|---:|---:|---:|
+| `db_acquire_cap` | 500 ms | **~1,025** | **~2,150** |
+| `txn_budget` | 3.5 s | ~7,175 | ~15,050 |
+| `server_deadline` | 5 s | ~10,250 | ~21,500 |
+
+So the first `timeout_*` outcomes should appear around **8× the highest concurrency tested**.
+Two things follow, and they are the answer to the question as asked:
+
+- **Yes**, pushing concurrency further would produce timeouts — and would be the first time in
+  2.35 million requests that the timeout budget did anything.
+- **No**, it would not reproduce the prototype's failure. It would produce a plateau of
+  *classified refusals* at bounded latency, because the queue stays capped at N and each refusal
+  is an explicit answer rather than an outer deadline expiring. Reproducing the prototype needs
+  the two things deliberately absent here: **open-loop arrivals and retry-on-timeout**.
+
+That experiment is also **not reachable today**: `slots_for()` cannot seed a fixture for c ≥ 256
+(§7), so it needs that fixed first.
+
+#### Two gaps this exposed
+
+**`admission_cap` is published in every run manifest and enforced nowhere.** It is declared,
+range-validated, and written into `timeout_budget` as `admission_cap=250ms` in every `run.json`
+— but its only non-test consumer is `cmd/alloca-seed`. No serving path applies it, because the
+admission tier is AG-M2+ (`system-context.md` §2). A reader of a manifest would reasonably
+conclude that 250 ms bounds something in the measured system. It does not, and the first
+version of the table above was wrong for exactly that reason before the code was checked.
+
+**The timeout budget has never been exercised under load.** 2.35 million requests with zero
+timeouts means §8.1's nesting is proven at startup and *never observed doing its job*. There is
+no negative control showing a request is actually refused at `db_acquire_cap` rather than
+waiting — which is the same class of gap as an untested backup: the mechanism is present,
+validated, and unobserved.
+
+Neither is fixed here. Both are cheap to close alongside the c≈1,000 experiment, which is where
+the budget would first be visible.
 
 ---
 

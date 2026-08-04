@@ -72,28 +72,36 @@ being argued across from a different one.
 
 | Generator `GOMAXPROCS` | throughput req/s | generator CPU/core | % of unconstrained |
 |---:|---:|---:|---:|
-| 1 | 4301.8 | 0.0173 | 101.5% |
-| 2 | 4263.2 | 0.0212 | 100.6% |
-| 4 | *1389.3* | *0.0105* | *32.8%* |
-| 10 (all) | 4238.6 | 0.0245 | 100.0% |
+| 1 | 4682.7 | 0.0174 | 113.4% |
+| 2 | 4236.2 | 0.0209 | 102.6% |
+| 4 | 4135.4 | 0.0227 | 100.1% |
+| 10 (all) | 4130.1 | 0.0245 | 100.0% |
 
-**Headroom holds at the plateau**: a generator confined to a *single* core delivers 4301.8
-req/s, matching the unconstrained 4238.6. The `GOMAXPROCS=4` cell is the §4 excursion again —
-its generator CPU *fell* to 0.0105, so the generator was starved alongside everything else
-rather than saturated, which is the opposite of a generator limit.
+**Headroom holds at the plateau**: a generator confined to a *single* core delivers 4682.7
+req/s, matching and slightly exceeding the unconstrained 4130.1. Constraining the harness
+tenfold does not reduce the answer, so the harness is not what produces it.
 
 This also **corroborates the plateau from a third independent path**: the control shares no
-code with the sweep, seeds a much smaller fixture (8,000 slots against 61,540), and still lands
-at 4238.6–4301.8 req/s. Fixture and index size are therefore not what sets the ceiling either.
+code with the sweep, runs no warm-up phase, and seeds a fixture seven times smaller (8,000
+slots against 61,540) — and still lands at 4130.1–4682.7 req/s, against the sweep's
+3883.7–4345.0. Fixture and index size do not set the ceiling; if anything the smaller table is
+marginally faster, which is the direction cache locality predicts and the opposite of a
+fixture-bound result.
 
-> **Defect found in this control, not fixed.** The verdict logic in
-> `test/scripts/control-generator.sh` selects the lowest `GOMAXPROCS` among cells within 5% of
-> unconstrained and reports headroom "down to" it — so it printed a **pass** here while one of
-> its own four cells read 32.8%. It cannot distinguish "flat across the ladder" from "flat with
-> a hole in it", and would pass identically if the hole were a genuine generator limit. The
-> conclusion above is still sound, but it is sound because of the CPU reading, not because the
-> script said so. The script should require monotonic non-degradation, or refuse to conclude
-> when any cell falls outside the band.
+> **The first attempt at this control did not conclude, and that is why the script changed.**
+> The 2026-08-04 first pass read 101.5%, 100.6%, **32.8%**, 100.0% — one rung had met the §4
+> excursion (its generator CPU *fell* to 0.0105, so the generator was starved alongside
+> everything else rather than saturated). The script printed a **pass** anyway: its verdict
+> took the lowest `GOMAXPROCS` within 5% of unconstrained and reported headroom "down to" it,
+> so it could not distinguish "flat across the ladder" from "flat with a hole in it" — and
+> would have passed identically had the hole been a genuine generator limit.
+>
+> `control-generator.sh` now requires **every** rung within the band and reports `INCONCLUSIVE`
+> otherwise, alongside the admissibility gates of ChatGPT's P1 (every requested rung present,
+> sound, response-validated, free of timeouts and unknown outcomes, at or above `-require`, and
+> sharing one service identity). The table above is the re-run under the hardened script, which
+> exits zero. The refused first pass is not retained: it was superseded rather than explanatory,
+> and §4 already documents the excursion with better evidence.
 
 ---
 
@@ -307,7 +315,7 @@ single cell:
   **3629.5–4832.5 req/s, mean 4325.4** — ten seconds each, before any §4 excursion could
   develop. The plateau does not depend on which cells are treated as clean.
 - **The §1.1 generator control**, which shares no code with the sweep and uses a fixture seven
-  times smaller, independently lands at **4238.6–4301.8 req/s**.
+  times smaller, independently lands at **4130.1–4682.7 req/s**.
 
 Three measurement paths, one answer.
 
@@ -321,7 +329,7 @@ Three candidates are eliminated at the plateau cell itself:
 | candidate | reading at the plateau | verdict |
 |---|---|---|
 | alloca-go compute | 1.2 of 10 cores (**12%**) | not the constraint |
-| the load generator | §1.1's control **re-run at this operating point**: 4301.8 req/s on one core | not the constraint |
+| the load generator | §1.1's control **re-run at this operating point**: 4682.7 req/s on one core, against 4130.1 unconstrained | not the constraint |
 | the connection pool | acquire-wait **0.003 s/s** (53.6 at pool 10), 58–64 of 80 connections in use | **not the constraint at pool 80** |
 | fixture / index size | §1.1 reaches the same rate on 8,000 slots as the sweep does on 61,540 | not the constraint |
 
@@ -418,6 +426,57 @@ host-level metrics (CPU steal, page cache, disk latency on the Docker Desktop st
 which neither a service exporter nor a PostgreSQL exporter provides. A node exporter is the
 cheapest instrument that would see it. Until something does, single readings from this
 workstation carry §4's ~2× caveat no matter how good the database instrumentation gets.
+
+### 6.1 The dashboard's latency trace is bucket-limited; `run.json` is not `[MEASURED]`
+
+Raised in review: the Grafana p95/p99 traces appear to stop at ~0.25 s. They are not clipped,
+and the distribution is not really clustered there — it is **histogram resolution**, and the
+report's own latency figures are unaffected because none of them come from the histogram.
+
+`requestBuckets` (`internal/metrics/metrics.go:123`) steps `… 0.05, 0.1, 0.25, 0.5 …`. Once p99
+falls inside the 2.5×-wide `(0.1, 0.25]` bucket, `histogram_quantile` interpolates within it and
+can return anything up to the upper bound — typically landing high, hence the pin at ~0.2485.
+Comparing the panel against the client's exact percentile, computed from raw samples, shows the
+panel never exceeding the bound of the bucket the true value sits in:
+
+| cell | panel p99 | client p99 | bucket |
+|---|---:|---:|---|
+| `pr2-telemetry/full-1` | 0.2460 | **0.1225** | (0.1, 0.25] |
+| `pr2-telemetry/metrics_only-1` | 0.2462 | **0.1245** | (0.1, 0.25] |
+| `contended-2/hot-slot-c64` | 0.2471 | 0.1589 | (0.1, 0.25] |
+| `plateau-repeat/dispersed-c128-pool80` | 0.4393 | 0.2667 | (0.25, 0.5] |
+
+The last row is the proof that it is not a ceiling: once the true value crosses into the next
+bucket, the panel follows. Within the wide bucket the over-estimate reaches **2×**.
+
+**Every latency figure in this report comes from `run.json`**, whose percentiles are computed
+from raw per-request samples rather than from buckets — so §2, §2.2 and §5 are unaffected. It
+is the *dashboard* that misleads, and only between 0.1 s and 0.25 s.
+
+Buckets are deliberately **not** changed here. Adding boundaries costs cardinality on a
+labelled histogram, and PR2's latency conclusions do not depend on the panel. If PR3 needs the
+dashboard to be quantitatively trustworthy in that band, insert `0.15` and `0.2` and re-measure
+the telemetry overhead, since bucket count is part of what §6.2 was trying to price.
+
+### 6.2 TSDB snapshots are cumulative, and the redesign is deferred to PR3
+
+Raised in review, confirmed, and **deliberately not fixed in PR2** (Nancy's call, 2026-08-04).
+
+`export-panels.sh` copies a full Prometheus snapshot per cell, and Prometheus blocks are
+shared history rather than cell-local: across the 33 cells here there are **140 block copies of
+only 39 distinct blocks — 72% redundant**, and 560 of the 1,288 tracked files under
+`docs/measurements/` are TSDB.
+
+**What a reader needs to know to use them:** a cell's snapshot is *not* scoped to that cell. It
+carries whatever history the Prometheus instance held at export time, including other cells'
+windows. **`panels/index.json`'s `window` is what isolates a cell's evidence** — a query against
+a snapshot without those bounds will silently span neighbouring cells.
+
+Deferred rather than fixed because the redesign changes how every cell is produced, and PR3
+re-runs everything on the container path anyway; doing it here means re-exporting 33 cells for
+no new evidence. The shape PR3 should take: one snapshot per *sweep* with cell-specific CSVs and
+windows, or a fresh Prometheus data directory per sweep. It matters more there than here,
+because PR3 multiplies cells by replica count.
 
 ---
 

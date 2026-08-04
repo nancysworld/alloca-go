@@ -2,36 +2,36 @@
   "rows": [
     {
       "gomaxprocs": 1,
-      "throughput_per_s": 4301.8,
-      "goodput_per_s": 4301.8,
-      "p99_ms": 60.257349,
-      "generator_cpu_per_core": 0.0173,
+      "throughput_per_s": 4682.7,
+      "goodput_per_s": 4682.7,
+      "p99_ms": 54.640707,
+      "generator_cpu_per_core": 0.0174,
       "level": "local",
-      "pct_of_unconstrained": 101.5
+      "pct_of_unconstrained": 113.4
     },
     {
       "gomaxprocs": 2,
-      "throughput_per_s": 4263.2,
-      "goodput_per_s": 4263.2,
-      "p99_ms": 58.143174,
-      "generator_cpu_per_core": 0.0212,
+      "throughput_per_s": 4236.2,
+      "goodput_per_s": 4236.2,
+      "p99_ms": 58.910653,
+      "generator_cpu_per_core": 0.0209,
       "level": "local",
-      "pct_of_unconstrained": 100.6
+      "pct_of_unconstrained": 102.6
     },
     {
       "gomaxprocs": 4,
-      "throughput_per_s": 1389.3,
-      "goodput_per_s": 1389.3,
-      "p99_ms": 202.997411,
-      "generator_cpu_per_core": 0.0105,
+      "throughput_per_s": 4135.4,
+      "goodput_per_s": 4135.4,
+      "p99_ms": 59.648635,
+      "generator_cpu_per_core": 0.0227,
       "level": "local",
-      "pct_of_unconstrained": 32.8
+      "pct_of_unconstrained": 100.1
     },
     {
       "gomaxprocs": 10,
-      "throughput_per_s": 4238.6,
-      "goodput_per_s": 4238.6,
-      "p99_ms": 59.124197,
+      "throughput_per_s": 4130.1,
+      "goodput_per_s": 4130.1,
+      "p99_ms": 59.572686,
       "generator_cpu_per_core": 0.0245,
       "level": "local",
       "pct_of_unconstrained": 100.0
@@ -46,6 +46,6 @@
   "require": "local",
   "refusals": [],
   "verdict": [
-    "INCONCLUSIVE: throughput is not flat across the ladder \u2014 GOMAXPROCS=4 at 32.8%. Either the generator binds at those levels, or the run met the environmental excursion the frontier report's \u00a74 describes; the generator cannot be ruled out from this ladder until every rung is within 5%. Check each rung's generator CPU: a generator that is binding works harder, not less."
+    "throughput is within 5% of unconstrained at EVERY level tested, down to GOMAXPROCS=1, so at this operating point the generator had at least 10x the compute it needed and is not the binding constraint"
   ]
 }

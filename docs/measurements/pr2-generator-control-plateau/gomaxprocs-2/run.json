@@ -1,9 +1,9 @@
 {
   "manifest": {
-    "service_commit_sha": "ea44c9be5d83fde56ea2c12af5b823630902690c",
+    "service_commit_sha": "e17dfdf97059329ac1c3d1f7a96a9a7b22aed96d",
     "service_source_modified": false,
     "service_go_version": "go1.26.5",
-    "generator_commit_sha": "ea44c9be5d83fde56ea2c12af5b823630902690c",
+    "generator_commit_sha": "e17dfdf97059329ac1c3d1f7a96a9a7b22aed96d",
     "generator_source_modified": false,
     "generator_go_version": "go1.26.5",
     "replica_count": 0,
@@ -24,15 +24,15 @@
     "generator_gomaxprocs": 2,
     "generator_num_cpu": 10,
     "target": "http://localhost:8080",
-    "timestamp": "2026-08-04T11:45:00.94806846Z"
+    "timestamp": "2026-08-04T13:23:21.651687645Z"
   },
   "summary": {
     "workload": "dispersed",
     "concurrency": 128,
     "iterations": 0,
     "duration_requested_seconds": 20,
-    "completed_iterations": 85346,
-    "duration_seconds": 20.019243385,
+    "completed_iterations": 84860,
+    "duration_seconds": 20.031880746,
     "warm_up_seconds": 0,
     "warm_up_discarded": 0,
     "totals": [
@@ -40,23 +40,23 @@
         "operation": "reserve",
         "outcome": "admitted_success",
         "replay": false,
-        "count": 85346
+        "count": 84860
       }
     ],
-    "completed_requests": 85346,
-    "successful_mutation_goodput": 85346,
+    "completed_requests": 84860,
+    "successful_mutation_goodput": 84860,
     "replayed_mutations": 0,
     "latency_ms": {
-      "p50": 28.67194,
-      "p95": 47.253596,
-      "p99": 58.143174,
-      "max": 141.612644
+      "p50": 28.768437,
+      "p95": 47.966627,
+      "p99": 58.910653,
+      "max": 123.888603
     },
     "generator": {
       "gomaxprocs": 2,
       "goroutines": 261,
-      "cpu_seconds": 4.249537,
-      "cpu_utilisation_per_core": 0.02122726078241343,
+      "cpu_seconds": 4.189499,
+      "cpu_utilisation_per_core": 0.02091415705355857,
       "num_cpu": 10
     },
     "response_validation_enabled": true,

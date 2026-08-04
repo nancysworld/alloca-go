@@ -6,7 +6,7 @@
 > PostgreSQL — not alloca-go.**
 >
 > At that rate the service uses **1.2 of 10 cores (12%)**, the connection pool has stopped
-> being the constraint (acquire-wait falls to **zero** at pool 80), and the database's
+> being the constraint (acquire-wait falls from 53.6 s/s to **0.003** at pool 80), and the
 > largest single wait is **`LWLock:WALWrite`** — backends serialising on the write-ahead
 > log. Throughput is flat from concurrency 64 to 128 while p99 doubles: added load buys
 > queue depth, not work.
@@ -171,9 +171,10 @@ Two things follow, and the first is the ceiling:
 4345.0 (pass 1) — **0.4%** — while p99 rises 34.0 → 61.6 ms. That is the saturation signature
 again, one level up from §2: doubling the offered concurrency changes only the queue.
 
-**At pool 80 the connection pool is no longer the constraint at all.** `pool_acquire_wait` is
-flat **zero** through the c=64/pool=80 window and only 58–64 of the 80 connections are ever in
-use, because the generator's 64 workers cannot ask for more. Whatever limits throughput at
+**At pool 80 the connection pool is no longer the constraint at all.** `pool_acquire_wait`
+collapses to **0.003 s/s** through the c=64/pool=80 window — against 22.8 s/s at pool 40 and
+53.6 at pool 10, so four orders of magnitude down and effectively nil — and only 58–64 of the
+80 connections are ever in use, because the generator's 64 workers cannot ask for more. Whatever limits throughput at
 4,300 req/s, it is not the pool — which is what makes §5's conclusion a statement about the
 database rather than about a tunable.
 
@@ -293,8 +294,11 @@ plans — see §6.
 | c=64 pool=80 | 4113.3 | 37.5 ms | [`plateau-repeat/dispersed-c64-pool80/`](plateau-repeat/dispersed-c64-pool80/) |
 | c=128 pool=40 | 3883.7 | 51.0 ms | [`plateau-repeat/dispersed-c128-pool40/`](plateau-repeat/dispersed-c128-pool40/) |
 
-Spread at a fixed configuration is **5.2%** (c=64/pool=80) and **10.6%** (c=128/pool=80), which
-is the §5.6 variance component measured at the ceiling rather than at the default pool.
+**Variance at the ceiling: 4.9%**, from c=64/pool=80 (4326.8 and 4113.3). That is the §5.6
+variance component measured at the ceiling rather than at the default pool, and it is a
+**single pair** — the honest sample size, because the other three configurations each lost one
+of their two cells to a §4 excursion, so no second clean pair exists. Repeating the plateau
+until every configuration has one is the cheapest way to strengthen this report.
 
 Two independent corroborations sit in the artifacts, and together they are worth more than any
 single cell:
@@ -318,7 +322,7 @@ Three candidates are eliminated at the plateau cell itself:
 |---|---|---|
 | alloca-go compute | 1.2 of 10 cores (**12%**) | not the constraint |
 | the load generator | §1.1's control **re-run at this operating point**: 4301.8 req/s on one core | not the constraint |
-| the connection pool | acquire-wait **0.0 s/s**, 58–64 of 80 connections in use | **not the constraint at pool 80** |
+| the connection pool | acquire-wait **0.003 s/s** (53.6 at pool 10), 58–64 of 80 connections in use | **not the constraint at pool 80** |
 | fixture / index size | §1.1 reaches the same rate on 8,000 slots as the sweep does on 61,540 | not the constraint |
 
 The pool ceasing to bind is what makes this a database result rather than a tuning result. And
@@ -387,8 +391,9 @@ PR3 line — but only the *term* is deferred, not the work. `measurement-contrac
 it as a cap reserving headroom for **variance, rolling deployment, and loss of one unit**. At
 one replica the last two cannot be reserved against at all, so the defined quantity is not
 computable here. The one component that *is* meaningful is measured and reported above:
-**5.2–10.6% run-to-run at the ceiling** (0.6–8.4% at the default pool, §2.1), with §4's
-excursions as the outer bound.
+**4.9% run-to-run at the ceiling from a single clean pair** (0.6–8.4% across three pairs at the
+default pool, §2.1), with §4's excursions as the outer bound. PR3 should not treat one pair as
+a variance estimate without repeating it.
 
 ---
 

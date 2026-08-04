@@ -533,17 +533,42 @@ concurrency until timeouts became the visible failure, without isolating why"* �
 that "why" is a large part of what this project exists to do. So the question deserves a
 straight answer rather than a caveat.
 
-**Half of it is reproduced already.** Latency grows with concurrency, linearly, exactly as
-Little's Law requires of a closed loop (§2's cells, pool 10):
+**Two words this section depends on.** A **closed-loop** generator holds a fixed population of
+workers, each of which sends one request, waits for the response, and only then sends the next.
+The operator sets the *population*; the service sets the *rate*. An **open-loop** generator
+sends at a rate the operator sets, whether or not earlier requests have finished — arrivals are
+independent of completions. Alloca's generator is closed-loop
+(`internal/loadgen/run.go`); open-loop arrival-rate mode is not built.
 
-| c | throughput req/s | p99 ms | N ÷ X (mean, ms) |
-|---:|---:|---:|---:|
-| 32 | 2053.6 | 24.0 | 15.6 |
-| 64 | 2091.6 | 47.0 | 30.6 |
-| 128 | 2049.1 | 92.8 | 62.5 |
+The difference decides what can be observed. In a closed loop the number of requests inside the
+service can never exceed the worker count, so the queue is bounded and a slow service simply
+receives less load. In an open loop, a service that slows below the arrival rate accumulates a
+backlog that grows for as long as the overload lasts — which is the only way latency grows
+without bound.
+
+**Half of the prototype finding is reproduced already.** Latency grows with concurrency,
+linearly, exactly as a closed loop requires (§2's cells, pool 10). Writing **N** for the number
+of requests inside the service and **X** for completions per second:
+
+| c — workers, so **N** | throughput req/s, so **X** | **N ÷ X** predicted mean, ms | p50 measured, ms | p99 ms |
+|---:|---:|---:|---:|---:|
+| 32 | 2053.6 | 15.6 | **15.1** | 24.0 |
+| 64 | 2091.6 | 30.6 | **29.7** | 47.0 |
+| 128 | 2049.1 | 62.5 | **60.6** | 92.8 |
+
+`N = c` because each worker holds exactly one request at all times, which is what makes the
+loop closed. `N ÷ X` is then the mean time a request spends inside: 64 ÷ 2091.6 = 0.0306 s =
+30.6 ms. Compare it to **p50**, not p99 — it predicts a mean, and it lands within 3% at every
+point using no latency measurement at all. p99 sits above it as the tail of the same
+distribution, not as a separate effect.
+
+*(Strictly this is the interactive response-time law, `R = N/X − Z`, with think time `Z = 0`
+because the generator has none — Little's Law applied to a closed system.)*
 
 Doubling concurrency multiplies p99 by **1.96** then **1.97**, against 2.00 for exact
-linearity. That is the same shape.
+linearity. That is the same shape the prototype showed. **And there is no room in that
+arithmetic for a pathology**: with N fixed by the operator and X flat, latency can only track
+N. Runaway latency needs N itself to grow without bound, and a closed loop cannot do that.
 
 **The other half has never occurred.** Across **2,350,742 requests** in every retained run,
 exactly two outcomes appear: 2,218,403 `admitted_success` and 132,339 `business_refusal`.

@@ -115,6 +115,56 @@ func parseCount(s string) (int, error) {
 	return n, nil
 }
 
+// Scrapes are the server-side counters bracketing the measured phase.
+//
+// Baseline is optional and is what makes warm-up possible. §5.4 of the PR2 scope note runs
+// warm-up traffic, resets the fixture, and leaves the service *running* — because restarting
+// it would discard exactly what warm-up establishes. Prometheus counters are cumulative and
+// only a process restart zeroes them, so After alone carries the warm-up requests too, while
+// the client report describes the measured phase alone. Comparing those two would fail every
+// warmed cell and report a correct service as unreconciled.
+//
+// A nil Baseline means the run began from a freshly started process, which is PR1's shape and
+// stays valid.
+type Scrapes struct {
+	Baseline ServerTotals
+	After    ServerTotals
+}
+
+// measured returns the counts attributable to the measured phase, and says why it cannot when
+// the two scrapes do not describe one continuous process.
+func (s Scrapes) measured() (ServerTotals, error) {
+	if s.Baseline == nil {
+		return s.After, nil
+	}
+
+	before := map[cellKey]int{}
+	for _, t := range s.Baseline {
+		before[keyOf(t)] += t.Count
+	}
+
+	out := make(ServerTotals, 0, len(s.After))
+	for _, t := range s.After {
+		delta := t.Count - before[keyOf(t)]
+		if delta < 0 {
+			// A counter went backwards, which a monotonic counter cannot do within one
+			// process. The service restarted between the two scrapes — so the warm state the
+			// baseline was taken to preserve is gone, and the binary that served the measured
+			// phase may not even be the one the manifest names (DEBT-3).
+			return nil, fmt.Errorf("cell %s counted %d after the run but %d before it: the "+
+				"counter went backwards, so the service restarted mid-cell and the measured "+
+				"phase did not run against the process the baseline describes",
+				describe(keyOf(t)), t.Count, before[keyOf(t)])
+		}
+		if delta > 0 {
+			nt := t
+			nt.Count = delta
+			out = append(out, nt)
+		}
+	}
+	return out, nil
+}
+
 // Sum totals every cell, which is the count comparable to the client's completed requests.
 func (t ServerTotals) Sum() int {
 	n := 0
@@ -130,16 +180,23 @@ func (t ServerTotals) Sum() int {
 // can agree perfectly while the service's own telemetry says something else, and a capacity
 // number read off that telemetry would then be wrong in a way nothing else detects.
 //
-// The scrape is assumed to start from zero, which the operator guide gets by restarting the
-// service before a run. Counters are cumulative and nothing resets them, so a scrape taken
-// across two runs reports both and fails here — correctly, since the client report describes
-// only one of them.
+// Counters are cumulative and nothing resets them short of a process restart. With no
+// baseline the scrape is assumed to start from zero, which a restart before the run gives, and
+// a scrape taken across two runs reports both and fails here — correctly, since the client
+// report describes only one of them. With a baseline the comparison is the delta across the
+// measured phase, which is what lets a cell keep a warmed process (see Scrapes).
 //
 // Ambiguous outcomes are not special-cased. If the client recorded a timeout while the
 // service recorded a completion, the cells disagree and this check fails; that is deliberate,
 // because such a run needs a person to look at it before any number is quoted from it.
-func serverTotalsCheck(s loadgen.Summary, server ServerTotals) Check {
+func serverTotalsCheck(s loadgen.Summary, scrapes Scrapes) Check {
 	c := Check{Name: "server totals vs client totals"}
+
+	server, err := scrapes.measured()
+	if err != nil {
+		c.Detail = err.Error()
+		return c
+	}
 
 	if server == nil {
 		c.Detail = "no metrics scrape was supplied, so the server's own count did not " +

@@ -1,0 +1,17 @@
+{
+	"ulid": "01KZ669KPACF9PKW50R3D45N6X",
+	"minTime": 1785834161919,
+	"maxTime": 1785840585532,
+	"stats": {
+		"numSamples": 83468,
+		"numSeries": 86,
+		"numChunks": 815
+	},
+	"compaction": {
+		"level": 1,
+		"sources": [
+			"01KZ669KPACF9PKW50R3D45N6X"
+		]
+	},
+	"version": 1
+}

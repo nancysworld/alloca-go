@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,26 +14,95 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/nancysworld/alloca-go/internal/httpapi"
 	"github.com/nancysworld/alloca-go/internal/metrics"
 	"github.com/nancysworld/alloca-go/internal/telemetry"
 )
 
-// buildRecorder assembles the observation recorder the service runs with: AG-M1's
-// structured log line and AG-Sept's aggregate series, both fed from the same observation.
+// Telemetry modes, selected by ALLOCA_TELEMETRY.
 //
-// Both, not one: the log answers "what happened to this request" and the metric answers
-// "what happened to ten million of them", and an experiment needs to be able to drop from
-// the second to the first when a total looks wrong.
-func buildRecorder(reg *prometheus.Registry, pool *pgxpool.Pool, logger *slog.Logger) telemetry.Recorder {
+// Three rather than two, because the two questions an experiment asks are different. §6.2
+// asks what *emission* costs on the request path, and PR1 measured that almost all of it is
+// the synchronous log write (1793ns for the Tee against a real file; 136ns for the Prometheus
+// recorder alone) — so TelemetryMetricsOnly is the arm that isolates the cost that matters
+// while leaving the run reconcilable. TelemetryOff answers the blunter question of what the
+// service does with no observation at all, and pays for it: with no aggregate series there is
+// no server-side count, so §6.5's three-way agreement cannot be reached and the run is not
+// quotable. That refusal is deliberate and is enforced in the manifest, not left to be
+// noticed.
+const (
+	TelemetryFull        = "full"
+	TelemetryMetricsOnly = "metrics_only"
+	TelemetryOff         = "off"
+)
+
+// telemetryMode reads the requested mode, defaulting to full.
+//
+// Env-driven rather than part of config.Config, for the same reason METRICS_ADDR is: this is
+// an experiment-time concern, and config.Config is the service's operational contract — a
+// field there would imply every deployment must answer for it.
+func telemetryMode() (string, error) {
+	switch mode := os.Getenv("ALLOCA_TELEMETRY"); mode {
+	case "", TelemetryFull:
+		return TelemetryFull, nil
+	case TelemetryMetricsOnly, TelemetryOff:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("ALLOCA_TELEMETRY=%q: want %s, %s or %s",
+			mode, TelemetryFull, TelemetryMetricsOnly, TelemetryOff)
+	}
+}
+
+// buildRecorder assembles the observation recorder the service runs with.
+//
+// In full mode that is AG-M1's structured log line and AG-Sept's aggregate series, both fed
+// from the same observation — the log answers "what happened to this request" and the metric
+// answers "what happened to ten million of them", and an experiment needs to drop from the
+// second to the first when a total looks wrong.
+//
+// The process-level collectors stay registered in every mode. They are not request-path
+// telemetry, and keeping them means an `off` run still shows its own CPU and memory, which is
+// most of the reason to run one.
+func buildRecorder(reg *prometheus.Registry, pool *pgxpool.Pool, logger *slog.Logger, mode string) telemetry.Recorder {
 	reg.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		newPoolCollector(pool),
 	)
-	return metrics.Tee{
-		telemetry.NewSlogRecorder(logger),
-		metrics.New(reg),
+
+	switch mode {
+	case TelemetryOff:
+		return telemetry.Nop{}
+	case TelemetryMetricsOnly:
+		return metrics.New(reg)
+	default:
+		return metrics.Tee{
+			telemetry.NewSlogRecorder(logger),
+			metrics.New(reg),
+		}
 	}
+}
+
+// databaseMeta reads what the service can say about its own authority.
+//
+// The version is queried once at startup rather than per request: it cannot change under a
+// live connection pool, and a /meta that issued a database round trip would make the endpoint
+// fail exactly when the database is the thing under pressure.
+//
+// A failed query yields an empty version rather than a startup failure. The service can serve
+// without knowing its server version; what it cannot do is claim a capacity result, and the
+// manifest gate is what refuses that — one place, not two.
+func databaseMeta(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) httpapi.DatabaseMeta {
+	meta := httpapi.DatabaseMeta{PoolMaxConns: pool.Config().MaxConns}
+
+	var version string
+	if err := pool.QueryRow(ctx, "SHOW server_version").Scan(&version); err != nil {
+		logger.Warn("could not read server_version; /meta will omit it and no run against "+
+			"this service can reach a capacity claim", slog.Any("error", err))
+		return meta
+	}
+	meta.Version = version
+	return meta
 }
 
 // serveMetrics exposes the registry on its own listener.

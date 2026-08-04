@@ -1,0 +1,113 @@
+{
+  "_comment": [
+    "Canonical PromQL for AG-Sept PR2. This file is the single source: the Grafana dashboard",
+    "and the snapshot exporter are both generated from it, so the panel an operator watched and",
+    "the CSV the report quotes cannot drift apart. TestDashboardMatchesCanonicalPanels enforces",
+    "that. Change an expression here, not in the dashboard JSON.",
+    "",
+    "RANGE TOKEN. Range selectors are written as $RANGE rather than as Grafana's",
+    "$__rate_interval, because that macro is a Grafana construct the Prometheus HTTP API cannot",
+    "parse \u2014 an exporter would have to rewrite the expression, and a rewritten expression is no",
+    "longer the same query source. $RANGE is repository-owned and each consumer substitutes it:",
+    "  Grafana   -> $__rate_interval   (adaptive; Grafana knows the panel's resolution)",
+    "  exporter  -> a literal window, recorded per cell alongside the CSV",
+    "The exporter records the value it used because a rate over 5s and a rate over 60s are",
+    "different measurements, and a CSV that does not say which is not reproducible.",
+    "",
+    "Scope is ag-sept-plan \u00a77's required outputs and nothing else."
+  ],
+  "panels": [
+    {
+      "key": "throughput",
+      "title": "Completed throughput",
+      "unit": "req/s",
+      "expr": "sum(rate(alloca_requests_total[$RANGE]))"
+    },
+    {
+      "key": "goodput",
+      "title": "Successful mutation goodput",
+      "unit": "req/s",
+      "_note": "Mutations only, never list_slots (observability \u00a73.1), and replay=false only: a replay returns a recorded outcome without performing a mutation (measurement-contract \u00a74.2), so counting it would overstate useful work and count one booking twice. Same definition as Summary.Goodput and as the FreshAdmittedFor count reconciliation compares against persisted rows.",
+      "expr": "sum(rate(alloca_requests_total{operation=~\"reserve|confirm|cancel\",outcome=\"admitted_success\",replay=\"false\"}[$RANGE]))"
+    },
+    {
+      "key": "replay_rate",
+      "title": "Replayed mutations",
+      "unit": "req/s",
+      "_note": "The population goodput excludes, shown rather than dropped. A replay is a correctness claim in its own right (INV-5); the `replay` workload is what verifies it.",
+      "expr": "sum(rate(alloca_requests_total{operation=~\"reserve|confirm|cancel\",outcome=\"admitted_success\",replay=\"true\"}[$RANGE]))"
+    },
+    {
+      "key": "latency_p50",
+      "title": "Request latency p50",
+      "unit": "s",
+      "_note": "Required by ag-sept-plan \u00a77 and by measurement-contract \u00a76, and it is an SLO gate (\u00a77: p50 <= 50ms). SLO-safe capacity is the highest goodput satisfying *all* latency gates, so a panel set without p50 cannot evaluate one of the three and cannot discharge PR2's own deliverable.",
+      "expr": "histogram_quantile(0.50, sum by (le) (rate(alloca_request_duration_seconds_bucket[$RANGE])))"
+    },
+    {
+      "key": "latency_p95",
+      "title": "Request latency p95",
+      "unit": "s",
+      "expr": "histogram_quantile(0.95, sum by (le) (rate(alloca_request_duration_seconds_bucket[$RANGE])))"
+    },
+    {
+      "key": "latency_p99",
+      "title": "Request latency p99",
+      "unit": "s",
+      "expr": "histogram_quantile(0.99, sum by (le) (rate(alloca_request_duration_seconds_bucket[$RANGE])))"
+    },
+    {
+      "key": "outcomes",
+      "title": "Outcomes",
+      "unit": "req/s",
+      "_note": "Business refusals are a valid domain answer and are reported separately here, never folded into a failure rate (measurement-contract \u00a73).",
+      "expr": "sum by (outcome) (rate(alloca_requests_total[$RANGE]))"
+    },
+    {
+      "key": "pool_in_use",
+      "title": "DB pool connections in use",
+      "unit": "conns",
+      "expr": "alloca_db_pool_acquired_connections"
+    },
+    {
+      "key": "pool_max",
+      "title": "DB pool maximum",
+      "unit": "conns",
+      "expr": "alloca_db_pool_max_connections"
+    },
+    {
+      "key": "pool_acquire_wait",
+      "title": "DB pool acquire wait",
+      "unit": "s/s",
+      "_note": "Seconds of wait accumulated per second. It crosses 1 when requests spend more time queueing for a connection than wall-clock elapses, which is the pool becoming the frontier rather than the database.",
+      "expr": "rate(alloca_db_pool_acquire_wait_seconds_total[$RANGE])"
+    },
+    {
+      "key": "process_cpu",
+      "title": "Process CPU",
+      "unit": "cores",
+      "expr": "rate(process_cpu_seconds_total[$RANGE])"
+    },
+    {
+      "key": "process_memory",
+      "title": "Process resident memory",
+      "unit": "bytes",
+      "expr": "process_resident_memory_bytes"
+    },
+    {
+      "key": "go_goroutines",
+      "title": "Goroutines",
+      "unit": "count",
+      "expr": "go_goroutines"
+    },
+    {
+      "key": "go_gc_pause",
+      "title": "GC pause quantile",
+      "unit": "s",
+      "_note": "The Go collector exports this as a summary, so the series carries its own quantile label rather than needing histogram_quantile.",
+      "expr": "go_gc_duration_seconds{quantile=\"0.75\"}"
+    }
+  ],
+  "export_range": "15s",
+  "_export_range_note": "The window the exporter substitutes for $RANGE unless a cell overrides it. Must be at least 4x prometheus.yml's scrape_interval (1s) for rate() to have enough points to be stable; 15s gives 15, which smooths a sweep cell without hiding the knee a frontier is read from."
+}

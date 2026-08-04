@@ -1,0 +1,19 @@
+{
+  "workload": "dispersed",
+  "concurrency": 64,
+  "window_seconds": 30.067591926,
+  "throughput_per_s": 1099.9,
+  "goodput_per_s": 1099.9,
+  "latency_ms": {
+    "p50": 55.47208,
+    "p95": 108.736388,
+    "p99": 128.709204,
+    "max": 183.304484
+  },
+  "generator_cpu_per_core": 0.009420611424324411,
+  "level": "local",
+  "load_ok": true,
+  "verify_ok": true,
+  "fixture_units": 1541000,
+  "notes": []
+}

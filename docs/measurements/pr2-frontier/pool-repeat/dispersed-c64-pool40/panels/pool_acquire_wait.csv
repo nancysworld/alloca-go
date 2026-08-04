@@ -1,0 +1,8 @@
+timestamp,labels,value
+1785794052,"instance=alloca-go-local,job=alloca-go,milestone=ag-sept,topology=single-instance-local",2.841225623302699e-07
+1785794057,"instance=alloca-go-local,job=alloca-go,milestone=ag-sept,topology=single-instance-local",7.52091898092721
+1785794062,"instance=alloca-go-local,job=alloca-go,milestone=ag-sept,topology=single-instance-local",15.680886604471747
+1785794067,"instance=alloca-go-local,job=alloca-go,milestone=ag-sept,topology=single-instance-local",22.68211246446682
+1785794072,"instance=alloca-go-local,job=alloca-go,milestone=ag-sept,topology=single-instance-local",22.713067976345318
+1785794077,"instance=alloca-go-local,job=alloca-go,milestone=ag-sept,topology=single-instance-local",22.730101450153647
+1785794082,"instance=alloca-go-local,job=alloca-go,milestone=ag-sept,topology=single-instance-local",22.775425391285708

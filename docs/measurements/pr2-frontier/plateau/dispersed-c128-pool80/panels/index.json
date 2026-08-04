@@ -1,0 +1,137 @@
+{
+  "window": {
+    "start": "2026-08-04T10:40:04Z",
+    "end": "2026-08-04T10:40:35Z"
+  },
+  "rate_range": "15s",
+  "step": "5s",
+  "_note": "step is finer than rate_range, so consecutive points share samples and the series is smoothed; this is a property of the export, not of the measurement",
+  "panels": [
+    {
+      "key": "throughput",
+      "title": "Completed throughput",
+      "unit": "req/s",
+      "expr": "sum(rate(alloca_requests_total[15s]))",
+      "file": "panels/throughput.csv",
+      "series": 1,
+      "points": 7
+    },
+    {
+      "key": "goodput",
+      "title": "Successful mutation goodput",
+      "unit": "req/s",
+      "expr": "sum(rate(alloca_requests_total{operation=~\"reserve|confirm|cancel\",outcome=\"admitted_success\",replay=\"false\"}[15s]))",
+      "file": "panels/goodput.csv",
+      "series": 1,
+      "points": 7
+    },
+    {
+      "key": "replay_rate",
+      "title": "Replayed mutations",
+      "unit": "req/s",
+      "expr": "sum(rate(alloca_requests_total{operation=~\"reserve|confirm|cancel\",outcome=\"admitted_success\",replay=\"true\"}[15s]))",
+      "file": "panels/replay_rate.csv",
+      "series": 0,
+      "points": 0
+    },
+    {
+      "key": "latency_p50",
+      "title": "Request latency p50",
+      "unit": "s",
+      "expr": "histogram_quantile(0.50, sum by (le) (rate(alloca_request_duration_seconds_bucket[15s])))",
+      "file": "panels/latency_p50.csv",
+      "series": 1,
+      "points": 7
+    },
+    {
+      "key": "latency_p95",
+      "title": "Request latency p95",
+      "unit": "s",
+      "expr": "histogram_quantile(0.95, sum by (le) (rate(alloca_request_duration_seconds_bucket[15s])))",
+      "file": "panels/latency_p95.csv",
+      "series": 1,
+      "points": 7
+    },
+    {
+      "key": "latency_p99",
+      "title": "Request latency p99",
+      "unit": "s",
+      "expr": "histogram_quantile(0.99, sum by (le) (rate(alloca_request_duration_seconds_bucket[15s])))",
+      "file": "panels/latency_p99.csv",
+      "series": 1,
+      "points": 7
+    },
+    {
+      "key": "outcomes",
+      "title": "Outcomes",
+      "unit": "req/s",
+      "expr": "sum by (outcome) (rate(alloca_requests_total[15s]))",
+      "file": "panels/outcomes.csv",
+      "series": 1,
+      "points": 7
+    },
+    {
+      "key": "pool_in_use",
+      "title": "DB pool connections in use",
+      "unit": "conns",
+      "expr": "alloca_db_pool_acquired_connections",
+      "file": "panels/pool_in_use.csv",
+      "series": 1,
+      "points": 7
+    },
+    {
+      "key": "pool_max",
+      "title": "DB pool maximum",
+      "unit": "conns",
+      "expr": "alloca_db_pool_max_connections",
+      "file": "panels/pool_max.csv",
+      "series": 1,
+      "points": 7
+    },
+    {
+      "key": "pool_acquire_wait",
+      "title": "DB pool acquire wait",
+      "unit": "s/s",
+      "expr": "rate(alloca_db_pool_acquire_wait_seconds_total[15s])",
+      "file": "panels/pool_acquire_wait.csv",
+      "series": 1,
+      "points": 7
+    },
+    {
+      "key": "process_cpu",
+      "title": "Process CPU",
+      "unit": "cores",
+      "expr": "rate(process_cpu_seconds_total[15s])",
+      "file": "panels/process_cpu.csv",
+      "series": 1,
+      "points": 7
+    },
+    {
+      "key": "process_memory",
+      "title": "Process resident memory",
+      "unit": "bytes",
+      "expr": "process_resident_memory_bytes",
+      "file": "panels/process_memory.csv",
+      "series": 1,
+      "points": 7
+    },
+    {
+      "key": "go_goroutines",
+      "title": "Goroutines",
+      "unit": "count",
+      "expr": "go_goroutines",
+      "file": "panels/go_goroutines.csv",
+      "series": 1,
+      "points": 7
+    },
+    {
+      "key": "go_gc_pause",
+      "title": "GC pause quantile",
+      "unit": "s",
+      "expr": "go_gc_duration_seconds{quantile=\"0.75\"}",
+      "file": "panels/go_gc_pause.csv",
+      "series": 1,
+      "points": 7
+    }
+  ]
+}

@@ -57,6 +57,11 @@ type Options struct {
 	Recorder telemetry.Recorder
 	// Ready gates /readyz. When nil, the service always reports ready.
 	Ready ReadinessFunc
+	// Database and TelemetryMode are reported at /meta so the load harness can record the
+	// shape of what it measured without an operator transcribing it. Both are zero for the
+	// probe-only server AG-M0 shipped, which has no database and no recorder.
+	Database      DatabaseMeta
+	TelemetryMode string
 }
 
 // Server bundles the HTTP handler and the configuration used to construct the
@@ -82,7 +87,8 @@ func New(cfg config.Config, metaSource func() buildinfo.Info, opts Options) *Ser
 		logger = slog.Default()
 	}
 	mux := http.NewServeMux()
-	registerRoutes(mux, metaSource, cfg, ready, logger, opts.Service, opts.Slots, recorder)
+	registerRoutes(mux, metaSource, cfg, ready, logger, opts.Service, opts.Slots, recorder,
+		opts.Database, opts.TelemetryMode)
 	return &Server{cfg: cfg, handler: withRequestID(mux)}
 }
 

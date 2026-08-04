@@ -1,0 +1,71 @@
+{
+  "manifest": {
+    "service_commit_sha": "58f2cea9317477373955c92a435d98fb500ea1c1",
+    "service_source_modified": false,
+    "service_go_version": "go1.26.5",
+    "generator_commit_sha": "58f2cea9317477373955c92a435d98fb500ea1c1",
+    "generator_source_modified": false,
+    "generator_go_version": "go1.26.5",
+    "replica_count": 0,
+    "deployment_topology": "",
+    "environment": "",
+    "server_gomaxprocs": 10,
+    "timeout_budget": "admission_cap=250ms client_deadline=6s db_acquire_cap=500ms lock_timeout=2s server_deadline=5s statement_timeout=3s txn_budget=3.5s",
+    "reservation_ttl": "2m0s",
+    "postgres_version": "16.14",
+    "pool_size_per_replica": 10,
+    "telemetry_mode": "full",
+    "workload": "dispersed",
+    "concurrency": 16,
+    "duration": "20s",
+    "warm_up": "0s",
+    "dataset_slots": 8000,
+    "generator_location": "local",
+    "generator_gomaxprocs": 1,
+    "generator_num_cpu": 10,
+    "target": "http://localhost:8080",
+    "timestamp": "2026-08-03T21:27:41.059385404Z"
+  },
+  "summary": {
+    "workload": "dispersed",
+    "concurrency": 16,
+    "iterations": 0,
+    "duration_requested_seconds": 20,
+    "completed_iterations": 45904,
+    "duration_seconds": 20.005035254,
+    "warm_up_seconds": 0,
+    "warm_up_discarded": 0,
+    "totals": [
+      {
+        "operation": "reserve",
+        "outcome": "admitted_success",
+        "replay": false,
+        "count": 45904
+      }
+    ],
+    "completed_requests": 45904,
+    "successful_mutation_goodput": 45904,
+    "replayed_mutations": 0,
+    "latency_ms": {
+      "p50": 6.799515,
+      "p95": 9.713414,
+      "p99": 11.840814,
+      "max": 27.233202
+    },
+    "generator": {
+      "gomaxprocs": 1,
+      "goroutines": 37,
+      "cpu_seconds": 2.537563,
+      "cpu_utilisation_per_core": 0.012684621485446346,
+      "num_cpu": 10
+    },
+    "response_validation_enabled": true,
+    "invalid_responses": 0,
+    "measurement_sound": true
+  },
+  "quotability": {
+    "level": "local",
+    "blocked_from": "capacity",
+    "blocked_because": "manifest is incomplete for a capacity claim: aggregate_pool_size is not positive (operator-supplied, PR3); replica_count is not positive (operator-supplied, PR3); deployment_topology is empty (operator-supplied, PR3); environment is empty (operator-supplied, PR4)"
+  }
+}

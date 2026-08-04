@@ -11,6 +11,10 @@
 // Usage:
 //
 //	alloca-verify -run run-42.json -database-url "$DATABASE_URL" -org load-org
+//
+// A sweep cell keeps its service warm across the measured phase rather than restarting it, so
+// its counters do not start at zero. Pass -metrics-baseline alongside -metrics there and the
+// comparison becomes the delta across the measured phase.
 package main
 
 import (
@@ -37,13 +41,17 @@ func main() {
 
 func run() error {
 	var (
-		runPath     = flag.String("run", "", "path to the alloca-load JSON report (required)")
-		dsn         = flag.String("database-url", os.Getenv("DATABASE_URL"), "PostgreSQL DSN")
-		org         = flag.String("org", "load-org", "organisation whose rows the run touched")
-		metricsPath = flag.String("metrics", "", "path to a saved /metrics scrape (required to certify a run)")
-		timeout     = flag.Duration("timeout", 30*time.Second, "overall verification timeout")
-		out         = flag.String("out", "", "write the verdict JSON here (default stdout)")
-		require     = flag.String("require", string(loadgen.LevelLocal),
+		runPath      = flag.String("run", "", "path to the alloca-load JSON report (required)")
+		dsn          = flag.String("database-url", os.Getenv("DATABASE_URL"), "PostgreSQL DSN")
+		org          = flag.String("org", "load-org", "organisation whose rows the run touched")
+		metricsPath  = flag.String("metrics", "", "path to the /metrics scrape taken after the run (required to certify a run)")
+		baselinePath = flag.String("metrics-baseline", "",
+			"path to a /metrics scrape taken before the measured phase; supply it when the "+
+				"service was not restarted immediately before the run, as a warmed sweep cell "+
+				"is not")
+		timeout = flag.Duration("timeout", 30*time.Second, "overall verification timeout")
+		out     = flag.String("out", "", "write the verdict JSON here (default stdout)")
+		require = flag.String("require", string(loadgen.LevelLocal),
 			"fail unless the run reaches this level: local | capacity | publishable")
 	)
 	flag.Parse()
@@ -77,12 +85,17 @@ func run() error {
 	}
 	defer pool.Close()
 
-	server, err := readServerTotals(*metricsPath)
+	after, err := readServerTotals(*metricsPath)
+	if err != nil {
+		return err
+	}
+	baseline, err := readServerTotals(*baselinePath)
 	if err != nil {
 		return err
 	}
 
-	result, err := reconcile.Run(ctx, pool, domain.OrganisationID(*org), report, server)
+	result, err := reconcile.Run(ctx, pool, domain.OrganisationID(*org), report,
+		reconcile.Scrapes{Baseline: baseline, After: after})
 	if err != nil {
 		return fmt.Errorf("reconciling: %w", err)
 	}

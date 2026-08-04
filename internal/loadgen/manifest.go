@@ -54,17 +54,35 @@ type Manifest struct {
 	TimeoutBudget    string `json:"timeout_budget,omitempty"`
 	ReservationTTL   string `json:"reservation_ttl,omitempty"`
 
-	// Service-side shape the service does not know about itself. These stay operator-
-	// supplied and staged by ag-sept-plan §14 — the database's version and the pool
-	// arithmetic are facts about the deployment, and no endpoint on the service reports them.
+	// PostgresVersion and PoolSizePerReplica also come from /meta: the service holds the
+	// connection, so both are facts it can report about itself.
 	PostgresVersion    string `json:"postgres_version,omitempty"`
 	PoolSizePerReplica int    `json:"pool_size_per_replica,omitempty"`
-	AggregatePoolSize  int    `json:"aggregate_pool_size,omitempty"`
+
+	// AggregatePoolSize is the one pool fact no single process can know, because it needs a
+	// replica count. It stays operator-supplied and staged to PR3 with the topology.
+	AggregatePoolSize int `json:"aggregate_pool_size,omitempty"`
+
+	// ServiceIdentityDrift is empty when /meta reported the same service before and after the
+	// run, and otherwise says how it changed. DEBT-3 recorded that a single pre-run read
+	// establishes only "the service behind the target when the run began"; this is the
+	// post-run half of that claim.
+	ServiceIdentityDrift string `json:"service_identity_drift,omitempty"`
+
+	// TelemetryMode records which recorder served the run (full | metrics_only | off). It is
+	// provenance, not configuration: a throughput figure measured with logging disabled is
+	// not comparable to one measured with it on, and without this field nothing downstream
+	// could tell the two apart.
+	TelemetryMode string `json:"telemetry_mode,omitempty"`
 
 	// Workload and dataset.
-	Workload     string `json:"workload"`
-	Concurrency  int    `json:"concurrency"`
-	Iterations   int    `json:"iterations"`
+	Workload    string `json:"workload"`
+	Concurrency int    `json:"concurrency"`
+	// Exactly one of Iterations or Duration bounds the run, and the manifest records which.
+	// A duration-bounded sweep cell has no requested iteration count, so recording the flag
+	// default here would describe an experiment nobody asked for.
+	Iterations   int    `json:"iterations,omitempty"`
+	Duration     string `json:"duration,omitempty"`
 	WarmUp       string `json:"warm_up"`
 	DatasetSlots int    `json:"dataset_slots,omitempty"`
 	DatasetUsers int    `json:"dataset_users,omitempty"`
@@ -110,6 +128,9 @@ func NewManifest(target, workload string, opts Options, location string, svc Ser
 		ServiceSourceModified: svc.Modified,
 		ServiceGoVersion:      svc.GoVersion,
 		ServerGOMAXPROCS:      svc.GOMAXPROCS,
+		PostgresVersion:       svc.Database.Version,
+		PoolSizePerReplica:    svc.Database.PoolMaxConns,
+		TelemetryMode:         svc.TelemetryMode,
 		TimeoutBudget:         svc.TimeoutBudgetString(),
 		ReservationTTL:        svc.ReservationTTL,
 
@@ -119,7 +140,8 @@ func NewManifest(target, workload string, opts Options, location string, svc Ser
 
 		Workload:            workload,
 		Concurrency:         opts.Concurrency,
-		Iterations:          opts.Iterations,
+		Iterations:          iterationsFor(opts),
+		Duration:            durationFor(opts),
 		WarmUp:              opts.WarmUp.String(),
 		GeneratorLocation:   location,
 		GeneratorGOMAXPROCS: runtime.GOMAXPROCS(0),
@@ -162,6 +184,21 @@ func (m Manifest) Validate(level Level) []string {
 		add(m.ServerGOMAXPROCS < 1, "server_gomaxprocs is not positive: /meta was not read")
 		add(m.TimeoutBudget == "", "timeout_budget is empty: /meta was not read")
 		add(m.ReservationTTL == "", "reservation_ttl is empty: /meta was not read")
+		add(m.PostgresVersion == "", "postgres_version is empty: the service could not read "+
+			"its own server_version, so the authority under test is unidentified")
+		add(m.PoolSizePerReplica < 1, "pool_size_per_replica is not positive: /meta was not read")
+
+		// An unobservable run cannot reconcile. With telemetry off there is no
+		// alloca_requests_total, so §6.5's three-way agreement has only two counts — and a
+		// verdict reached on two of three is the weaker gate wearing the stronger one's name.
+		// Refused here rather than left to surface as a confusing "server counted 0".
+		add(m.TelemetryMode == "off", "telemetry_mode is off: the service emitted no "+
+			"aggregate series, so the server-side count \u00a76.5 requires does not exist and this "+
+			"run cannot be reconciled. It is a \u00a76.2 control, not a measurement")
+		add(m.TelemetryMode == "", "telemetry_mode is empty: /meta was not read, so nothing "+
+			"records which recorder produced these numbers")
+		add(m.ServiceIdentityDrift != "", "the service did not stay the same across the run: "+
+			m.ServiceIdentityDrift)
 
 		// Identity of the harness. Generator-determinable, so nothing here has an excuse to
 		// be empty — see NewManifest.
@@ -174,7 +211,13 @@ func (m Manifest) Validate(level Level) []string {
 
 		add(m.Workload == "", "workload is empty")
 		add(m.Concurrency < 1, "concurrency is not positive")
-		add(m.Iterations < 1, "iterations is not positive")
+		// One bound or the other, never neither: a run with no stated size cannot be said
+		// to have run the experiment its manifest describes.
+		add(m.Iterations < 1 && m.Duration == "",
+			"neither iterations nor duration is set, so the run states no size")
+		add(m.Iterations > 0 && m.Duration != "",
+			"both iterations and duration are set, so the manifest does not say which "+
+				"bound the run actually used")
 		add(m.WarmUp == "", "warm_up is empty")
 		add(m.GeneratorLocation == "", "generator_location is empty")
 		add(m.GeneratorGOMAXPROCS < 1, "generator_gomaxprocs is not positive")
@@ -185,13 +228,11 @@ func (m Manifest) Validate(level Level) []string {
 	}
 
 	if level.AtLeast(LevelCapacity) {
-		// Service shape the service cannot report about itself — PR2 supplies these. The
-		// other three service-shape fields are checked at `local`, because /meta hands them
-		// over for free and a field that costs nothing to record should not gate a
-		// higher tier than a field that costs an operator's attention.
-		add(m.PostgresVersion == "", "postgres_version is empty (operator-supplied, PR2)")
-		add(m.PoolSizePerReplica < 1, "pool_size_per_replica is not positive (operator-supplied, PR2)")
-		add(m.AggregatePoolSize < 1, "aggregate_pool_size is not positive (operator-supplied, PR2)")
+		// The only pool fact left: the aggregate needs a replica count, which one process
+		// cannot know. Everything else the service reports about itself is checked at
+		// `local`, because /meta hands it over for free and a field that costs nothing to
+		// record should not gate a higher tier than one that costs an operator's attention.
+		add(m.AggregatePoolSize < 1, "aggregate_pool_size is not positive (operator-supplied, PR3)")
 
 		// Topology — PR3 supplies these.
 		add(m.ReplicaCount < 1, "replica_count is not positive (operator-supplied, PR3)")
@@ -241,6 +282,23 @@ func isCoResident(location string) bool {
 	default:
 		return false
 	}
+}
+
+// iterationsFor and durationFor record whichever bound applied and leave the other empty, so
+// the manifest cannot imply a request the operator did not make. Options rejects both-set
+// before it reaches here; these two are what keep the recorded shape unambiguous.
+func iterationsFor(opts Options) int {
+	if opts.Duration > 0 {
+		return 0
+	}
+	return opts.Iterations
+}
+
+func durationFor(opts Options) string {
+	if opts.Duration <= 0 {
+		return ""
+	}
+	return opts.Duration.String()
 }
 
 // redact removes anything credential-shaped from a URL before it is committed.

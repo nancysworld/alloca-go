@@ -1,0 +1,17 @@
+{
+	"ulid": "01KZ4TNXFFWW98P27X1424BK8F",
+	"minTime": 1785787200000,
+	"maxTime": 1785794851727,
+	"stats": {
+		"numSamples": 186776,
+		"numSeries": 104,
+		"numChunks": 1859
+	},
+	"compaction": {
+		"level": 1,
+		"sources": [
+			"01KZ4TNXFFWW98P27X1424BK8F"
+		]
+	},
+	"version": 1
+}

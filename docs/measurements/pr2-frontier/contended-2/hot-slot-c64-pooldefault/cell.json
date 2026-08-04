@@ -1,0 +1,19 @@
+{
+  "workload": "hot_slot",
+  "concurrency": 64,
+  "window_seconds": 30.091989347,
+  "throughput_per_s": 637.7,
+  "goodput_per_s": 1.7,
+  "latency_ms": {
+    "p50": 97.480208,
+    "p95": 113.59917,
+    "p99": 158.934716,
+    "max": 173.719863
+  },
+  "generator_cpu_per_core": 0.008309085089614632,
+  "level": "local",
+  "load_ok": true,
+  "verify_ok": true,
+  "fixture_units": 1541000,
+  "notes": []
+}

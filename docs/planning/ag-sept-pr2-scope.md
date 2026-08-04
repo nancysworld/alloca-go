@@ -307,6 +307,17 @@ vocabulary is not quietly redefined to make a number reportable. See
 
 ### 5.7 What a sweep cell produced, measured 2026-08-03
 
+> **These figures are from an exploratory ranging sweep whose artifacts were not retained**, so
+> unlike everything in the report they cannot be re-derived — which §5.8 immediately below
+> otherwise requires. They are kept because they record *why* the design was accepted, not as
+> evidence for any result. The published numbers are in
+> [the report](../measurements/reports/ag-sept-pr2-single-instance-frontier.md).
+>
+> One difference will otherwise look like a contradiction: the `hot_slot` goodput here is 5/s
+> and the report's is 1.7/s. Both are the same behaviour — goodput is the slot's capacity ÷ the
+> window, so capacity 50 gives 5/s over the 10s window used here and 1.7/s over the report's
+> 30s window. Neither figure is wrong; they are different windows.
+
 A four-cell sweep ran end to end, which is what turned the sequence in §5.4 from a design into
 a verified one. Two things it established that could not be reasoned about:
 

@@ -23,9 +23,10 @@
 > [`postgres-waits/`](../pr2-frontier/postgres-waits/). Full reasoning in [§5](#5-capacity-on-this-machine-the-conclusion).
 > Scope limit in [§5.5](#55-what-this-number-is-not).
 
-**Status:** the frontier's mechanism is identified, the ceiling is measured, and the
-bottleneck is named. What remains deferred is narrower than it was: **SLO-safe capacity** and
-the contract's **recommended operating capacity** term, for the reasons in §5.5 and §5.6.
+**Status:** the ceiling is measured and the limiting *subsystem* is identified. The
+sub-mechanism inside PostgreSQL is narrowed but provisional (§5.2). What remains deferred is
+narrower than it was: **SLO-safe capacity** and the contract's **recommended operating
+capacity** term, for the reasons in §5.5 and §5.6.
 
 All figures are `[MEASURED]` from the artifacts in this directory unless labelled otherwise.
 Every number below is derived from a retained `run.json`, `verdict.json` or panel CSV; none is
@@ -136,7 +137,7 @@ queue is, which is Little's Law rather than a discovery.
 | `rate(process_cpu_seconds_total)` | **1.1 of 10 vCPUs** |
 
 The pool is pinned at its ceiling, requests accumulate 53.6 seconds of acquire-wait per
-wall-clock second, and the service uses 1.1 of the 10 vCPUs available to it. It is not
+wall-clock second, and `alloca-go` uses 1.1 CPU cores within the 10-vCPU allocation. It is not
 compute-bound; it is waiting for connections.
 
 **On "cores" in this report.** Every CPU figure is `process_cpu_seconds_total` read inside
@@ -497,7 +498,8 @@ is the *dashboard* that misleads, and only between 0.1 s and 0.25 s.
 Buckets are deliberately **not** changed here. Adding boundaries costs cardinality on a
 labelled histogram, and PR2's latency conclusions do not depend on the panel. If PR3 needs the
 dashboard to be quantitatively trustworthy in that band, insert `0.15` and `0.2` and re-measure
-the telemetry overhead, since bucket count is part of what §6.2 was trying to price.
+the telemetry overhead, since bucket count is part of what §6.2 was trying to price. Registered
+in [`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §14 PR3, *Carried in from PR2* group C.
 
 ### 6.2 TSDB snapshots are cumulative, and the redesign is deferred to PR3
 
@@ -517,7 +519,8 @@ Deferred rather than fixed because the redesign changes how every cell is produc
 re-runs everything on the container path anyway; doing it here means re-exporting 33 cells for
 no new evidence. The shape PR3 should take: one snapshot per *sweep* with cell-specific CSVs and
 windows, or a fresh Prometheus data directory per sweep. It matters more there than here,
-because PR3 multiplies cells by replica count.
+because PR3 multiplies cells by replica count. Registered in
+[`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §14 PR3, *Carried in from PR2* group C.
 
 ### 6.3 The prototype's overload failure is still unreproduced, and this harness cannot produce it
 
@@ -611,6 +614,15 @@ validated, and unobserved.
 
 Neither is fixed here. Both are cheap to close alongside the c≈1,000 experiment, which is where
 the budget would first be visible.
+
+**Where this goes next.** Nancy's call, 2026-08-04: this is **plan work, not a debt register
+entry** — it is the prototype finding the project was built to resolve, and `tech-debts.md` is
+where it would quietly stop being anyone's deliverable. It is recorded in
+[`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §14 PR3 under *Carried in from PR2*, group
+A, together with everything else PR2 deferred: the open-loop generator mode that makes the
+failure reachable at all, retry-on-timeout, the `slots_for()` fix that unblocks c ≥ 256, the
+timeout-budget negative control, and the `admission_cap` decision. The budget implication is
+flagged there rather than absorbed.
 
 ---
 

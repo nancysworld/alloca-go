@@ -95,7 +95,7 @@ records the durable authority and technology choices that implement those semant
   2026-08-04 workstation baseline that ceiling is ~4,300 booking req/s, reached while the
   service uses 12% of the host's CPU and the connection pool has stopped binding; the
   largest single database wait is `LWLock:WALWrite`. See
-  [`../measurements/pr2-frontier/README.md`](../measurements/pr2-frontier/README.md) §5 —
+  [`../measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../measurements/reports/ag-sept-pr2-single-instance-frontier.md) §5 —
   that report owns the number and its caveats, including that it describes an untuned
   container on a developer machine.
   **The architectural consequence: adding stateless service replicas against one database

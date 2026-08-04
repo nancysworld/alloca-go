@@ -15,8 +15,8 @@
 > will not raise throughput.** The pool ladder already tested that in disguise, and §5.4
 > turns it into a prediction PR3 can falsify.
 >
-> Evidence: [`plateau/`](plateau/) · [`plateau-repeat/`](plateau-repeat/) ·
-> [`postgres-waits/`](postgres-waits/). Full reasoning in [§5](#5-capacity-on-this-machine-the-conclusion).
+> Evidence: [`plateau/`](../pr2-frontier/plateau/) · [`plateau-repeat/`](../pr2-frontier/plateau-repeat/) ·
+> [`postgres-waits/`](../pr2-frontier/postgres-waits/). Full reasoning in [§5](#5-capacity-on-this-machine-the-conclusion).
 > Scope limit in [§5.5](#55-what-this-number-is-not).
 
 **Status:** the frontier's mechanism is identified, the ceiling is measured, and the
@@ -26,7 +26,7 @@ the contract's **recommended operating capacity** term, for the reasons in §5.5
 All figures are `[MEASURED]` from the artifacts in this directory unless labelled otherwise.
 Every number below is derived from a retained `run.json`, `verdict.json` or panel CSV; none is
 quoted from a terminal. The one exception is labelled wherever it appears: the PostgreSQL wait
-percentages in §4.1 and §5.2 come from [`postgres-waits/`](postgres-waits/), which is
+percentages in §4.1 and §5.2 come from [`postgres-waits/`](../pr2-frontier/postgres-waits/), which is
 hand-driven sampling retained as **diagnostic evidence, not a measured deliverable** — read
 that directory's caveats before quoting them.
 
@@ -99,7 +99,7 @@ at 4238.6–4301.8 req/s. Fixture and index size are therefore not what sets the
 
 ## 2. The frontier and its mechanism `[MEASURED]`
 
-Artifacts: [`dispersed/`](dispersed/). 30s windows, 10s warm-up, pool at its default of 10.
+Artifacts: [`dispersed/`](../pr2-frontier/dispersed/). 30s windows, 10s warm-up, pool at its default of 10.
 
 | concurrency | throughput req/s | p99 ms | generator CPU/core |
 |---:|---:|---:|---:|
@@ -129,7 +129,7 @@ is waiting for connections.
 
 ### 2.1 The pool hypothesis, tested directly `[MEASURED]`
 
-Artifacts: [`pool/`](pool/) and [`pool-repeat/`](pool-repeat/). Concurrency 64, two passes.
+Artifacts: [`pool/`](../pr2-frontier/pool/) and [`pool-repeat/`](../pr2-frontier/pool-repeat/). Concurrency 64, two passes.
 
 | pool size | run 1 | run 2 | spread | req/s per connection (run 2) |
 |---:|---:|---:|---:|---:|
@@ -148,7 +148,7 @@ it and names it.
 
 ### 2.2 Past the pool: the plateau and what actually binds `[MEASURED]`
 
-Artifacts: [`plateau/`](plateau/), [`plateau-repeat/`](plateau-repeat/), 2026-08-04. Two
+Artifacts: [`plateau/`](../pr2-frontier/plateau/), [`plateau-repeat/`](../pr2-frontier/plateau-repeat/), 2026-08-04. Two
 passes, 30s windows, 10s warm-up.
 
 **The §2 and §2.1 grid was a cross, not a rectangle.** The concurrency arm ran at pool 10 and
@@ -182,7 +182,7 @@ database rather than about a tunable.
 
 ## 3. Contended workloads `[MEASURED]`
 
-Artifacts: [`contended-1/`](contended-1/), [`contended-2/`](contended-2/). Two passes each.
+Artifacts: [`contended-1/`](../pr2-frontier/contended-1/), [`contended-2/`](../pr2-frontier/contended-2/). Two passes each.
 
 | workload | concurrency | throughput req/s | goodput req/s |
 |---|---:|---:|---:|
@@ -235,8 +235,8 @@ problem is that quietness is not currently a controlled variable.
 ### 4.1 What the 2026-08-04 passes added, including two suspects now ruled out
 
 Ten more cells reproduced the excursion four times and narrowed it considerably. Artifacts:
-[`plateau/`](plateau/), [`plateau-repeat/`](plateau-repeat/),
-[`postgres-waits/`](postgres-waits/).
+[`plateau/`](../pr2-frontier/plateau/), [`plateau-repeat/`](../pr2-frontier/plateau-repeat/),
+[`postgres-waits/`](../pr2-frontier/postgres-waits/).
 
 **It is not the configuration.** The affected cell moves between passes: `c=128/pool=40` read
 1953.4 then 3883.7, while `c=128/pool=80` read 4345.0 then 1165.0. Nothing about a pool size or
@@ -283,16 +283,16 @@ plans — see §6.
 ### 5.1 The number `[MEASURED]`
 
 **Peak throughput: 4345.0 req/s** — dispersed, concurrency 128, pool 80
-([`plateau/dispersed-c128-pool80/`](plateau/dispersed-c128-pool80/)).
+([`plateau/dispersed-c128-pool80/`](../pr2-frontier/plateau/dispersed-c128-pool80/)).
 
 **Sustained plateau: ~4,300 req/s**, from the four clean cells across two passes:
 
 | cell | throughput | p99 | artifact |
 |---|---:|---:|---|
-| c=128 pool=80 | 4345.0 | 61.6 ms | [`plateau/dispersed-c128-pool80/`](plateau/dispersed-c128-pool80/) |
-| c=64 pool=80 | 4326.8 | 34.0 ms | [`plateau/dispersed-c64-pool80/`](plateau/dispersed-c64-pool80/) |
-| c=64 pool=80 | 4113.3 | 37.5 ms | [`plateau-repeat/dispersed-c64-pool80/`](plateau-repeat/dispersed-c64-pool80/) |
-| c=128 pool=40 | 3883.7 | 51.0 ms | [`plateau-repeat/dispersed-c128-pool40/`](plateau-repeat/dispersed-c128-pool40/) |
+| c=128 pool=80 | 4345.0 | 61.6 ms | [`plateau/dispersed-c128-pool80/`](../pr2-frontier/plateau/dispersed-c128-pool80/) |
+| c=64 pool=80 | 4326.8 | 34.0 ms | [`plateau/dispersed-c64-pool80/`](../pr2-frontier/plateau/dispersed-c64-pool80/) |
+| c=64 pool=80 | 4113.3 | 37.5 ms | [`plateau-repeat/dispersed-c64-pool80/`](../pr2-frontier/plateau-repeat/dispersed-c64-pool80/) |
+| c=128 pool=40 | 3883.7 | 51.0 ms | [`plateau-repeat/dispersed-c128-pool40/`](../pr2-frontier/plateau-repeat/dispersed-c128-pool40/) |
 
 **Variance at the ceiling: 4.9%**, from c=64/pool=80 (4326.8 and 4113.3). That is the §5.6
 variance component measured at the ceiling rather than at the default pool, and it is a
@@ -328,7 +328,7 @@ Three candidates are eliminated at the plateau cell itself:
 The pool ceasing to bind is what makes this a database result rather than a tuning result. And
 inside PostgreSQL the largest single wait, in both clean cells sampled, is
 **`LWLock:WALWrite`** — 41.0% and 36.8% of active-backend samples, with `LWLock:BufferContent`
-second at 22.5% and 32.7% ([`postgres-waits/`](postgres-waits/)).
+second at 22.5% and 32.7% ([`postgres-waits/`](../pr2-frontier/postgres-waits/)).
 
 That is a database serialising on its write-ahead log. Every `reserve` is a durable
 transaction, WAL writes are serialised, and one PostgreSQL instance has one WAL.
@@ -405,7 +405,7 @@ measured deliverable** — the service exposes its own pool state but nothing ab
 PostgreSQL process, and §14 PR2's wording says "database-pool pressure", which is a narrower
 thing.
 
-[`postgres-waits/`](postgres-waits/) closed enough of that gap to name the bottleneck (§5.2)
+[`postgres-waits/`](../pr2-frontier/postgres-waits/) closed enough of that gap to name the bottleneck (§5.2)
 and to eliminate two suspects in §4.1, but it is hand-driven sampling retained as diagnostic
 evidence, not instrumentation: 2-second polls, not time-weighted, and it perturbs the window it
 observes. **PR3 should replace it with a PostgreSQL exporter** on the container path, at which

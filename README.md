@@ -113,6 +113,15 @@ fixture, an external generator holding no database credentials, and a reconcilia
 client, server and persisted-state totals. The procedure is in
 [`docs/operations/load-harness.md`](docs/operations/load-harness.md).
 
+**What it has found so far** lives in [`docs/measurements/`](docs/measurements/) — the reports
+and the retained artifacts every figure in them is re-derived from. The load-bearing result is
+the [single-instance frontier](docs/measurements/reports/ag-sept-pr2-single-instance-frontier.md):
+on a developer workstation the service reaches ~4,300 booking req/s, and **the limit is
+PostgreSQL's write-ahead log rather than the Go service**, which uses 12% of the host's CPU at
+that rate. So adding service replicas against one database buys availability, not throughput.
+Read that report's §5.5 before quoting the number — it is a workstation measurement against an
+untuned container, not a capacity claim.
+
 The HTTP contract — routes, request and response shapes, status mapping, and the
 `/healthz`, `/readyz`, `/meta` operational endpoints — is documented in
 [`docs/design/api-surface.md`](docs/design/api-surface.md). What the service emits about

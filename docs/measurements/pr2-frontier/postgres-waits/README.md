@@ -1,8 +1,9 @@
 # PostgreSQL-side sampling, 2026-08-04
 
 The service exposes its own pool state but nothing about the PostgreSQL process
-(`../README.md` §6). These samples are the first look inside the database, taken while the
-`../plateau-repeat/` cells and a throwaway diagnostic pass were running.
+([the report](../../reports/ag-sept-pr2-single-instance-frontier.md) §6). These samples are the
+first look inside the database, taken while the `../plateau-repeat/` cells and a throwaway
+diagnostic pass were running.
 
 **They are diagnostic evidence, not a measured deliverable.** Nothing in the report's tables
 is derived from them; they are cited only where the report names *what* PostgreSQL was doing.

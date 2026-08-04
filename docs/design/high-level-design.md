@@ -256,7 +256,7 @@ replicas against one database buys availability rather than rate. It is the find
 governs how any scale-out work is read, which is why it is signposted here rather than only
 in the milestone tracker. The number, the conditions it was measured under, and what it
 cannot be used to claim are all in
-[`../measurements/pr2-frontier/README.md`](../measurements/pr2-frontier/README.md) §5; the
+[`../measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../measurements/reports/ag-sept-pr2-single-instance-frontier.md) §5; the
 architectural consequence is recorded against
 [ADR-0002](../decisions/0002-postgresql-transactional-authority.md).
 

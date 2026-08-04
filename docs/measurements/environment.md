@@ -7,19 +7,28 @@ and because "cores" is ambiguous here in a way that changes what a utilisation f
 **Captured 2026-08-04.** Values below are read from the machine, with the command that produced
 each block, rather than transcribed from a spec sheet.
 
-## The distinction that matters
+## Two distinctions that matter
 
-> **The service is not measured against the host's CPU. It is measured against the 10 vCPUs
-> WSL2 is allocated**, which is itself half the host's core count.
+**1. The denominator is the allocation, not the host.** `process_cpu_seconds_total` is read
+inside WSL2, where `runtime.NumCPU()` is **10** because `.wslconfig` says `processors=10`. So
+"1.2 cores" is 1.2 within a **10-vCPU allocation**, not 1.2 of the host's 20. A reader who
+assumes the host draws a utilisation figure wrong by 2×, in the direction that flatters the
+result.
 
-`process_cpu_seconds_total` is read inside WSL2, where `runtime.NumCPU()` is **10** because
-`.wslconfig` says `processors=10`. So "1.2 cores" is 1.2 of that **10-vCPU allocation** — not
-1.2 of the host's 20. A reader who assumes otherwise will draw a utilisation figure that is
-wrong by 2×, in the direction that flatters the result.
+**2. Those 10 vCPUs are shared by the whole guest, not reserved for the service.** The metric
+covers the `alloca-go` process and nothing else. PostgreSQL, the load generator, Prometheus,
+Grafana and Docker/WSL overhead are all outside it — and all of them run on the *same*
+allocation: WSL2 uses one utility VM for every distro, so the `docker-desktop` distro shares it,
+and a container on this machine reports `nproc` = **10**, the same ten.
 
-Nothing in the reports depends on the host figure: the conclusion is that the service is far
-from compute-bound, and it is further from it on the host than within the allocation. But the
-denominator has to be stated, and it is the allocation.
+> So a service-process CPU figure bounds **the application's demand**. It does **not** say how
+> much of the allocation, the guest, or the host was idle. PR2 measures no total utilisation
+> for any of the three.
+
+This is not pedantry about wording. It is why §4's excursions — which slow the service, the
+database *and* the generator simultaneously — are consistent with contention for one shared
+10-vCPU pool, and why nothing in this repository can currently confirm or refute that. A node
+exporter is the instrument that would.
 
 ## Host
 
@@ -55,8 +64,11 @@ model name           : Intel(R) Core(TM) i7-14700F
 MemTotal             : 11 GiB visible
 kernel               : 5.15.167.4-microsoft-standard-WSL2
 go version           : go1.26.5 linux/amd64
+
+wsl.exe -l -v        : Ubuntu (running), docker-desktop (running)
+docker run alpine nproc : 10   <- the same ten, not a separate allocation
 ```
-<sub>`nproc`, `/proc/cpuinfo`, `free -h`, `uname -r`, `go version`</sub>
+<sub>`nproc`, `/proc/cpuinfo`, `free -h`, `uname -r`, `go version`, `wsl.exe -l -v`</sub>
 
 **`GOMAXPROCS` is therefore 10 by default** for both the service and the load generator, and
 each run records its own observed value in `run.json`'s manifest (`server_gomaxprocs`,

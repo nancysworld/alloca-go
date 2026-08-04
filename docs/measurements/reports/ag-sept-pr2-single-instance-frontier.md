@@ -5,11 +5,15 @@
 > **This machine tops out at ~4,300 booking requests per second, and the limit is
 > PostgreSQL — not alloca-go.**
 >
-> At that rate the service uses **1.2 of the 10 vCPUs WSL2 is allocated** (on a 20-core
-> host), the connection pool has stopped being the constraint (acquire-wait falls from
-> 53.6 s/s to **0.003** at pool 80), and the largest single wait is **`LWLock:WALWrite`** —
-> backends serialising on the write-ahead log. Throughput is flat from concurrency 64 to 128
-> while p99 doubles: added load buys queue depth, not work.
+> At that rate `alloca-go` uses about **1.2 CPU cores** within WSL2's 10-vCPU allocation, so
+> application compute retains substantial headroom; the connection pool has stopped being the
+> constraint (acquire-wait falls from 53.6 s/s to **0.003** at pool 80). Throughput is flat
+> from concurrency 64 to 128 while p99 doubles: added load buys queue depth, not work.
+>
+> Inside PostgreSQL the strongest observed constraint is **write-path contention, led by
+> `LWLock:WALWrite`**, with substantial `BufferContent` contention also present. That
+> sub-mechanism is **provisional** — the sampling is diagnostic rather than time-weighted
+> (§5.2). *PostgreSQL as the limiting subsystem* is not provisional.
 >
 > **The consequence for PR3: running more alloca-go replicas against this one database
 > will not raise throughput.** The pool ladder already tested that in disguise, and §5.4
@@ -328,35 +332,57 @@ Three measurement paths, one answer.
 At the default pool of 10 the same machine does 2194.9 / 2074.2 (§2.1), so **pool sizing alone
 is worth roughly 2× on this hardware** — the single most valuable configuration finding in PR2.
 
-### 5.2 What decides it: PostgreSQL's write-ahead log `[MEASURED]`
+### 5.2 What decides it: PostgreSQL, and within it the write path `[MEASURED]`
 
-Three candidates are eliminated at the plateau cell itself:
+Four candidates are eliminated at the plateau cell itself:
 
 | candidate | reading at the plateau | verdict |
 |---|---|---|
-| alloca-go compute | **1.2 of the 10 vCPUs** allocated to WSL2, on a 20-core host | not the constraint |
+| alloca-go compute | **1.2 CPU cores** within WSL2's 10-vCPU allocation | not the constraint |
 | the load generator | §1.1's control **re-run at this operating point**: 4682.7 req/s on one core, against 4130.1 unconstrained | not the constraint |
 | the connection pool | acquire-wait **0.003 s/s** (53.6 at pool 10), 58–64 of 80 connections in use | **not the constraint at pool 80** |
 | fixture / index size | §1.1 reaches the same rate on 8,000 slots as the sweep does on 61,540 | not the constraint |
 
-The pool ceasing to bind is what makes this a database result rather than a tuning result. And
-inside PostgreSQL the largest single wait, in both clean cells sampled, is
-**`LWLock:WALWrite`** — 41.0% and 36.8% of active-backend samples, with `LWLock:BufferContent`
-second at 22.5% and 32.7% ([`postgres-waits/`](../pr2-frontier/postgres-waits/)).
+**PostgreSQL is the limiting subsystem**, and the pool ceasing to bind is what makes that a
+database result rather than a tuning result. That conclusion is what the architecture argument
+in §5.4 rests on, and it is firm.
 
-That is a database serialising on its write-ahead log. Every `reserve` is a durable
-transaction, WAL writes are serialised, and one PostgreSQL instance has one WAL.
+**The sub-mechanism inside PostgreSQL is provisional.** The strongest observed constraint is
+**write-path contention, led by `LWLock:WALWrite`** — 41.0% and 36.8% of active-backend samples
+in the two clean cells — **with substantial `LWLock:BufferContent` also present**, at 22.5% and
+32.7% ([`postgres-waits/`](../pr2-frontier/postgres-waits/)). Both are write-path waits, so the
+direction is clear; which of them is the *actionable* bound is not settled by this evidence.
 
-**Read `postgres-waits/README.md` before quoting those percentages** — they are 2-second
-samples of `pg_stat_activity`, so they are shares of *observed active backends*, not shares of
-time.
+Two reasons to hold it provisional rather than name the WAL outright. The sampling is a
+**2-second poll of `pg_stat_activity`, so it is a share of observed active backends and not
+time-weighted** — a wait shorter than the interval can be missed entirely, and a long one is
+counted the same as a brief one. And `BufferContent` is close enough behind that a time-weighted
+measurement could reorder them. **Read `postgres-waits/README.md` before quoting these
+percentages.**
+
+Naming the mechanism properly needs PostgreSQL and storage instrumentation, which is why §6
+makes the exporter a PR3 requirement. What does *not* depend on resolving it: every reading here
+puts the constraint inside the database and outside alloca-go, which is all §5.4 needs.
 
 ### 5.3 Where the 4,300 goes
 
-At the plateau the whole service draws **1.2 of the 10 vCPUs WSL2 is allocated**, with p99 of
-34–62 ms against a 500 ms objective. Roughly **88% of the allocation is idle** — and since the
-allocation is half of a 20-core host, the machine as a whole is idler still. This is not a
-system that runs out of CPU; it is one that runs out of *serialised durable writes*.
+At the plateau, `alloca-go` consumes about **1.2 CPU cores within WSL2's 10-vCPU allocation**,
+with p99 of 34–62 ms against a 500 ms objective. **Application compute therefore retains
+substantial headroom.**
+
+**PR2 does not measure total WSL2 or host CPU utilisation.** `process_cpu_seconds_total` is the
+`alloca-go` process and nothing else: PostgreSQL, the load generator, Prometheus, Grafana and
+Docker/WSL overhead are all outside it, and all of them share the *same* 10 vCPUs — a container
+on this machine reports `nproc` = 10, the same allocation, not a separate one. So "1.2 of 10"
+bounds the application's demand; it says nothing about how much of the allocation was free.
+
+That distinction matters twice over. It is why this section claims headroom for application
+compute rather than idleness for the machine — and it is why §4's excursions, which slow the
+service, the database *and* the generator together, are consistent with contention for one
+shared 10-vCPU pool that nothing here instruments.
+
+What the evidence does support: this is not a system that runs out of *application* CPU. It
+runs out of something inside PostgreSQL (§5.2).
 
 ### 5.4 The prediction PR3 must test
 

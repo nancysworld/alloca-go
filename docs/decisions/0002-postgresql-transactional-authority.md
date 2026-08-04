@@ -90,12 +90,14 @@ records the durable authority and technology choices that implement those semant
 - Mutations targeting one slot serialize at its row lock; a hot slot has a deliberate
   single-authority ceiling.
 - **A second, instance-wide ceiling exists that this ADR did not anticipate, now
-  `[MEASURED]`.** Even with *fully dispersed* slots — no row contention at all — one
-  PostgreSQL instance has one write-ahead log, and durable commits serialise on it. On the
-  2026-08-04 workstation baseline that ceiling is ~4,300 booking req/s, reached while the
-  service uses 1.2 of the 10 vCPUs available to it and the connection pool has stopped
-  binding; the
-  largest single database wait is `LWLock:WALWrite`. See
+  `[MEASURED]`.** Even with *fully dispersed* slots — no row contention at all — throughput
+  stops at a limit set inside the single PostgreSQL instance rather than in the service. On
+  the 2026-08-04 workstation baseline that ceiling is ~4,300 booking req/s, reached while
+  `alloca-go` uses about 1.2 CPU cores of a 10-vCPU allocation and the connection pool has
+  stopped binding. The strongest observed database-side constraint is **write-path
+  contention, led by `LWLock:WALWrite` with substantial `BufferContent` alongside it** —
+  provisional, since the sampling is diagnostic rather than time-weighted, and PR3's
+  PostgreSQL instrumentation is what would settle which bound is actionable. See
   [`../measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../measurements/reports/ag-sept-pr2-single-instance-frontier.md) §5 —
   that report owns the number and its caveats, including that it describes an untuned
   container on a developer machine.

@@ -23,7 +23,7 @@ artifact directories are large and are kept anyway: without them a report is an 
 
 | Report | Milestone | What it establishes |
 |---|---|---|
-| [AG-Sept PR2 — single-instance frontier](reports/ag-sept-pr2-single-instance-frontier.md) | AG-Sept | **The load-bearing result so far.** This machine reaches ~4,300 booking req/s and the limit is PostgreSQL's write-ahead log, not alloca-go — so adding service replicas against one database raises availability, not throughput. |
+| [AG-Sept PR2 — single-instance frontier](reports/ag-sept-pr2-single-instance-frontier.md) | AG-Sept | **The load-bearing result so far.** This machine reaches ~4,300 booking req/s and the limiting subsystem is PostgreSQL, not alloca-go — so adding service replicas against one database raises availability, not throughput. The sub-mechanism inside PostgreSQL (write-path contention, led by `LWLock:WALWrite`) is provisional pending PR3's instrumentation. |
 
 ### Artifacts
 

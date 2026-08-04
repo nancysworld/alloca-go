@@ -6,6 +6,7 @@
       "goodput_per_s": 4301.8,
       "p99_ms": 60.257349,
       "generator_cpu_per_core": 0.0173,
+      "level": "local",
       "pct_of_unconstrained": 101.5
     },
     {
@@ -14,6 +15,7 @@
       "goodput_per_s": 4263.2,
       "p99_ms": 58.143174,
       "generator_cpu_per_core": 0.0212,
+      "level": "local",
       "pct_of_unconstrained": 100.6
     },
     {
@@ -22,6 +24,7 @@
       "goodput_per_s": 1389.3,
       "p99_ms": 202.997411,
       "generator_cpu_per_core": 0.0105,
+      "level": "local",
       "pct_of_unconstrained": 32.8
     },
     {
@@ -30,10 +33,19 @@
       "goodput_per_s": 4238.6,
       "p99_ms": 59.124197,
       "generator_cpu_per_core": 0.0245,
+      "level": "local",
       "pct_of_unconstrained": 100.0
     }
   ],
+  "requested": [
+    "1",
+    "2",
+    "4",
+    "0"
+  ],
+  "require": "local",
+  "refusals": [],
   "verdict": [
-    "throughput is within 5% of unconstrained down to GOMAXPROCS=1, so at this operating point the generator had at least 10x the compute it needed and is not the binding constraint"
+    "INCONCLUSIVE: throughput is not flat across the ladder \u2014 GOMAXPROCS=4 at 32.8%. Either the generator binds at those levels, or the run met the environmental excursion the frontier report's \u00a74 describes; the generator cannot be ruled out from this ladder until every rung is within 5%. Check each rung's generator CPU: a generator that is binding works harder, not less."
   ]
 }

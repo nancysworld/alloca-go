@@ -53,12 +53,40 @@ curl -sf "$PROM/-/ready" >/dev/null || fail "prometheus is not ready at $PROM �
 mkdir -p "$OUT"
 log "sweep -> $OUT"
 
+# The port the service publishes metrics on, derived from METRICS rather than hardcoded.
+metrics_port() { printf '%s' "${METRICS#*://}" | sed 's#/.*##' | awk -F: '{print $NF}'; }
+
+SERVICE_PID=""
+
+# Stop only the service *this script started*, by pid.
+#
+# Looking it up by port was wrong in two ways at once. The port was hardcoded to :9090 while
+# METRICS_URL is an override, so with an override the lookup found nothing, the old service
+# kept running, and the next cell's process failed to bind — silently, since the readiness
+# probe then succeeded against the *old* service. The cell would measure a process the sweep
+# believed it had replaced, with warm state and counters from the previous cell, and every
+# correctness check would still pass. Killing by pid cannot make that mistake.
 stop_service() {
-  local pid
-  pid=$(ss -ltnp 2>/dev/null | grep ':9090' | grep -o 'pid=[0-9]*' | cut -d= -f2 | head -1) || true
-  [ -n "${pid:-}" ] && kill "$pid" 2>/dev/null && sleep 1 || true
+  [ -n "$SERVICE_PID" ] || return 0
+  kill "$SERVICE_PID" 2>/dev/null || true
+  wait "$SERVICE_PID" 2>/dev/null || true
+  SERVICE_PID=""
 }
 trap 'stop_service' EXIT
+
+# The documented flow leaves `make dev-measured` running in another terminal, and this script
+# needs that port for its own per-cell processes. Take it over once, and say so: silently
+# killing a process this script did not start is exactly the kind of thing that should not
+# happen quietly.
+takeover_port() {
+  local port existing
+  port=$(metrics_port)
+  existing=$(ss -ltnp 2>/dev/null | grep ":${port} " | grep -o 'pid=[0-9]*' | cut -d= -f2 | head -1 || true)
+  [ -n "${existing:-}" ] || return 0
+  log "stopping the service already listening on :${port} (pid $existing) — this sweep starts its own per cell"
+  kill "$existing" 2>/dev/null || true
+  sleep 1
+}
 
 # slots_for sizes the fixture to the cell rather than to a constant.
 #
@@ -97,9 +125,16 @@ for workload in $WORKLOADS; do
       DATABASE_URL="$dsn" go run ./cmd/alloca-seed -reset -slots "$slots" -capacity "$CAPACITY" \
         > "$cell/seed.log" 2>&1 || fail "seed failed; see $cell/seed.log"
       stop_service
+      [ "$cells" -eq 1 ] && takeover_port
       DATABASE_URL="$dsn" "$SERVICE" > "$cell/service.log" 2>&1 &
+      SERVICE_PID=$!
       for _ in $(seq 1 40); do curl -sf "$BASE/healthz" >/dev/null 2>&1 && break; sleep 0.5; done
       curl -sf "$BASE/healthz" >/dev/null || fail "service did not become ready; see $cell/service.log"
+      # Readiness alone cannot tell this cell's service from a previous one that never died,
+      # which is the failure the pid-based stop_service exists to prevent. Prove the process
+      # answering is the one just started.
+      kill -0 "$SERVICE_PID" 2>/dev/null \
+        || fail "the service started for this cell is no longer running; see $cell/service.log"
 
       # 3. warm up. Its report is kept — a warm-up that failed explains a strange cell.
       "$LOAD" -workload "$workload" -concurrency "$conc" -duration "$WARMUP" \
@@ -120,8 +155,14 @@ for workload in $WORKLOADS; do
       curl -sf "$METRICS" > "$cell/metrics.txt" || fail "after scrape failed"
 
       # 6. evidence, then the verdict.
+      #
+      # Export failure refuses the cell. It used to only log: a cell whose panel CSVs or TSDB
+      # snapshot were missing still counted as passed, and the sweep still exited zero, so the
+      # run advertised measurements whose supporting evidence had not been retained. That is
+      # the one failure this whole directory structure exists to prevent.
       PROM_URL="$PROM" ./test/scripts/export-panels.sh "$cell" "$start" "$end" \
-        > "$cell/export.log" 2>&1 || log "  export failed; see $cell/export.log"
+        > "$cell/export.log" 2>&1 && export_ok=yes || export_ok=no
+      [ "$export_ok" = yes ] || log "  export FAILED; see $cell/export.log"
 
       DATABASE_URL="$dsn" go run ./cmd/alloca-verify \
         -run "$cell/run.json" -metrics "$cell/metrics.txt" \
@@ -132,17 +173,48 @@ for workload in $WORKLOADS; do
       # The plateau check of §5.5. A cell whose goodput equals the fixture's capacity spent
       # part of its window measuring refusals, and nothing else in the pipeline notices —
       # every correctness check passes, because a refusal is a valid domain answer.
-      python3 - "$cell" "$slots" "$CAPACITY" "$load_ok" "$verify_ok" <<'PY'
-import json, sys
-cell, slots, capacity, load_ok, verify_ok = sys.argv[1:6]
+      python3 - "$cell" "$slots" "$CAPACITY" "$load_ok" "$verify_ok" "$export_ok" <<'PY'
+import json, os, sys
+cell, slots, capacity, load_ok, verify_ok, export_ok = sys.argv[1:7]
 r = json.load(open(f"{cell}/run.json"))
 s = r["summary"]
 goodput, window = s["successful_mutation_goodput"], s["duration_seconds"]
 fixture = int(slots) * int(capacity)
-notes = []
+
+# refusals are the reasons this cell may not be read as a measurement. Recorded in the cell's
+# own artifact, not only in the terminal, so a directory inspected later still says why.
+refusals = []
+if load_ok != "yes":
+    refusals.append("the load generator failed")
+if verify_ok != "yes":
+    refusals.append("reconciliation failed")
+if export_ok != "yes":
+    refusals.append("evidence export failed: panel CSVs or the TSDB snapshot are missing")
+
+# Fixture exhaustion refuses the cell rather than annotating it. The surrounding comment always
+# said a cell that ran out of fixture "measures refusal throughput while every correctness check
+# still passes" — and then the pass condition read only load_ok and verify_ok, so the cell was
+# counted as passed anyway and the sweep exited zero. A measurement identified as measuring the
+# wrong thing is not a weaker result; it is not a result.
 if goodput >= fixture:
-    notes.append(f"EXHAUSTED FIXTURE: goodput {goodput} reached capacity {fixture}; part of "
-                 f"the window measured refusals, not bookings")
+    refusals.append(f"EXHAUSTED FIXTURE: goodput {goodput} reached capacity {fixture}; part of "
+                    f"the window measured refusals, not bookings")
+
+# The export can fail *partially* — a query returning nothing still writes its file. Check the
+# panels the index claims, so a truncated export cannot pass as a complete one.
+index = f"{cell}/panels/index.json"
+if export_ok == "yes":
+    if not os.path.exists(index):
+        refusals.append("evidence export reported success but wrote no panels/index.json")
+    else:
+        idx = json.load(open(index))
+        missing = [p["key"] for p in idx["panels"] if not os.path.exists(f"{cell}/{p['file']}")]
+        if missing:
+            refusals.append(f"evidence export is incomplete: no CSV for {sorted(missing)}")
+    snapshot = f"{cell}/tsdb-snapshot"
+    if not os.path.isdir(snapshot) or not os.listdir(snapshot):
+        refusals.append("evidence export left no TSDB snapshot")
+
 json.dump({
     "workload": s["workload"], "concurrency": s["concurrency"],
     "window_seconds": window,
@@ -152,16 +224,23 @@ json.dump({
     "generator_cpu_per_core": s["generator"]["cpu_utilisation_per_core"],
     "level": r["quotability"]["level"],
     "load_ok": load_ok == "yes", "verify_ok": verify_ok == "yes",
-    "fixture_units": fixture, "notes": notes,
+    "export_ok": export_ok == "yes",
+    "fixture_units": fixture,
+    "cell_ok": not refusals,
+    "refusals": refusals,
+    # notes is retained as the previous key name so older readers of a cell directory keep
+    # working; it now carries exactly the refusal reasons.
+    "notes": refusals,
 }, open(f"{cell}/cell.json", "w"), indent=2)
-for n in notes:
+for n in refusals:
     print(f"  !! {n}")
 PY
 
-      if [ "$load_ok" = yes ] && [ "$verify_ok" = yes ]; then
+      cell_ok=$(python3 -c 'import json,sys;print("yes" if json.load(open(sys.argv[1]))["cell_ok"] else "no")' "$cell/cell.json")
+      if [ "$cell_ok" = yes ]; then
         passed=$((passed+1)); log "  ok"
       else
-        refused=$((refused+1)); log "  REFUSED (load=$load_ok verify=$verify_ok)"
+        refused=$((refused+1)); log "  REFUSED (load=$load_ok verify=$verify_ok export=$export_ok)"
       fi
     done
   done

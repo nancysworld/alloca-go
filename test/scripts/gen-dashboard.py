@@ -22,20 +22,39 @@ OUT = ROOT / "deploy/observability/grafana/dashboards/alloca-frontier.json"
 
 # Which canonical panels share a graph. Grouped by what an operator reads together: the three
 # latency quantiles on one axis, pool size against pool usage, and so on.
+#
+# Panels only share an axis when they share a *scale*. Resident memory used to sit beside CPU,
+# goroutine count and GC pause: tens of millions against values below ten, so memory set the
+# axis and flattened the other three into a line along the bottom — the panel existed but could
+# not be read. It now has its own.
 LAYOUT = [
     ("Throughput and goodput", ["throughput", "goodput", "replay_rate"]),
     ("Latency", ["latency_p50", "latency_p95", "latency_p99"]),
     ("Outcomes", ["outcomes"]),
     ("Database pool pressure", ["pool_in_use", "pool_max", "pool_acquire_wait"]),
-    ("Process and Go runtime", ["process_cpu", "process_memory", "go_goroutines", "go_gc_pause"]),
+    ("Process CPU and Go runtime", ["process_cpu", "go_goroutines", "go_gc_pause"]),
+    ("Process resident memory", ["process_memory"]),
 ]
 
 DATASOURCE = {"type": "prometheus", "uid": "alloca-prometheus"}
+
+# Panels whose query returns one series per label value, and the label that names them.
+#
+# A fixed legend is right for a single-series panel and actively misleading for these: the
+# `outcomes` query returns one series per outcome, and labelling all of them "Outcomes" hid
+# exactly the distinction — admitted success against business refusal against timeout — that
+# the panel exists to expose.
+MULTI_SERIES_LEGEND = {"outcomes": "{{outcome}}"}
 
 
 def grafana_expr(expr: str) -> str:
     """Substitute the repository token with Grafana's adaptive macro."""
     return expr.replace("$RANGE", "$__rate_interval")
+
+
+def legend_for(key: str, title: str) -> str:
+    """The legend a series should carry: its label value when the query fans out, else the title."""
+    return MULTI_SERIES_LEGEND.get(key, title)
 
 
 def main() -> None:
@@ -58,7 +77,7 @@ def main() -> None:
                 "refId": chr(ord("A") + i),
                 "datasource": DATASOURCE,
                 "expr": grafana_expr(by_key[k]["expr"]),
-                "legendFormat": by_key[k]["title"],
+                "legendFormat": legend_for(k, by_key[k]["title"]),
                 "range": True,
             }
             for i, k in enumerate(keys)

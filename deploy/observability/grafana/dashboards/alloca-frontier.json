@@ -182,7 +182,7 @@
             "uid": "alloca-prometheus"
           },
           "expr": "sum by (outcome) (rate(alloca_requests_total[$__rate_interval]))",
-          "legendFormat": "Outcomes",
+          "legendFormat": "{{outcome}}",
           "range": true
         }
       ]
@@ -254,7 +254,7 @@
     {
       "id": 5,
       "type": "timeseries",
-      "title": "Process and Go runtime",
+      "title": "Process CPU and Go runtime",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -299,8 +299,8 @@
             "type": "prometheus",
             "uid": "alloca-prometheus"
           },
-          "expr": "process_resident_memory_bytes",
-          "legendFormat": "Process resident memory",
+          "expr": "go_goroutines",
+          "legendFormat": "Goroutines",
           "range": true
         },
         {
@@ -309,18 +309,52 @@
             "type": "prometheus",
             "uid": "alloca-prometheus"
           },
-          "expr": "go_goroutines",
-          "legendFormat": "Goroutines",
+          "expr": "go_gc_duration_seconds{quantile=\"0.75\"}",
+          "legendFormat": "GC pause quantile",
           "range": true
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Process resident memory",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "alloca-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
         },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
         {
-          "refId": "D",
+          "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "alloca-prometheus"
           },
-          "expr": "go_gc_duration_seconds{quantile=\"0.75\"}",
-          "legendFormat": "GC pause quantile",
+          "expr": "process_resident_memory_bytes",
+          "legendFormat": "Process resident memory",
           "range": true
         }
       ]

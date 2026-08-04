@@ -27,6 +27,7 @@ type canonicalPanels struct {
 	Panels      []struct {
 		Key   string `json:"key"`
 		Title string `json:"title"`
+		Unit  string `json:"unit"`
 		Expr  string `json:"expr"`
 	} `json:"panels"`
 }
@@ -56,9 +57,34 @@ type dashboard struct {
 	Panels []struct {
 		Title   string `json:"title"`
 		Targets []struct {
-			Expr string `json:"expr"`
+			Expr         string `json:"expr"`
+			LegendFormat string `json:"legendFormat"`
 		} `json:"targets"`
 	} `json:"panels"`
+}
+
+// aggregatedLabels returns the labels a `sum by (...)` / `by (a, b)` clause fans out over.
+// Written against the canonical expressions this repository actually uses rather than as a
+// general PromQL parser: a wrong answer here would be a test that lies, so it stays narrow.
+func aggregatedLabels(expr string) []string {
+	var out []string
+	for rest := expr; ; {
+		i := strings.Index(rest, " by (")
+		if i < 0 {
+			return out
+		}
+		rest = rest[i+len(" by ("):]
+		j := strings.Index(rest, ")")
+		if j < 0 {
+			return out
+		}
+		for l := range strings.SplitSeq(rest[:j], ",") {
+			if l = strings.TrimSpace(l); l != "" && l != "le" {
+				out = append(out, l)
+			}
+		}
+		rest = rest[j:]
+	}
 }
 
 func loadJSON[T any](t *testing.T, path string) T {
@@ -233,5 +259,70 @@ func TestRangeTokenSubstitutesToValidPromQL(t *testing.T) {
 
 	if substituted == 0 {
 		t.Error("no canonical panel uses the range token, so this test proved nothing")
+	}
+}
+
+// TestFannedOutPanelsCarryTheirLabelInTheLegend guards a property the drift test cannot see.
+//
+// TestDashboardMatchesCanonicalPanels compares *expressions*, so a panel can carry the right
+// query and still be unreadable. `outcomes` is `sum by (outcome) (...)`: it returns one series
+// per outcome, and the generator gave every one of them the same fixed legend, "Outcomes". On
+// screen that is four or five indistinguishable lines — admitted success, business refusal,
+// timeout — in the one panel whose entire purpose is telling them apart.
+//
+// The rule is general rather than a list of known panels, so the next `by (reason)` panel is
+// covered the day it is added rather than the day someone notices the legend.
+func TestFannedOutPanelsCarryTheirLabelInTheLegend(t *testing.T) {
+	dash := loadJSON[dashboard](t, dashboardPath)
+
+	checked := 0
+	for _, p := range dash.Panels {
+		for _, target := range p.Targets {
+			labels := aggregatedLabels(target.Expr)
+			if len(labels) == 0 {
+				continue
+			}
+			checked++
+			for _, l := range labels {
+				if !strings.Contains(target.LegendFormat, "{{"+l+"}}") {
+					t.Errorf("panel %q fans out over %q but its legend is %q: every series would "+
+						"be labelled identically, hiding the distinction the panel exists to show. "+
+						"Use {{%s}}.", p.Title, l, target.LegendFormat, l)
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Error("no dashboard panel aggregates by a label, so this test proved nothing")
+	}
+}
+
+// TestPanelsSharingAnAxisShareAScale keeps a readable panel readable.
+//
+// Resident memory (tens of millions of bytes) once shared an axis with CPU, goroutines and GC
+// pause (all below ten). Grafana scales to the largest series, so the other three rendered as a
+// flat line along the bottom: the panel was present, and useless. Bytes are the only unit in
+// this set that can do that, so the rule is expressed as the unit rather than as a threshold.
+func TestPanelsSharingAnAxisShareAScale(t *testing.T) {
+	canonical := loadJSON[canonicalPanels](t, panelsPath)
+	dash := loadJSON[dashboard](t, dashboardPath)
+
+	unitByExpr := map[string]string{}
+	for _, p := range canonical.Panels {
+		unitByExpr[grafanaForm(p.Expr)] = p.Unit
+	}
+
+	for _, p := range dash.Panels {
+		if len(p.Targets) < 2 {
+			continue
+		}
+		units := map[string]bool{}
+		for _, target := range p.Targets {
+			units[unitByExpr[target.Expr]] = true
+		}
+		if units["bytes"] && len(units) > 1 {
+			t.Errorf("panel %q plots bytes alongside %d other units on one axis; the byte series "+
+				"will set the scale and flatten the rest", p.Title, len(units)-1)
+		}
 	}
 }

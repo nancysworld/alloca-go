@@ -339,6 +339,25 @@ func (h *harness) confirm(ctx context.Context, user, key string, res domain.Rese
 	})
 }
 
+// confirmAs and cancelAs name the caller's whole identity rather than just its user_id,
+// so a test can act as an identity from another organisation — the pair the compound
+// key exists to keep apart (transaction-semantics §1.1).
+func (h *harness) confirmAs(
+	ctx context.Context, caller domain.UserRef, key string, res domain.ReservationID,
+) (domain.Result, error) {
+	return h.svc.Confirm(ctx, service.ConfirmCommand{
+		UserRef: caller, ReservationID: res, IdempotencyKey: key,
+	})
+}
+
+func (h *harness) cancelAs(
+	ctx context.Context, caller domain.UserRef, key string, res domain.ReservationID,
+) (domain.Result, error) {
+	return h.svc.Cancel(ctx, service.CancelCommand{
+		UserRef: caller, ReservationID: res, IdempotencyKey: key,
+	})
+}
+
 func (h *harness) cancel(ctx context.Context, user, key string, res domain.ReservationID) (domain.Result, error) {
 	return h.svc.Cancel(ctx, service.CancelCommand{
 		UserRef:       userRef(user),

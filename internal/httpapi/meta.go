@@ -38,6 +38,32 @@ type metaResponse struct {
 	// settings are not comparable and nothing in the totals would say so. It is the field
 	// that lets ag-sept-plan §6.2's comparison identify its own arms.
 	Telemetry string `json:"telemetry_mode"`
+
+	// Placement is which authority this unit is and which routing it is serving under.
+	// A multi-authority run is only certifiable if every participating unit agrees on
+	// the routing version and reports a compatible schema, and the harness cannot ask
+	// an operator to transcribe either (ag-sept-plan-new.md §6.4).
+	Placement PlacementMeta `json:"placement"`
+}
+
+// PlacementMeta is what a shard-affine service unit can say about its own routing.
+//
+// It is reported even when the deployment is unsharded, because "there was one
+// authority" is an answer a result should carry rather than a field a reader has to
+// infer from absence.
+type PlacementMeta struct {
+	// AuthorityID names the writable authority this unit is bound to.
+	AuthorityID string `json:"authority_id"`
+	// RoutingVersion is the placement map's version, or "unsharded".
+	RoutingVersion string `json:"routing_version"`
+	// Sharded distinguishes a unit serving part of a placement map from one serving a
+	// single-authority deployment. Derivable from RoutingVersion, and stated anyway:
+	// a boolean a reader can trust beats a string they have to know the convention for.
+	Sharded bool `json:"sharded"`
+	// Organisations are the organisations this unit serves, empty when unsharded
+	// because "every organisation" is not a list. Bounded by the placement map, so
+	// unlike a metric label it is safe here.
+	Organisations []string `json:"organisations,omitempty"`
 }
 
 // DatabaseMeta is what the service can say about its own authority without asking the
@@ -50,10 +76,25 @@ type DatabaseMeta struct {
 	// PoolMaxConns is this process's configured ceiling, not the deployment's aggregate:
 	// the aggregate needs a replica count, which one process cannot know (PR3).
 	PoolMaxConns int32 `json:"pool_max_conns,omitempty"`
+	// SchemaVersion is the migration version this authority is at, empty when it could
+	// not be read. A multi-authority run is only admissible if every participating
+	// authority is schema-compatible with the serving binary
+	// (horizontal-database-authority §5.1), and this is what lets the harness check it
+	// rather than assume it.
+	SchemaVersion int64 `json:"schema_version,omitempty"`
 }
 
 // handleMeta returns runtime metadata and the resolved timing configuration as JSON.
-func handleMeta(source func() buildinfo.Info, cfg config.Config, db DatabaseMeta, telemetry string) http.HandlerFunc {
+func handleMeta(source func() buildinfo.Info, cfg config.Config, db DatabaseMeta, telemetry string, guard placementGuard) http.HandlerFunc {
+	placement := PlacementMeta{
+		AuthorityID:    string(guard.authority),
+		RoutingVersion: guard.placement.Version(),
+		Sharded:        !guard.placement.IsUnsharded(),
+	}
+	for _, org := range guard.placement.Organisations(guard.authority) {
+		placement.Organisations = append(placement.Organisations, string(org))
+	}
+
 	return func(w http.ResponseWriter, _ *http.Request) {
 		writeJSONResponse(w, http.StatusOK, metaResponse{
 			Info:             source(),
@@ -62,6 +103,7 @@ func handleMeta(source func() buildinfo.Info, cfg config.Config, db DatabaseMeta
 			ReadinessTimeout: cfg.ReadinessTimeout.String(),
 			Database:         db,
 			Telemetry:        telemetry,
+			Placement:        placement,
 		})
 	}
 }

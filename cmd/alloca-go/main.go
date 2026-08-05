@@ -85,7 +85,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	recorder := buildRecorder(registry, pool, logger, mode)
+	recorder, onMisroute := buildRecorder(registry, pool, logger, mode)
 	dbMeta := databaseMeta(ctx, pool, logger)
 	shutdownMetrics := serveMetrics(metricsAddr(), registry, logger)
 
@@ -99,6 +99,11 @@ func run(logger *slog.Logger) error {
 		Logger:        logger,
 		Database:      dbMeta,
 		TelemetryMode: mode,
+		// This unit serves the organisations its authority owns and refuses the rest,
+		// so a routing mistake is refused here rather than written to the wrong database.
+		Placement:  placement,
+		Authority:  authority,
+		OnMisroute: onMisroute,
 		// Readiness is the database check: this service cannot answer a booking request
 		// without it, so reporting ready while it is unreachable would just move the
 		// failure from the probe to every request.

@@ -17,6 +17,7 @@ import (
 
 	"github.com/nancysworld/alloca-go/internal/buildinfo"
 	"github.com/nancysworld/alloca-go/internal/config"
+	"github.com/nancysworld/alloca-go/internal/domain"
 	"github.com/nancysworld/alloca-go/internal/telemetry"
 )
 
@@ -62,6 +63,18 @@ type Options struct {
 	// probe-only server AG-M0 shipped, which has no database and no recorder.
 	Database      DatabaseMeta
 	TelemetryMode string
+
+	// Placement and Authority bind this unit to one writable authority: it serves the
+	// organisations that authority owns and refuses the rest
+	// (horizontal-database-authority §5.2). The zero Placement serves nothing, which is
+	// the right answer for a unit that was never told its routing — but note that New
+	// treats it as unsharded, because the probe-only server has no organisations to
+	// route and every deployment before PR3a had none either.
+	Placement domain.Placement
+	Authority domain.AuthorityID
+	// OnMisroute counts requests refused for reaching the wrong unit. Optional: a
+	// deployment without metrics still refuses them and still logs them.
+	OnMisroute func(context.Context, domain.Operation)
 }
 
 // Server bundles the HTTP handler and the configuration used to construct the
@@ -86,9 +99,25 @@ func New(cfg config.Config, metaSource func() buildinfo.Info, opts Options) *Ser
 	if logger == nil {
 		logger = slog.Default()
 	}
+	placement := opts.Placement
+	if placement.IsZero() {
+		// A caller that supplied no routing gets the pre-PR3a behaviour: one authority
+		// owning everything, refusing nothing for placement reasons. This is the
+		// probe-only server and every existing test, and it is deliberately *not* what
+		// a service whose placement document failed to load gets — that never reaches
+		// here, because resolvePlacement refuses to start (cmd/alloca-go/placement.go).
+		placement = domain.Unsharded(opts.Authority)
+	}
+	guard := placementGuard{
+		placement:  placement,
+		authority:  opts.Authority,
+		logger:     logger,
+		onMisroute: opts.OnMisroute,
+	}
+
 	mux := http.NewServeMux()
 	registerRoutes(mux, metaSource, cfg, ready, logger, opts.Service, opts.Slots, recorder,
-		opts.Database, opts.TelemetryMode)
+		opts.Database, opts.TelemetryMode, guard)
 	return &Server{cfg: cfg, handler: withRequestID(mux)}
 }
 

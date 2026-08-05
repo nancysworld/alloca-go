@@ -25,6 +25,7 @@ type bookingHandlers struct {
 	svc      BookingService
 	recorder telemetry.Recorder
 	budget   config.RequestBudget
+	guard    placementGuard
 }
 
 // Every handler here leaves the command's Body field unset, and must keep doing so.
@@ -50,6 +51,13 @@ func (h *bookingHandlers) reserve(w http.ResponseWriter, r *http.Request) {
 	user, detail := decodeIdentity(r, maxBodyBytes)
 	if detail != "" {
 		h.invalid(ctx, w, domain.OpReserve, start, detail)
+		return
+	}
+	// Mutations route by the user's organisation: user-home owns the schedule claim and
+	// the client idempotency scope, so it is the stable home for a mutation and for
+	// every replay of it (horizontal-database-authority §4.1).
+	if !h.guard.serves(user.OrganisationID) {
+		h.invalid(ctx, w, domain.OpReserve, start, h.guard.refuse(ctx, domain.OpReserve, user.OrganisationID))
 		return
 	}
 
@@ -81,6 +89,13 @@ func (h *bookingHandlers) confirm(w http.ResponseWriter, r *http.Request) {
 		h.invalid(ctx, w, domain.OpConfirm, start, detail)
 		return
 	}
+	// Mutations route by the user's organisation: user-home owns the schedule claim and
+	// the client idempotency scope, so it is the stable home for a mutation and for
+	// every replay of it (horizontal-database-authority §4.1).
+	if !h.guard.serves(user.OrganisationID) {
+		h.invalid(ctx, w, domain.OpConfirm, start, h.guard.refuse(ctx, domain.OpConfirm, user.OrganisationID))
+		return
+	}
 
 	result, err := h.svc.Confirm(ctx, service.ConfirmCommand{
 		UserRef:        user,
@@ -103,6 +118,13 @@ func (h *bookingHandlers) cancel(w http.ResponseWriter, r *http.Request) {
 	user, detail := decodeIdentity(r, maxBodyBytes)
 	if detail != "" {
 		h.invalid(ctx, w, domain.OpCancel, start, detail)
+		return
+	}
+	// Mutations route by the user's organisation: user-home owns the schedule claim and
+	// the client idempotency scope, so it is the stable home for a mutation and for
+	// every replay of it (horizontal-database-authority §4.1).
+	if !h.guard.serves(user.OrganisationID) {
+		h.invalid(ctx, w, domain.OpCancel, start, h.guard.refuse(ctx, domain.OpCancel, user.OrganisationID))
 		return
 	}
 

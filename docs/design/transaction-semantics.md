@@ -923,18 +923,23 @@ measurements may assume.
 
 ### Not directly proven
 
-Recorded so the gap is visible rather than assumed. Not a known defect; a property no
-current test discriminates.
+Recorded so the gap is visible rather than assumed. Neither is a known defect; both are
+properties no current test fully discriminates.
 
-INV-21 was in this section from AG-M1 until AG-Sept PR3, and writing the test that moved
-it found a real defect: `classifyCommit` treated *every* `*pgconn.PgError` as the server
-answering the `COMMIT`, so a terminated backend (57P01) or a crash (57P02) was reported as
-a definite failure. Both are the session ending, not an answer about the transaction, and
+**INV-21 is here for half of itself.** It sat here wholly unproven from AG-M1 until AG-Sept
+PR3, when a test was finally written for it — and that test found a real defect:
+`classifyCommit` treated *every* `*pgconn.PgError` as the server answering the `COMMIT`, so
+a terminated backend (57P01) or a crash (57P02) was reported as a definite failure. Both are the session ending, not an answer about the transaction, and
 a commit already flushed to WAL survives a crash. A client told "failed" may reasonably
 reissue under a **new** key, which is exactly what breaks INV-5. Class 57 and class 08 are
-now ambiguous. **The lesson is about the register itself:** an invariant parked in this
-section is not merely unproven, it is unexamined, and the classification looked correct
-for two milestones because nothing had killed a connection mid-`COMMIT`.
+now ambiguous. It stays in this section because the *acknowledgement-lost* half is still
+untested, and moving it out on the strength of the half that now is would be the same
+overstatement the register exists to prevent.
+
+**The lesson is about the register itself:** an invariant parked in this section is not
+merely unproven, it is unexamined. The classification looked correct for two milestones
+because nothing had ever killed a connection mid-`COMMIT`, and an entry here is a
+standing invitation to go and find out — not a place for a property to rest.
 
 | ID | Property | Decided in | Status |
 |---|---|---|---|
@@ -943,5 +948,5 @@ for two milestones because nothing had killed a connection mid-`COMMIT`.
 | **INV-23** | A confirm or cancel mutates a reservation only for the `UserRef` that owns it; any other caller receives `unknown_target`, whether or not the two organisations share an authority | §4 | `service/placement_test.go` — `TestConfirmAndCancelRejectACallerWhoIsNotTheOwner`, with `TestOwnerConfirmAndCancelStillSucceed` as the positive control; `postgres/schedule_test.go` — `TestConfirmAndCancelRejectAnImpostorWithTheSameUserID` pins the same rule against the real adapter, where the impostor shares the owner's `user_id` and differs only by organisation. Removing the comparison fails the first; mis-scanning `user_organisation_id` in `ReservationTarget` fails the second while the in-memory tests still pass |
 | **INV-24** | A booking is supported exactly when the slot and user organisations resolve to the **same** writable authority — placement equality, never organisation-identifier equality. A single-authority deployment therefore refuses nothing, and a colocated cross-organisation booking keeps working (INV-13) | §4, [`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md) §4.1 | `service/placement_test.go` — `TestReserveAcrossAuthoritiesIsRefused`, `TestColocatedCrossOrganisationReserveSucceeds`, `TestUnshardedDeploymentRefusesNothingForPlacement`; `domain/placement_test.go` — `TestColocationIsDecidedByAuthorityNotByOrganisationIdentity`. Comparing identifiers instead of authorities fails all four |
 | **INV-25** | A cross-authority refusal is recorded on the user-home authority and performs no slot-authority work: no lock, no reservation, no claim, no booking | §5.3 of the design note | `service/placement_test.go` — `TestCrossAuthorityRefusalNeverEntersTheSlotPath` is the load-bearing one: a `Tx` spy whose `LockSlot` fails, with a supported reserve as the control proving the spy watches a reachable path. `TestCrossAuthorityRefusalTouchesNoSlotState` and `TestCrossAuthorityRefusalIsReplayable` cover state and replay. **Moving the policy check after `LockSlot` fails only the first** — capacity is unchanged either way, so the state test alone would have overstated its evidence |
-| **INV-27** | A service unit starts only against an authority whose applied schema is **exactly** the version the binary's embedded migrations expect. Unreadable, unapplied, behind and ahead are all refused | ADR-0002, [`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md) §5.1 | `postgres/schema_test.go` — `TestCheckSchemaRefusesToServeAnIncompatibleAuthority` covers all four refusals, with `TestCheckSchemaAcceptsTheVersionThisBinaryExpects` as the control, without which the gate could be satisfied by refusing everything. The gate runs in `cmd/alloca-go` before the listener and the expiry worker start; `/meta` reports the value it validated rather than one it merely read. **Ahead is refused deliberately**: accepting it would trust that every intervening migration was additive, which the gate cannot check, and would admit a multi-authority run whose units are ahead of their binary. The cost — rollback across a migration is blocked — is accepted, because that refusal is loud and immediate where the failure it replaces is silent and arrives under load |
 | **INV-26** | A service unit serves only the organisations its authority owns; a request for any other is refused at the transport edge as `invalid_request`, before the domain path, and is never recorded as a durable domain outcome on the wrong authority | §8, [`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md) §5.2 | `httpapi/placement_test.go` — `TestMisroutedMutationIsRefusedBeforeReachingTheService`, `TestMisroutedListSlotsIsRefusedBeforeReachingTheRepository`, with `TestOwnedOrganisationsPassTheGuard` as the positive control. A guard that always allows fails all three |
+| **INV-27** | A service unit starts only against an authority whose applied schema is **exactly** the version the binary's embedded migrations expect. Unreadable, unapplied, behind and ahead are all refused | ADR-0002, [`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md) §5.1 | `postgres/schema_test.go` — `TestCheckSchemaRefusesToServeAnIncompatibleAuthority` covers all four refusals, with `TestCheckSchemaAcceptsTheVersionThisBinaryExpects` as the control, without which the gate could be satisfied by refusing everything. The gate runs in `cmd/alloca-go` before the listener and the expiry worker start; `/meta` reports the value it validated rather than one it merely read. **Ahead is refused deliberately**: accepting it would trust that every intervening migration was additive, which the gate cannot check, and would admit a multi-authority run whose units are ahead of their binary. The cost — rollback across a migration is blocked — is accepted, because that refusal is loud and immediate where the failure it replaces is silent and arrives under load |

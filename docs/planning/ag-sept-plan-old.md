@@ -1,5 +1,10 @@
 # AG-Sept — Measured scale-out and distributed authority
 
+**Status: SUPERSEDED on 5 August 2026 by [`ag-sept-plan-new.md`](ag-sept-plan-new.md).**
+Retained unchanged for the record, because PR1 and PR2 were planned, executed, and reported
+under it, and their scope notes and measurement reports cite its section numbers. It is not
+normative for any remaining work. What changed and why is in `ag-sept-plan-new.md` §0.
+
 **Status:** Draft v0.4  
 **Created:** 31 July 2026  
 **Delivery window:** August 2026  

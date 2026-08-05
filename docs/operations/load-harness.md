@@ -6,7 +6,7 @@ produced may be quoted.
 **This document owns the procedure, not the rules.** What a run must contain and when a
 number may be quoted are owned by
 [`../design/measurement-contract.md`](../design/measurement-contract.md) and
-[`ag-sept-plan.md`](../planning/ag-sept-plan.md) §6; what PR1 built against them is recorded
+[`ag-sept-plan-new.md`](../planning/ag-sept-plan-new.md) §6; what PR1 built against them is recorded
 in [`ag-sept-pr1-scope.md`](../planning/ag-sept-pr1-scope.md). Where those disagree with
 this page, they win.
 
@@ -263,7 +263,10 @@ jq -r '.quotability | "\(.level)\t\(.blocked_because)"' test/results/run.json
 **PR1 runs reach `local`, and that is the correct outcome, not a defect.** The generator is
 an HTTP client and cannot discover the service's shape, so the fields above `local` are
 supplied by an operator in the PR that first has something to say about them — service shape
-in PR2, topology and image identity in PR3, environment in PR4 (`ag-sept-plan.md` §14). The
+in PR2 (which took the operator-supplied count to zero by reading `/meta`), placement,
+authority identity, topology and image identity in PR3b, replica count and aggregate pool
+capacity in PR4 (`ag-sept-plan-new.md` §6.4). The environment stage the earlier plan assigned
+to an AWS PR does not arrive; that path is withdrawn (`ag-sept-plan-new.md` §10). The
 report says so itself in `blocked_because`, naming each missing field and the PR that owns
 it, so an incomplete manifest reads as scheduled rather than broken.
 
@@ -502,8 +505,9 @@ It establishes **no capacity**, and no number from it may be quoted as one. PR2 
 one-instance frontier, but with the generator still on this machine, so its result is a
 *bounded local* one: the generator-headroom control limits how far the co-resident generator
 can be distorting it. A publishable capacity claim needs the generator on separate compute
-([`ag-sept-plan.md`](../planning/ag-sept-plan.md) §6.3), which arrives with PR4 and only if
-its gate passes (§14).
+([`ag-sept-plan-new.md`](../planning/ag-sept-plan-new.md) §6.3). That compute is no longer
+funded in AG-Sept — the deployment path that would have provided it is withdrawn (§10) — so
+every AG-Sept run stays `local` by construction and the rule is honoured by labelling.
 
 Two consequences for anything you keep:
 

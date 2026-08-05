@@ -83,7 +83,7 @@ func newFixture(t *testing.T) *fixture {
 	if err := repo.Truncate(context.Background()); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
-	return &fixture{pool: pool, repo: repo, svc: service.New(repo, ids.Random{}, time.Hour)}
+	return &fixture{pool: pool, repo: repo, svc: service.New(repo, ids.Random{}, time.Hour, domain.Placement{})}
 }
 
 // seedSlot creates a slot open for booking now, with the given capacity.

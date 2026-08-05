@@ -123,15 +123,20 @@ type Tx interface {
 	// separate method rather than a fallback inside Now so that the no-slot path is
 	// explicit at the call site and cannot be reached by forgetting to lock.
 	ResolveTimeWithoutSlot(ctx context.Context) (time.Time, error)
-	// SlotRefForReservation resolves the slot a reservation belongs to, without
-	// locking, so the caller can then LockSlot that slot (transaction-semantics §2).
-	// Returns ErrNotFound if the reservation does not exist. It establishes no
-	// timestamp: only the subsequent LockSlot does.
+	// ReservationTarget resolves what a reservation points at — its slot and the user
+	// who owns it — without locking, so the caller can check ownership and then
+	// LockSlot that slot (transaction-semantics §2). Returns ErrNotFound if the
+	// reservation does not exist. It establishes no timestamp: only the subsequent
+	// LockSlot does.
 	//
 	// It returns the whole SlotRef rather than a bare identifier because the caller
 	// cannot reconstruct the owning organisation: for a booking made into another
 	// organisation it is neither the user's own organisation nor derivable from it.
-	SlotRefForReservation(ctx context.Context, id ReservationID) (SlotRef, error)
+	//
+	// It returns the owner in the same read so that confirm and cancel can reject a
+	// caller who is not the owner *before* taking the slot lock. A wrong identity must
+	// not queue behind, or contend with, the traffic of a slot it has no claim on.
+	ReservationTarget(ctx context.Context, id ReservationID) (SlotRef, UserRef, error)
 	// Reservation loads a reservation by ID. Returns ErrNotFound if absent.
 	Reservation(ctx context.Context, id ReservationID) (Reservation, error)
 	// HeldReservations returns every reservation on the slot currently in the held

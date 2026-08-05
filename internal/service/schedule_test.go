@@ -40,7 +40,7 @@ func scheduleFixture(t *testing.T) *fixture {
 		})
 	}
 	ids := &seqIDGen{}
-	return &fixture{svc: New(store, ids, testTTL), store: store, clock: clock, ids: ids}
+	return &fixture{svc: New(store, ids, testTTL, domain.Placement{}), store: store, clock: clock, ids: ids}
 }
 
 func (f *fixture) reserveSlot(t *testing.T, name, key string, slotID domain.SlotID) domain.Result {

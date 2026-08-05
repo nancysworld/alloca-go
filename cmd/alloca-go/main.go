@@ -75,7 +75,7 @@ func run(logger *slog.Logger) error {
 	defer pool.Close()
 
 	repo := postgres.New(pool, cfg.RequestBudget)
-	svc := service.New(repo, ids.Random{}, cfg.ReservationTTL)
+	svc := service.New(repo, ids.Random{}, cfg.ReservationTTL, placement)
 
 	// A private registry rather than the default: the default is package-global, so a
 	// duplicate registration anywhere in the process would panic at startup and a test

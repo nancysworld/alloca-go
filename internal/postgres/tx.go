@@ -164,15 +164,17 @@ func (t *tx) setNow(now time.Time) {
 	t.established = true
 }
 
-func (t *tx) SlotRefForReservation(ctx context.Context, id domain.ReservationID) (domain.SlotRef, error) {
-	var ref domain.SlotRef
+func (t *tx) ReservationTarget(ctx context.Context, id domain.ReservationID) (domain.SlotRef, domain.UserRef, error) {
+	var slot domain.SlotRef
+	var owner domain.UserRef
 	err := t.conn.QueryRow(ctx,
-		`SELECT slot_organisation_id, slot_id FROM reservations WHERE reservation_id = $1`,
-		string(id)).Scan(&ref.OrganisationID, &ref.SlotID)
+		`SELECT slot_organisation_id, slot_id, user_organisation_id, user_id
+		 FROM reservations WHERE reservation_id = $1`,
+		string(id)).Scan(&slot.OrganisationID, &slot.SlotID, &owner.OrganisationID, &owner.UserID)
 	if err != nil {
-		return domain.SlotRef{}, mapError(ctx, err)
+		return domain.SlotRef{}, domain.UserRef{}, mapError(ctx, err)
 	}
-	return ref, nil
+	return slot, owner, nil
 }
 
 func (t *tx) Reservation(ctx context.Context, id domain.ReservationID) (domain.Reservation, error) {

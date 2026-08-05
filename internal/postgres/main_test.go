@@ -91,7 +91,7 @@ func newHarness(t *testing.T, budget config.RequestBudget, ttl time.Duration) *h
 		t.Fatalf("truncate: %v", err)
 	}
 	ids := &seqIDGen{}
-	return &harness{repo: repo, svc: service.New(repo, ids, ttl), ids: ids}
+	return &harness{repo: repo, svc: service.New(repo, ids, ttl, domain.Placement{}), ids: ids}
 }
 
 // newRepo builds a repo over its own pool, without truncating or constructing a
@@ -279,7 +279,7 @@ func (h *harness) reserveAs(
 func (h *harness) reserveWithTTL(
 	ctx context.Context, ttl time.Duration, user, key string, ref domain.SlotRef,
 ) (domain.Result, error) {
-	return service.New(h.repo, h.ids, ttl).Reserve(ctx, service.ReserveCommand{
+	return service.New(h.repo, h.ids, ttl, domain.Placement{}).Reserve(ctx, service.ReserveCommand{
 		UserRef: userRef(user), SlotRef: ref, IdempotencyKey: key,
 	})
 }

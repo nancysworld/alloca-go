@@ -51,15 +51,24 @@ type Service struct {
 	repo domain.Repository
 	ids  domain.IDGen
 	ttl  time.Duration
+	// placement answers which writable authority owns an organisation. The service
+	// needs it for one decision only — whether a booking's two business authorities
+	// are colocated — and never derives a connection from it (design note §4.3).
+	placement domain.Placement
 }
 
 // New constructs a Service. ttl is the service-owned reservation hold duration
-// (transaction-semantics §1.6) and must be positive.
-func New(repo domain.Repository, ids domain.IDGen, ttl time.Duration) *Service {
+// (transaction-semantics §1.6) and must be positive. placement is the deployment's organisation-to-authority
+// map; the zero value is treated as unsharded, which is what every deployment before
+// PR3a was and what the in-memory reference and unit tests use.
+func New(repo domain.Repository, ids domain.IDGen, ttl time.Duration, placement domain.Placement) *Service {
 	if ttl <= 0 {
 		panic("service: reservation ttl must be positive")
 	}
-	return &Service{repo: repo, ids: ids, ttl: ttl}
+	if placement.IsZero() {
+		placement = domain.Unsharded("")
+	}
+	return &Service{repo: repo, ids: ids, ttl: ttl, placement: placement}
 }
 
 // ReserveCommand asks to hold one unit of a slot's capacity.
@@ -101,6 +110,19 @@ func (s *Service) Reserve(ctx context.Context, cmd ReserveCommand) (domain.Resul
 	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpReserve, cmd.UserRef, slotTarget(cmd.SlotRef), cmd.Body)
 
 	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
+		// The Phase 1 support boundary, checked before any slot work: the two business
+		// authorities must live on one writable database, or this booking would need a
+		// distributed commit that Phase 1 does not have
+		// (horizontal-database-authority §4.1, §5.3).
+		//
+		// It compares *resolved authorities*, never organisation identifiers, so a user
+		// booking into a different organisation is supported whenever the two are
+		// colocated — which is every organisation pair in a single-authority deployment,
+		// leaving the shipped cross-organisation behaviour and INV-13 untouched.
+		if r, done, err := s.crossAuthority(ctx, tx, cmd, scope, hash); done || err != nil {
+			return r, err
+		}
+
 		slot, err := tx.LockSlot(ctx, cmd.SlotRef)
 		if errors.Is(err, domain.ErrNotFound) {
 			return s.unknownTarget(ctx, tx, scope, hash)
@@ -269,7 +291,7 @@ func (s *Service) Confirm(ctx context.Context, cmd ConfirmCommand) (domain.Resul
 	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpConfirm, cmd.UserRef, string(cmd.ReservationID), cmd.Body)
 
 	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
-		slot, res, now, done, r, err := s.lockByReservation(ctx, tx, cmd.ReservationID, scope, hash)
+		slot, res, now, done, r, err := s.lockByReservation(ctx, tx, cmd.ReservationID, cmd.UserRef, scope, hash)
 		if done || err != nil {
 			return r, err
 		}
@@ -329,7 +351,7 @@ func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (domain.Result,
 	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpCancel, cmd.UserRef, string(cmd.ReservationID), cmd.Body)
 
 	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
-		slot, res, now, done, r, err := s.lockByReservation(ctx, tx, cmd.ReservationID, scope, hash)
+		slot, res, now, done, r, err := s.lockByReservation(ctx, tx, cmd.ReservationID, cmd.UserRef, scope, hash)
 		if done || err != nil {
 			return r, err
 		}
@@ -389,14 +411,28 @@ func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (domain.Result,
 // The reservation → slot lookup deliberately establishes no timestamp: it runs
 // before the lock, so its instant is exactly the stale one the authoritative-time
 // contract rejects. Only the LockSlot below fixes the attempt's now.
-func (s *Service) lockByReservation(ctx context.Context, tx domain.Tx, id domain.ReservationID, scope domain.ScopeKey, hash string) (slot domain.Slot, res domain.Reservation, now time.Time, done bool, result domain.Result, err error) {
-	ref, err := tx.SlotRefForReservation(ctx, id)
+func (s *Service) lockByReservation(ctx context.Context, tx domain.Tx, id domain.ReservationID, caller domain.UserRef, scope domain.ScopeKey, hash string) (slot domain.Slot, res domain.Reservation, now time.Time, done bool, result domain.Result, err error) {
+	ref, owner, err := tx.ReservationTarget(ctx, id)
 	if errors.Is(err, domain.ErrNotFound) {
 		result, err = s.unknownTarget(ctx, tx, scope, hash)
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, result, err
 	}
 	if err != nil {
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, domain.Result{}, err
+	}
+	// A caller who is not the owner is told the reservation does not exist, and is told
+	// it here — before the slot lock, so a wrong identity cannot contend with the
+	// traffic of a slot it has no claim on.
+	//
+	// This is a deliberate correction, not a preserved check: before PR3a the UserRef
+	// scoped idempotency and nothing else, so a caller holding a reservation identifier
+	// could confirm or cancel it while asserting someone else's identity. Sharding
+	// makes the correction necessary as well as right — without it, the answer to a
+	// wrong identity would depend on whether two organisations happened to be colocated
+	// (horizontal-database-authority §5.4).
+	if owner != caller {
+		result, err = s.unknownTarget(ctx, tx, scope, hash)
+		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, result, err
 	}
 	slot, err = tx.LockSlot(ctx, ref)
 	if err != nil {
@@ -469,6 +505,40 @@ func (s *Service) lookup(ctx context.Context, tx domain.Tx, scope domain.ScopeKe
 	default:
 		return domain.Refusal(domain.ReasonIdempotencyConflict), true, nil
 	}
+}
+
+// crossAuthority applies the Phase 1 placement policy to a reserve.
+//
+// done=false means the two organisations share one writable authority and the caller
+// should proceed through the ordinary local transaction. done=true means the booking
+// spans two authorities and the refusal has been recorded.
+//
+// The refusal is recorded on the user-home authority through the ordinary client
+// idempotency scope, so a replay of the same key returns it rather than re-deciding
+// (horizontal-database-authority §5.3). It performs no slot lookup and no
+// booking-state mutation, and the slot authority is never contacted — the design's rule
+// is "reject and durably record on user-home before any slot-authority work", which is
+// not the same as "record nothing".
+//
+// An organisation the map has never heard of shares an authority with nothing, so it is
+// refused here too rather than reaching a slot lookup that could only fail.
+func (s *Service) crossAuthority(
+	ctx context.Context, tx domain.Tx, cmd ReserveCommand, scope domain.ScopeKey, hash string,
+) (domain.Result, bool, error) {
+	colocated, placed := s.placement.Colocated(cmd.SlotRef.OrganisationID, cmd.UserRef.OrganisationID)
+	if colocated && placed {
+		return domain.Result{}, false, nil
+	}
+
+	if r, done, err := s.lookup(ctx, tx, scope, hash); done || err != nil {
+		return r, true, err
+	}
+	now, err := tx.ResolveTimeWithoutSlot(ctx)
+	if err != nil {
+		return domain.Result{}, true, err
+	}
+	r, err := s.commit(ctx, tx, scope, hash, domain.Refusal(domain.ReasonCrossAuthorityUnsupported), now, nil)
+	return r, true, err
 }
 
 // unknownTarget handles a well-formed request for a target that does not exist

@@ -233,12 +233,12 @@ func (t *tx) ResolveTimeWithoutSlot(_ context.Context) (time.Time, error) {
 	return t.establish(), nil
 }
 
-func (t *tx) SlotRefForReservation(_ context.Context, id domain.ReservationID) (domain.SlotRef, error) {
+func (t *tx) ReservationTarget(_ context.Context, id domain.ReservationID) (domain.SlotRef, domain.UserRef, error) {
 	r, ok := t.store.reservations[id]
 	if !ok {
-		return domain.SlotRef{}, domain.ErrNotFound
+		return domain.SlotRef{}, domain.UserRef{}, domain.ErrNotFound
 	}
-	return r.SlotRef, nil
+	return r.SlotRef, r.UserRef, nil
 }
 
 func (t *tx) Reservation(_ context.Context, id domain.ReservationID) (domain.Reservation, error) {

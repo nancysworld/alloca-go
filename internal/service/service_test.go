@@ -104,7 +104,7 @@ func newFixture(t *testing.T, capacity int) *fixture {
 		ReleaseAt: baseRelease, StartsAt: baseStart, EndsAt: baseStart.Add(time.Hour),
 	})
 	ids := &seqIDGen{}
-	return &fixture{svc: New(store, ids, testTTL), store: store, clock: clock, ids: ids}
+	return &fixture{svc: New(store, ids, testTTL, domain.Placement{}), store: store, clock: clock, ids: ids}
 }
 
 func (f *fixture) reserve(t *testing.T, name, key string) domain.Result {
@@ -552,7 +552,7 @@ func (t *conflictOnceTx) InsertRecord(ctx context.Context, rec domain.Idempotenc
 func TestReserveIdempotencyInsertRaceReplaysWinner(t *testing.T) {
 	store := inmem.New(&manualClock{t: baseNow})
 	store.SeedSlot(domain.Slot{ID: slot, OrganisationID: org, Capacity: 5, ReleaseAt: baseRelease, StartsAt: baseStart})
-	svc := New(&conflictOnceRepo{inner: store}, &seqIDGen{}, testTTL)
+	svc := New(&conflictOnceRepo{inner: store}, &seqIDGen{}, testTTL, domain.Placement{})
 
 	r, err := svc.Reserve(context.Background(), ReserveCommand{UserRef: user("user-1"), SlotRef: ref(slot), IdempotencyKey: "k1"})
 	if err != nil {

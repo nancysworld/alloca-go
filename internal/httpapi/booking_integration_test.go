@@ -145,7 +145,7 @@ func newVertical(t *testing.T, ttl time.Duration) *vertical {
 
 	// The production ID generator, so the tests also see the identifier format clients
 	// receive. Nothing here depends on identifiers being predictable.
-	svc := service.New(repo, ids.Random{}, ttl)
+	svc := service.New(repo, ids.Random{}, ttl, domain.Placement{})
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 	recorder := telemetry.NewSlogRecorder(quiet)
 

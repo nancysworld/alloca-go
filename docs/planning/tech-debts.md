@@ -36,6 +36,7 @@ code comment or a PR description can cite one and still be right in a year.
 | [**DEBT-1**](#3-debt-1--no-reaper-for-abandoned-schedule-claims) | Elapsed `user_time_claims` rows are reclaimed only by their owner's next reserve, so an identity that never returns leaves its row indefinitely | schedule claims | 2026-08-02, AG-Sept PR1 | open |
 | [**DEBT-2**](#4-debt-2--no-retention-policy-for-durable-rows) | No durable row is ever deleted and no retention policy exists; `idempotency_records` is the instance with no product reason to keep it | data lifecycle | 2026-08-02, AG-Sept PR1 | open |
 | [**DEBT-3**](#5-debt-3--service-identity-is-sampled-only-before-a-run) | The load harness records service provenance before load starts but does not prove the same service identity remained behind the target for the whole run | measurement provenance | 2026-08-03, AG-Sept PR1 | open |
+| [**DEBT-4**](#6-debt-4--lockbyreservation-returns-a-six-value-maybe-answered-protocol) | The shared confirm/cancel prologue returns six values, three of which encode "I may already have answered"; a caller that mishandles them proceeds on zero values | service orchestration | 2026-08-05, AG-Sept PR3a | open |
 
 ## 3. DEBT-1 — no reaper for abandoned schedule claims
 
@@ -314,3 +315,107 @@ read `service_commit_sha` from the service's `/meta`. The implementation fetches
 before `Runner.Run`; there is no corresponding post-run fetch. This is deliberate and sound
 for PR1's one-process local procedure, but the guarantee narrows as soon as run duration or
 replica count grows.
+
+## 6. DEBT-4 — `lockByReservation` returns a six-value "maybe answered" protocol
+
+### What it is
+
+`internal/service/service.go` — the prologue confirm and cancel share takes six parameters
+and returns six values:
+
+```go
+func (s *Service) lockByReservation(
+	ctx context.Context, tx domain.Tx, id domain.ReservationID, caller domain.UserRef,
+	scope domain.ScopeKey, hash string,
+) (
+	slot domain.Slot, res domain.Reservation, now time.Time,
+	done bool, result domain.Result, err error,
+)
+```
+
+Three of the returns are the work — `slot`, `res`, `now` — and three are a control protocol:
+`done` means "I have already produced the caller's answer, in `result`". Both callers destructure
+it identically:
+
+```go
+slot, res, now, done, r, err := s.lockByReservation(...)
+if done || err != nil {
+	return r, err
+}
+```
+
+The hazard is not the length. It is that **`done` and the work returns are silently coupled**:
+when `done` is true, `slot`, `res` and `now` are zero values, and nothing in the type system says
+so. A caller that checked only `err` would compile, pass a smoke test against a live reservation,
+and mis-handle exactly the paths this function exists to short-circuit — a replay, an unknown
+target, and now a non-owner. Those are the paths least likely to be covered by a hand test and
+most likely to matter.
+
+### Why it is this way
+
+It accreted, and each step was right on its own. The function began as "resolve the slot for a
+reservation and lock it". Then the idempotency lookup moved inside it, because the lookup must
+happen after the slot lock and before settlement. Then settlement joined it, then the
+authoritative instant, and in AG-Sept PR3a the ownership comparison
+([INV-23](../design/transaction-semantics.md#appendix-a--invariant-register)). Each addition had
+a reason to be in the shared prologue rather than duplicated across two callers, and duplicating
+it would have been the worse error: confirm and cancel drifting apart on lock order or on when
+time is resolved is precisely the class of bug the invariant register exists to prevent.
+
+What was never revisited is the *shape* the accretion produced.
+
+### Why it is acceptable today
+
+- There are exactly **two** callers, both in the same file, both destructuring identically, and
+  both covered by tests that exercise the replay, unknown-target and non-owner paths.
+- No invariant is at risk. The lock order (INV-10), the authoritative instant (INV-9) and the
+  ownership rule (INV-23) are each pinned by their own tests, which fail if this function
+  reorders or drops a step regardless of how its results are shaped.
+- The alternative shapes all cost something real, and none is obviously right yet (below).
+
+### Trigger — when it stops being acceptable
+
+Any one of:
+
+1. **A third caller.** Two callers agreeing by inspection is a convention; three is a rule
+   nobody wrote down.
+2. **A seventh return value**, or a second boolean. The protocol is already at the limit of
+   what a reader can hold; a second flag makes the valid combinations something to reason about
+   rather than read.
+3. **Phase 2's cross-authority coordinator.** The horizontal-database-authority note's
+   compatibility obligation 3 requires a future coordinator to dispatch to this same-authority
+   path rather than rewrite it
+   ([design note](../design-notes/horizontal-database-authority.md) §4.3). A coordinator calling
+   it from a different package cannot rely on two callers in one file agreeing by eye, and it is
+   the first caller that will not have been written by someone who just read the function.
+
+### What a fix must preserve
+
+- **One prologue, not two.** Whatever shape replaces it, confirm and cancel must keep sharing
+  the same lock order, the same settlement, and the same authoritative instant.
+- **The short-circuit must stay explicit at the call site.** The current code's one virtue is
+  that `if done || err != nil { return r, err }` is visible in both callers; a fix that hides
+  the early answer inside a helper trades a shape problem for a control-flow one.
+- **No new database round trips.** The ownership check was deliberately placed before the slot
+  lock so a wrong identity cannot contend with a slot it has no claim on; a refactor must not
+  reintroduce that contention.
+
+### Options, none decided
+
+1. **A result struct with a constructor per outcome** — `prologue{Answered(result)}` versus
+   `prologue{Proceed(slot, res, now)}` — so "answered" and "the work" cannot both be read from
+   one value. Most direct expression of the actual protocol; costs a type.
+2. **Split into two functions**: one that resolves and short-circuits, one that locks and
+   settles. Reads better but risks the two callers sequencing them differently, which is the
+   duplication this function exists to prevent.
+3. **Leave it and pin the coupling with a test** that asserts the work returns are zero when
+   `done` is true. Cheapest, and it converts an invisible convention into a checked one without
+   touching the confirm/cancel path.
+
+### Evidence
+
+Raised by Nancy during review of AG-Sept PR3a, 2026-08-05, after the ownership parameter pushed
+the signature to 258 columns and it was wrapped in `0bf2f8d`. Wrapping made it legible; it did
+not make it good, and the length was the symptom rather than the debt. PR3a made the shape
+marginally worse by one parameter and one path, which is what moved it from a shape someone
+might tidy to one worth recording.

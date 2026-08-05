@@ -338,11 +338,42 @@ would deliberately trigger it is PR3c, which lands after.
    verdict, and refusing to reconcile a run with anything left unresolved
    (`ag-sept-plan-new.md` §6.5);
 2. the **failure-isolation experiment** itself, with affected and unaffected populations
-   reported separately as their own evidence class;
+   reported separately as their own evidence class. **It must state which failure mode it
+   injected**, because the outcome depends on it — see §6b;
 3. the **Phase 1 correctness matrix** and per-authority verdicts;
 4. **INV-21's remaining half.** The *commit-landed-but-acknowledgement-lost* case is still
    unproven and needs a proxy that drops the reply; the register says so, and PR3c must not
    claim the whole invariant on the strength of the half that is tested.
+
+### 6b. The unavailable-authority outcome depends on *how* the authority is unavailable
+
+Observed on the containerised topology while validating it (PR3b), and recorded here because
+it changes what PR3c's expected-outcome set may assert.
+
+Stopping an authority's container and issuing a request to its unit produced
+**`timeout_server` (504)**, not one of the three outcomes the design note enumerates for an
+unavailable authority — `internal_failure`, `timeout_db`, `unknown_replayable` (design note
+§6.4). The unit's `/readyz` correctly reported 503 throughout, and the healthy authority
+continued serving its own organisations, so failure *isolation* held exactly as designed.
+
+The reason matters: a **stopped** container drops packets rather than refusing them, so the
+connection attempt hangs instead of failing fast, and the per-request server deadline is the
+first bound to fire. A container that is *killed*, or a database that refuses connections,
+would fail immediately and classify differently.
+
+Two consequences for PR3c:
+
+1. **The experiment must name its failure mode** — stopped, killed, network-partitioned,
+   or process-crashed — because they do not produce the same outcome mix. An expected-outcome
+   set that lists three outcomes and meets a fourth reads as a defect when it is a different
+   experiment.
+2. **`db_acquire_cap` did not bound this wait**, and it is worth understanding before the
+   experiment quotes anything. The observation is that a ~5 s server deadline elapsed where a
+   500 ms acquisition cap might have been expected to fire first; the diagnosis is *not*
+   established, and it may be that the cap does not cover establishing a new connection. This
+   is adjacent to the PR2 deferral register's standing item that the timeout budget has never
+   been observed doing its job under load (`ag-sept-plan-old.md` §14, group A). Investigate
+   before asserting, and do not fix it on the strength of one observation.
 
 ## 7. Not in PR3
 

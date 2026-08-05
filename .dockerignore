@@ -1,0 +1,10 @@
+# The build context deliberately *includes* .git: `go build` reads the VCS revision from it
+# and stamps it into the binary, which is what /meta reports and what makes a run
+# certifiable (ag-sept-plan-new.md §6.4). An image built without it serves an unstamped
+# binary and every run against it is uncertifiable — the failure looks like a harness bug.
+bin/
+docs/
+test/
+deploy/observability/grafana/
+*.md
+.github/

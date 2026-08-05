@@ -1,0 +1,123 @@
+# The Phase 1 two-authority topology, brought up by `make topo-up`.
+#
+# Two independent PostgreSQL authorities, each with its own shard-affine service unit
+# (horizontal-database-authority §5.2). This is the smallest deployment that can show
+# authority composition at all: one organisation's rows live on exactly one writer, a unit
+# serves only the organisations its authority owns, and a failure of one authority does not
+# reach the other.
+#
+# What this file must get right, and why each is not incidental:
+#
+#   - **migration is a separate step.** ADR-0002 keeps DDL out of the serving path, so each
+#     authority is migrated by a one-shot container that must exit successfully before its
+#     service starts. Serving replicas racing the same DDL at rollout is a classic way to
+#     take a service down, and the schema gate (INV-27) would refuse to start anyway;
+#   - **one placement document, mounted read-only into both units.** Two units disagreeing
+#     about routing would write one organisation to two authorities and silently divide its
+#     source of truth — the split-brain risk the design note records as §7.3. One file,
+#     mounted once, is the cheapest way to make disagreement impossible rather than
+#     unlikely;
+#   - **each unit names its own authority.** The unit refuses to start if the map does not
+#     assign it any organisation, so a typo here fails at boot rather than serving nothing.
+
+name: alloca-topology
+
+x-service-base: &service-base
+  image: alloca-go:${ALLOCA_IMAGE_TAG:-dev}
+  # Graceful termination: the service drains in-flight requests on SIGTERM within its own
+  # ShutdownGrace, so this must exceed it or Compose would SIGKILL mid-drain and turn a
+  # clean shutdown into torn connections an experiment would have to explain.
+  stop_grace_period: 30s
+  restart: "no"
+  volumes:
+    - ./placement.json:/etc/alloca/placement.json:ro
+  # No container healthcheck. The runtime image has no shell and no curl by design (§9.1
+  # forbids development tooling in it), and adding a probe-only mode to the production
+  # binary to work around that would put a second, weaker definition of "ready" inside the
+  # thing being measured. /readyz is the operational contract and `make topo-up` polls it
+  # from the host, where the ports are published anyway. Each environment block below is
+  # written out in full: a service that declares `environment:` replaces the anchor's map
+  # rather than merging into it, so inheriting it here would be an illusion.
+
+x-postgres-base: &postgres-base
+  image: postgres:16-alpine
+  environment:
+    POSTGRES_USER: alloca
+    POSTGRES_PASSWORD: alloca
+    POSTGRES_DB: alloca
+  healthcheck:
+    # -h 127.0.0.1 forces a TCP check. The official image runs an initialisation phase with
+    # a temporary server on the unix socket only, so a socket-based pg_isready reports ready
+    # before the real server accepts connections — and the migrate step then fails with
+    # "connection reset by peer". The same trap `make db-up` documents.
+    test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U alloca -d alloca -q"]
+    interval: 2s
+    timeout: 3s
+    retries: 30
+
+services:
+  authority-1-db:
+    <<: *postgres-base
+    container_name: alloca-authority-1-db
+    ports: ["${AUTHORITY_1_PGPORT:-15433}:5432"]
+
+  authority-2-db:
+    <<: *postgres-base
+    container_name: alloca-authority-2-db
+    ports: ["${AUTHORITY_2_PGPORT:-15434}:5432"]
+
+  # One migration per authority. They run to completion and exit; the services below wait
+  # for that exit rather than for the container merely to have started.
+  authority-1-migrate:
+    image: alloca-go:${ALLOCA_IMAGE_TAG:-dev}
+    container_name: alloca-authority-1-migrate
+    entrypoint: ["/usr/local/bin/alloca-migrate"]
+    environment:
+      DATABASE_URL: postgres://alloca:alloca@authority-1-db:5432/alloca?sslmode=disable
+    depends_on:
+      authority-1-db: {condition: service_healthy}
+    restart: "no"
+
+  authority-2-migrate:
+    image: alloca-go:${ALLOCA_IMAGE_TAG:-dev}
+    container_name: alloca-authority-2-migrate
+    entrypoint: ["/usr/local/bin/alloca-migrate"]
+    environment:
+      DATABASE_URL: postgres://alloca:alloca@authority-2-db:5432/alloca?sslmode=disable
+    depends_on:
+      authority-2-db: {condition: service_healthy}
+    restart: "no"
+
+  service-1:
+    <<: *service-base
+    container_name: alloca-service-1
+    ports:
+      - "${SERVICE_1_PORT:-8081}:8080"
+      - "${SERVICE_1_METRICS_PORT:-9091}:9090"
+    environment:
+      ALLOCA_PLACEMENT_FILE: /etc/alloca/placement.json
+      ALLOCA_LISTEN_ADDR: ":8080"
+      METRICS_ADDR: ":9090"
+      ALLOCA_TELEMETRY: ${ALLOCA_TELEMETRY:-full}
+      ALLOCA_AUTHORITY_ID: authority-1
+      DATABASE_URL: postgres://alloca:alloca@authority-1-db:5432/alloca?sslmode=disable
+    depends_on:
+      authority-1-db: {condition: service_healthy}
+      authority-1-migrate: {condition: service_completed_successfully}
+
+  service-2:
+    <<: *service-base
+    container_name: alloca-service-2
+    ports:
+      - "${SERVICE_2_PORT:-8082}:8080"
+      - "${SERVICE_2_METRICS_PORT:-9092}:9090"
+    environment:
+      ALLOCA_PLACEMENT_FILE: /etc/alloca/placement.json
+      ALLOCA_LISTEN_ADDR: ":8080"
+      METRICS_ADDR: ":9090"
+      ALLOCA_TELEMETRY: ${ALLOCA_TELEMETRY:-full}
+      ALLOCA_AUTHORITY_ID: authority-2
+      DATABASE_URL: postgres://alloca:alloca@authority-2-db:5432/alloca?sslmode=disable
+    depends_on:
+      authority-2-db: {condition: service_healthy}
+      authority-2-migrate: {condition: service_completed_successfully}

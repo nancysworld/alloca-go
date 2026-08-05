@@ -18,7 +18,8 @@ GOLANGCI_LINT         := $(TOOLBIN)/golangci-lint
 GOLANGCI_LINT_STAMP   := $(TOOLBIN)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 
 .PHONY: all ci fmt fmt-check vet lint build test test-race test-integration \
-        db-up db-down migrate run dev dev-measured smoke obs-up obs-target obs-down tidy tools clean
+        db-up db-down migrate run dev dev-measured smoke obs-up obs-target obs-down tidy tools clean \
+        image topo-up topo-down topo-ps
 
 # Integration tests need a real PostgreSQL: the properties they prove (capacity safety
 # under concurrent transactions, post-lock decision time, the scoped-key race) do not
@@ -42,6 +43,16 @@ PGPORT       ?= 15432
 # The PR2 observability stack. Separate from the service so `make dev-measured` and a
 # measured run stay independent of whether anything is scraping.
 OBSCOMPOSE   ?= deploy/observability/docker-compose.yml
+# The PR3b two-authority topology: two PostgreSQL authorities, two shard-affine service
+# units, one placement document. Separate from the observability stack so a topology can be
+# raised and torn down without disturbing whatever is scraping it.
+TOPOCOMPOSE  ?= deploy/topology/docker-compose.yml
+# Immutable experiment tagging (§9.1). Defaults to the working tree's commit so a run's
+# artifacts name an image that can be rebuilt; `dirty` when the tree has uncommitted changes,
+# which is a warning that the image is not reproducible from any commit.
+ALLOCA_IMAGE_TAG ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell git diff --quiet 2>/dev/null || echo -dirty)
+SERVICE_1_PORT   ?= 8081
+SERVICE_2_PORT   ?= 8082
 
 all: ci
 
@@ -204,3 +215,48 @@ clean:
 	rm -f $(BINARY)
 	rm -rf $(TOOLBIN)
 	$(GO) clean
+
+## image: build the production-shaped service image, tagged with the current commit
+#
+# The build context includes .git on purpose: `go build` stamps the VCS revision into the
+# binary, /meta reports it, and the load harness records it as the identity of the code under
+# test. An unstamped image serves runs that cannot be certified (§6.4).
+image:
+	docker build -t alloca-go:$(ALLOCA_IMAGE_TAG) -t alloca-go:dev .
+	@echo "built alloca-go:$(ALLOCA_IMAGE_TAG)"
+
+## topo-up: build the image, then raise the two-authority topology and wait for readiness
+#
+# Readiness is polled from the host rather than by a container healthcheck: the runtime image
+# has no shell and no curl by design, and adding a probe-only mode to the production binary
+# would put a second definition of "ready" inside the thing being measured. The ports are
+# published anyway, so the honest check is the one a client would make.
+topo-up: image
+	ALLOCA_IMAGE_TAG=$(ALLOCA_IMAGE_TAG) docker compose -f $(TOPOCOMPOSE) up -d
+	@echo "waiting for both service units to report ready..."
+	@for port in $(SERVICE_1_PORT) $(SERVICE_2_PORT); do \
+		ok=0; \
+		for i in $$(seq 1 60); do \
+			if curl -fsS -m 2 "http://localhost:$$port/readyz" >/dev/null 2>&1; then \
+				echo "  service on $$port ready"; ok=1; break; \
+			fi; \
+			sleep 1; \
+		done; \
+		if [ $$ok -ne 1 ]; then \
+			echo "  service on $$port never became ready; check: docker compose -f $(TOPOCOMPOSE) logs"; \
+			exit 1; \
+		fi; \
+	done
+	@echo "topology up. authority-1 -> localhost:$(SERVICE_1_PORT), authority-2 -> localhost:$(SERVICE_2_PORT)"
+
+## topo-down: stop the topology and remove its volumes
+#
+# -v because each run starts from a known fixture. A topology that kept its data between runs
+# would make the first run of a session differ from the rest, which is the kind of difference
+# that gets discovered halfway through interpreting a result.
+topo-down:
+	docker compose -f $(TOPOCOMPOSE) down -v --remove-orphans
+
+## topo-ps: what the topology is doing, including the exited migration steps
+topo-ps:
+	docker compose -f $(TOPOCOMPOSE) ps --all

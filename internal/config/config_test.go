@@ -327,3 +327,77 @@ func TestDefaultReadinessTimeoutOutlastsAcquisition(t *testing.T) {
 		t.Errorf("default config is invalid: %v", err)
 	}
 }
+
+// Placement configuration is optional, and the default is a named single authority
+// rather than an empty one: a figure from a one-authority run should still say which
+// database produced it.
+func TestPlacementDefaultsToAnUnconfiguredSingleAuthority(t *testing.T) {
+	cfg, err := Load(lookupFrom(nil))
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Placement.Configured() {
+		t.Error("no placement variables were set, so no map should be configured")
+	}
+	if cfg.Placement.AuthorityID != "" {
+		t.Error("config records what the operator supplied; naming the sole authority is the wiring layer's job")
+	}
+}
+
+func TestPlacementLoadsFromEnvironment(t *testing.T) {
+	cfg, err := Load(lookupFrom(map[string]string{
+		envAuthorityID: "authority-1",
+		envPlacement:   `{"version":"v1","homes":{"org-a":"authority-1"}}`,
+	}))
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if !cfg.Placement.Configured() {
+		t.Fatal("a placement document was supplied but Configured reports false")
+	}
+	if cfg.Placement.AuthorityID != "authority-1" {
+		t.Errorf("AuthorityID = %q, want authority-1", cfg.Placement.AuthorityID)
+	}
+}
+
+// Each of these leaves the unit unable to make one unambiguous routing decision, so
+// Load must refuse rather than resolve it silently.
+func TestPlacementConfigurationsThatCannotRouteAreRejected(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{
+			name: "map without an authority identity",
+			env:  map[string]string{envPlacement: `{"version":"v1","homes":{"org-a":"authority-1"}}`},
+			want: envAuthorityID,
+		},
+		{
+			name: "two documents",
+			env: map[string]string{
+				envAuthorityID:   "authority-1",
+				envPlacement:     `{"version":"v1","homes":{"org-a":"authority-1"}}`,
+				envPlacementFile: "/etc/alloca/placement.json",
+			},
+			want: "one placement document",
+		},
+		{
+			name: "empty override",
+			env:  map[string]string{envAuthorityID: ""},
+			want: "must not be empty",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(lookupFrom(tc.env))
+			if err == nil {
+				t.Fatal("Load accepted a placement configuration that cannot route")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not mention %q", err, tc.want)
+			}
+		})
+	}
+}

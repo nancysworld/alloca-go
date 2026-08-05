@@ -122,7 +122,7 @@ AG-M1 never produces — so adding a producer later cannot fall through to a def
 |---|---|---|
 | `admitted_success` | 200 | 200 rather than 201; the created entity's identifier is in the body either way |
 | `business_refusal` | 409 | the request is well-formed and understood; the current state prevents it |
-| `business_refusal` with `unknown_target` | 404 | "the thing you named does not exist" |
+| `business_refusal` with `unknown_target` | 404 | "the thing you named does not exist" — including a confirm or cancel whose caller is not the reservation's owner (§2.6) |
 | `invalid_request` | 400 | rejected before the domain path |
 | `unknown_replayable` | 500 | see §2.4 — the one message a client must act on |
 | `internal_failure` | 500 | |
@@ -163,6 +163,39 @@ There is **no pagination**. A fixed cap of 1000 applies and truncation is *repor
 
 A client that cannot tell it received a partial list would treat it as the whole
 catalogue. A cursor contract is query-platform work and is out of scope.
+
+### 2.6 Three behaviours a sharded deployment adds
+
+Both arrive with AG-Sept PR3a and are visible to any client, so they are stated here
+rather than left to the design note that decided them
+([`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md)).
+
+**A reserve whose organisations live on different database authorities is refused**
+with `business_refusal` / `cross_authority_unsupported` / 409:
+
+```json
+{ "outcome": "business_refusal", "reason": "cross_authority_unsupported", "replay": false }
+```
+
+The condition is *placement*, not identity. A user registered with one organisation
+booking a slot owned by another is supported whenever the deployment homes both on the
+same writable authority — which is every organisation pair in a single-authority
+deployment, where this refusal cannot occur at all. It is recorded and replayable like
+any other refusal.
+
+**A confirm or cancel by someone other than the reservation's owner is `unknown_target`
+/ 404.** Before PR3a the caller's identity scoped idempotency and nothing else, so a
+caller holding a reservation identifier could mutate it while asserting a different
+identity; that succeeded, and now returns 404. This is not authentication — the API
+still trusts the caller to assert a `UserRef`, and a caller who knows both the
+reservation identifier and its exact owner can still act as that owner — but it makes
+the answer to a wrong identity independent of how the deployment happens to be sharded.
+
+**A request that reaches the wrong service unit is `invalid_request` / 400.** In a
+sharded deployment each unit serves only the organisations its authority owns. This is
+a routing or deployment fault rather than anything the caller can fix by changing the
+request body, and it is deliberately not a `business_refusal`: a misroute must never be
+recorded as the user's durable domain outcome on an authority that does not own them.
 
 ---
 

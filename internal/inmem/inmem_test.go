@@ -48,7 +48,7 @@ func TestReservationAndBookingRoundTrip(t *testing.T) {
 		if err := tx.PutReservation(ctx, res); err != nil {
 			return err
 		}
-		if _, err := tx.SlotRefForReservation(ctx, "res-1"); err != nil {
+		if _, _, err := tx.ReservationTarget(ctx, "res-1"); err != nil {
 			return err
 		}
 		held, err := tx.HeldReservations(ctx, ref("slot-1"))
@@ -91,7 +91,7 @@ func TestNotFoundErrors(t *testing.T) {
 		if _, err := tx.Reservation(ctx, "nope"); !errors.Is(err, domain.ErrNotFound) {
 			t.Errorf("Reservation: %v, want ErrNotFound", err)
 		}
-		if _, err := tx.SlotRefForReservation(ctx, "nope"); !errors.Is(err, domain.ErrNotFound) {
+		if _, _, err := tx.ReservationTarget(ctx, "nope"); !errors.Is(err, domain.ErrNotFound) {
 			t.Errorf("SlotIDForReservation: %v, want ErrNotFound", err)
 		}
 		if _, err := tx.BookingForReservation(ctx, "nope"); !errors.Is(err, domain.ErrNotFound) {

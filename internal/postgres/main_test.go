@@ -91,7 +91,7 @@ func newHarness(t *testing.T, budget config.RequestBudget, ttl time.Duration) *h
 		t.Fatalf("truncate: %v", err)
 	}
 	ids := &seqIDGen{}
-	return &harness{repo: repo, svc: service.New(repo, ids, ttl), ids: ids}
+	return &harness{repo: repo, svc: service.New(repo, ids, ttl, domain.Unsharded("authority-1")), ids: ids}
 }
 
 // newRepo builds a repo over its own pool, without truncating or constructing a
@@ -279,7 +279,7 @@ func (h *harness) reserveAs(
 func (h *harness) reserveWithTTL(
 	ctx context.Context, ttl time.Duration, user, key string, ref domain.SlotRef,
 ) (domain.Result, error) {
-	return service.New(h.repo, h.ids, ttl).Reserve(ctx, service.ReserveCommand{
+	return service.New(h.repo, h.ids, ttl, domain.Unsharded("authority-1")).Reserve(ctx, service.ReserveCommand{
 		UserRef: userRef(user), SlotRef: ref, IdempotencyKey: key,
 	})
 }
@@ -336,6 +336,25 @@ func (h *harness) confirm(ctx context.Context, user, key string, res domain.Rese
 	return h.svc.Confirm(ctx, service.ConfirmCommand{
 		UserRef:       userRef(user),
 		ReservationID: res, IdempotencyKey: key,
+	})
+}
+
+// confirmAs and cancelAs name the caller's whole identity rather than just its user_id,
+// so a test can act as an identity from another organisation — the pair the compound
+// key exists to keep apart (transaction-semantics §1.1).
+func (h *harness) confirmAs(
+	ctx context.Context, caller domain.UserRef, key string, res domain.ReservationID,
+) (domain.Result, error) {
+	return h.svc.Confirm(ctx, service.ConfirmCommand{
+		UserRef: caller, ReservationID: res, IdempotencyKey: key,
+	})
+}
+
+func (h *harness) cancelAs(
+	ctx context.Context, caller domain.UserRef, key string, res domain.ReservationID,
+) (domain.Result, error) {
+	return h.svc.Cancel(ctx, service.CancelCommand{
+		UserRef: caller, ReservationID: res, IdempotencyKey: key,
 	})
 }
 

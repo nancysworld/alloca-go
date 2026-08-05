@@ -50,19 +50,20 @@ func registerRoutes(
 	recorder telemetry.Recorder,
 	db DatabaseMeta,
 	telemetryMode string,
+	guard placementGuard,
 ) {
 	mux.HandleFunc(pathHealthz, handleHealthz)
 	mux.HandleFunc(pathReadyz, handleReadyz(ready, cfg.ReadinessTimeout, logger))
-	mux.HandleFunc(pathMeta, handleMeta(metaSource, cfg, db, telemetryMode))
+	mux.HandleFunc(pathMeta, handleMeta(metaSource, cfg, db, telemetryMode, guard))
 
 	if svc != nil {
-		h := &bookingHandlers{svc: svc, recorder: recorder, budget: cfg.RequestBudget}
+		h := &bookingHandlers{svc: svc, recorder: recorder, budget: cfg.RequestBudget, guard: guard}
 		mux.HandleFunc(pathReserve, h.reserve)
 		mux.HandleFunc(pathConfirm, h.confirm)
 		mux.HandleFunc(pathCancel, h.cancel)
 	}
 	if slots != nil {
-		h := &slotHandlers{slots: slots, recorder: recorder, budget: cfg.RequestBudget}
+		h := &slotHandlers{slots: slots, recorder: recorder, budget: cfg.RequestBudget, guard: guard}
 		mux.HandleFunc(pathListSlots, h.listSlots)
 	}
 }

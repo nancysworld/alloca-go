@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/nancysworld/alloca-go/internal/domain"
 	"github.com/nancysworld/alloca-go/internal/httpapi"
 	"github.com/nancysworld/alloca-go/internal/metrics"
 	"github.com/nancysworld/alloca-go/internal/telemetry"
@@ -63,7 +64,15 @@ func telemetryMode() (string, error) {
 // The process-level collectors stay registered in every mode. They are not request-path
 // telemetry, and keeping them means an `off` run still shows its own CPU and memory, which is
 // most of the reason to run one.
-func buildRecorder(reg *prometheus.Registry, pool *pgxpool.Pool, logger *slog.Logger, mode string) telemetry.Recorder {
+// buildRecorder returns the telemetry recorder and, separately, the misroute hook.
+//
+// The hook is not part of telemetry.Recorder because a misroute is a deployment fault
+// rather than a completed request's outcome (internal/metrics). It is nil when metrics
+// are off, for the same reason every other signal is: "off" has to mean off, or the
+// §6.2 telemetry comparison is measuring two different services.
+func buildRecorder(
+	reg *prometheus.Registry, pool *pgxpool.Pool, logger *slog.Logger, mode string,
+) (telemetry.Recorder, func(context.Context, domain.Operation)) {
 	reg.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
@@ -72,14 +81,16 @@ func buildRecorder(reg *prometheus.Registry, pool *pgxpool.Pool, logger *slog.Lo
 
 	switch mode {
 	case TelemetryOff:
-		return telemetry.Nop{}
+		return telemetry.Nop{}, nil
 	case TelemetryMetricsOnly:
-		return metrics.New(reg)
+		m := metrics.New(reg)
+		return m, m.RecordMisroute
 	default:
+		m := metrics.New(reg)
 		return metrics.Tee{
 			telemetry.NewSlogRecorder(logger),
-			metrics.New(reg),
-		}
+			m,
+		}, m.RecordMisroute
 	}
 }
 
@@ -92,8 +103,8 @@ func buildRecorder(reg *prometheus.Registry, pool *pgxpool.Pool, logger *slog.Lo
 // A failed query yields an empty version rather than a startup failure. The service can serve
 // without knowing its server version; what it cannot do is claim a capacity result, and the
 // manifest gate is what refuses that — one place, not two.
-func databaseMeta(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) httpapi.DatabaseMeta {
-	meta := httpapi.DatabaseMeta{PoolMaxConns: pool.Config().MaxConns}
+func databaseMeta(ctx context.Context, pool *pgxpool.Pool, schemaVersion int64, logger *slog.Logger) httpapi.DatabaseMeta {
+	meta := httpapi.DatabaseMeta{PoolMaxConns: pool.Config().MaxConns, SchemaVersion: schemaVersion}
 
 	var version string
 	if err := pool.QueryRow(ctx, "SHOW server_version").Scan(&version); err != nil {
@@ -102,6 +113,7 @@ func databaseMeta(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) 
 		return meta
 	}
 	meta.Version = version
+
 	return meta
 }
 

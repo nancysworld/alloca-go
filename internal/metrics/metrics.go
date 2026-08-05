@@ -58,6 +58,7 @@ type Recorder struct {
 	expirySlots prometheus.Counter
 	expired     prometheus.Counter
 	expiryTime  prometheus.Histogram
+	misroutes   *prometheus.CounterVec
 }
 
 // New builds a Recorder and registers its collectors with reg.
@@ -106,11 +107,21 @@ func New(reg prometheus.Registerer) *Recorder {
 			Help:      "Duration of one expiry worker iteration.",
 			Buckets:   expiryBuckets,
 		}),
+
+		misroutes: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Name:      "placement_misrouted_requests_total",
+			Help: "Requests refused because they reached a unit that does not own the " +
+				"requested organisation. A deployment fault, counted separately from " +
+				"invalid_request so it is not buried among malformed client requests. " +
+				"Not labelled by organisation: that is unbounded (ag-sept-plan-new.md §6.1).",
+		}, []string{"operation"}),
 	}
 
 	reg.MustRegister(
 		r.requests, r.duration,
 		r.expiryRuns, r.expirySlots, r.expired, r.expiryTime,
+		r.misroutes,
 	)
 	return r
 }
@@ -183,6 +194,17 @@ func normaliseReason(reason domain.Reason) string {
 }
 
 // RecordExpiry aggregates one expiry worker iteration.
+// RecordMisroute counts a request refused for reaching a unit that does not own its
+// organisation.
+//
+// It is deliberately not part of telemetry.Recorder. A misroute is not a completed
+// request's terminal outcome — that is already recorded as invalid_request — but a
+// deployment fault wearing a client error's clothes, and an operator needs a signal
+// they can alert on without it being diluted by genuinely malformed requests.
+func (r *Recorder) RecordMisroute(_ context.Context, op domain.Operation) {
+	r.misroutes.WithLabelValues(normaliseOperation(string(op))).Inc()
+}
+
 func (r *Recorder) RecordExpiry(_ context.Context, obs telemetry.ExpiryObservation) {
 	r.expiryRuns.WithLabelValues(boolLabel(obs.Failed)).Inc()
 	r.expirySlots.Add(float64(obs.Slots))

@@ -1,18 +1,25 @@
 # Horizontal database authority
 
 **Status:** Proposed for AG-Sept PR3 review.  
-**Scope:** frame horizontal database scaling as part of Alloca's end-to-end scalability story, state the correctness constraints it must preserve, and propose a leading partitioning model for review before PR3 implementation scope is committed.  
-**Not yet normative:** this note does not replace [`transaction-semantics.md`](../design/transaction-semantics.md), select a coordination protocol, or authorise a production implementation.
+**Scope:** define a phased route from one PostgreSQL writer to multiple writable authorities while preserving Alloca's invariants and the accepted same-database transaction semantics.  
+**Not yet normative:** this note does not replace [`transaction-semantics.md`](../design/transaction-semantics.md), authorise production sharding, or select a future cross-shard coordination protocol.
 
 ## 1. Why this note exists
 
-AG-Sept originally planned to measure one service instance and then add stateless service replicas against one PostgreSQL authority. PR2 changed the order of that investigation.
+AG-Sept originally planned to establish one service baseline and then add stateless service replicas against one PostgreSQL authority. PR2 changed the order of that investigation.
 
-The single-instance frontier reaches approximately 4,300 dispersed booking requests per second on the measured workstation while `alloca-go` retains substantial application-compute headroom. Increasing the connection pool from 40 to 80 removes acquire wait and lifts throughput to the plateau; the pool stops binding and throughput still does not rise further. PostgreSQL is therefore the shared limiting subsystem in the measured topology. The exact database-side mechanism remains provisional, but the architectural result does not: service replicas can raise throughput while aggregate database concurrency is below that frontier, but they cannot move the saturated ceiling of one writable authority.
+The measured single-instance report shows that one shared PostgreSQL authority becomes the aggregate limiting subsystem while `alloca-go` still has application-compute headroom. The exact database-side mechanism and all measured values remain owned by [`ag-sept-pr2-single-instance-frontier.md`](../measurements/reports/ag-sept-pr2-single-instance-frontier.md); this design note carries only the architectural conclusion.
 
-This does not mean the measured number is abnormal or that PostgreSQL is the wrong database. It means one PostgreSQL writer is a finite global boundary. If Alloca claims horizontal scalability for the whole system, it needs a route for scaling writable database authority as well as stateless service compute.
+Adding service replicas can raise throughput while database concurrency remains below that authority's frontier. It cannot move the saturated ceiling of the same writable authority. End-to-end horizontal scalability therefore needs a way to add writable database authority as well as stateless service compute.
 
-Database efficiency work remains valuable: remove demonstrated pathologies, avoid unnecessary writes, choose sensible storage and configuration, and establish an honest per-authority baseline. But optimisation cannot remove the structural ceiling of one writer. Horizontal authority scaling is therefore part of the scalability design, not an optional optimisation deferred until every single-node improvement has been exhausted.
+The first version of this note investigated cross-shard booking immediately. Review exposed the cost accurately: once slot capacity and one user's schedule live on different PostgreSQL authorities, the operation needs distributed commit or a durable compensating workflow. Neither coordination family fits the remaining AG-Sept budget with enough correctness evidence.
+
+The revised decision is therefore phased:
+
+- **Phase 1 — AG-Sept:** compose independent organisation-home authorities while supporting same-shard booking only;
+- **Phase 2 — later:** retain that placement and add an explicitly designed cross-shard booking protocol when the project can fund its failure semantics and recovery model.
+
+Phase 1 is not a temporary mock of Phase 2. It is the durable local transaction path and the first horizontal database unit. Phase 2 must extend it without reopening or weakening that path.
 
 ## 2. What scalability means here
 
@@ -20,35 +27,39 @@ Alloca scalability is not one maximum-throughput number. It is the behaviour of 
 
 - service compute can be increased with stateless replicas;
 - writable database capacity can be increased by adding independent authorities;
-- the service-to-database resource ratio can be measured and provisioned rather than assumed;
-- independent slots, organisations, and user schedules should progress concurrently;
-- one hot slot and one user's schedule remain deliberately serialised, because those are correctness authorities rather than accidental global locks.
+- independent organisations should progress without sharing one PostgreSQL process set, buffer pool, WAL stream, connection ceiling, or storage path;
+- one hot slot and one user's schedule remain deliberately serialised, because those are correctness authorities rather than accidental global locks;
+- the service-to-database resource ratio must be measured per topology and workload rather than assumed.
 
-A useful experiment may therefore report a topology such as:
+A useful experiment may report a topology such as:
 
 ```text
 N service replicas : M writable PostgreSQL authorities
 ```
 
-and state which workload and authority distribution that ratio supports. A dispersed workload and a one-hot-slot workload do not share one meaningful ratio or one scale-efficiency claim.
+and state which authority distribution it supports. A dispersed multi-organisation workload, one hot organisation, one hot slot, and one hot identity do not share one meaningful scale-efficiency claim.
 
-Local containers with explicit CPU and memory limits can establish logical authority separation and exercise cross-authority correctness. They cannot establish a production capacity number, and a local one-authority versus two-authority throughput comparison would be uninterpretable: the service, generator, telemetry stack, PostgreSQL instances, WSL2, and storage path still share one workstation allocation, while PR2's approximately 2x capacity excursion remains unexplained.
+Local containers can establish routing, authority isolation, schema compatibility, and correctness. They cannot establish a production database-capacity multiplier when the service, generator, telemetry stack, PostgreSQL instances, WSL2, and storage path share one workstation allocation. Any publishable capacity-composition claim requires independently provisioned database resources and a controlled service-compute comparison.
 
-The first PR3 spike must therefore be **correctness-first**. Its purpose is to test routing, partial-failure semantics, and invariant reconciliation, not to claim that two local databases provide a measured throughput multiplier.
+## 3. Correctness and placement invariants
 
-## 3. Correctness constraints do not change
-
-Any horizontally scaled design must preserve the invariants already established by AG-M1:
+Horizontal scaling does not change the AG-M1 correctness requirements:
 
 - active reservations and bookings never exceed one slot's capacity;
 - one logical mutation is recorded per scoped idempotency key;
 - ambiguous outcomes remain replay-safe;
 - reserve, confirm, cancel, expiry, and settlement races have valid committed outcomes;
-- one user cannot hold overlapping active booking claims, including bookings for slots owned by different organisations;
+- one user cannot hold overlapping active schedule claims within the booking policy the phase supports;
 - authoritative time and bounded timeout classification remain explicit;
-- every admissible experiment reconciles outcomes with persisted state across every participating authority.
+- every admissible experiment reconciles outcomes with persisted state on every participating authority.
 
-Scaling by weakening global schedule non-overlap is out of scope. A user cannot attend two overlapping classes merely because the classes are owned by different organisations.
+The partitioned design adds these placement invariants:
+
+1. **One organisation, one writable home authority.** At any instant, every authoritative row for an organisation is written on exactly one assigned PostgreSQL authority.
+2. **One `UserRef`, one schedule authority.** Every schedule claim for one stable `UserRef` lives on exactly one user-home authority, always. A slot-owning authority must never create an authoritative schedule claim for a user homed elsewhere.
+3. **No failure fallback.** If an organisation's assigned authority is unavailable, requests fail with a classified unavailable outcome. They must never be retried against another writable shard.
+4. **One routing decision.** All service and experiment components use the same versioned organisation-to-authority map for a run.
+5. **One compatible schema.** Every authority participating in one deployment or experiment runs a schema version compatible with the serving binary.
 
 The current user identity remains:
 
@@ -56,193 +67,255 @@ The current user identity remains:
 UserRef = (user_organisation_id, user_id)
 ```
 
-The compound key avoids requiring `user_id` to be globally unique. For one stable `UserRef`, schedule protection already spans every slot-owning organisation into which that user books. This note does not introduce a separate global `user_id` or attempt to merge distinct `UserRef` values that external identity systems may associate with the same real-world person.
+The compound key avoids requiring `user_id` to be globally unique. This note does not introduce a separate global person identity or merge distinct `UserRef` values that an external identity system may associate with the same person.
 
-## 4. Same-shard and cross-shard bookings
+## 4. Two phases of horizontal database scaling
 
-The current transaction contains two business authorities:
+### 4.1 Phase 1 — organisation-affine, same-shard booking
 
-- slot capacity, identified by `(slot_organisation_id, slot_id)`;
-- the global schedule for one stable `UserRef`.
+Phase 1 assigns each organisation to one writable PostgreSQL home authority. That authority contains the organisation's complete transactional state:
 
-Those authorities do not require distributed coordination for every booking. The important distinction is whether they route to the same writable shard.
+- its slots and slot-side lifecycle rows;
+- its registered users and identity-serialization rows;
+- those users' schedule claims;
+- reservations and bookings;
+- idempotency records;
+- expiry and settlement state.
 
-### 4.1 Organisation-home authority
-
-The leading placement hypothesis gives each organisation a writable home authority containing:
-
-- slots and slot-side lifecycle state owned by that organisation;
-- user identities and global schedule claims for users registered with that organisation;
-- local idempotency and workflow records needed to preserve the current transaction semantics.
-
-The slot side routes by `slot_organisation_id`. The user-schedule side routes by the stable home of `UserRef`, initially `user_organisation_id`.
-
-This gives two execution paths.
-
-**Same-shard booking**
+For AG-Sept, the booking policy requires:
 
 ```text
 slot_organisation_id == user_organisation_id
 ```
 
-The slot-capacity and user-schedule authorities are colocated. Reserve, confirm, and cancel can retain the current single-PostgreSQL transaction and existing correctness mechanisms.
+A cross-organisation reserve is rejected before repository work with an explicit stable business refusal. It is not routed to either side and cannot create partial state.
 
-**Cross-shard booking**
+Because both business authorities are colocated, every supported reserve, confirm, cancel, expiry, and settlement operation keeps the current single-PostgreSQL transaction. Existing row locks, the identity lock, the GiST exclusion constraint, PostgreSQL authoritative time, foreign keys, idempotency records, commit-ambiguity classification, and rollback behaviour remain intact.
+
+#### Phase 1 topology
+
+```text
+                    versioned organisation placement
+                                  │
+                    ┌─────────────┴─────────────┐
+                    │                           │
+                    ▼                           ▼
+          shard-affine service A      shard-affine service B
+          one database pool           one database pool
+                    │                           │
+                    ▼                           ▼
+          PostgreSQL authority A      PostgreSQL authority B
+          organisations A, C          organisations B, D
+```
+
+Each service instance remains shard-affine and opens one database pool. This avoids a `service replicas × shard count × pool size` connection fan-out and gives readiness one clear dependency.
+
+For the first AG-Sept experiment, static routing may live in the load generator or experiment harness. A production routing gateway and dynamic placement service are not required to prove authority composition.
+
+The current API already carries the routing information needed by the supported policy:
+
+- reserve routes by the organisation shared by `slot_organisation_id` and `user_organisation_id` after equality validation;
+- confirm and cancel route by `user_organisation_id` from the request body;
+- list-slots routes by its required `slot_organisation_id` query parameter.
+
+Reservation and booking identifiers remain server-minted opaque identifiers. Phase 1 does not encode physical shard location into them; the stable organisation identity remains the routing key, so a later placement change does not require changing entity identity.
+
+#### What Phase 1 proves
+
+Phase 1 can establish that:
+
+- complete organisation authorities can be placed on independent PostgreSQL writers;
+- supported operations preserve the accepted local transaction semantics unchanged;
+- a failure of one authority does not corrupt or block unrelated authorities;
+- aggregate database capacity can be composed across independent organisations when the authorities receive independent resources;
+- one hot organisation, slot, or identity remains bounded by its home authority, by design.
+
+The precise claim is:
+
+> Alloca horizontally composes independent organisation authorities.
+
+Phase 1 does **not** prove that one organisation can use several writable database authorities or that every booking pattern is horizontally partitionable.
+
+### 4.2 Phase 2 — cross-shard booking
+
+Phase 2 may later support:
 
 ```text
 slot_organisation_id != user_organisation_id
 ```
 
-The user's schedule remains authoritative on the user's home shard while slot capacity remains authoritative on the slot-owning organisation's shard. The mutation therefore needs explicit coordination between two writable authorities.
+The Phase 1 placement remains unchanged:
 
-This placement keeps the common local case simple without weakening the global schedule invariant. A user's schedule authority still sees every booking claim for that `UserRef`, including claims for slots owned by other organisations.
+- slot capacity stays authoritative on the slot organisation's home shard;
+- every schedule claim for the user stays authoritative on the user's home shard;
+- the same-shard path continues to use one local PostgreSQL transaction;
+- only the cross-shard path pays the cost of distributed coordination.
 
-### 4.2 Workload assumption and generator gap
+A future cross-shard protocol must explicitly define reserve, confirm, cancel, expiry, replay, visibility, compensation, and recovery under partial failure. Distributed atomic commit and a durable saga remain candidate families; this note deliberately selects neither.
 
-The repository's own representative workload gives the shape. In the fitness-club release, a member is registered with one club and usually books that club's sessions, which maps to the same-shard path. A member booking a session at a different club — a partner site, a network-wide class, a guest booking — maps to the cross-shard path.
+Phase 2 must not introduce a shared global workflow database that becomes the writable authority for every cross-shard booking. Any durable coordination state must be partitioned with one of the participating authorities, most plausibly the user-home authority, and participant commands must be idempotent under stable logical identifiers.
 
-For PR3 planning, use **approximately 10% cross-shard bookings** as an explicit scenario assumption. It is not measured Alloca evidence and is not claimed as a universal production rate. The load generator must make the rate configurable so the design can be exercised at least at:
+### 4.3 Phase 1 compatibility obligations
+
+Phase 1 must leave Phase 2 open by preserving the following seams:
+
+1. **Keep slot and user organisation identities distinct in every command and row.** Phase 1 validates equality as policy; it must not collapse the fields into one ambiguous `organisation_id`.
+2. **Keep organisation placement behind a stable routing boundary.** Callers ask for the authority assigned to an organisation; business code does not derive a DSN directly.
+3. **Keep the same-shard service path intact.** A future coordinator dispatches to it or to equivalent participant commands rather than rewriting local transaction semantics.
+4. **Keep schedule authority on the user home.** Phase 1 must not optimise by duplicating claims onto slot shards.
+5. **Keep identifiers globally collision-resistant and location-independent.** Logical identity must survive a future routing or placement change.
+6. **Keep idempotency domain-local but protocol-extensible.** Existing client idempotency remains on the user-home transaction; Phase 2 may add separate participant-command idempotency without changing the client contract.
+7. **Make verification authority-aware.** Phase 1 verifies each shard and aggregates the verdict after the run is quiesced. Phase 2 can extend the same verifier with cross-authority workflow assertions.
+8. **Represent unsupported cross-shard booking as an explicit policy outcome.** Do not delete the two-organisation data model or make the request structurally impossible merely to simplify Phase 1.
+
+## 5. Phase 1 routing and lifecycle rules
+
+### 5.1 Static placement for AG-Sept
+
+The smallest experiment uses a versioned static mapping:
 
 ```text
-0%   cross-shard: local-path control
-10%  cross-shard: working scenario assumption
-100% cross-shard: coordination stress case
+organisation A -> authority A
+organisation B -> authority B
+organisation C -> authority A
 ```
 
-Every PR2 workload used one organisation value for both the slot and user sides, so all 2,350,742 measured requests were same-shard. PR2 therefore provides no evidence about cross-shard correctness, cost, or frequency.
+The mapping is immutable for the duration of a run. Every artifact records its routing version and authority assignment. Setup fails if an organisation is absent, assigned more than once, or if participating authorities report incompatible schema versions.
 
-The assumed rate affects architecture rather than merely tuning it. At approximately 10%, the current local transaction can remain the dominant path while the slower, explicitly compensated protocol is isolated to the minority cross-shard path. If a target domain later shows that most bookings are cross-shard, the coordination protocol becomes the critical path and the placement decision must be revisited.
+Modulo hashing is not required for the first experiment. A static assignment is easier to inspect, controls tenant skew, and does not pretend that online rebalancing has been solved.
 
-### 4.3 Scaling and future subdivision
+### 5.2 Shard-affine service units
 
-Organisation-home shards remove one global writer across independent organisations while preserving one authoritative schedule location per user. Unrelated organisations can progress on different PostgreSQL authorities; one hot slot and one user's schedule remain serialised by design.
+Each service unit:
 
-Routing all users of one organisation to one home shard is the smallest hypothesis for PR3, not a claim that `user_organisation_id` is the final partition granularity. A very large organisation may later require a stable mapping that subdivides users by full `UserRef`. That rebalancing problem should not be introduced before the two-database correctness spike establishes whether the local/cross-shard split is viable.
+- serves only the organisations assigned to its database authority;
+- opens one PostgreSQL pool;
+- reports its authority identifier and routing version through operational metadata;
+- becomes unready when that authority is unavailable;
+- never forwards a mutation to another shard as a fallback.
 
-## 5. Leading partitioning hypothesis
-
-The leading topology is a set of organisation-home PostgreSQL authorities:
+Once database authority composition succeeds, AG-Sept may add stateless replicas within each shard group if budget remains:
 
 ```text
-                 same-shard booking
-        ┌────────────────────────────────┐
-        │ one local PostgreSQL transaction│
-        ▼                                │
-┌──────────────────────┐       ┌──────────────────────┐
-│ organisation A shard │       │ organisation B shard │
-│                      │       │                      │
-│ A-owned slots        │       │ B-owned slots        │
-│ A users' schedules   │       │ B users' schedules   │
-│ local workflow state │       │ local workflow state │
-└──────────┬───────────┘       └──────────┬───────────┘
-           │                              │
-           └──── cross-shard coordination┘
-             A user booking a B slot
+service A1 ─┐
+service A2 ─┼── PostgreSQL authority A
+service A3 ─┘
 ```
 
-Each shard remains an ordinary writable PostgreSQL authority. Local correctness mechanisms remain familiar:
+That is application scaling inside one authority unit. It is deliberately subsequent to proving that independent database authorities route and reconcile correctly.
 
-- slot row locks and capacity checks for locally owned slots;
-- identity row locks and the GiST exclusion constraint for locally homed users;
-- local transactions, PostgreSQL time, SQLSTATE classification, and idempotent commands inside each authority.
+### 5.3 Cross-organisation refusal
 
-Aggregate write throughput can rise across independent organisation-home shards because unrelated work no longer shares one database process set, buffer pool, WAL stream, and storage path.
+A reserve with different user and slot organisations is well-formed but unsupported by the Phase 1 booking policy. The service should return one stable business-refusal reason owned by the domain and mapped through the existing closed HTTP outcome model.
 
-This does not make one hot authority parallel. One slot's capacity and one user's schedule still serialise by design.
+The exact reason name is an implementation-scope decision, but its semantics must be unambiguous:
 
-## 6. The cross-shard coordination problem
+> This deployment supports booking only when the user and slot organisations share one writable authority.
 
-A same-shard reserve retains the current local atomic boundary. A cross-shard reserve needs agreement from two writable authorities:
+Confirm and cancel continue to validate ownership and idempotency on the routed user-home shard. A caller supplying the wrong organisation reaches an authority on which the reservation does not exist and receives the existing safe unknown-target behaviour.
 
-1. the user-home authority must grant a non-overlapping schedule claim;
-2. the slot-owning authority must grant capacity.
+## 6. Phase 1 experiment and evidence gates
 
-Physical separation removes the single-transaction boundary for that path. A correct protocol must specify what happens when one side succeeds and the other refuses, times out, becomes unreachable, or commits while its acknowledgement is lost.
+The minimum local experiment should contain:
 
-Two broad coordination families remain open.
+- a minimal pair of independently migrated PostgreSQL authorities;
+- one shard-affine service unit per authority;
+- several organisations assigned across the authorities;
+- a generator that routes requests by the versioned placement map and generates same-shard traffic only;
+- a verifier that connects to every authority involved in the run and aggregates per-shard correctness results.
 
-### 6.1 Distributed atomic commit
+The local experiment is correctness-first. It must prove:
 
-A transaction manager or distributed PostgreSQL system coordinates both authorities and presents one atomic commit decision.
+- no supported request reaches the wrong authority;
+- cross-organisation reserve is refused before persistence;
+- capacity, schedule, idempotency, lifecycle, and outcome-reconciliation gates pass independently on every shard;
+- taking one authority unavailable affects only its assigned organisations;
+- restoration does not require writing those organisations on another shard;
+- schema and routing metadata are recorded with the result.
 
-This preserves semantics closest to the current implementation, but introduces distributed commit availability, recovery of unresolved transactions, locks held across failures, cross-shard deadlocks, and product-specific compatibility constraints. It must not be selected merely because it hides routing behind one SQL endpoint.
+Verification follows a quiesced consistency rule:
 
-### 6.2 Explicit leased, idempotent reservation protocol
+1. stop issuing new requests;
+2. drain in-flight requests and settlement work;
+3. read each authority after the supported workflows have reached terminal local state;
+4. apply local capacity, schedule, idempotency, and outcome reconciliation;
+5. aggregate the verdict without treating sequential cross-database reads as one atomic snapshot.
 
-Each authority commits a local, idempotent step under a shared reservation identifier. Temporary schedule claims and slot holds are leased; a durable workflow record retries completion or compensation, and reconciliation detects partial states.
+A local shared-workstation run must not claim a throughput multiplier. A capacity-composition result requires independent database resources, controlled service resources, generator headroom, and the evidence contract's normal SLO and quotability gates.
 
-A likely safety-first reserve ordering is a leased schedule claim before a leased slot hold: an orphaned temporary schedule claim reduces availability until expiry, while an externally usable slot hold without schedule protection could violate global non-overlap. That ordering is only a starting hypothesis; confirm, cancel, expiry, lost acknowledgement, and recovery states must be written explicitly.
+## 7. Risks and explicit limitations
 
-Lease expiry does **not** repair every failure. In the current model, confirming a schedule claim sets `expires_at = NULL`; the confirmed claim is intentionally permanent and is not reaped by `SettleClaims`. If the schedule side becomes confirmed while the slot side fails permanently, recovery requires an explicit, durable, idempotent cross-authority cancellation or deletion. Until that compensation completes, the orphaned claim can block the user from overlapping bookings. The protocol therefore needs:
+### 7.1 One large organisation remains one authority
 
-- durable workflow ownership for every cross-shard reservation;
-- idempotent forward and compensating commands on both authorities;
-- explicit handling for permanent confirmed claims, not only leased pending claims;
-- a recovery worker that does not depend on the user's next reserve;
-- cross-authority reconciliation capable of detecting and repairing partial states.
+Phase 1 scales across independent organisations, not inside one organisation. A very large organisation can still reach the frontier of its assigned PostgreSQL authority.
 
-A result must not become externally visible as confirmed merely because one authority has reached its local confirmed state. The externally visible decision and the convergence rule remain open design questions.
+Later subdivision by full `UserRef`, slot groups, or another stable placement would reopen the cross-authority transaction problem. It is not hidden inside Phase 1.
 
-This family fits mechanisms Alloca already uses—holds, expiry, idempotency, replay, settlement, and classified ambiguous outcomes—but it changes the correctness model from one local commit to one distributed protocol. It therefore needs a failure-state design and discriminating tests before implementation.
+### 7.2 Placement skew
 
-This note treats the leased protocol as the leading hypothesis for the minority cross-shard path, not a decided design.
+Equal organisation counts do not imply equal load. Static placement must account for known heavy organisations in the experiment, and every result must report the organisation-to-authority distribution it measured.
 
-## 7. Smallest decisive feasibility spike
+### 7.3 Routing split-brain
 
-The first spike should use:
+Different service or generator instances using different placement maps could write one organisation to multiple authorities and silently divide its source of truth.
 
-- two PostgreSQL instances: one user-home authority and one different slot-owning authority;
-- one service process with two hard-coded DSNs and no routing tier;
-- a generator with a configurable cross-shard rate, including the 0%, 10%, and 100% cases;
-- one durable reservation identifier and the minimum workflow state needed to exercise replay and compensation;
-- a verifier that connects to both databases and reconciles capacity, schedule non-overlap, and partial workflow state.
+The routing version must therefore be immutable for a run, validated at startup, and recorded in operational metadata and result artifacts.
 
-The decisive test is correctness under injected partial failure:
+### 7.4 Rebalancing is deferred
 
-1. commit the schedule-side step;
-2. make the slot authority unavailable before its corresponding commit or acknowledgement;
-3. replay and recover the logical reservation;
-4. reconcile both databases;
-5. prove global user non-overlap, slot-capacity safety, replay safety, and eventual removal of any invalid orphaned state.
+Moving an organisation between authorities requires transferring slots, reservations, bookings, claims, idempotency history, and lifecycle state without allowing concurrent writes on both sides. Phase 1 uses fixed placement and resets or reseeds between topology changes.
 
-The spike should also inject the inverse partial state if the chosen protocol can produce it. It must not report a local two-database throughput multiplier: the shared workstation makes that comparison uninterpretable, and throughput is not the decision being tested.
+### 7.5 Global reads become fan-out work
 
-If the invariants survive the failure matrix with a credible recovery mechanism, the leased family is worth designing further. If they do not, reject it before spending the milestone on routing, rebalancing, deployment, or observability.
+The current booking path is organisation-scoped and remains local. Future cross-organisation administration, analytics, and search require fan-out reads or a separate read model. They must not become a hidden global write authority.
 
-## 8. Questions PR3 must answer before implementation scope
+### 7.6 Caller-asserted routing identity
 
-The next review should answer or narrow these questions:
+The current API accepts user organisation from the request body because authentication is not yet implemented. That is adequate for the synthetic experiment but not a production trust boundary. A later authenticated system should route from trusted identity claims.
 
-1. Is organisation-home placement the right first decomposition for preserving the local path while isolating cross-shard coordination?
-2. Is approximately 10% cross-shard traffic a useful working scenario, and which additional rates are necessary to prevent the design from depending on it?
-3. Which idempotency and workflow records belong on each side, and which authority owns the durable coordination decision?
-4. Is distributed atomic commit or an explicit leased protocol the more credible fit for Alloca's guarantees and time budget?
-5. What are the reserve, confirm, cancel, expiry, compensation, and recovery states under every partial failure?
-6. At what point is a result externally visible as reserved or confirmed?
-7. How are permanent confirmed schedule claims compensated when the slot-side outcome cannot be completed?
-8. What cross-authority verifier queries and assertions gate every admissible experiment?
-9. Does the two-database failure spike above discriminate between the coordination families strongly enough?
-10. What evidence is actually needed for that decision, without producing another oversized dashboard and artifact surface?
+### 7.7 Resource confounding
+
+Adding both a service process and a PostgreSQL instance can make a throughput comparison ambiguous. The capacity experiment must hold service compute comparable or report the service-to-database resource ratio explicitly.
+
+## 8. Questions for review
+
+1. Is organisation-home placement the correct Phase 1 unit for preserving every supported transaction on one authority?
+2. Should the first experiment use shard-affine service units, as proposed, rather than one process with pools to every shard?
+3. Is rejecting cross-organisation reserve as a business refusal the correct API semantics for Phase 1?
+4. Are the one-organisation and one-`UserRef` placement invariants strong enough to prevent accidental split authority?
+5. Do the Phase 1 compatibility obligations preserve the right seams for a later cross-shard protocol without building that protocol now?
+6. What is the smallest authority-aware verifier extension that makes the local run admissible?
+7. Which service and database resources must be controlled before aggregate authority capacity can be quoted?
+8. Is any item in the proposed Phase 1 scope still coordination work disguised as routing or verification?
 
 ## 9. Immediate next step
 
-Review this revised design note before freezing a complete PR3 implementation matrix or rewriting the remaining AG-Sept PR scopes.
+Review this phased decision before freezing the PR3 implementation scope.
 
-After review, create a bounded PR3 scope for the correctness-first two-database feasibility spike. Its purpose should be to test the hardest coordination and invariant edge, not to productionise sharding, Kubernetes, AWS, routing, rebalancing, observability, and performance measurement at once.
+After review, define a bounded AG-Sept PR3 around Phase 1 only:
 
-## 10. Explicit non-goals of this draft
+- explicit same-shard booking policy;
+- static versioned organisation placement;
+- shard-affine service/database units;
+- multi-authority generator routing;
+- authority-aware verification;
+- correctness and failure-isolation evidence first;
+- database capacity composition when the environment can support a valid comparison;
+- stateless service scaling only if the Phase 1 database work leaves sufficient milestone budget.
 
-This draft does not:
+## 10. Explicit non-goals
 
-- choose a distributed database product;
-- implement a general shard router or production transaction coordinator;
-- define production shard counts, cross-shard rates, or resource ratios;
-- claim a throughput gain from two PostgreSQL containers on one workstation;
-- promise that horizontal database scaling fits wholly inside AG-Sept;
-- weaken global user schedule non-overlap;
-- reopen the accepted same-shard transaction semantics before a replacement cross-shard protocol is proven;
-- add PostgreSQL exporters, Grafana panels, a large load matrix, AWS, or Kubernetes;
-- solve user-shard subdivision or rebalancing before the two-database correctness hypothesis is tested;
-- predict the remaining PR sequence before this decision is reviewed.
+Phase 1 does not:
 
-The design is intentionally small because PR2 demonstrated that evidence may change the order of the work. PR3 should proceed one decision at a time.
+- support cross-organisation booking;
+- choose or implement two-phase commit, a saga, or another distributed transaction protocol;
+- split one organisation across writable database authorities;
+- build a production routing service or dynamic shard catalogue;
+- solve online rebalancing or dual-write migration;
+- add a shared global workflow database;
+- claim a local shared-workstation throughput multiplier;
+- make one hot slot or one hot identity parallel;
+- require AWS, Kubernetes, PostgreSQL exporters, or a large dashboard surface before correctness evidence exists;
+- weaken the global schedule invariant for any booking pattern the phase claims to support.
+
+Phase 2 remains possible because Phase 1 preserves distinct user and slot identities, stable organisation placement, one user-home schedule authority, opaque logical identifiers, the complete same-shard transaction path, and authority-aware verification. It is deferred because its coordination and recovery cost does not fit AG-Sept, not because the data model has been simplified until it can no longer express it.

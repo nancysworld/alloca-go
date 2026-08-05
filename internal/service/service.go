@@ -298,9 +298,10 @@ func (s *Service) Confirm(ctx context.Context, cmd ConfirmCommand) (domain.Resul
 	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpConfirm, cmd.UserRef, string(cmd.ReservationID), cmd.Body)
 
 	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
-		slot, res, now, done, r, err := s.lockByReservation(ctx, tx, cmd.ReservationID, cmd.UserRef, scope, hash)
+		slot, res, now, done, earlyResult, err := s.lockByReservation(
+			ctx, tx, cmd.ReservationID, cmd.UserRef, scope, hash)
 		if done || err != nil {
-			return r, err
+			return earlyResult, err
 		}
 
 		var result domain.Result
@@ -358,9 +359,10 @@ func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (domain.Result,
 	hash := idempotency.RequestHash(domain.ContractVersion, domain.OpCancel, cmd.UserRef, string(cmd.ReservationID), cmd.Body)
 
 	return s.run(ctx, func(ctx context.Context, tx domain.Tx) (domain.Result, error) {
-		slot, res, now, done, r, err := s.lockByReservation(ctx, tx, cmd.ReservationID, cmd.UserRef, scope, hash)
+		slot, res, now, done, earlyResult, err := s.lockByReservation(
+			ctx, tx, cmd.ReservationID, cmd.UserRef, scope, hash)
 		if done || err != nil {
-			return r, err
+			return earlyResult, err
 		}
 
 		var result domain.Result
@@ -425,7 +427,7 @@ func (s *Service) lockByReservation(
 	slot domain.Slot, res domain.Reservation, now time.Time,
 	done bool, result domain.Result, err error,
 ) {
-	slotRef, userRef, err := tx.ReservationTarget(ctx, id)
+	slotRef, reservationOwner, err := tx.ReservationTarget(ctx, id)
 	if errors.Is(err, domain.ErrNotFound) {
 		result, err = s.unknownTarget(ctx, tx, scope, hash)
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, result, err
@@ -443,7 +445,7 @@ func (s *Service) lockByReservation(
 	// makes the correction necessary as well as right — without it, the answer to a
 	// wrong identity would depend on whether two organisations happened to be colocated
 	// (horizontal-database-authority §5.4).
-	if userRef != caller {
+	if reservationOwner != caller {
 		result, err = s.unknownTarget(ctx, tx, scope, hash)
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, result, err
 	}

@@ -77,6 +77,9 @@ type Client struct {
 	// validate reports whether responses are checked. False is the negative control's
 	// mode and nothing else — see the package comment.
 	validate bool
+	// ambiguous collects mutations whose outcome the client could not settle, so they
+	// can be replayed under their own keys once the authority is back (ambiguous.go).
+	ambiguous ambiguityRegister
 }
 
 // NewClient builds a Client. validate=false is the response-validation negative control
@@ -171,7 +174,22 @@ func (c *Client) do(ctx context.Context, op, url string, u User, key string) Res
 	out.Outcome, out.Reason, out.Replay = b.Outcome, b.Reason, b.Replay
 	out.ReservationID, out.BookingID = b.ReservationID, b.BookingID
 	out.Invalid = c.check(out)
+	c.recordIfAmbiguous(op, url, u, key, out)
 	return out
+}
+
+// recordIfAmbiguous registers a mutation the client could not settle.
+//
+// It is called on the one path that produces a parsed response, deliberately: a transport
+// failure is classified as a timeout above and *is* a definite client-side fact — the
+// request may still have committed, but that is the timeout contract's problem, not this
+// register's. What lands here is the server's own admission that its commit outcome is
+// unknown.
+func (c *Client) recordIfAmbiguous(op, url string, u User, key string, resp Response) {
+	if resp.Outcome != domain.OutcomeUnknownReplayable {
+		return
+	}
+	c.ambiguous.record(Ambiguous{Operation: op, User: u, Key: key, path: url})
 }
 
 // check validates the two dimensions §5.4 requires, and returns the first disagreement.

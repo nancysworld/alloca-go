@@ -923,12 +923,22 @@ measurements may assume.
 
 ### Not directly proven
 
-Recorded so the gap is visible rather than assumed. Neither is a known defect; both are
-properties no current test discriminates.
+Recorded so the gap is visible rather than assumed. Not a known defect; a property no
+current test discriminates.
+
+INV-21 was in this section from AG-M1 until AG-Sept PR3, and writing the test that moved
+it found a real defect: `classifyCommit` treated *every* `*pgconn.PgError` as the server
+answering the `COMMIT`, so a terminated backend (57P01) or a crash (57P02) was reported as
+a definite failure. Both are the session ending, not an answer about the transaction, and
+a commit already flushed to WAL survives a crash. A client told "failed" may reasonably
+reissue under a **new** key, which is exactly what breaks INV-5. Class 57 and class 08 are
+now ambiguous. **The lesson is about the register itself:** an invariant parked in this
+section is not merely unproven, it is unexamined, and the classification looked correct
+for two milestones because nothing had killed a connection mid-`COMMIT`.
 
 | ID | Property | Decided in | Status |
 |---|---|---|---|
-| **INV-21** | An ambiguous commit yields `unknown_replayable`, and replaying the same key produces exactly one logical mutation | §5.4, §6 | The classification is unit-tested as a mapping (`postgres/classify_test.go` — `TestClassifyCommitTimeoutSQLSTATEs`), but **no test kills a connection mid-`COMMIT`**. Flagged since PR3; carried into AG-M2 |
+| **INV-21** | An ambiguous commit yields `unknown_replayable`, and replaying the same key produces exactly one logical mutation | §5.4, §6 | **Partially proven, and the gap is now named rather than open-ended.** `postgres/commit_fault_test.go` — `TestCommitInterruptedMidFlightIsUnknownReplayable` terminates the transaction's own backend from a second pool with its work done and `COMMIT` not yet sent: the *did-not-commit* half is proven, and the interrupted commit is shown to leave no row, so a replay performs the mutation exactly once. The *commit-landed-but-acknowledgement-lost* half remains unproven and cannot be produced against PostgreSQL directly — there is no instant between the durable write and the reply for a client to interpose on; it needs a proxy that drops the reply. Classification is also unit-tested as a mapping (`postgres/classify_test.go`) |
 | **INV-22** | Decision timestamps are coherent but not monotonic: a backwards host-clock correction never revives a terminal state | §1.5 | Proven against the in-memory double only. A PostgreSQL host clock cannot be stepped from a test, so the real adapter is unproven here |
 | **INV-23** | A confirm or cancel mutates a reservation only for the `UserRef` that owns it; any other caller receives `unknown_target`, whether or not the two organisations share an authority | §4 | `service/placement_test.go` — `TestConfirmAndCancelRejectACallerWhoIsNotTheOwner`, with `TestOwnerConfirmAndCancelStillSucceed` as the positive control; `postgres/schedule_test.go` — `TestConfirmAndCancelRejectAnImpostorWithTheSameUserID` pins the same rule against the real adapter, where the impostor shares the owner's `user_id` and differs only by organisation. Removing the comparison fails the first; mis-scanning `user_organisation_id` in `ReservationTarget` fails the second while the in-memory tests still pass |
 | **INV-24** | A booking is supported exactly when the slot and user organisations resolve to the **same** writable authority — placement equality, never organisation-identifier equality. A single-authority deployment therefore refuses nothing, and a colocated cross-organisation booking keeps working (INV-13) | §4, [`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md) §4.1 | `service/placement_test.go` — `TestReserveAcrossAuthoritiesIsRefused`, `TestColocatedCrossOrganisationReserveSucceeds`, `TestUnshardedDeploymentRefusesNothingForPlacement`; `domain/placement_test.go` — `TestColocationIsDecidedByAuthorityNotByOrganisationIdentity`. Comparing identifiers instead of authorities fails all four |

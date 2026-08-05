@@ -179,12 +179,22 @@ func (r *Repo) classify(ctx context.Context, txCtx context.Context, err error) e
 // classifyCommit maps a commit failure, where the distinction between "definitely did
 // not commit" and "unknown" is the one that matters.
 //
-// A *pgconn.PgError means the server processed the COMMIT and rejected it, so the
+// A *pgconn.PgError usually means the server processed the COMMIT and rejected it, so the
 // transaction definitely did not commit — a definite fault, not an ambiguous one. Any
 // other failure (a broken connection, a deadline firing while the acknowledgement was
 // in flight) leaves the outcome genuinely unknown: the commit may well have been
 // applied and only the answer lost. That case is ErrCommitUnknown, which the client
 // resolves by replaying the same idempotency key (§5.4).
+//
+// **"Usually" carries weight: not every PgError is the server answering the COMMIT.**
+// Operator intervention (class 57) and connection exceptions (class 08) arrive as
+// PgErrors but report that the *session* ended, not that the transaction was refused —
+// `pg_terminate_backend` produces 57P01, and a server crash produces 57P02 while a commit
+// in flight may already have reached WAL and will be recovered on restart. Treating those
+// as definite failures is precisely the dangerous direction this function exists to avoid,
+// so they are ambiguous. Found by the deliberately-timed fault in
+// `commit_fault_test.go`, which is also why INV-21 sat unproven for two milestones: the
+// classification looked right until something actually killed a connection mid-COMMIT.
 //
 // Reporting an ambiguous commit as a definite failure would be the more dangerous
 // error of the two: a client told "failed" may reasonably reissue with a new key, and
@@ -212,6 +222,10 @@ func (r *Repo) classifyCommit(ctx context.Context, txCtx context.Context, err er
 			}
 			return fmt.Errorf("postgres: commit exceeded statement_timeout: %w", domain.ErrDBTimeout)
 		}
+		if ambiguousCommitCode(pgErr.Code) {
+			return fmt.Errorf("postgres: commit interrupted by the server (%s), outcome unknown: %w: %w",
+				pgErr.Code, domain.ErrCommitUnknown, err)
+		}
 		return fmt.Errorf("postgres: commit rejected (%s): %w", pgErr.Code, err)
 	}
 	if ctx.Err() != nil || txCtx.Err() != nil || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
@@ -222,3 +236,22 @@ func (r *Repo) classifyCommit(ctx context.Context, txCtx context.Context, err er
 
 // Static assertion that Repo satisfies the domain port.
 var _ domain.Repository = (*Repo)(nil)
+
+// ambiguousCommitCode reports whether a SQLSTATE from a failed COMMIT means the session
+// ended rather than that the transaction was refused.
+//
+// Class 57 is operator intervention — an administrator terminating the backend, a fast
+// shutdown, a crash — and class 08 is a connection exception. In every one of them the
+// server stopped talking to us; none of them is an answer about the transaction, and a
+// commit already flushed to WAL survives a crash and is recovered.
+//
+// QueryCanceled (57014) is deliberately absent: it is handled above as a timeout, where
+// the server did answer and the statement really was cancelled.
+func ambiguousCommitCode(code string) bool {
+	switch code {
+	case pgerrcode.AdminShutdown, pgerrcode.CrashShutdown, pgerrcode.CannotConnectNow,
+		pgerrcode.DatabaseDropped, pgerrcode.IdleSessionTimeout, pgerrcode.OperatorIntervention:
+		return true
+	}
+	return pgerrcode.IsConnectionException(code)
+}

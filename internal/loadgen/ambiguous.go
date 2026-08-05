@@ -41,18 +41,18 @@ type ambiguityRegister struct {
 	entries []Ambiguous
 }
 
-func (r *ambiguityRegister) record(a Ambiguous) {
+func (r *ambiguityRegister) record(entry Ambiguous) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.entries = append(r.entries, a)
+	r.entries = append(r.entries, entry)
 }
 
 func (r *ambiguityRegister) snapshot() []Ambiguous {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]Ambiguous, len(r.entries))
-	copy(out, r.entries)
-	return out
+	snapshot := make([]Ambiguous, len(r.entries))
+	copy(snapshot, r.entries)
+	return snapshot
 }
 
 // Ambiguous returns the mutations this client could not settle, in the order they
@@ -90,26 +90,26 @@ type Resolution struct {
 // Conflating the two is how that group creeps into a PR that cannot fund it.
 func (c *Client) ResolveAmbiguous(ctx context.Context) []Resolution {
 	entries := c.Ambiguous()
-	out := make([]Resolution, 0, len(entries))
-	for _, a := range entries {
-		resp := c.do(ctx, a.Operation, a.path, a.User, a.Key)
-		out = append(out, Resolution{
-			Ambiguous:      a,
-			Response:       resp,
-			StillAmbiguous: resp.Outcome == domain.OutcomeUnknownReplayable,
+	resolutions := make([]Resolution, 0, len(entries))
+	for _, entry := range entries {
+		replayed := c.do(ctx, entry.Operation, entry.path, entry.User, entry.Key)
+		resolutions = append(resolutions, Resolution{
+			Ambiguous:      entry,
+			Response:       replayed,
+			StillAmbiguous: replayed.Outcome == domain.OutcomeUnknownReplayable,
 		})
 	}
-	return out
+	return resolutions
 }
 
 // Unresolved counts resolutions that are still ambiguous. A run with any of these is not
 // reconcilable and must not be quoted.
-func Unresolved(rs []Resolution) int {
-	var n int
-	for _, r := range rs {
-		if r.StillAmbiguous {
-			n++
+func Unresolved(resolutions []Resolution) int {
+	var stillAmbiguous int
+	for _, resolution := range resolutions {
+		if resolution.StillAmbiguous {
+			stillAmbiguous++
 		}
 	}
-	return n
+	return stillAmbiguous
 }

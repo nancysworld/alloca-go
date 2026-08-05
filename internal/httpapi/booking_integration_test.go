@@ -145,17 +145,19 @@ func newVertical(t *testing.T, ttl time.Duration) *vertical {
 
 	// The production ID generator, so the tests also see the identifier format clients
 	// receive. Nothing here depends on identifiers being predictable.
-	svc := service.New(repo, ids.Random{}, ttl, domain.Placement{})
+	svc := service.New(repo, ids.Random{}, ttl, domain.Unsharded("authority-1"))
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 	recorder := telemetry.NewSlogRecorder(quiet)
 
 	srv := httpapi.New(cfg, func() buildinfo.Info { return buildinfo.Collect(time.Now()) },
 		httpapi.Options{
-			Service:  svc,
-			Slots:    repo,
-			Recorder: recorder,
-			Logger:   quiet,
-			Ready:    repo.Ready,
+			Placement: domain.Unsharded("authority-1"),
+			Authority: "authority-1",
+			Service:   svc,
+			Slots:     repo,
+			Recorder:  recorder,
+			Logger:    quiet,
+			Ready:     repo.Ready,
 		})
 
 	return &vertical{

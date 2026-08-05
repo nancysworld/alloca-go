@@ -159,6 +159,34 @@ func TestParsePlacementRejectsDocumentsThatCannotDescribeOneRouting(t *testing.T
 			want: "empty organisation identifier",
 		},
 		{
+			// Go's decoder lets the last duplicate win, so a map-typed decode cannot see
+			// this: an operator reads one routing out of the file and the service uses
+			// another. The design note requires setup to fail here (§5.1).
+			name: "organisation assigned twice",
+			doc:  `{"version": "v1", "homes": {"org-a": "authority-1", "org-a": "authority-2"}}`,
+			want: "more than once",
+		},
+		{
+			name: "organisation assigned twice with the same authority",
+			doc:  `{"version": "v1", "homes": {"org-a": "authority-1", "org-a": "authority-1"}}`,
+			want: "more than once",
+		},
+		{
+			name: "trailing document",
+			doc:  `{"version": "v1", "homes": {"org-a": "authority-1"}} {"version": "v2", "homes": {"org-a": "authority-2"}}`,
+			want: "trailing content",
+		},
+		{
+			name: "trailing garbage",
+			doc:  `{"version": "v1", "homes": {"org-a": "authority-1"}} nonsense`,
+			want: "trailing content",
+		},
+		{
+			name: "homes is not an object",
+			doc:  `{"version": "v1", "homes": ["org-a"]}`,
+			want: "must be an object",
+		},
+		{
 			name: "unknown field",
 			doc:  `{"version": "v1", "home": {"org-a": "authority-1"}}`,
 			want: "unknown field",

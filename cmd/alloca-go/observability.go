@@ -101,8 +101,8 @@ func buildRecorder(reg *prometheus.Registry, pool *pgxpool.Pool, logger *slog.Lo
 // A failed query yields an empty version rather than a startup failure. The service can serve
 // without knowing its server version; what it cannot do is claim a capacity result, and the
 // manifest gate is what refuses that — one place, not two.
-func databaseMeta(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) httpapi.DatabaseMeta {
-	meta := httpapi.DatabaseMeta{PoolMaxConns: pool.Config().MaxConns}
+func databaseMeta(ctx context.Context, pool *pgxpool.Pool, schemaVersion int64, logger *slog.Logger) httpapi.DatabaseMeta {
+	meta := httpapi.DatabaseMeta{PoolMaxConns: pool.Config().MaxConns, SchemaVersion: schemaVersion}
 
 	var version string
 	if err := pool.QueryRow(ctx, "SHOW server_version").Scan(&version); err != nil {
@@ -112,22 +112,6 @@ func databaseMeta(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) 
 	}
 	meta.Version = version
 
-	// The schema version comes from goose's own bookkeeping table. A multi-authority run
-	// is admissible only if every participating authority is schema-compatible with the
-	// serving binary (horizontal-database-authority §5.1), and the harness can only check
-	// that if each unit reports what it is running against.
-	//
-	// Absent or unreadable is not a startup failure, for the same reason the server
-	// version is not: the service can serve without knowing it, and the manifest gate is
-	// what refuses to quote a run that does not.
-	var schema int64
-	if err := pool.QueryRow(ctx,
-		"SELECT max(version_id) FROM goose_db_version WHERE is_applied").Scan(&schema); err != nil {
-		logger.Warn("could not read the schema version; /meta will omit it and a "+
-			"multi-authority run cannot check schema compatibility", slog.Any("error", err))
-		return meta
-	}
-	meta.SchemaVersion = schema
 	return meta
 }
 

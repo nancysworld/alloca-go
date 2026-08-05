@@ -3,7 +3,9 @@ package domain
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 )
@@ -73,9 +75,55 @@ func (p Placement) IsUnsharded() bool { return p.unshard }
 // placementDoc is the wire form parsed by ParsePlacement. It is deliberately explicit
 // rather than a bare map: the version is not optional, and a document that cannot say
 // which routing it describes cannot be recorded against a measurement.
+//
+// Homes stays raw so ParsePlacement can walk its keys itself. Decoding straight into a
+// map would silently collapse a duplicate organisation — see decodeHomes.
 type placementDoc struct {
-	Version string                         `json:"version"`
-	Homes   map[OrganisationID]AuthorityID `json:"homes"`
+	Version string          `json:"version"`
+	Homes   json.RawMessage `json:"homes"`
+}
+
+// decodeHomes turns the raw homes object into the map, rejecting an organisation that
+// appears twice.
+//
+// Go's decoder resolves duplicate object keys by letting the last one win, so decoding
+// into a map cannot see the ambiguity: `{"org-a":"authority-1","org-a":"authority-2"}`
+// becomes a perfectly well-formed one-entry map. That is the single most dangerous thing
+// a placement document can do quietly — an operator reading the file sees one routing and
+// the service uses another — and the design note requires setup to fail when an
+// organisation is "assigned more than once" (§5.1). So the keys are walked as tokens.
+func decodeHomes(raw json.RawMessage, version string) (map[OrganisationID]AuthorityID, error) {
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("domain: placement version %q has no homes object", version)
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, fmt.Errorf("domain: placement version %q: reading homes: %w", version, err)
+	}
+	if delim, ok := tok.(json.Delim); !ok || delim != '{' {
+		return nil, fmt.Errorf("domain: placement version %q: homes must be an object", version)
+	}
+
+	homes := map[OrganisationID]AuthorityID{}
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return nil, fmt.Errorf("domain: placement version %q: reading an organisation: %w", version, err)
+		}
+		org := OrganisationID(keyTok.(string))
+
+		var authority AuthorityID
+		if err := dec.Decode(&authority); err != nil {
+			return nil, fmt.Errorf("domain: placement version %q: reading the authority for %q: %w", version, org, err)
+		}
+		if _, dup := homes[org]; dup {
+			return nil, fmt.Errorf("domain: placement version %q assigns organisation %q more than once; one organisation, one writable home authority", version, org)
+		}
+		homes[org] = authority
+	}
+	return homes, nil
 }
 
 // ParsePlacement builds a Placement from its JSON document:
@@ -83,10 +131,8 @@ type placementDoc struct {
 //	{"version": "v1", "homes": {"org-a": "authority-1", "org-b": "authority-2"}}
 //
 // It rejects a document that cannot describe one unambiguous routing: a missing or
-// empty version, an empty map, an organisation with no authority, or an authority with
-// no name. Duplicate organisation keys are rejected by construction — JSON object keys
-// are unique after decoding, so "assigned more than once" cannot be expressed here;
-// what can be expressed, and is rejected, is an assignment to nothing.
+// empty version, an empty map, an organisation with no authority, an authority with no
+// name, an organisation assigned more than once, or anything at all after the document.
 //
 // Parsing is strict about unknown fields so a typo in a placement document fails at
 // startup rather than silently routing by a default.
@@ -98,23 +144,31 @@ func ParsePlacement(data []byte) (Placement, error) {
 	if err := dec.Decode(&doc); err != nil {
 		return Placement{}, fmt.Errorf("domain: placement document: %w", err)
 	}
+	// One document, one routing decision. Decode stops at the end of the first JSON
+	// value, so without this a file holding two placements would be accepted using only
+	// the first — and the second, which someone wrote deliberately, would vanish.
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return Placement{}, fmt.Errorf("domain: placement document has trailing content after the routing map; one document, one routing decision")
+	}
 
 	if strings.TrimSpace(doc.Version) == "" {
 		return Placement{}, fmt.Errorf("domain: placement document has no version; every artifact must record the routing it used")
 	}
-	if len(doc.Homes) == 0 {
+	homes, err := decodeHomes(doc.Homes, doc.Version)
+	if err != nil {
+		return Placement{}, err
+	}
+	if len(homes) == 0 {
 		return Placement{}, fmt.Errorf("domain: placement version %q assigns no organisations", doc.Version)
 	}
 
-	homes := make(map[OrganisationID]AuthorityID, len(doc.Homes))
-	for org, authority := range doc.Homes {
+	for org, authority := range homes {
 		if strings.TrimSpace(string(org)) == "" {
 			return Placement{}, fmt.Errorf("domain: placement version %q has an empty organisation identifier", doc.Version)
 		}
 		if strings.TrimSpace(string(authority)) == "" {
 			return Placement{}, fmt.Errorf("domain: placement version %q assigns organisation %q to an empty authority", doc.Version, org)
 		}
-		homes[org] = authority
 	}
 
 	return Placement{version: doc.Version, homes: homes}, nil

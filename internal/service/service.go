@@ -58,15 +58,22 @@ type Service struct {
 }
 
 // New constructs a Service. ttl is the service-owned reservation hold duration
-// (transaction-semantics §1.6) and must be positive. placement is the deployment's organisation-to-authority
-// map; the zero value is treated as unsharded, which is what every deployment before
-// PR3a was and what the in-memory reference and unit tests use.
+// (transaction-semantics §1.6) and must be positive. placement is the deployment's
+// organisation-to-authority map.
+//
+// **The zero Placement is a wiring error, not a default.** domain.Placement defines zero
+// as "routes nothing", and giving it a second meaning here would mean a composition root
+// that forgot to pass one silently disabled placement enforcement — the service would
+// serve every organisation from whatever database it happened to hold. A single-authority
+// deployment says so explicitly with domain.Unsharded, which costs one call and cannot be
+// reached by omission. Panicking matches the ttl rule immediately above: both are
+// programming errors that no request should be allowed to discover.
 func New(repo domain.Repository, ids domain.IDGen, ttl time.Duration, placement domain.Placement) *Service {
 	if ttl <= 0 {
 		panic("service: reservation ttl must be positive")
 	}
 	if placement.IsZero() {
-		placement = domain.Unsharded("")
+		panic("service: placement must be supplied; use domain.Unsharded for a single-authority deployment")
 	}
 	return &Service{repo: repo, ids: ids, ttl: ttl, placement: placement}
 }

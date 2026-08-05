@@ -180,7 +180,9 @@ func TestMisroutedListSlotsIsRefusedBeforeReachingTheRepository(t *testing.T) {
 func TestUnshardedServerRefusesNothingForPlacement(t *testing.T) {
 	svc := &recordingService{}
 	h := New(config.Default(), func() buildinfo.Info { return buildinfo.Info{} }, Options{
-		Service: svc,
+		Service:   svc,
+		Placement: domain.Unsharded("authority-1"),
+		Authority: "authority-1",
 	}).Handler()
 
 	rec := httptest.NewRecorder()
@@ -222,6 +224,7 @@ func TestMetaReportsThisUnitsPlacement(t *testing.T) {
 // answer a result should carry rather than a field a reader infers from absence.
 func TestMetaReportsUnshardedRouting(t *testing.T) {
 	h := New(config.Default(), func() buildinfo.Info { return buildinfo.Info{} }, Options{
+		Placement: domain.Unsharded("authority-1"),
 		Authority: "authority-1",
 	}).Handler()
 

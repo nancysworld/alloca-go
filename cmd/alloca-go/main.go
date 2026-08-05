@@ -74,6 +74,16 @@ func run(logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	// The schema gate, before anything serves. ADR-0002 keeps migration out of the
+	// serving path, so this process cannot repair what it finds — which is precisely why
+	// it must refuse to start rather than meet the mismatch one failing query at a time,
+	// under load. In a sharded deployment an authority left behind by a rollout would
+	// serve its own organisations wrongly while its peers served theirs correctly.
+	schemaVersion, err := postgres.CheckSchema(ctx, pool)
+	if err != nil {
+		return err
+	}
+
 	repo := postgres.New(pool, cfg.RequestBudget)
 	svc := service.New(repo, ids.Random{}, cfg.ReservationTTL, placement)
 
@@ -86,7 +96,7 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	recorder, onMisroute := buildRecorder(registry, pool, logger, mode)
-	dbMeta := databaseMeta(ctx, pool, logger)
+	dbMeta := databaseMeta(ctx, pool, schemaVersion, logger)
 	shutdownMetrics := serveMetrics(metricsAddr(), registry, logger)
 
 	startedAt := time.Now()
@@ -123,6 +133,7 @@ func run(logger *slog.Logger) error {
 		slog.String("revision", info.Revision),
 		slog.String("authority", string(authority)),
 		slog.String("routing_version", placement.Version()),
+		slog.Int64("schema_version", schemaVersion),
 		slog.Bool("sharded", !placement.IsUnsharded()),
 	)
 

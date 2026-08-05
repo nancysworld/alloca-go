@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -150,7 +151,7 @@ func TestUnshardedDeploymentRefusesNothingForPlacement(t *testing.T) {
 		ID: slot, OrganisationID: "org-a", Capacity: 5,
 		ReleaseAt: baseRelease, StartsAt: baseStart, EndsAt: baseStart.Add(time.Hour),
 	})
-	f := &fixture{svc: New(store, &seqIDGen{}, testTTL, domain.Placement{}), store: store, clock: clock}
+	f := &fixture{svc: New(store, &seqIDGen{}, testTTL, domain.Unsharded("authority-1")), store: store, clock: clock}
 
 	r := reserveAs(t, f, "org-b", "org-a", "k-1")
 
@@ -212,5 +213,83 @@ func TestOwnerConfirmAndCancelStillSucceed(t *testing.T) {
 	second := f.reserve(t, "owner2", "k-3")
 	if got := f.cancel(t, "owner2", "k-4", second.ReservationID); got.Outcome != domain.OutcomeAdmittedSuccess {
 		t.Fatalf("owner cancel: %q/%q", got.Outcome, got.Reason)
+	}
+}
+
+// refusingSlotRepo is a repository whose slot lock cannot be taken. Anything that reaches
+// LockSlot fails loudly instead of returning a plausible answer.
+//
+// TestCrossAuthorityRefusalTouchesNoSlotState proves the refusal changes no slot *state*,
+// which a policy check moved to *after* LockSlot would also satisfy — capacity would still
+// be untouched, and the cited negative control would look stronger than the test. This
+// proves the stronger thing the design actually requires: the refusal never enters the
+// slot path at all ("no slot lookup, reservation, claim, booking, or other slot-authority
+// work" — design note §5.3).
+type refusingSlotRepo struct {
+	inner  domain.Repository
+	locked bool
+}
+
+func (r *refusingSlotRepo) WithinTx(ctx context.Context, fn func(context.Context, domain.Tx) error) error {
+	return r.inner.WithinTx(ctx, func(ctx context.Context, tx domain.Tx) error {
+		return fn(ctx, &refusingSlotTx{Tx: tx, repo: r})
+	})
+}
+
+type refusingSlotTx struct {
+	domain.Tx
+	repo *refusingSlotRepo
+}
+
+func (t *refusingSlotTx) LockSlot(ctx context.Context, ref domain.SlotRef) (domain.Slot, error) {
+	t.repo.locked = true
+	return domain.Slot{}, errSlotPathEntered
+}
+
+var errSlotPathEntered = errors.New("the cross-authority refusal entered the slot path")
+
+func TestCrossAuthorityRefusalNeverEntersTheSlotPath(t *testing.T) {
+	placement, err := domain.ParsePlacement([]byte(
+		`{"version":"routing-v1","homes":{"org-a":"authority-1","org-b":"authority-2"}}`))
+	if err != nil {
+		t.Fatalf("parsing placement: %v", err)
+	}
+
+	clock := &manualClock{t: baseNow}
+	store := inmem.New(clock)
+	store.SeedSlot(domain.Slot{
+		ID: slot, OrganisationID: "org-a", Capacity: 5,
+		ReleaseAt: baseRelease, StartsAt: baseStart, EndsAt: baseStart.Add(time.Hour),
+	})
+	repo := &refusingSlotRepo{inner: store}
+	svc := New(repo, &seqIDGen{}, testTTL, placement)
+
+	got, err := svc.Reserve(context.Background(), ReserveCommand{
+		UserRef:        domain.UserRef{OrganisationID: "org-b", UserID: "u-1"},
+		SlotRef:        domain.SlotRef{OrganisationID: "org-a", SlotID: slot},
+		IdempotencyKey: "k-1",
+	})
+	if err != nil {
+		t.Fatalf("Reserve returned a fault: %v", err)
+	}
+	if repo.locked {
+		t.Error("the refusal called LockSlot; it must be decided before any slot-authority work")
+	}
+	if got.Reason != domain.ReasonCrossAuthorityUnsupported {
+		t.Errorf("reason = %q, want %q", got.Reason, domain.ReasonCrossAuthorityUnsupported)
+	}
+
+	// The control: a *supported* booking must still reach the slot path, so the spy is
+	// proved to be watching something reachable rather than a path nothing takes.
+	repo.locked = false
+	if _, err := svc.Reserve(context.Background(), ReserveCommand{
+		UserRef:        domain.UserRef{OrganisationID: "org-a", UserID: "u-2"},
+		SlotRef:        domain.SlotRef{OrganisationID: "org-a", SlotID: slot},
+		IdempotencyKey: "k-2",
+	}); !errors.Is(err, errSlotPathEntered) {
+		t.Fatalf("a supported reserve did not reach LockSlot (err = %v)", err)
+	}
+	if !repo.locked {
+		t.Error("a supported reserve must reach the slot path")
 	}
 }

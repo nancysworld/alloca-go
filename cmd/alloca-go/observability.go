@@ -70,7 +70,9 @@ func telemetryMode() (string, error) {
 // rather than a completed request's outcome (internal/metrics). It is nil when metrics
 // are off, for the same reason every other signal is: "off" has to mean off, or the
 // §6.2 telemetry comparison is measuring two different services.
-func buildRecorder(reg *prometheus.Registry, pool *pgxpool.Pool, logger *slog.Logger, mode string) (telemetry.Recorder, func(context.Context, domain.Operation)) {
+func buildRecorder(
+	reg *prometheus.Registry, pool *pgxpool.Pool, logger *slog.Logger, mode string,
+) (telemetry.Recorder, func(context.Context, domain.Operation)) {
 	reg.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),

@@ -418,7 +418,13 @@ func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (domain.Result,
 // The reservation → slot lookup deliberately establishes no timestamp: it runs
 // before the lock, so its instant is exactly the stale one the authoritative-time
 // contract rejects. Only the LockSlot below fixes the attempt's now.
-func (s *Service) lockByReservation(ctx context.Context, tx domain.Tx, id domain.ReservationID, caller domain.UserRef, scope domain.ScopeKey, hash string) (slot domain.Slot, res domain.Reservation, now time.Time, done bool, result domain.Result, err error) {
+func (s *Service) lockByReservation(
+	ctx context.Context, tx domain.Tx, id domain.ReservationID, caller domain.UserRef,
+	scope domain.ScopeKey, hash string,
+) (
+	slot domain.Slot, res domain.Reservation, now time.Time,
+	done bool, result domain.Result, err error,
+) {
 	ref, owner, err := tx.ReservationTarget(ctx, id)
 	if errors.Is(err, domain.ErrNotFound) {
 		result, err = s.unknownTarget(ctx, tx, scope, hash)

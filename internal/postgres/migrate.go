@@ -162,7 +162,9 @@ func CheckSchema(ctx context.Context, q SchemaQuerier) (applied int64, err error
 			ErrSchemaIncompatible, *version, expected)
 	}
 	if *version > expected {
-		return 0, fmt.Errorf("%w: authority is at version %d but this binary expects %d; the authority has migrations this build does not carry, so roll the schema back or deploy the matching binary",
+		return 0, fmt.Errorf("%w: authority is at version %d but this binary expects %d; "+
+			"the authority has migrations this build does not carry, so roll the schema "+
+			"back or deploy the matching binary",
 			ErrSchemaIncompatible, *version, expected)
 	}
 	return *version, nil

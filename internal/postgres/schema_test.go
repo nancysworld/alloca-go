@@ -9,8 +9,11 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// stubRow answers one Scan, so the gate's refusal paths can be exercised without a
-// database. The real query is covered by the integration suite.
+// stubRow answers one Scan, so the gate's *comparison* branches can be exercised without a
+// database. The query itself — the goose table name, its predicate, and the pgx scan into a
+// nullable — is covered by TestCheckSchemaAgainstTheMigratedDatabase in the integration
+// suite. Neither test covers the other: this one cannot see a wrong column name, and that
+// one cannot reach the refusal branches without corrupting a shared database.
 type stubRow struct {
 	version *int64
 	err     error

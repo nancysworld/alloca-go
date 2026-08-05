@@ -425,7 +425,7 @@ func (s *Service) lockByReservation(
 	slot domain.Slot, res domain.Reservation, now time.Time,
 	done bool, result domain.Result, err error,
 ) {
-	ref, owner, err := tx.ReservationTarget(ctx, id)
+	slotRef, userRef, err := tx.ReservationTarget(ctx, id)
 	if errors.Is(err, domain.ErrNotFound) {
 		result, err = s.unknownTarget(ctx, tx, scope, hash)
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, result, err
@@ -433,9 +433,9 @@ func (s *Service) lockByReservation(
 	if err != nil {
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, domain.Result{}, err
 	}
-	// A caller who is not the owner is told the reservation does not exist, and is told
-	// it here — before the slot lock, so a wrong identity cannot contend with the
-	// traffic of a slot it has no claim on.
+	// A caller who does not own the reservation is told it does not exist, and is told so
+	// here — before the slot lock, so a wrong identity cannot contend with the traffic of
+	// a slot it has no claim on.
 	//
 	// This is a deliberate correction, not a preserved check: before PR3a the UserRef
 	// scoped idempotency and nothing else, so a caller holding a reservation identifier
@@ -443,11 +443,11 @@ func (s *Service) lockByReservation(
 	// makes the correction necessary as well as right — without it, the answer to a
 	// wrong identity would depend on whether two organisations happened to be colocated
 	// (horizontal-database-authority §5.4).
-	if owner != caller {
+	if userRef != caller {
 		result, err = s.unknownTarget(ctx, tx, scope, hash)
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, result, err
 	}
-	slot, err = tx.LockSlot(ctx, ref)
+	slot, err = tx.LockSlot(ctx, slotRef)
 	if err != nil {
 		// A reservation pointing at a missing slot is an invariant violation.
 		return domain.Slot{}, domain.Reservation{}, time.Time{}, true, domain.Result{}, err

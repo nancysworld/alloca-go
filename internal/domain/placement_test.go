@@ -172,6 +172,21 @@ func TestParsePlacementRejectsDocumentsThatCannotDescribeOneRouting(t *testing.T
 			want: "more than once",
 		},
 		{
+			// The outer object has the same last-wins hazard its homes object had: two
+			// homes objects would silently replace one routing with another before
+			// anything downstream could see there had been two.
+			name: "homes given twice",
+			doc: `{"version": "v1",
+				"homes": {"org-a": "authority-1"},
+				"homes": {"org-a": "authority-2"}}`,
+			want: `repeats the "homes" field`,
+		},
+		{
+			name: "version given twice",
+			doc:  `{"version": "v1", "version": "v2", "homes": {"org-a": "authority-1"}}`,
+			want: `repeats the "version" field`,
+		},
+		{
 			name: "trailing document",
 			doc:  `{"version": "v1", "homes": {"org-a": "authority-1"}} {"version": "v2", "homes": {"org-a": "authority-2"}}`,
 			want: "trailing content",

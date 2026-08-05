@@ -61,7 +61,8 @@ excursion. PR3 is correctness-first by design, not by descope.
 | 11 | Authority-aware verifier with one aggregated verdict | 3b | §6.5 |
 | 12 | Phase 1 correctness experiments and per-authority verdicts | 3c | §11 |
 | 13 | Failure-isolation experiment — one authority down, ambiguous mutations replayed, then restored | 3c | §11 |
-| 14 | Ambiguous-request register and post-restoration replay pass (§5.7) | 3b/3c | §6.5 |
+| 14 | Ambiguous-request register and `ResolveAmbiguous` (§5.7) | 3b | §6.5 |
+| 15 | `classifyCommit` ambiguity fix and the INV-21 mid-`COMMIT` fault test | 3b, early | §3.2 |
 
 ## 3. What the existing code makes cheap, and what it does not
 
@@ -303,6 +304,44 @@ The design note's map is now four organisations across two authorities (§5.1 of
 workload and the distribution reporting of the plan's §5.6 have something to show. It stays a
 run parameter that implementation may change on evidence, not an architectural commitment —
 recorded only so the fixture is chosen rather than defaulted into.
+
+## 6a. What PR3b carries early, and what stays PR3c
+
+Nancy's call, 2026-08-05, after PR3a merged: rather than hold finished work on a branch of
+its own, PR3b takes everything that already exists and PR3c keeps only what still has to be
+built. Fewer branches, one review, and nothing parked where it cannot be seen.
+
+**Already built and riding in PR3b** (branch `agent/ag-sept-pr3b`):
+
+- the generator's **ambiguous-request register** and `ResolveAmbiguous`. The register was
+  always PR3b's — the plan's §14 asks PR3b to "retain the idempotency keys of any
+  `unknown_replayable` response so PR3c can replay them" — and the replay mechanism is
+  built alongside it rather than split across two PRs for the sake of the boundary;
+- the **`classifyCommit` ambiguity fix**: class 57 (operator intervention) and class 08
+  (connection exception) SQLSTATEs are the session ending, not the server answering the
+  `COMMIT`, so they are now `unknown_replayable` rather than definite failures;
+- the **INV-21 mid-`COMMIT` fault test** that found that defect, and INV-21's revised
+  register entry.
+
+The last two were nominally PR3c's and explicitly unfunded (§4). They are here because
+they are *done*, and because the fix is a correctness change to merged code that should not
+wait on a measurement PR. **Consequence, accepted rather than overlooked:** the fix reaches
+`main` when PR3b merges, so until then `main` misclassifies a mid-`COMMIT` session death as
+a definite failure. Low risk — no production deployment exists, and the experiment that
+would deliberately trigger it is PR3c, which lands after.
+
+**Still PR3c's, and still to be built:**
+
+1. the **post-restoration resolution pass** as a step of the failure-isolation experiment —
+   calling `ResolveAmbiguous` after the authority is back and before the correctness
+   verdict, and refusing to reconcile a run with anything left unresolved
+   (`ag-sept-plan-new.md` §6.5);
+2. the **failure-isolation experiment** itself, with affected and unaffected populations
+   reported separately as their own evidence class;
+3. the **Phase 1 correctness matrix** and per-authority verdicts;
+4. **INV-21's remaining half.** The *commit-landed-but-acknowledgement-lost* case is still
+   unproven and needs a proxy that drops the reply; the register says so, and PR3c must not
+   claim the whole invariant on the strength of the half that is tested.
 
 ## 7. Not in PR3
 

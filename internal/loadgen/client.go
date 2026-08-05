@@ -70,10 +70,11 @@ type body struct {
 	BookingID     string         `json:"booking_id"`
 }
 
-// Client issues booking requests against one service base URL.
+// Client issues booking requests against the service unit that owns each request's
+// organisation, as decided by its Router.
 type Client struct {
-	http    *http.Client
-	baseURL string
+	http   *http.Client
+	router Router
 	// validate reports whether responses are checked. False is the negative control's
 	// mode and nothing else — see the package comment.
 	validate bool
@@ -82,9 +83,15 @@ type Client struct {
 	ambiguous ambiguityRegister
 }
 
-// NewClient builds a Client. validate=false is the response-validation negative control
-// and marks every run it produces invalid.
+// NewClient builds a Client routing everything to one base URL — the unsharded case, and
+// what every run before PR3b did. validate=false is the response-validation negative
+// control and marks every run it produces invalid.
 func NewClient(baseURL string, timeout time.Duration, validate bool) *Client {
+	return NewRoutedClient(SingleTarget(baseURL), timeout, validate)
+}
+
+// NewRoutedClient builds a Client that routes by placement.
+func NewRoutedClient(router Router, timeout time.Duration, validate bool) *Client {
 	return &Client{
 		http: &http.Client{
 			Timeout: timeout,
@@ -98,27 +105,48 @@ func NewClient(baseURL string, timeout time.Duration, validate bool) *Client {
 				IdleConnTimeout:     90 * time.Second,
 			},
 		},
-		baseURL:  baseURL,
+		router:   router,
 		validate: validate,
 	}
 }
 
+// Router exposes the routing this client uses, so the manifest can record the version and
+// the harness can reach every unit's /meta without being told where they are twice.
+func (c *Client) Router() Router { return c.router }
+
 // Reserve holds one unit of a slot for a user.
+//
+// Routed by the *user's* organisation, not the slot's: user-home owns the schedule claim
+// and the client idempotency scope, so it is where this mutation and every replay of it
+// belong (horizontal-database-authority §4.1). Whether the slot's organisation is colocated
+// is the service's decision, not the router's — sending it there and being refused is the
+// supported behaviour, and routing around the refusal would hide it.
 func (c *Client) Reserve(ctx context.Context, u User, slot Slot, key string) Response {
-	path := fmt.Sprintf("%s/v1/slots/%s/%s/reservations",
-		c.baseURL, slot.OrganisationID, slot.SlotID)
+	base, err := c.router.For(u.OrganisationID)
+	if err != nil {
+		return unroutable(string(domain.OpReserve), err)
+	}
+	path := fmt.Sprintf("%s/v1/slots/%s/%s/reservations", base, slot.OrganisationID, slot.SlotID)
 	return c.do(ctx, string(domain.OpReserve), path, u, key)
 }
 
 // Confirm turns a held reservation into a booking.
 func (c *Client) Confirm(ctx context.Context, u User, reservationID, key string) Response {
-	path := fmt.Sprintf("%s/v1/reservations/%s/confirm", c.baseURL, reservationID)
+	base, err := c.router.For(u.OrganisationID)
+	if err != nil {
+		return unroutable(string(domain.OpConfirm), err)
+	}
+	path := fmt.Sprintf("%s/v1/reservations/%s/confirm", base, reservationID)
 	return c.do(ctx, string(domain.OpConfirm), path, u, key)
 }
 
 // Cancel releases a held reservation or an active booking.
 func (c *Client) Cancel(ctx context.Context, u User, reservationID, key string) Response {
-	path := fmt.Sprintf("%s/v1/reservations/%s/cancel", c.baseURL, reservationID)
+	base, err := c.router.For(u.OrganisationID)
+	if err != nil {
+		return unroutable(string(domain.OpCancel), err)
+	}
+	path := fmt.Sprintf("%s/v1/reservations/%s/cancel", base, reservationID)
 	return c.do(ctx, string(domain.OpCancel), path, u, key)
 }
 
@@ -245,4 +273,18 @@ func transportOutcome(ctx context.Context, err error) domain.Outcome {
 func isTimeout(err error) bool {
 	var nerr net.Error
 	return errors.As(err, &nerr) && nerr.Timeout()
+}
+
+// unroutable reports a request the generator could not address at all.
+//
+// It is marked Invalid rather than given an outcome the service might have produced: no
+// request was sent, so there is no server behaviour to classify, and counting it as an
+// internal_failure would attribute a harness error to the thing being measured. Invalid is
+// the harness's own channel for "this run is not trustworthy" (measurement-contract §5).
+func unroutable(op string, err error) Response {
+	return Response{
+		Operation: op,
+		Outcome:   domain.OutcomeInternalFailure,
+		Invalid:   "unroutable request: " + err.Error(),
+	}
 }

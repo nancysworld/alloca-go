@@ -3,7 +3,7 @@
 **Status:** Draft v0.5 — normative for all remaining AG-Sept work
 **Created:** 5 August 2026, superseding [`ag-sept-plan-old.md`](ag-sept-plan-old.md) (v0.4, 31 July 2026)
 **Delivery window:** August 2026
-**Development budget:** 15 focused development days remaining — 19.5 for the milestone, of which 4.5 are spent — followed by 2–3 days for reruns, review, refinement, documentation, and public-release preparation
+**Development budget:** 19.5 focused development days for the milestone, of which 5.5 are spent (PR1, PR2, PR3a) and 14.0 remain — followed by 2–3 days for reruns, review, refinement, documentation, and public-release preparation
 **Predecessor:** AG-M1 — correct transactional core and end-to-end service path
 
 ## 0. What changed from v0.4, and why
@@ -186,23 +186,34 @@ label according to the evidence convention in
 
 ## 4. Time budget and priority
 
-The development allocation is a planning constraint. 4.5 days are spent; 15 remain. **Half a day
+The development allocation is a planning constraint. 5.5 days are spent; 14.0 remain. **Half a day
 is the unit**, here and in the scope notes: nothing is estimated well enough to distinguish 0.3
 from 0.4, and finer granularity is false precision that invites its own overrun (Nancy's call,
 2026-08-05).
 
-| Workstream | PR | Days | Status |
+| Workstream | PR | Allocated | Status |
 |---|---|---:|---|
-| Measurement harness and load generator | PR1 | 2.0 | spent |
-| Single-instance frontier, with the diagnostic time-series minimum | PR2 | 2.5 | spent |
-| Placement, booking policy, and confirm/cancel ownership | PR3a | 3.0 | remaining |
-| Multi-authority harness — topology, generator routing, authority-aware verification | PR3b | 2.5 | remaining |
+| Measurement harness and load generator | PR1 | 2.0 | spent 2.0 — merged `71914a4` |
+| Single-instance frontier, with the diagnostic time-series minimum | PR2 | 2.5 | spent 2.5 — merged `0d40de4` |
+| Placement, booking policy, and confirm/cancel ownership | PR3a | 3.0 | **done in 1.0 — merged `aa1e3a5`; 2.0 returned to contingency** |
+| Multi-authority harness — topology, generator routing, authority-aware verification | PR3b | 2.5 | in progress, PR #14 |
 | Multi-authority correctness and failure-isolation evidence | PR3c | 2.0 | remaining |
-| Container and local scale-out — replicas, exporters, controls | PR4 | 4.5 | remaining |
+| Container and local scale-out — replicas, exporters, controls | PR4 | 4.5 | remaining, provisional envelope |
 | Architecture conclusions and one justified boundary | PR5 | 1.5 | remaining |
-| **Committed** | | **18.0** | 13.5 of it remaining |
-| Unallocated contingency | | 1.5 | remaining |
-| **Total milestone budget** | | **19.5** | |
+| **Committed** | | **16.0** | 5.5 spent, 10.5 remaining |
+| Unallocated contingency | | 3.5 | remaining |
+| **Total milestone budget** | | **19.5** | unchanged |
+
+**PR3a came in at 1.0 against 3.0, and the 2.0 goes to contingency rather than to scope.**
+The figure recorded is the conservative one: implementation alone was about half a day, and
+1.0 is what it cost including the design decisions and the re-planning around it. Being
+generous to ourselves on our own favourable numbers is how estimates stop meaning anything.
+
+The gain is **not** an invitation to widen PR3b or PR4. It is held for where this milestone
+is most likely to need it — reruns, an investigation that does not resolve on the first
+attempt, a hard problem that turns out to deserve more argument than a day allows. PR2's
+unexplained ~2× excursion is the standing example of work that consumed far more than its
+share, and nothing about PR3a going well makes that less likely to recur.
 
 **Every PR is funded at what its scope costs.** No PR carries a deliberate shortfall, and no
 part of §14 depends on the reserve to be reachable. This is the difference the increased budget
@@ -223,8 +234,8 @@ a domain-contract correction with its own normative updates and tests
 ([`ag-sept-pr3-scope.md`](ag-sept-pr3-scope.md) §5.5). The half day came from contingency rather
 than from another PR.
 
-**The 1.5 remaining unallocated days are contingency, not scope.** They are drawn on before
-§16's descope order, and two things could plausibly claim them, in this order:
+**The 3.5 unallocated days are contingency, not scope.** They are drawn on before §16's
+descope order, and two things could plausibly claim them, in this order:
 
 1. **PR2's unexplained ~2× excursions turning out to be reproducible and diagnosable** once
    PR4's node exporter can see them. That would be a real finding, and chasing it is worth more
@@ -232,7 +243,18 @@ than from another PR.
 2. **Group A of the PR2 deferral register** — the overload question, roughly 1.5 days (§14).
    It is the founding unreproduced question in `high-level-design.md` §1.1, and it is the one
    candidate here that is *new scope* rather than insurance. Adding it is Nancy's call, not a
-   default, and at 1.5 days it would now consume nearly all of what remains.
+   default — and PR3a's returned 2.0 makes it affordable for the first time, which is a
+   reason to decide it deliberately rather than to let it drift in.
+
+**Review depth is the throughput control, and it is Nancy's to set** (2026-08-05). The
+implementation side of this milestone is not the constraint; the review step is, and it can
+be traded for speed when momentum matters more than scrutiny. The consequence is stated
+rather than left implicit: less detailed review moves the burden of catching errors onto
+the implementation side's own verification — the mutation tests, the live SQL checks, the
+re-measurement of quoted figures. Where that verification is weak, a lighter review does not
+find it. PR3a's own record is the argument: three of nine review findings were comments of
+mine asserting the opposite of the truth, and a pre-merge audit found six more stale claims.
+Those were caught by review. Going faster means catching more of them before review.
 
 Unspent contingency is not a licence to expand a PR. It returns to the reserve.
 

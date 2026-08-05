@@ -4,7 +4,8 @@
 PR split are agreed, and §6 holds no blocker — its one remaining item is a starting fixture, not
 a contract.
 **Budget:** 7.5 development days across three PRs ([AG-Sept plan](ag-sept-plan-new.md) §4) —
-3.0 for PR3a, 2.5 for PR3b, 2.0 for PR3c
+3.0 for PR3a, 2.5 for PR3b, 2.0 for PR3c. **PR3a came in at 1.0**; the 2.0 difference went
+to the plan's contingency, not to PR3b or PR3c.
 **Owner doc:** [ag-sept-plan-new.md](ag-sept-plan-new.md) §8.2 and §6.5 are normative for what
 this PR builds; this note records only how PR3 discharges them and the choices made along the
 way
@@ -151,7 +152,7 @@ targeted fault-injection mechanism proves cheap it can be taken inside PR3c; if 
 is a contingency draw of about 0.5 days or it is left open, exactly as it has been since AG-M1.
 What PR3c must not do is claim the discharge from a generic shutdown.
 
-**PR3a — 3.0 days**
+**PR3a — 3.0 days allocated, 1.0 actual**
 
 | Component | Days |
 |---|---:|

@@ -2,9 +2,9 @@
 
 **Status:** Complete — every decision in §5 settled, nothing open in §6. Results and the
 frontier report are in [`../measurements/pr2-frontier/`](../measurements/pr2-frontier/)
-**Budget:** 2.5 development days ([AG-Sept plan](ag-sept-plan.md) §14) — 1.0 for the retention
+**Budget:** 2.5 development days ([AG-Sept plan](ag-sept-plan-old.md) §14) — 1.0 for the retention
 path and diagnostic panels, 1.5 for the sweeps, controls, and report
-**Owner doc:** [ag-sept-plan.md](ag-sept-plan.md) §7 and §12.2 are normative for what this PR
+**Owner doc:** [ag-sept-plan-old.md](ag-sept-plan-old.md) §7 and §12.2 are normative for what this PR
 measures; this note records only how PR2 discharges them and the choices made along the way.
 
 ## 1. Exit gate

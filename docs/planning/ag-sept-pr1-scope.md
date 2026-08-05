@@ -1,8 +1,8 @@
 # AG-Sept PR1 — Measurement substrate and load harness (scope)
 
 **Status:** Complete — every decision in §3 settled, exit gate discharged in §3.6
-**Budget:** 2 development days ([AG-Sept plan](ag-sept-plan.md) §14)
-**Owner doc:** [ag-sept-plan.md](ag-sept-plan.md) §6 is normative for what this PR builds; this
+**Budget:** 2 development days ([AG-Sept plan](ag-sept-plan-old.md) §14)
+**Owner doc:** [ag-sept-plan-old.md](ag-sept-plan-old.md) §6 is normative for what this PR builds; this
 note records only how PR1 discharges it and the choices settled along the way.
 
 ## 1. Exit gate
@@ -153,7 +153,7 @@ off, reporting the throughput and p99 delta. **PR1 does not do that, and does no
 §6.2 is discharged.** What PR1 discharges is the decision §6.2 gates — whether to build the
 asynchronous sink now — on the evidence that a healthy sink costs under 0.2% of a request.
 The end-to-end comparison belongs with the sweeps that can run it, and is scoped to PR2 in
-[`ag-sept-plan.md`](ag-sept-plan.md) §14.
+[`ag-sept-plan-old.md`](ag-sept-plan-old.md) §14.
 
 ### 3.4 Quotability is a level, not a boolean (settled 2026-08-03)
 
@@ -168,7 +168,7 @@ next level up and what blocks it. Both binaries take `-require` so the bar is de
 caller, who is the only one who knows what the number is for. The ladder and the per-level
 field lists are in
 [`../operations/load-harness.md`](../operations/load-harness.md) §4; the staging they
-implement is `ag-sept-plan.md` §14's.
+implement is `ag-sept-plan-old.md` §14's.
 
 Levels are named for the claim rather than for the PR that first reaches them. A report in
 `docs/measurements/` outlives the schedule, and `"PR1"` would oblige a later reader to
@@ -271,7 +271,7 @@ keeps them apart. See §3.5.
 the generator and service sharing a machine. It proves the substrate works end to end; it
 establishes no capacity, and no number in it may be quoted as one. PR2 measures the
 one-instance frontier, still co-resident and therefore still bounded rather than published;
-separate generator compute arrives with PR4 (`ag-sept-plan.md` §14).
+separate generator compute arrives with PR4 (`ag-sept-plan-old.md` §14).
 
 ## 4. Non-goals
 

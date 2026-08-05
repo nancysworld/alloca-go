@@ -13,10 +13,10 @@ import (
 const twoAuthorities = `{
 	"version": "test-v1",
 	"homes": {
-		"org-a": "authority-a",
-		"org-b": "authority-b",
-		"org-c": "authority-a",
-		"org-d": "authority-b"
+		"org-a": "authority-1",
+		"org-b": "authority-2",
+		"org-c": "authority-1",
+		"org-d": "authority-2"
 	}
 }`
 
@@ -33,10 +33,10 @@ func TestPlacementRoutesEachOrganisationToItsAssignedAuthority(t *testing.T) {
 	p := mustParse(t, twoAuthorities)
 
 	for org, want := range map[domain.OrganisationID]domain.AuthorityID{
-		"org-a": "authority-a",
-		"org-b": "authority-b",
-		"org-c": "authority-a",
-		"org-d": "authority-b",
+		"org-a": "authority-1",
+		"org-b": "authority-2",
+		"org-c": "authority-1",
+		"org-d": "authority-2",
 	} {
 		got, ok := p.AuthorityFor(org)
 		if !ok {
@@ -99,28 +99,28 @@ func TestColocationIsDecidedByAuthorityNotByOrganisationIdentity(t *testing.T) {
 func TestServesAnswersWhatOneUnitOwns(t *testing.T) {
 	p := mustParse(t, twoAuthorities)
 
-	if !p.Serves("authority-a", "org-c") {
-		t.Error("authority-a should serve org-c")
+	if !p.Serves("authority-1", "org-c") {
+		t.Error("authority-1 should serve org-c")
 	}
-	if p.Serves("authority-a", "org-b") {
-		t.Error("authority-a must not serve org-b, which is homed on authority-b")
+	if p.Serves("authority-1", "org-b") {
+		t.Error("authority-1 must not serve org-b, which is homed on authority-2")
 	}
-	if p.Serves("authority-a", "org-unknown") {
-		t.Error("authority-a must not serve an unplaced organisation")
+	if p.Serves("authority-1", "org-unknown") {
+		t.Error("authority-1 must not serve an unplaced organisation")
 	}
 }
 
 func TestOrganisationsAndAuthoritiesAreSortedAndComplete(t *testing.T) {
 	p := mustParse(t, twoAuthorities)
 
-	orgs := p.Organisations("authority-a")
+	orgs := p.Organisations("authority-1")
 	if len(orgs) != 2 || orgs[0] != "org-a" || orgs[1] != "org-c" {
-		t.Errorf("Organisations(authority-a) = %v, want [org-a org-c]", orgs)
+		t.Errorf("Organisations(authority-1) = %v, want [org-a org-c]", orgs)
 	}
 
 	authorities := p.Authorities()
-	if len(authorities) != 2 || authorities[0] != "authority-a" || authorities[1] != "authority-b" {
-		t.Errorf("Authorities() = %v, want [authority-a authority-b]", authorities)
+	if len(authorities) != 2 || authorities[0] != "authority-1" || authorities[1] != "authority-2" {
+		t.Errorf("Authorities() = %v, want [authority-1 authority-2]", authorities)
 	}
 }
 
@@ -135,12 +135,12 @@ func TestParsePlacementRejectsDocumentsThatCannotDescribeOneRouting(t *testing.T
 	}{
 		{
 			name: "no version",
-			doc:  `{"homes": {"org-a": "authority-a"}}`,
+			doc:  `{"homes": {"org-a": "authority-1"}}`,
 			want: "no version",
 		},
 		{
 			name: "blank version",
-			doc:  `{"version": "   ", "homes": {"org-a": "authority-a"}}`,
+			doc:  `{"version": "   ", "homes": {"org-a": "authority-1"}}`,
 			want: "no version",
 		},
 		{
@@ -155,12 +155,12 @@ func TestParsePlacementRejectsDocumentsThatCannotDescribeOneRouting(t *testing.T
 		},
 		{
 			name: "empty organisation identifier",
-			doc:  `{"version": "v1", "homes": {"": "authority-a"}}`,
+			doc:  `{"version": "v1", "homes": {"": "authority-1"}}`,
 			want: "empty organisation identifier",
 		},
 		{
 			name: "unknown field",
-			doc:  `{"version": "v1", "home": {"org-a": "authority-a"}}`,
+			doc:  `{"version": "v1", "home": {"org-a": "authority-1"}}`,
 			want: "unknown field",
 		},
 		{
@@ -189,15 +189,15 @@ func TestParsePlacementRejectsDocumentsThatCannotDescribeOneRouting(t *testing.T
 func TestValidateUnitRejectsAUnitWithNothingToServe(t *testing.T) {
 	p := mustParse(t, twoAuthorities)
 
-	if err := p.ValidateUnit("authority-a"); err != nil {
-		t.Fatalf("authority-a serves org-a and org-c, but the gate rejected it: %v", err)
+	if err := p.ValidateUnit("authority-1"); err != nil {
+		t.Fatalf("authority-1 serves org-a and org-c, but the gate rejected it: %v", err)
 	}
 
-	err := p.ValidateUnit("authority-c")
+	err := p.ValidateUnit("authority-3")
 	if err == nil {
 		t.Fatal("a unit whose authority is absent from the map started successfully")
 	}
-	if !strings.Contains(err.Error(), "authority-c") || !strings.Contains(err.Error(), "test-v1") {
+	if !strings.Contains(err.Error(), "authority-3") || !strings.Contains(err.Error(), "test-v1") {
 		t.Errorf("error %q should name the unserved authority and the routing version", err)
 	}
 
@@ -221,7 +221,7 @@ func TestZeroPlacementRoutesNothingAndFailsTheStartupGate(t *testing.T) {
 	if _, placed := p.Colocated("org-a", "org-a"); placed {
 		t.Error("the zero Placement reported an organisation as placed")
 	}
-	if err := p.ValidateUnit("authority-a"); err == nil {
+	if err := p.ValidateUnit("authority-1"); err == nil {
 		t.Error("a unit started against the zero Placement")
 	}
 }
@@ -256,13 +256,13 @@ func TestUnshardedPlacementColocatesEveryOrganisation(t *testing.T) {
 	if !p.Serves("authority-only", "any-org") {
 		t.Error("the sole authority must serve every organisation")
 	}
-	if p.Serves("some-other-authority", "any-org") {
+	if p.Serves("authority-9", "any-org") {
 		t.Error("an authority that is not the sole one must serve nothing")
 	}
 	if err := p.ValidateUnit("authority-only"); err != nil {
 		t.Errorf("the sole authority failed its own startup gate: %v", err)
 	}
-	if err := p.ValidateUnit("authority-other"); err == nil {
+	if err := p.ValidateUnit("authority-9"); err == nil {
 		t.Error("a unit whose authority is not the unsharded one started successfully")
 	}
 }
@@ -276,13 +276,13 @@ func TestUnshardedPlacementColocatesEveryOrganisation(t *testing.T) {
 func TestReturnedOrganisationsDoNotAliasTheMap(t *testing.T) {
 	p := mustParse(t, twoAuthorities)
 
-	orgs := p.Organisations("authority-a")
+	orgs := p.Organisations("authority-1")
 	orgs[0] = "org-tampered"
 
-	if got, _ := p.AuthorityFor("org-a"); got != "authority-a" {
+	if got, _ := p.AuthorityFor("org-a"); got != "authority-1" {
 		t.Errorf("org-a re-homed to %q through a returned slice", got)
 	}
-	if again := p.Organisations("authority-a"); again[0] != "org-a" {
+	if again := p.Organisations("authority-1"); again[0] != "org-a" {
 		t.Errorf("Organisations returned tampered data: %v", again)
 	}
 }

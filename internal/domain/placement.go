@@ -80,7 +80,7 @@ type placementDoc struct {
 
 // ParsePlacement builds a Placement from its JSON document:
 //
-//	{"version": "v1", "homes": {"org-a": "authority-a", "org-b": "authority-b"}}
+//	{"version": "v1", "homes": {"org-a": "authority-1", "org-b": "authority-2"}}
 //
 // It rejects a document that cannot describe one unambiguous routing: a missing or
 // empty version, an empty map, an organisation with no authority, or an authority with

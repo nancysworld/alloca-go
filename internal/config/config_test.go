@@ -346,8 +346,8 @@ func TestPlacementDefaultsToAnUnconfiguredSingleAuthority(t *testing.T) {
 
 func TestPlacementLoadsFromEnvironment(t *testing.T) {
 	cfg, err := Load(lookupFrom(map[string]string{
-		envAuthorityID: "authority-a",
-		envPlacement:   `{"version":"v1","homes":{"org-a":"authority-a"}}`,
+		envAuthorityID: "authority-1",
+		envPlacement:   `{"version":"v1","homes":{"org-a":"authority-1"}}`,
 	}))
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
@@ -355,8 +355,8 @@ func TestPlacementLoadsFromEnvironment(t *testing.T) {
 	if !cfg.Placement.Configured() {
 		t.Fatal("a placement document was supplied but Configured reports false")
 	}
-	if cfg.Placement.AuthorityID != "authority-a" {
-		t.Errorf("AuthorityID = %q, want authority-a", cfg.Placement.AuthorityID)
+	if cfg.Placement.AuthorityID != "authority-1" {
+		t.Errorf("AuthorityID = %q, want authority-1", cfg.Placement.AuthorityID)
 	}
 }
 
@@ -370,14 +370,14 @@ func TestPlacementConfigurationsThatCannotRouteAreRejected(t *testing.T) {
 	}{
 		{
 			name: "map without an authority identity",
-			env:  map[string]string{envPlacement: `{"version":"v1","homes":{"org-a":"authority-a"}}`},
+			env:  map[string]string{envPlacement: `{"version":"v1","homes":{"org-a":"authority-1"}}`},
 			want: envAuthorityID,
 		},
 		{
 			name: "two documents",
 			env: map[string]string{
-				envAuthorityID:   "authority-a",
-				envPlacement:     `{"version":"v1","homes":{"org-a":"authority-a"}}`,
+				envAuthorityID:   "authority-1",
+				envPlacement:     `{"version":"v1","homes":{"org-a":"authority-1"}}`,
 				envPlacementFile: "/etc/alloca/placement.json",
 			},
 			want: "one placement document",

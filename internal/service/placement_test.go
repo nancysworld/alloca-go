@@ -10,14 +10,14 @@ import (
 )
 
 // shardedFixture builds a service whose deployment splits organisations across two
-// writable authorities: org-a and org-c share authority-a, org-b is on authority-b.
+// writable authorities: org-a and org-c share authority-1, org-b is on authority-2.
 //
 // The slot always belongs to slotOrg, so a test chooses the case it wants by choosing
 // the *user's* organisation.
 func shardedFixture(t *testing.T, slotOrg domain.OrganisationID) *fixture {
 	t.Helper()
 	placement, err := domain.ParsePlacement([]byte(
-		`{"version":"routing-v1","homes":{"org-a":"authority-a","org-b":"authority-b","org-c":"authority-a"}}`))
+		`{"version":"routing-v1","homes":{"org-a":"authority-1","org-b":"authority-2","org-c":"authority-1"}}`))
 	if err != nil {
 		t.Fatalf("parsing placement: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestColocatedCrossOrganisationReserveSucceeds(t *testing.T) {
 	r := reserveAs(t, f, "org-c", "org-a", "k-1")
 
 	if r.Outcome != domain.OutcomeAdmittedSuccess {
-		t.Fatalf("outcome = %q (reason %q), want %q — org-a and org-c share authority-a",
+		t.Fatalf("outcome = %q (reason %q), want %q — org-a and org-c share authority-1",
 			r.Outcome, r.Reason, domain.OutcomeAdmittedSuccess)
 	}
 	if r.ReservationID == "" {

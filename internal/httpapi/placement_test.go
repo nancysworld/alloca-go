@@ -14,12 +14,12 @@ import (
 	"github.com/nancysworld/alloca-go/internal/service"
 )
 
-// shardedPlacement homes org-a and org-c on authority-a, and org-b on authority-b, so a
-// unit bound to authority-a owns two organisations and must refuse the third.
+// shardedPlacement homes org-a and org-c on authority-1, and org-b on authority-2, so a
+// unit bound to authority-1 owns two organisations and must refuse the third.
 func shardedPlacement(t *testing.T) domain.Placement {
 	t.Helper()
 	p, err := domain.ParsePlacement([]byte(
-		`{"version":"routing-v1","homes":{"org-a":"authority-a","org-b":"authority-b","org-c":"authority-a"}}`))
+		`{"version":"routing-v1","homes":{"org-a":"authority-1","org-b":"authority-2","org-c":"authority-1"}}`))
 	if err != nil {
 		t.Fatalf("parsing placement: %v", err)
 	}
@@ -58,7 +58,7 @@ func shardedServer(t *testing.T, svc BookingService, slots SlotLister, misroutes
 		Service:   svc,
 		Slots:     slots,
 		Placement: shardedPlacement(t),
-		Authority: "authority-a",
+		Authority: "authority-1",
 		OnMisroute: func(context.Context, domain.Operation) {
 			if misroutes != nil {
 				*misroutes++
@@ -95,7 +95,7 @@ func TestMisroutedMutationIsRefusedBeforeReachingTheService(t *testing.T) {
 			h := shardedServer(t, svc, nil, &misroutes)
 
 			rec := httptest.NewRecorder()
-			// org-b is homed on authority-b; this unit is authority-a.
+			// org-b is homed on authority-2; this unit is authority-1.
 			h.ServeHTTP(rec, mutationRequest(t, tc.method, tc.path, "org-b"))
 
 			if svc.called {
@@ -121,7 +121,7 @@ func TestMisroutedMutationIsRefusedBeforeReachingTheService(t *testing.T) {
 			if misroutes != 1 {
 				t.Errorf("misroute counter = %d, want 1: a deployment fault must not hide among client errors", misroutes)
 			}
-			for _, want := range []string{"authority-a", "org-b", "routing-v1"} {
+			for _, want := range []string{"authority-1", "org-b", "routing-v1"} {
 				if !strings.Contains(body.Message, want) {
 					t.Errorf("message %q does not mention %q", body.Message, want)
 				}
@@ -131,7 +131,7 @@ func TestMisroutedMutationIsRefusedBeforeReachingTheService(t *testing.T) {
 }
 
 // The organisations this unit *does* own must pass the guard untouched — including
-// org-c, which is a different organisation sharing authority-a. A guard that refused it
+// org-c, which is a different organisation sharing authority-1. A guard that refused it
 // would have broken colocated cross-organisation booking.
 func TestOwnedOrganisationsPassTheGuard(t *testing.T) {
 	for _, org := range []string{"org-a", "org-c"} {
@@ -143,7 +143,7 @@ func TestOwnedOrganisationsPassTheGuard(t *testing.T) {
 			h.ServeHTTP(rec, mutationRequest(t, http.MethodPost, "/v1/slots/org-a/slot-1/reservations", org))
 
 			if !svc.called {
-				t.Fatalf("a request for %s, which authority-a owns, was refused at the edge", org)
+				t.Fatalf("a request for %s, which authority-1 owns, was refused at the edge", org)
 			}
 			if rec.Code != http.StatusOK {
 				t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -204,8 +204,8 @@ func TestMetaReportsThisUnitsPlacement(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &meta); err != nil {
 		t.Fatalf("decoding /meta: %v", err)
 	}
-	if meta.Placement.AuthorityID != "authority-a" {
-		t.Errorf("authority_id = %q, want authority-a", meta.Placement.AuthorityID)
+	if meta.Placement.AuthorityID != "authority-1" {
+		t.Errorf("authority_id = %q, want authority-1", meta.Placement.AuthorityID)
 	}
 	if meta.Placement.RoutingVersion != "routing-v1" {
 		t.Errorf("routing_version = %q, want routing-v1", meta.Placement.RoutingVersion)

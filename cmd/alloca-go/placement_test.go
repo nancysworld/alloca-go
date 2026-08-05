@@ -11,7 +11,7 @@ import (
 
 const placementDoc = `{
 	"version": "test-v1",
-	"homes": {"org-a": "authority-a", "org-b": "authority-b", "org-c": "authority-a"}
+	"homes": {"org-a": "authority-1", "org-b": "authority-2", "org-c": "authority-1"}
 }`
 
 // The behaviour every deployment before PR3a had, and must keep having: no placement
@@ -39,14 +39,14 @@ func TestNoPlacementConfiguredIsAnUnshardedDeployment(t *testing.T) {
 
 func TestInlinePlacementIsParsedAndGated(t *testing.T) {
 	p, authority, err := resolvePlacement(config.PlacementSource{
-		AuthorityID: "authority-a",
+		AuthorityID: "authority-1",
 		Document:    placementDoc,
 	})
 	if err != nil {
 		t.Fatalf("resolving a valid placement: %v", err)
 	}
-	if authority != "authority-a" {
-		t.Errorf("unit authority = %q, want authority-a", authority)
+	if authority != "authority-1" {
+		t.Errorf("unit authority = %q, want authority-1", authority)
 	}
 	if p.IsUnsharded() {
 		t.Fatal("a configured placement must not be unsharded")
@@ -54,8 +54,8 @@ func TestInlinePlacementIsParsedAndGated(t *testing.T) {
 	if v := p.Version(); v != "test-v1" {
 		t.Errorf("version = %q, want test-v1", v)
 	}
-	if got := p.Organisations("authority-a"); len(got) != 2 {
-		t.Errorf("authority-a serves %v, want two organisations", got)
+	if got := p.Organisations("authority-1"); len(got) != 2 {
+		t.Errorf("authority-1 serves %v, want two organisations", got)
 	}
 }
 
@@ -66,14 +66,14 @@ func TestPlacementFileIsRead(t *testing.T) {
 	}
 
 	p, _, err := resolvePlacement(config.PlacementSource{
-		AuthorityID:  "authority-b",
+		AuthorityID:  "authority-2",
 		DocumentPath: path,
 	})
 	if err != nil {
 		t.Fatalf("resolving a placement from file: %v", err)
 	}
-	if got := p.Organisations("authority-b"); len(got) != 1 || got[0] != "org-b" {
-		t.Errorf("authority-b serves %v, want [org-b]", got)
+	if got := p.Organisations("authority-2"); len(got) != 1 || got[0] != "org-b" {
+		t.Errorf("authority-2 serves %v, want [org-b]", got)
 	}
 }
 
@@ -88,22 +88,22 @@ func TestBrokenPlacementFailsStartupRatherThanServingEverything(t *testing.T) {
 	}{
 		{
 			name: "document does not parse",
-			src:  config.PlacementSource{AuthorityID: "authority-a", Document: `{"version":`},
+			src:  config.PlacementSource{AuthorityID: "authority-1", Document: `{"version":`},
 			want: "placement document",
 		},
 		{
 			name: "document has no version",
-			src:  config.PlacementSource{AuthorityID: "authority-a", Document: `{"homes":{"org-a":"authority-a"}}`},
+			src:  config.PlacementSource{AuthorityID: "authority-1", Document: `{"homes":{"org-a":"authority-1"}}`},
 			want: "no version",
 		},
 		{
 			name: "this unit is not in the map",
-			src:  config.PlacementSource{AuthorityID: "authority-z", Document: placementDoc},
-			want: "authority-z",
+			src:  config.PlacementSource{AuthorityID: "authority-9", Document: placementDoc},
+			want: "authority-9",
 		},
 		{
 			name: "file is missing",
-			src:  config.PlacementSource{AuthorityID: "authority-a", DocumentPath: "/nonexistent/placement.json"},
+			src:  config.PlacementSource{AuthorityID: "authority-1", DocumentPath: "/nonexistent/placement.json"},
 			want: "reading placement document",
 		},
 	}
@@ -129,7 +129,7 @@ func TestBrokenPlacementFailsStartupRatherThanServingEverything(t *testing.T) {
 // a mystery to be diagnosed from traffic.
 func TestUnitNotNamedByTheMapDoesNotStart(t *testing.T) {
 	_, _, err := resolvePlacement(config.PlacementSource{
-		AuthorityID: "authority-z",
+		AuthorityID: "authority-9",
 		Document:    placementDoc,
 	})
 	if err == nil {
@@ -141,14 +141,14 @@ func TestUnitNotNamedByTheMapDoesNotStart(t *testing.T) {
 }
 
 func TestResolvedPlacementAnswersTheSupportBoundary(t *testing.T) {
-	p, _, err := resolvePlacement(config.PlacementSource{AuthorityID: "authority-a", Document: placementDoc})
+	p, _, err := resolvePlacement(config.PlacementSource{AuthorityID: "authority-1", Document: placementDoc})
 	if err != nil {
 		t.Fatalf("resolving placement: %v", err)
 	}
 
 	// org-a and org-c are different organisations on one authority: supported.
 	if colocated, placed := p.Colocated("org-c", "org-a"); !colocated || !placed {
-		t.Error("org-a and org-c share authority-a and must be colocated")
+		t.Error("org-a and org-c share authority-1 and must be colocated")
 	}
 	// org-a and org-b are on different authorities: the one case Phase 1 refuses.
 	if colocated, _ := p.Colocated("org-b", "org-a"); colocated {

@@ -85,6 +85,61 @@ type Config struct {
 
 	// RequestBudget is the per-request deadline chain (measurement-contract §8).
 	RequestBudget RequestBudget
+
+	// Placement is the routing configuration of a shard-affine service unit
+	// (horizontal-database-authority §5.2). It is carried as unparsed source because
+	// config depends on nothing below it (project-structure §4); cmd turns it into a
+	// domain.Placement and applies the startup gate.
+	Placement PlacementSource
+}
+
+// PlacementSource is the unparsed placement configuration: which authority this unit
+// is, and where its organisation-to-authority map comes from.
+//
+// Absent configuration and broken configuration are different answers and Validate
+// keeps them apart. A deployment that sets nothing is unsharded — one authority owns
+// everything, which is what every deployment before PR3a was — and that is a state a
+// deployment may legitimately be in. A deployment that names a map it cannot load, or
+// names a map without saying which authority it is, is misconfigured, and it must fail
+// at startup rather than quietly serve every organisation from one database.
+type PlacementSource struct {
+	// AuthorityID names the writable authority this unit is bound to. Required
+	// whenever a map is configured; defaulted when one is not, because a single
+	// authority still deserves a name in metadata and metrics.
+	AuthorityID string
+	// Document is the inline placement JSON, when supplied.
+	Document string
+	// DocumentPath is the file holding the placement JSON, when supplied. A mounted
+	// file is the natural shape for a container; the inline form exists for tests and
+	// single-command runs.
+	DocumentPath string
+}
+
+// Configured reports whether a placement map was supplied at all.
+func (p PlacementSource) Configured() bool {
+	return p.Document != "" || p.DocumentPath != ""
+}
+
+// Validate rejects a placement configuration that cannot be resolved into one routing
+// decision. Parsing the document itself belongs to the domain; this checks only what
+// config can see.
+func (p PlacementSource) Validate() error {
+	if p.Document != "" && p.DocumentPath != "" {
+		return fmt.Errorf("config: %s and %s are both set; one placement document, one routing decision", envPlacement, envPlacementFile)
+	}
+	if p.Configured() && p.AuthorityID == "" {
+		return fmt.Errorf("config: %s is set but %s is not; a shard-affine unit must know which authority it is", placementSourceName(p), envAuthorityID)
+	}
+	return nil
+}
+
+// placementSourceName names whichever placement variable was supplied, so the error
+// above points at the one the operator actually set.
+func placementSourceName(p PlacementSource) string {
+	if p.DocumentPath != "" {
+		return envPlacementFile
+	}
+	return envPlacement
 }
 
 // RequestBudget is the nested per-request deadline chain from measurement-contract
@@ -211,6 +266,12 @@ func Default() Config {
 		ShutdownGrace:       15 * time.Second,
 		ReservationTTL:      2 * time.Minute,
 		ReadinessTimeout:    1 * time.Second,
+		// Nothing: an unsharded deployment, which is what every deployment before PR3a
+		// was. config records only what the operator supplied — naming the sole
+		// authority of an unsharded deployment is the wiring layer's job, and doing it
+		// here would mask an operator who configured a map but forgot to say which
+		// authority this unit is.
+		Placement: PlacementSource{},
 		RequestBudget: RequestBudget{
 			ClientDeadline:   6000 * time.Millisecond,
 			ServerDeadline:   5000 * time.Millisecond,
@@ -235,6 +296,10 @@ const (
 	envReservationTTL      = "ALLOCA_RESERVATION_TTL"
 	envReadinessTimeout    = "ALLOCA_READINESS_TIMEOUT"
 
+	envAuthorityID   = "ALLOCA_AUTHORITY_ID"
+	envPlacement     = "ALLOCA_PLACEMENT"
+	envPlacementFile = "ALLOCA_PLACEMENT_FILE"
+
 	envClientDeadline   = "ALLOCA_CLIENT_DEADLINE"
 	envServerDeadline   = "ALLOCA_SERVER_DEADLINE"
 	envAdmissionCap     = "ALLOCA_ADMISSION_CAP"
@@ -251,6 +316,25 @@ const (
 // fast rather than silently falling back to a default or accepting an unsafe chain.
 func Load(lookup func(string) (string, bool)) (Config, error) {
 	cfg := Default()
+
+	strs := []struct {
+		name string
+		dst  *string
+	}{
+		{envAuthorityID, &cfg.Placement.AuthorityID},
+		{envPlacement, &cfg.Placement.Document},
+		{envPlacementFile, &cfg.Placement.DocumentPath},
+	}
+	for _, sv := range strs {
+		v, ok := lookup(sv.name)
+		if !ok {
+			continue
+		}
+		if v == "" {
+			return Config{}, fmt.Errorf("config: %s must not be empty when set", sv.name)
+		}
+		*sv.dst = v
+	}
 
 	if v, ok := lookup(envListenAddr); ok {
 		if v == "" {
@@ -372,6 +456,10 @@ func (c Config) Validate() error {
 	}
 	if c.ReadinessTimeout > b.ServerDeadline {
 		return fmt.Errorf("config: ReadinessTimeout (%s) must be <= server_deadline (%s)", c.ReadinessTimeout, b.ServerDeadline)
+	}
+
+	if err := c.Placement.Validate(); err != nil {
+		return err
 	}
 
 	return nil

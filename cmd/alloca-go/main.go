@@ -53,6 +53,14 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("DATABASE_URL must be set")
 	}
 
+	// The routing decision for this unit's whole life, resolved before anything opens a
+	// connection: a unit that cannot say which organisations it owns has no business
+	// accepting a request for one (horizontal-database-authority §5.2).
+	placement, authority, err := resolvePlacement(cfg.Placement)
+	if err != nil {
+		return err
+	}
+
 	// Stop the base context on the first interrupt/termination signal. Everything that
 	// runs for the life of the process derives from it, so one signal stops all of them.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -108,6 +116,9 @@ func run(logger *slog.Logger) error {
 		slog.Int("gomaxprocs", info.GOMAXPROCS),
 		slog.Bool("gomaxprocs_explicit", info.GOMAXPROCSExplicit),
 		slog.String("revision", info.Revision),
+		slog.String("authority", string(authority)),
+		slog.String("routing_version", placement.Version()),
+		slog.Bool("sharded", !placement.IsUnsharded()),
 	)
 
 	var workers sync.WaitGroup

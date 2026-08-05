@@ -37,7 +37,7 @@ code comment or a PR description can cite one and still be right in a year.
 | [**DEBT-2**](#4-debt-2--no-retention-policy-for-durable-rows) | No durable row is ever deleted and no retention policy exists; `idempotency_records` is the instance with no product reason to keep it | data lifecycle | 2026-08-02, AG-Sept PR1 | open |
 | [**DEBT-3**](#5-debt-3--service-identity-is-sampled-only-before-a-run) | The load harness records service provenance before load starts but does not prove the same service identity remained behind the target for the whole run | measurement provenance | 2026-08-03, AG-Sept PR1 | open |
 | [**DEBT-4**](#6-debt-4--lockbyreservation-returns-a-six-value-maybe-answered-protocol) | The shared confirm/cancel prologue returns six values, three of which encode "I may already have answered"; a caller that mishandles them proceeds on zero values | service orchestration | 2026-08-05, AG-Sept PR3a | open |
-| [**DEBT-5**](#7-debt-5--no-automated-line-length-guardrail) | Nothing in CI bounds line length, so declarations grow until a human notices; 103 code lines exceed 110 columns, the longest at 205 | tooling, readability | 2026-08-05, AG-Sept PR3a | open |
+| [**DEBT-5**](#7-debt-5--no-automated-line-length-guardrail) | Nothing in CI bounds line length, so declarations grow until a human notices; ~104 code lines exceed 110 columns, the longest at 205 | tooling, readability | 2026-08-05, AG-Sept PR3a | open |
 | [**DEBT-6**](#8-debt-6--res-denotes-three-unrelated-types) | `res` names a Reservation, a Result and a Response in different files, and the obvious mechanical rename is wrong in three separate ways | naming, readability | 2026-08-05, AG-Sept PR3a | open |
 
 ## 3. DEBT-1 — no reaper for abandoned schedule claims
@@ -435,10 +435,18 @@ As measured at AG-Sept PR3a:
 
 | Metric | Value |
 |---|---|
-| Code lines over 110 columns | 103 |
+| Code lines over 110 columns | 104 |
 | Median of those | 122 |
 | 90th percentile | 140 |
 | Longest | 205 — `internal/service/service.go`, the `commit` signature |
+
+The counts are a snapshot and will drift with every change; re-measure rather than trusting
+them:
+
+```sh
+cat $(git ls-tree -r HEAD --name-only | grep '\.go$') \
+  | awk 'length > 110 && $0 !~ /^[[:space:]]*\/\// {c++} END {print c}'
+```
 
 Six of them are function signatures; the rest are mostly long error strings, which wrap badly
 and are the less interesting half. Signatures are where it bites: `commit` takes seven
@@ -457,7 +465,7 @@ Recorded in `.golangci.yml` itself, and it was the right call:
 > (e.g. revive) can be layered in once a green baseline is observed in CI. Keep additions
 > incremental so a new check never silently blocks unrelated work.
 
-Turning on `lll` today would fail CI on 103 pre-existing lines across most packages. That is not
+Turning on `lll` today would fail CI on ~104 pre-existing lines across most packages. That is not
 an incremental addition; it is a repo-wide reformat wearing a linter's clothes, and it would land
 in whichever PR happened to enable it — exactly the "silently blocks unrelated work" the config
 warns against.
@@ -498,7 +506,7 @@ Any one of:
 
 ### Options, none decided
 
-1. **`lll` at 120**, with the existing 103 lines fixed in the enabling PR. Clean end state; the
+1. **`lll` at 120**, with the existing ~104 lines fixed in the enabling PR. Clean end state; the
    enabling PR is large and touches almost every package.
 2. **`lll` at 120 with `nolint` on the pre-existing lines**, worked down opportunistically.
    Small enabling PR, but the exclusions are a second register to maintain and tend to become

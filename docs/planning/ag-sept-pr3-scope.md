@@ -333,6 +333,10 @@ would deliberately trigger it is PR3c, which lands after.
 
 **Still PR3c's, and still to be built:**
 
+0. **wiring `RunTopology` into `cmd/alloca-verify`.** The package-level verifier is built and
+   tested; the CLI still takes one `--database-url` and one `--org`. The flags it needs — a
+   placement document and one DSN per authority — are shaped by how PR3c actually drives a
+   run, so they are left to the PR that first has a run to drive rather than guessed at now;
 1. the **post-restoration resolution pass** as a step of the failure-isolation experiment —
    calling `ResolveAmbiguous` after the authority is back and before the correctness
    verdict, and refusing to reconcile a run with anything left unresolved

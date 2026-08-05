@@ -190,13 +190,23 @@ func (t ServerTotals) Sum() int {
 // service recorded a completion, the cells disagree and this check fails; that is deliberate,
 // because such a run needs a person to look at it before any number is quoted from it.
 func serverTotalsCheck(s loadgen.Summary, scrapes Scrapes) Check {
-	c := Check{Name: "server totals vs client totals"}
-
 	server, err := scrapes.measured()
 	if err != nil {
-		c.Detail = err.Error()
-		return c
+		return Check{Name: "server totals vs client totals", Detail: err.Error()}
 	}
+	return serverTotalsCheckFromMeasured(s, server)
+}
+
+// serverTotalsCheckFromMeasured compares already-differenced server counters with the
+// client's totals.
+//
+// It is separate from serverTotalsCheck because a multi-authority run must difference each
+// unit's own before/after pair *before* summing them (ag-sept-plan-new.md §6.5). Differencing
+// the sums would let one unit restarting mid-run — its counters resetting to zero — be masked
+// by another unit's increase, and the restart is exactly what the differencing exists to
+// catch.
+func serverTotalsCheckFromMeasured(s loadgen.Summary, server ServerTotals) Check {
+	c := Check{Name: "server totals vs client totals"}
 
 	if server == nil {
 		c.Detail = "no metrics scrape was supplied, so the server's own count did not " +

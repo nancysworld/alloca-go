@@ -37,6 +37,7 @@ code comment or a PR description can cite one and still be right in a year.
 | [**DEBT-2**](#4-debt-2--no-retention-policy-for-durable-rows) | No durable row is ever deleted and no retention policy exists; `idempotency_records` is the instance with no product reason to keep it | data lifecycle | 2026-08-02, AG-Sept PR1 | open |
 | [**DEBT-3**](#5-debt-3--service-identity-is-sampled-only-before-a-run) | The load harness records service provenance before load starts but does not prove the same service identity remained behind the target for the whole run | measurement provenance | 2026-08-03, AG-Sept PR1 | open |
 | [**DEBT-4**](#6-debt-4--lockbyreservation-returns-a-six-value-maybe-answered-protocol) | The shared confirm/cancel prologue returns six values, three of which encode "I may already have answered"; a caller that mishandles them proceeds on zero values | service orchestration | 2026-08-05, AG-Sept PR3a | open |
+| [**DEBT-5**](#7-debt-5--no-automated-line-length-guardrail) | Nothing in CI bounds line length, so declarations grow until a human notices; 103 code lines exceed 110 columns, the longest at 205 | tooling, readability | 2026-08-05, AG-Sept PR3a | open |
 
 ## 3. DEBT-1 — no reaper for abandoned schedule claims
 
@@ -419,3 +420,100 @@ the signature to 258 columns and it was wrapped in `0bf2f8d`. Wrapping made it l
 not make it good, and the length was the symptom rather than the debt. PR3a made the shape
 marginally worse by one parameter and one path, which is what moved it from a shape someone
 might tidy to one worth recording.
+
+## 7. DEBT-5 — no automated line-length guardrail
+
+### What it is
+
+Nothing in `make ci` bounds line length. **gofmt does not do this and never will** — it
+normalises indentation, alignment and spacing, and has no opinion on where a line wraps, by
+deliberate Go design. `.golangci.yml` enables the standard bundle plus the gofmt formatter, and
+no length linter (`lll`, `golines`) is configured.
+
+As measured at AG-Sept PR3a:
+
+| Metric | Value |
+|---|---|
+| Code lines over 110 columns | 103 |
+| Median of those | 122 |
+| 90th percentile | 140 |
+| Longest | 205 — `internal/service/service.go`, the `commit` signature |
+
+Six of them are function signatures; the rest are mostly long error strings, which wrap badly
+and are the less interesting half. Signatures are where it bites: `commit` takes seven
+parameters on one 205-column line, and a reader has to count commas to find the one they want.
+
+**This is not a correctness debt.** Its cost is reviewer attention — spent noticing formatting
+that a linter would have caught, and not spent on the logic. It has already been paid twice in
+one review: `lockByReservation` reached 258 columns before a human spotted it, and `commit` was
+found by eye immediately after.
+
+### Why it is this way
+
+Recorded in `.golangci.yml` itself, and it was the right call:
+
+> The linter set is deliberately conservative for a young repository … Stricter style linters
+> (e.g. revive) can be layered in once a green baseline is observed in CI. Keep additions
+> incremental so a new check never silently blocks unrelated work.
+
+Turning on `lll` today would fail CI on 103 pre-existing lines across most packages. That is not
+an incremental addition; it is a repo-wide reformat wearing a linter's clothes, and it would land
+in whichever PR happened to enable it — exactly the "silently blocks unrelated work" the config
+warns against.
+
+### Why it is acceptable today
+
+- Nothing about it can produce a wrong answer. Every invariant is pinned by tests that do not
+  care how the source is wrapped.
+- The repository has one regular author and a review step that has, empirically, caught the two
+  worst instances.
+- The distribution is not pathological: the median over-limit line is 122 columns, which is long
+  but readable. It is the tail that is the problem, not the shape of the whole.
+
+### Trigger — when it stops being acceptable
+
+Any one of:
+
+1. **Before the repository goes public.** The code becomes the artifact being read by people
+   with no context and no review conversation to fall back on, and a 205-column signature is a
+   worse first impression than the code deserves. This is the strongest trigger and it has a
+   date attached to it — see [`../pre-public-checklist.md`](../pre-public-checklist.md).
+2. **A second regular contributor.** The convention currently lives in review comments and
+   nowhere else; transmitting it by correction does not scale past one person.
+3. **The count grows rather than shrinks** across two consecutive milestones. Today's 103 is a
+   stock to work down; a stock that grows means review is no longer catching it.
+
+### What a fix must preserve
+
+- **CI must not turn red on unrelated work.** Whatever limit is chosen, the pre-existing lines
+  are dealt with in the same change that introduces the check, or excluded explicitly with the
+  exclusion recorded rather than left to accumulate.
+- **Error strings must stay greppable.** Splitting a message across concatenated literals is the
+  usual remedy and it breaks `grep` for the whole sentence. A limit that forces every long
+  message to be split trades one readability problem for another; the check should be able to
+  ignore string-heavy lines, or the limit set high enough not to force it.
+- **No automatic rewriter in CI.** `golines` can reformat mechanically, but a tool that rewraps
+  signatures unattended will produce diffs nobody reviewed in files nobody touched.
+
+### Options, none decided
+
+1. **`lll` at 120**, with the existing 103 lines fixed in the enabling PR. Clean end state; the
+   enabling PR is large and touches almost every package.
+2. **`lll` at 120 with `nolint` on the pre-existing lines**, worked down opportunistically.
+   Small enabling PR, but the exclusions are a second register to maintain and tend to become
+   permanent.
+3. **Limit new and changed lines only**, via a review-time check rather than a linter — the
+   check this session performed by hand: diff added lines against the branch point and flag
+   anything beyond the repo's existing maximum. Catches the regression without a reformat, and
+   is the cheapest thing that would have caught both instances above.
+4. **Leave it to review and record the convention** in the contributing notes, so it is at least
+   written down once rather than transmitted by correction.
+
+### Evidence
+
+Raised by Nancy during review of AG-Sept PR3a, 2026-08-05, on finding the `commit` signature at
+205 columns immediately after `lockByReservation` had been wrapped from 258 in `0bf2f8d`. The
+second find is the one that made it a debt rather than an incident: the first could be called
+carelessness in a single PR, but two in one review is the absence of a guardrail. `commit` itself
+is pre-existing and untouched by PR3a — it is cited as the current worst case, not as something
+that PR introduced.

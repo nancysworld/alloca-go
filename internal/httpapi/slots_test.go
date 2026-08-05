@@ -32,7 +32,7 @@ func (f *fakeLister) SlotsByOrganisation(_ context.Context, org domain.Organisat
 func listServer(t *testing.T, lister SlotLister) *Server {
 	t.Helper()
 	meta := func() buildinfo.Info { return buildinfo.Collect(time.Now()) }
-	return New(config.Default(), meta, Options{Slots: lister})
+	return New(config.Default(), meta, Options{Slots: lister, Placement: domain.Unsharded("authority-1"), Authority: "authority-1"})
 }
 
 func getSlots(t *testing.T, s *Server, query string) *httptest.ResponseRecorder {
@@ -185,8 +185,10 @@ func TestReadyzLogsTheFailureItWithholds(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(&logged, nil))
 	meta := func() buildinfo.Info { return buildinfo.Collect(time.Now()) }
 	srv := New(config.Default(), meta, Options{
-		Logger: logger,
-		Ready:  func(context.Context) error { return errors.New("database unreachable: host=db.internal") },
+		Placement: domain.Unsharded("authority-1"),
+		Authority: "authority-1",
+		Logger:    logger,
+		Ready:     func(context.Context) error { return errors.New("database unreachable: host=db.internal") },
 	})
 
 	rec := httptest.NewRecorder()

@@ -53,6 +53,14 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("DATABASE_URL must be set")
 	}
 
+	// The routing decision for this unit's whole life, resolved before anything opens a
+	// connection: a unit that cannot say which organisations it owns has no business
+	// accepting a request for one (horizontal-database-authority §5.2).
+	placement, authority, err := resolvePlacement(cfg.Placement)
+	if err != nil {
+		return err
+	}
+
 	// Stop the base context on the first interrupt/termination signal. Everything that
 	// runs for the life of the process derives from it, so one signal stops all of them.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -66,8 +74,18 @@ func run(logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	// The schema gate, before anything serves. ADR-0002 keeps migration out of the
+	// serving path, so this process cannot repair what it finds — which is precisely why
+	// it must refuse to start rather than meet the mismatch one failing query at a time,
+	// under load. In a sharded deployment an authority left behind by a rollout would
+	// serve its own organisations wrongly while its peers served theirs correctly.
+	schemaVersion, err := postgres.CheckSchema(ctx, pool)
+	if err != nil {
+		return err
+	}
+
 	repo := postgres.New(pool, cfg.RequestBudget)
-	svc := service.New(repo, ids.Random{}, cfg.ReservationTTL)
+	svc := service.New(repo, ids.Random{}, cfg.ReservationTTL, placement)
 
 	// A private registry rather than the default: the default is package-global, so a
 	// duplicate registration anywhere in the process would panic at startup and a test
@@ -77,8 +95,8 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	recorder := buildRecorder(registry, pool, logger, mode)
-	dbMeta := databaseMeta(ctx, pool, logger)
+	recorder, onMisroute := buildRecorder(registry, pool, logger, mode)
+	dbMeta := databaseMeta(ctx, pool, schemaVersion, logger)
 	shutdownMetrics := serveMetrics(metricsAddr(), registry, logger)
 
 	startedAt := time.Now()
@@ -91,6 +109,11 @@ func run(logger *slog.Logger) error {
 		Logger:        logger,
 		Database:      dbMeta,
 		TelemetryMode: mode,
+		// This unit serves the organisations its authority owns and refuses the rest,
+		// so a routing mistake is refused here rather than written to the wrong database.
+		Placement:  placement,
+		Authority:  authority,
+		OnMisroute: onMisroute,
 		// Readiness is the database check: this service cannot answer a booking request
 		// without it, so reporting ready while it is unreachable would just move the
 		// failure from the probe to every request.
@@ -108,6 +131,10 @@ func run(logger *slog.Logger) error {
 		slog.Int("gomaxprocs", info.GOMAXPROCS),
 		slog.Bool("gomaxprocs_explicit", info.GOMAXPROCSExplicit),
 		slog.String("revision", info.Revision),
+		slog.String("authority", string(authority)),
+		slog.String("routing_version", placement.Version()),
+		slog.Int64("schema_version", schemaVersion),
+		slog.Bool("sharded", !placement.IsUnsharded()),
 	)
 
 	var workers sync.WaitGroup

@@ -62,6 +62,7 @@ type slotHandlers struct {
 	slots    SlotLister
 	recorder telemetry.Recorder
 	budget   config.RequestBudget
+	guard    placementGuard
 }
 
 // listSlots serves GET /v1/slots?slot_organisation_id=…
@@ -73,6 +74,16 @@ func (h *slotHandlers) listSlots(w http.ResponseWriter, r *http.Request) {
 	org := r.URL.Query().Get(queryParamSlotOrganisation)
 	if org == "" {
 		status, body := responseForInvalid(queryParamSlotOrganisation + " is required")
+		h.write(ctx, w, start, status, body.Outcome, body)
+		return
+	}
+
+	// Reads route by the slot organisation, which is the authority holding the rows
+	// they return (horizontal-database-authority §5.5). A unit that answered for an
+	// organisation it does not own would be reporting an empty catalogue as fact.
+	if !h.guard.serves(domain.OrganisationID(org)) {
+		detail := h.guard.refuse(ctx, domain.Operation(telemetry.OperationListSlots), domain.OrganisationID(org))
+		status, body := responseForInvalid(detail)
 		h.write(ctx, w, start, status, body.Outcome, body)
 		return
 	}

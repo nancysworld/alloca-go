@@ -17,6 +17,7 @@ import (
 
 	"github.com/nancysworld/alloca-go/internal/buildinfo"
 	"github.com/nancysworld/alloca-go/internal/config"
+	"github.com/nancysworld/alloca-go/internal/domain"
 	"github.com/nancysworld/alloca-go/internal/telemetry"
 )
 
@@ -62,6 +63,17 @@ type Options struct {
 	// probe-only server AG-M0 shipped, which has no database and no recorder.
 	Database      DatabaseMeta
 	TelemetryMode string
+
+	// Placement and Authority bind this unit to one writable authority: it serves the
+	// organisations that authority owns and refuses the rest
+	// (horizontal-database-authority §5.2). Required whenever a booking or read route is
+	// registered; a single-authority deployment passes domain.Unsharded. The zero value
+	// routes nothing and is treated as a wiring error rather than as "no sharding".
+	Placement domain.Placement
+	Authority domain.AuthorityID
+	// OnMisroute counts requests refused for reaching the wrong unit. Optional: a
+	// deployment without metrics still refuses them and still logs them.
+	OnMisroute func(context.Context, domain.Operation)
 }
 
 // Server bundles the HTTP handler and the configuration used to construct the
@@ -86,9 +98,39 @@ func New(cfg config.Config, metaSource func() buildinfo.Info, opts Options) *Ser
 	if logger == nil {
 		logger = slog.Default()
 	}
+	// The zero Placement is a wiring error, not "no sharding". domain.Placement defines
+	// zero as "routes nothing", and reinterpreting it here would let a composition root
+	// that omitted the option serve every organisation from one unit with enforcement
+	// silently off. A single-authority deployment states itself with domain.Unsharded.
+	//
+	// The probe-only server is the one caller with nothing to route, and it says so the
+	// same way: Options{} carries no Service and no Slots, so no guarded route is
+	// registered — but a server that *does* register booking routes must supply a
+	// placement.
+	placement := opts.Placement
+	if opts.Service != nil || opts.Slots != nil {
+		if placement.IsZero() {
+			panic("httpapi: Options.Placement must be supplied when booking or read routes are registered; " +
+				"use domain.Unsharded for a single-authority deployment")
+		}
+		// Placement and Authority are two values that have to agree, and a unit whose
+		// authority its own map does not name refuses *every* request — which reads as a
+		// routing bug for however long it takes someone to compare the two. The same gate
+		// cmd applies at startup applies here, so the mismatch cannot reach a request.
+		if err := placement.ValidateUnit(opts.Authority); err != nil {
+			panic("httpapi: " + err.Error())
+		}
+	}
+	guard := placementGuard{
+		placement:  placement,
+		authority:  opts.Authority,
+		logger:     logger,
+		onMisroute: opts.OnMisroute,
+	}
+
 	mux := http.NewServeMux()
 	registerRoutes(mux, metaSource, cfg, ready, logger, opts.Service, opts.Slots, recorder,
-		opts.Database, opts.TelemetryMode)
+		opts.Database, opts.TelemetryMode, guard)
 	return &Server{cfg: cfg, handler: withRequestID(mux)}
 }
 

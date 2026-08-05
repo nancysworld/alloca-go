@@ -55,6 +55,16 @@ const (
 	ReasonInvalidState        Reason = "invalid_state"
 	ReasonUnknownTarget       Reason = "unknown_target"
 	ReasonIdempotencyConflict Reason = "idempotency_conflict"
+	// ReasonCrossAuthorityUnsupported means the user and slot organisations resolve to
+	// different writable database authorities, which Phase 1 of the horizontal
+	// database-authority design does not support: committing it would need a
+	// distributed transaction or a compensating workflow, and neither is built.
+	//
+	// It is a policy of the *deployment*, not of the domain. The same request succeeds
+	// on a deployment where the two organisations are colocated — including every
+	// single-authority deployment — which is why it compares resolved authorities and
+	// never organisation identifiers.
+	ReasonCrossAuthorityUnsupported Reason = "cross_authority_unsupported"
 )
 
 // Result is a completed operation's classified answer: the terminal Outcome, the
@@ -117,15 +127,16 @@ func (o Outcome) IsKnown() bool {
 // it is the valid *absence* of a reason on a non-refusal, which is a different question
 // from membership, and callers that care distinguish the two explicitly.
 var knownReasons = map[Reason]struct{}{
-	ReasonSlotNotReleased:     {},
-	ReasonSlotClosed:          {},
-	ReasonNoCapacity:          {},
-	ReasonScheduleConflict:    {},
-	ReasonOutsideWindow:       {},
-	ReasonReservationExpired:  {},
-	ReasonInvalidState:        {},
-	ReasonUnknownTarget:       {},
-	ReasonIdempotencyConflict: {},
+	ReasonSlotNotReleased:           {},
+	ReasonSlotClosed:                {},
+	ReasonNoCapacity:                {},
+	ReasonScheduleConflict:          {},
+	ReasonOutsideWindow:             {},
+	ReasonReservationExpired:        {},
+	ReasonInvalidState:              {},
+	ReasonUnknownTarget:             {},
+	ReasonIdempotencyConflict:       {},
+	ReasonCrossAuthorityUnsupported: {},
 }
 
 // IsKnown reports whether r is a member of the closed refusal-reason set. The empty

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -71,4 +72,100 @@ func openStdlib(dsn string) (*sql.DB, error) {
 		return nil, fmt.Errorf("postgres: parse dsn: %w", err)
 	}
 	return stdlib.OpenDB(*cfg), nil
+}
+
+// ErrSchemaIncompatible reports that an authority's applied schema is not one this
+// binary can serve against.
+var ErrSchemaIncompatible = errors.New("postgres: schema incompatible with this binary")
+
+// ExpectedSchemaVersion is the highest migration version this binary carries. Because
+// the migrations are embedded (see migrationsFS), it is a property of the build rather
+// than of whatever SQL directory happens to be on disk at deploy time.
+func ExpectedSchemaVersion() (int64, error) {
+	goose.SetBaseFS(migrationsFS)
+	migrations, err := goose.CollectMigrations("migrations", 0, goose.MaxVersion)
+	if err != nil {
+		return 0, fmt.Errorf("postgres: collect embedded migrations: %w", err)
+	}
+	last, err := migrations.Last()
+	if err != nil {
+		return 0, fmt.Errorf("postgres: no embedded migrations: %w", err)
+	}
+	return last.Version, nil
+}
+
+// CheckSchema verifies that this authority's applied schema can serve this binary, and
+// returns the applied version so /meta can report a value that has been validated rather
+// than merely read.
+//
+// It is a startup gate, not a diagnostic. ADR-0002 keeps migration out of the serving
+// path, so a serving process cannot repair what it finds — which is exactly why it must
+// refuse to start rather than discover the mismatch one failing query at a time, under
+// load, on whichever request happened to touch the missing column first. A multi-authority
+// deployment makes it sharper still: an authority left behind by a rollout would serve its
+// organisations wrongly while its peers served theirs correctly, and the blast radius
+// would follow the placement map (horizontal-database-authority §5.1).
+//
+// **The rule is exact equality**, in both directions.
+//
+// Behind is obvious: the binary carries migrations that have not run, so it expects schema
+// that does not exist.
+//
+// Ahead is refused deliberately, and it is the interesting half. Accepting it would trust
+// something this gate cannot check — that every migration between the two versions was
+// additive. When one is not, the binary fails at runtime on whichever query first touches
+// the changed column, which is exactly the "one failing query at a time, under load"
+// failure the gate exists to prevent; a gate that delegates its own precondition to a
+// convention is not a gate. It also protects the *evidence*: `>=` would admit a run whose
+// authorities are uniformly ahead of the binary, or ahead of each other, and a
+// multi-authority result is only comparable when every unit runs the schema its binary
+// expects (horizontal-database-authority §5.1).
+//
+// **The cost is that rollback across a migration is blocked.** Deploy v2, migrate, find a
+// problem, roll back to v1 — v1 will refuse to start. That is accepted rather than
+// overlooked: the refusal is loud, immediate and actionable, where the alternative failure
+// is silent and arrives under load, and a rollback across a *destructive* migration is
+// genuinely unsafe, so forcing a schema decision is the correct outcome.
+//
+// A rolling deploy, where not-yet-replaced replicas legitimately run behind the schema,
+// would need an explicit opt-in set for the window it applies to. This project has no such
+// deploy — `alloca-migrate` runs, then the service starts — so building one now would be
+// speculative generality inside a safety gate. Add it when a rollout actually requires it.
+// SchemaQuerier is the single read CheckSchema needs. It is an interface rather than the
+// pool so the gate's refusal paths — unreadable, unapplied, behind — can be tested without
+// a database; *pgxpool.Pool satisfies it.
+type SchemaQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func CheckSchema(ctx context.Context, q SchemaQuerier) (applied int64, err error) {
+	expected, err := ExpectedSchemaVersion()
+	if err != nil {
+		return 0, err
+	}
+
+	// A NULL max() — the table exists but nothing is applied — is as incompatible as a
+	// missing table, so it is read into a nullable and rejected explicitly rather than
+	// coerced to a zero that would compare as "very old" by accident.
+	var version *int64
+	if err := q.QueryRow(ctx,
+		"SELECT max(version_id) FROM goose_db_version WHERE is_applied").Scan(&version); err != nil {
+		return 0, fmt.Errorf("%w: cannot read the applied schema version (expected %d): %w",
+			ErrSchemaIncompatible, expected, err)
+	}
+	if version == nil {
+		return 0, fmt.Errorf("%w: no migration is applied, but this binary expects version %d",
+			ErrSchemaIncompatible, expected)
+	}
+	if *version < expected {
+		return 0, fmt.Errorf("%w: authority is at version %d but this binary expects %d; run alloca-migrate before serving (ADR-0002)",
+			ErrSchemaIncompatible, *version, expected)
+	}
+	if *version > expected {
+		return 0, fmt.Errorf("%w: authority is at version %d but this binary expects %d; "+
+			"the authority has migrations this build does not carry, so roll the schema "+
+			"back or deploy the matching binary",
+			ErrSchemaIncompatible, *version, expected)
+	}
+	return *version, nil
 }

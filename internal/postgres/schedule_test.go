@@ -964,3 +964,49 @@ func TestConcurrentSettlementOfOneUserDoesNotDeadlock(t *testing.T) {
 		assertNoOverlappingClaims(t, h)
 	}
 }
+
+// INV-23 against the real adapter. The in-memory suite pins the rule; this pins the
+// *query* behind it — ReservationTarget reads four columns from `reservations`, and a
+// scan that mapped any of them to the wrong field would compare the wrong identity
+// while every in-memory test still passed.
+//
+// It matters that the impostor here is a different organisation with the *same* user_id.
+// That is precisely the pair the compound identity exists to keep apart
+// (transaction-semantics §1.1), and the pair a query that dropped
+// user_organisation_id from the comparison would silently admit.
+func TestConfirmAndCancelRejectAnImpostorWithTheSameUserID(t *testing.T) {
+	for _, op := range []string{"confirm", "cancel"} {
+		t.Run(op, func(t *testing.T) {
+			h := newHarness(t, testBudget(), 30*time.Second)
+			base := h.dbNow(t)
+			h.seedWindow(t, testOrg, "owned-slot", 5, base, time.Hour, 2*time.Hour)
+			ref := domain.SlotRef{OrganisationID: testOrg, SlotID: "owned-slot"}
+
+			held, err := h.reserveAs(context.Background(), testOrg, "user-1", "key-1", ref)
+			if err != nil {
+				t.Fatalf("reserve: %v", err)
+			}
+			assertOutcome(t, held, domain.OutcomeAdmittedSuccess, "")
+
+			// Same user_id, different organisation: a different identity entirely.
+			impostor := domain.UserRef{OrganisationID: otherOrg, UserID: "user-1"}
+			var got domain.Result
+			if op == "confirm" {
+				got, err = h.confirmAs(context.Background(), impostor, "key-2", held.ReservationID)
+			} else {
+				got, err = h.cancelAs(context.Background(), impostor, "key-2", held.ReservationID)
+			}
+			if err != nil {
+				t.Fatalf("%s by impostor: %v", op, err)
+			}
+			assertOutcome(t, got, domain.OutcomeBusinessRefusal, domain.ReasonUnknownTarget)
+
+			// The reservation is untouched: its owner can still act on it.
+			after, err := h.confirm(context.Background(), "user-1", "key-3", held.ReservationID)
+			if err != nil {
+				t.Fatalf("owner confirm after rejected %s: %v", op, err)
+			}
+			assertOutcome(t, after, domain.OutcomeAdmittedSuccess, "")
+		})
+	}
+}

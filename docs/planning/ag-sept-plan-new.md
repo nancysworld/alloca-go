@@ -508,13 +508,20 @@ A run with unreconciled client totals, server totals, or persisted state is not 
    non-overlap, idempotency, and lifecycle are all local properties of the rows one authority
    owns;
 3. **persisted and server totals are aggregated across authorities and compared once** with the
-   run's global client totals;
-4. the verdict aggregates without treating sequential cross-database reads as one atomic
+   run's global client totals — once, not per authority, because the client's totals are a
+   property of the run rather than of any one authority;
+4. **each service unit's scrape pair is differenced independently before the sum is taken.**
+   Differencing the sums instead would let one unit restarting mid-run vanish into another
+   unit's counters, which is the one arithmetic error this contract exists to prevent;
+5. the verdict aggregates without treating sequential cross-database reads as one atomic
    snapshot.
 
 The architectural requirement is that a multi-organisation run must never compare one
-organisation's persisted rows against the run's unpartitioned global summary. The verifier's
-data structures, query factoring, and scrape aggregation are PR3b's to choose (design note §6.3).
+organisation's persisted rows against the run's unpartitioned global summary. In particular,
+looping the existing organisation-scoped entry point against the unchanged global report is
+**not** a discharge of this contract — it would compare one organisation's rows with every
+organisation's totals. The verifier's data structures, query factoring, and scrape aggregation
+are otherwise PR3b's to choose (design note §6.3).
 
 ## 7. Single-instance baseline — discharged
 
@@ -576,8 +583,10 @@ The required properties for AG-Sept:
   and no fallback to another authority on failure;
 - **server-side placement enforcement** — a unit rejects a request for an organisation it does
   not own, rather than trusting the caller or the generator to route correctly;
-- **cross-organisation booking represented as an explicit outcome**, not made structurally
-  impossible, so Phase 2 remains reachable;
+- **cross-authority booking represented as an explicit outcome**, not made structurally
+  impossible, so Phase 2 remains reachable. Note which case this is: colocated
+  cross-*organisation* booking is supported and must keep working (INV-13); only a booking whose
+  two organisations resolve to *different authorities* is refused;
 - **authority-aware verification** (§6.5).
 
 ### 8.3 Local multi-instance scale-out
@@ -703,6 +712,11 @@ Deliberately send a request for an organisation to the service unit that does no
 prove the unit refuses it rather than writing the row. Without this control, "no supported
 request reached the wrong authority" is a property of the generator's routing table rather than
 of the system, and the placement invariant is untested.
+
+The control asserts a specific answer: **`invalid_request`, refused at the transport edge, plus
+the misroute counter** — never a `business_refusal`. A misroute is a routing or deployment fault,
+not a domain answer, and it must not be recorded as the user's durable domain outcome on an
+authority that does not own them. `api-surface.md` §2.6 states the client-visible half.
 
 ## 13. Architecture conclusion
 
@@ -893,6 +907,14 @@ claim.
 dashboard extension, 1.0 for the §11 replica matrix, 0.5 for the connection-budget control, 0.5
 for the prediction test and the operating-capacity number, 0.5 for the composed run, and 0.5 for
 the report.
+
+**This is a provisional envelope, not a committed scope (Nancy's call, 2026-08-05).** The
+decision order is: freeze Phase 1 → implement and measure PR3 → review its findings → re-scope
+PR4 from that evidence. The budget is reserved now so the milestone can be planned; what it
+buys is decided after PR3 reports, because PR2 already demonstrated once that evidence can
+change which experiment is worth running. The four obligations carried from v0.4 PR3 — the
+operating-capacity number, PR2's falsifiable prediction, the connection-budget control, and the
+exporters — survive that re-scoping as obligations; their order, depth, and matrix do not.
 
 **Scope:**
 

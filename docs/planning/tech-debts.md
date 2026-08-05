@@ -38,6 +38,7 @@ code comment or a PR description can cite one and still be right in a year.
 | [**DEBT-3**](#5-debt-3--service-identity-is-sampled-only-before-a-run) | The load harness records service provenance before load starts but does not prove the same service identity remained behind the target for the whole run | measurement provenance | 2026-08-03, AG-Sept PR1 | open |
 | [**DEBT-4**](#6-debt-4--lockbyreservation-returns-a-six-value-maybe-answered-protocol) | The shared confirm/cancel prologue returns six values, three of which encode "I may already have answered"; a caller that mishandles them proceeds on zero values | service orchestration | 2026-08-05, AG-Sept PR3a | open |
 | [**DEBT-5**](#7-debt-5--no-automated-line-length-guardrail) | Nothing in CI bounds line length, so declarations grow until a human notices; 103 code lines exceed 110 columns, the longest at 205 | tooling, readability | 2026-08-05, AG-Sept PR3a | open |
+| [**DEBT-6**](#8-debt-6--res-denotes-three-unrelated-types) | `res` names a Reservation, a Result and a Response in different files, and the obvious mechanical rename is wrong in three separate ways | naming, readability | 2026-08-05, AG-Sept PR3a | open |
 
 ## 3. DEBT-1 — no reaper for abandoned schedule claims
 
@@ -517,3 +518,102 @@ second find is the one that made it a debt rather than an incident: the first co
 carelessness in a single PR, but two in one review is the absence of a guardrail. `commit` itself
 is pre-existing and untouched by PR3a — it is cited as the current worst case, not as something
 that PR introduced.
+
+## 8. DEBT-6 — `res` denotes three unrelated types
+
+### What it is
+
+The identifier `res` appears 40 times in non-test code and 116 times in tests, and it does
+not mean one thing:
+
+| Meaning | Where | Rename would be |
+|---|---|---|
+| `domain.Reservation` | `service/service.go`, `postgres/tx.go`, `inmem/inmem_test.go` | `reservation` |
+| `reconcile.Result` | `reconcile/reconcile.go`, `reconcile_test.go`, `servertotals_test.go` | `result` |
+| a reserve `Response` | `loadgen/workload.go` | `reserveResponse` |
+| `domain.Result` from a service call | `reconcile_integration_test.go` | `result` |
+
+A reader moving between `service.go` and `reconcile.go` carries the wrong expansion into
+the second file, and nothing on the line corrects them — both read `res.Checks` or
+`res.State` as if the name told you what that was.
+
+### Why the obvious fix is not obvious
+
+This is the part worth recording, because the remedy looks like a one-line regex and is
+wrong in **three** independent ways:
+
+1. **The expansion differs per file.** A single `\bres\b` → `reservation` pass is wrong in
+   `reconcile` and `loadgen`, and it would still compile — `res.Checks` renamed to
+   `reservation.Checks` is valid Go against a `Result`, just a lie.
+2. **14 of the matches are string literals, not identifiers** — `"res-1"`, `"res-doomed"`,
+   `fmt.Sprintf("res-%d", …)`. These are reservation-ID *fixtures* and an ID prefix
+   convention, nothing to do with variable naming. A word-boundary rename rewrites them
+   silently, and it stays green as long as each file is internally consistent — until one
+   file's fixture is referenced from another that expanded it differently.
+3. **At least one is a struct field, not a local**: `seqIDGen{ res, bok int }` in
+   `postgres/main_test.go`, where `res` counts minted reservation IDs and `bok` counts
+   booking IDs. Renaming the field is a different change from renaming a local, and `bok`
+   shows the same habit one field along.
+
+So the safe-looking mechanical fix is the dangerous one, and the manual fix is 156
+occurrences across 15 files.
+
+### Why it is this way
+
+Each site is locally defensible: in a five-line scope holding one reservation, `res` reads
+fine, and the same is true of the `Result` in `reconcile`. **The collision is emergent** —
+no single change created it, and no single reviewer saw two of them side by side. It is the
+cross-file property that is the debt, not any one of the names.
+
+### Why it is acceptable today
+
+- No correctness risk: the compiler resolves the types, and every invariant is pinned by
+  tests indifferent to local naming.
+- The cost is a reader's attention, and it is bounded — each occurrence sits in a short
+  scope where the declaring line is visible.
+- The fix is disproportionate right now: 14 files, two of them heavily touched by open
+  branches (`agent/ag-sept-pr3a-placement`, `agent/ag-sept-pr3bc-ambiguity`), so it would
+  conflict with work under review for a benefit no reader has yet asked for twice.
+
+### Trigger — when it stops being acceptable
+
+Any one of:
+
+1. **Someone reads the wrong expansion into a review comment or a bug report.** One instance
+   of a human being actually misled converts this from a tidiness item to a defect risk.
+2. **A fourth meaning appears.** Three is a coincidence to be worked down; four is a
+   convention forming, and conventions are harder to reverse than habits.
+3. **When a package is already being substantially rewritten.** `reconcile` is due
+   authority-aware changes in PR3b (`ag-sept-plan-new.md` §6.5). Renaming inside a package
+   that is being reworked anyway costs almost nothing and conflicts with nothing.
+
+That third clause is the intended route: **this is three renames, not one**, and each should
+travel with work already happening in its package rather than as a sweep.
+
+### What a fix must preserve
+
+- **String-literal fixtures must not move** unless every reference moves with them.
+  `"res-1"` is an identifier value; it is not the variable-naming problem and should be
+  left alone or changed deliberately as its own decision.
+- **Each file gets the expansion its type deserves**, verified by reading the declaration —
+  not by one pattern applied everywhere.
+- **No mixed state within a package.** A package half-renamed is worse than either end,
+  because the reader can no longer assume the name means anything at all.
+
+### Options, none decided
+
+1. **Opportunistic, per package, as each is next substantially edited** — the trigger's
+   third clause. Slowest, cheapest, no conflicts. Preferred unless something forces the
+   issue.
+2. **One rename PR per meaning** — three small PRs, each internally consistent and
+   reviewable. Clean, but three rounds of conflict against open branches.
+3. **Leave it and rely on review** to stop new instances, accepting the existing ones. Does
+   nothing for the reader who hits it tomorrow.
+
+### Evidence
+
+Surveyed during AG-Sept PR3a review, 2026-08-05, after Nancy's feedback that short local
+names are a readability problem for humans. The rename was started and **stopped by Nancy on
+seeing the survey** — the right call: what looked like renaming one variable in one file was
+156 occurrences across 15 files with three different correct answers. Recorded so the next
+person to reach for the regex finds the survey rather than repeating it.

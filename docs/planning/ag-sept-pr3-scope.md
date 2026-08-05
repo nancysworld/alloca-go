@@ -1,15 +1,16 @@
 # AG-Sept PR3 — Horizontal database authority, Phase 1 (scope)
 
 **Status:** Proposed — §6 needs Nancy before implementation starts
-**Budget:** 7.2 development days across three PRs ([AG-Sept plan](ag-sept-plan-new.md) §4) —
-2.5 for PR3a, 2.7 for PR3b, 2.0 for PR3c
+**Budget:** 7.5 development days across three PRs ([AG-Sept plan](ag-sept-plan-new.md) §4) —
+3.0 for PR3a, 2.5 for PR3b, 2.0 for PR3c
 **Owner doc:** [ag-sept-plan-new.md](ag-sept-plan-new.md) §8.2 and §6.5 are normative for what
 this PR builds; this note records only how PR3 discharges them and the choices made along the
 way
 **Design input:**
 [`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md)
-owns the design. This note does not restate it, and where the two disagree the design note wins
-once §6.1 is settled.
+owns the design, at its revision of 2026-08-05 (`bc80d20`), which settled the three contract
+questions this note previously carried as open (§5.5). This note does not restate the design,
+and where the two disagree the design note wins.
 
 ## 1. Exit gates
 
@@ -47,15 +48,16 @@ exists. PR3 is correctness-first by design, not by descope.
 | 1 | Versioned placement map: loading, validation, immutability for a run, startup gate | 3a | §8.2 |
 | 2 | Shard-affine service units — one authority, one pool, readiness bound to it | 3a | §8.2 |
 | 3 | Server-side placement enforcement, with the §12.5 misrouting control | 3a | §8.2, §12.5 |
-| 4 | Phase 1 booking policy as one named outcome through every closed set it touches | 3a | §8.2 |
-| 5 | `/meta` extended with authority identifier, routing version, schema version | 3a | §6.4 |
-| 6 | Placement invariants in the register, each with a discriminating test | 3a | §3.2 |
-| 7 | Containerised two-authority topology, per-authority migration | 3b | §9.1 |
-| 8 | Generator routes by organisation; multi-organisation and one-hot-organisation workloads | 3b | §5.6, §6.3 |
-| 9 | Placement, authority count, and assignment in the manifest; multi-service certification | 3b | §6.4 |
-| 10 | Authority-aware verifier with one aggregated verdict | 3b | §6.5 |
-| 11 | Phase 1 correctness experiments and per-authority verdicts | 3c | §11 |
-| 12 | Failure-isolation experiment — one authority down, then restored | 3c | §11 |
+| 4 | Booking policy on resolved authorities, and `cross_authority_unsupported` through every closed set it touches | 3a | §8.2 |
+| 5 | Explicit `UserRef` ownership check on confirm and cancel | 3a | §8.2 |
+| 6 | `/meta` extended with authority identifier, routing version, schema version | 3a | §6.4 |
+| 7 | Placement invariants in the register, each with a discriminating test | 3a | §3.2 |
+| 8 | Containerised two-authority topology, per-authority migration | 3b | §9.1 |
+| 9 | Generator routes by organisation; multi-organisation and one-hot-organisation workloads | 3b | §5.6, §6.3 |
+| 10 | Placement, authority count, and assignment in the manifest; multi-service certification | 3b | §6.4 |
+| 11 | Authority-aware verifier with one aggregated verdict | 3b | §6.5 |
+| 12 | Phase 1 correctness experiments and per-authority verdicts | 3c | §11 |
+| 13 | Failure-isolation experiment — one authority down, then restored | 3c | §11 |
 
 ## 3. What the existing code makes cheap, and what it does not
 
@@ -114,41 +116,45 @@ per-authority migration is a loop over DSNs, not a design change.
 `:120-128`), and the HTTP mapping is keyed by outcome and total over the contract
 (`api-surface.md` §2.3). A new reason touches the domain set, the mapping, `api-surface.md`, the
 invariant register, the `measurement-contract.md` §4 taxonomy, and the metric label allowlist.
-Priced into PR3a at roughly 0.4 days, and the reason PR3a is not smaller than PR3b.
+The design note names it `cross_authority_unsupported` and states the same list. Priced into
+PR3a at 0.5 days, and part of why PR3a is not the smallest of the three.
 
 ## 4. Budget, by component
 
-Estimates, not measurements. Recorded at this granularity so an overrun is attributable.
+Estimates, not measurements. Recorded per component so an overrun is attributable to something.
 
-**PR3a — 2.5 days**
+**Half a day is the unit.** Finer granularity would be false precision: nothing here is
+estimated well enough to distinguish 0.3 from 0.4, and a plan that pretends otherwise invites
+its own overrun. Nancy's call, 2026-08-05.
+
+**PR3a — 3.0 days**
 
 | Component | Days |
 |---|---:|
 | Placement map: type, config, validation, immutability, startup gate | 0.5 |
-| Shard-affine binding and server-side enforcement of the assigned organisation set | 0.4 |
-| `/meta` authority identifier, routing version, schema version | 0.3 |
-| Booking policy through the closed sets and the status mapping | 0.4 |
-| Ownership decision from §6.1, implemented as settled | 0.3 |
-| Normative doc updates: api-surface, invariant register, measurement contract, design-note links | 0.4 |
-| Discriminating tests, each proved to fail without its property | 0.2 |
+| Shard-affine binding and server-side enforcement of the assigned organisation set | 0.5 |
+| `/meta` authority identifier, routing version, schema version | 0.5 |
+| Booking policy on resolved authorities, and `cross_authority_unsupported` through the closed sets and status mapping | 0.5 |
+| Explicit `UserRef` ownership check on confirm and cancel (§5.5) | 0.5 |
+| Normative doc updates and the discriminating tests, each proved to fail without its property | 0.5 |
 
-**PR3b — 2.7 days**
+**PR3b — 2.5 days**
 
 | Component | Days |
 |---|---:|
-| Containerised two-authority topology, per-authority migration, reproducible from version control | 0.6 |
-| Generator org→endpoint routing and multi-organisation workloads | 0.7 |
-| Multi-service manifest and certification — every unit's `/meta`, revision and schema agreement | 0.6 |
-| Authority-aware verifier: placement input, per-authority loop, N scrape pairs, aggregated verdict | 0.8 |
+| Containerised two-authority topology, per-authority migration, reproducible from version control | 0.5 |
+| Generator org→endpoint routing and multi-organisation workloads | 0.5 |
+| Multi-service manifest and certification — every unit's `/meta`, revision and schema agreement | 0.5 |
+| Authority-aware verifier: placement input, per-authority loop, N scrape pairs, aggregated verdict | 1.0 |
 
 **PR3c — 2.0 days**
 
 | Component | Days |
 |---|---:|
-| Multi-organisation seeding across authorities | 0.3 |
-| Correctness matrix — dispersed, one-hot-organisation, cross-organisation refusal | 0.5 |
+| Multi-organisation seeding across authorities, with at least two organisations colocated | 0.5 |
+| Correctness matrix — the six cases in design note §6 | 0.5 |
 | Failure-isolation experiment: down, observe, restore, verify | 0.5 |
-| Report with per-authority verdicts and the organisation-to-authority distribution | 0.7 |
+| Report with per-authority verdicts and the organisation-to-authority distribution | 0.5 |
 
 ## 5. Decisions taken
 
@@ -157,8 +163,9 @@ Estimates, not measurements. Recorded at this granularity so an overrun is attri
 The three exit gates fail independently, and the first is a contract change to a system with a
 merged, tested invariant register. Bundling them would mean the first review of a placement
 model arrives alongside a topology and a measurement run, which is how a contract error reaches
-evidence. PR3a can also merge and sit — it is inert in a single-authority deployment if §6.1
-resolves the policy as placement-derived.
+evidence. PR3a can also merge and sit: with the policy comparing resolved authorities (§5.5),
+its booking half is inert in a single-authority deployment, where every organisation is
+colocated and nothing is refused that is not refused today.
 
 ### 5.2 Routing lives in the generator *and* is enforced by the service
 
@@ -181,38 +188,41 @@ If PR3a–PR3c overrun, the difference comes out of PR4's measurement scope thro
 
 See §3.2. This is a design choice with a budget consequence, not a descope.
 
+### 5.5 The three contract questions are settled, and one of them cost 0.5 days
+
+Raised against the design note in
+[PR #12](https://github.com/nancysworld/alloca-go/pull/12) and settled by its revision of
+2026-08-05. Recorded here because each decides what PR3a builds, and because two of them changed
+the shape of the work rather than merely confirming it.
+
+1. **The booking policy compares resolved authorities, not organisation identifiers.**
+   `authority(slot_organisation_id) == authority(user_organisation_id)`, deliberately weaker
+   than identifier equality. Cross-organisation booking is shipped, tested behaviour — INV-13,
+   and `user-schedule-non-overlap.md` §3.3 records that its test exists precisely to stop a
+   later change disabling it — so an unconditional same-organisation policy would have regressed
+   the current one-authority deployment. It now survives wherever the two organisations are
+   colocated, which also keeps INV-13 exercised end to end. **PR3c must therefore cover
+   colocated cross-organisation booking as a success case, not only as a refusal.**
+2. **Confirm and cancel gain an explicit `UserRef` ownership check**, returning the existing
+   `unknown_target` on mismatch. The service has no such check today: `lockByReservation`
+   (`internal/service/service.go:392`) and `tx.Reservation` (`internal/postgres/tx.go:178`)
+   resolve by reservation identifier alone, and the caller's `UserRef` only scopes idempotency,
+   so a confirm carrying a wrong identity succeeds. Without the check, sharding would make that
+   outcome depend on whether two organisations happen to be colocated. This is a deliberate
+   domain-contract correction, and it is the 0.5 days PR3a rose by — drawn from the plan's
+   contingency rather than from another PR (`ag-sept-plan-new.md` §4). It is not authentication:
+   a caller who knows both the reservation identifier and its exact owner can still act as that
+   owner.
+3. **An unavailable authority uses the existing infrastructure classifications** — `timeout_db`
+   when a database bound fires, `internal_failure` for another definite fault. No new generic
+   unavailable outcome is added to the closed set. The consequence lands on the evidence
+   contract rather than the domain: failure-isolation runs report affected and unaffected
+   populations separately and are not judged against the aggregate SLO gates that govern a
+   healthy capacity run (design note §6.1 and §7.7, plan §14 PR3c).
+
 ## 6. Open — these need Nancy before or during implementation
 
-### 6.1 The three contract questions from the design-note review
-
-Raised against `horizontal-database-authority.md` in
-[PR #12](https://github.com/nancysworld/alloca-go/pull/12) and unresolved at the time of
-writing. Each changes what PR3a builds, so each needs an answer before PR3a starts rather than
-during it.
-
-1. **Confirm/cancel ownership.** The note's §5.3 says confirm and cancel "continue to validate
-   ownership". They do not: `lockByReservation` (`internal/service/service.go:392`) and
-   `tx.Reservation` (`internal/postgres/tx.go:178`) resolve by reservation identifier alone, and
-   the caller's `UserRef` only scopes idempotency. A confirm carrying the wrong
-   `user_organisation_id` succeeds today and would return `unknown_target` under Phase 1
-   routing. **Add a real ownership check, or record that routing becomes the de-facto check and
-   that this outcome differs by topology?** Adding the check is roughly +0.4 days on PR3a and
-   is a domain change with its own normative updates.
-2. **Is the booking policy unconditional or derived from placement?** The note states it
-   unconditionally (§4.1, §10), which regresses the single-authority deployment: cross-
-   organisation booking is shipped, tested behaviour (INV-13, and
-   `user-schedule-non-overlap.md` §3.3 records that its test exists precisely to stop a later
-   change disabling it). Deriving the refusal from placement — refuse only when the two
-   organisations resolve to different authorities — keeps today's semantics in a one-authority
-   deployment and keeps INV-13 exercised end to end. **Recommended: placement-derived.**
-3. **Which outcome does an unavailable authority produce?** The note's placement invariant 3
-   requires a "classified unavailable outcome"; no such outcome exists in the closed set
-   (`internal/domain/outcome.go:9-35`), and a dead authority currently produces
-   `internal_failure` or `timeout_db` — which would fail the run's admissibility gates during
-   exactly the failure-isolation experiment PR3c needs. **Name the existing outcome, or add one
-   and say how per-authority failure is accounted for in the gates.**
-
-### 6.2 How many organisations, and how skewed
+### 6.1 How many organisations, and how skewed
 
 The design note's example map is three organisations across two authorities. The correctness
 gates do not need more, but the one-hot-organisation workload and the distribution reporting of
@@ -220,15 +230,20 @@ gates do not need more, but the one-hot-organisation workload and the distributi
 2:2 by count and deliberately unequal by load. Cheap to change; recorded so the run is not
 designed by accident.
 
-### 6.3 Whether PR3a merges before PR3b exists
+### 6.2 PR3a changes current behaviour in one respect, and that needs a deliberate yes
 
-PR3a is inert in a single-authority deployment if §6.1.2 resolves as placement-derived, so it
-can merge alone. If it resolves as unconditional, PR3a changes behaviour for the current
-deployment and should wait for PR3b so the two land together.
+With the policy comparing resolved authorities, PR3a's booking half is inert in the current
+one-authority deployment (§5.1). Its **ownership half is not**: today a caller holding a
+reservation identifier can confirm or cancel it while asserting a different `UserRef`, and after
+PR3a that returns `unknown_target`. No known client depends on it and the current behaviour is
+almost certainly not intended, but it is a live API behaviour change on a merged contract rather
+than new functionality, so it should be an explicit approval rather than a consequence of
+sharding. It also wants a line in the invariant register and in `api-surface.md`, since the
+change is observable to any caller.
 
 ## 7. Not in PR3
 
-- cross-shard booking, distributed commit, or any saga (design note §10, plan §15);
+- cross-authority booking, distributed commit, or any saga (design note §10, plan §15);
 - splitting one organisation across authorities;
 - online rebalancing, dual-write migration, or a placement change during a run;
 - a production routing gateway or dynamic shard catalogue;

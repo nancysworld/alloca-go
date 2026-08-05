@@ -21,9 +21,10 @@ Four changes follow.
 1. **Horizontal database authority becomes the milestone's primary work**, ahead of stateless
    replica scaling. Its design is
    [`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md),
-   which phases the route: Phase 1 composes independent organisation-home authorities with
-   same-shard booking only; Phase 2 adds a cross-shard protocol and is deliberately deferred
-   beyond AG-Sept. **Only Phase 1 is in scope here.**
+   which phases the route: Phase 1 composes independent organisation-home authorities and
+   supports every booking whose participating organisations resolve to the same authority;
+   Phase 2 adds a cross-authority protocol and is deliberately deferred beyond AG-Sept.
+   **Only Phase 1 is in scope here.**
 2. **The AWS path is dropped** (§10). Its budget returns to local P0 work under v0.4 §4's own
    reallocation rule. AG-Sept closes with local-container evidence and no published capacity
    number, which the v0.4 descope order already accepted as a valid outcome.
@@ -185,19 +186,22 @@ label according to the evidence convention in
 
 ## 4. Time budget and priority
 
-The development allocation is a planning constraint. 4.5 days are spent; 15 remain:
+The development allocation is a planning constraint. 4.5 days are spent; 15 remain. **Half a day
+is the unit**, here and in the scope notes: nothing is estimated well enough to distinguish 0.3
+from 0.4, and finer granularity is false precision that invites its own overrun (Nancy's call,
+2026-08-05).
 
 | Workstream | PR | Days | Status |
 |---|---|---:|---|
 | Measurement harness and load generator | PR1 | 2.0 | spent |
 | Single-instance frontier, with the diagnostic time-series minimum | PR2 | 2.5 | spent |
-| Placement and same-shard booking policy | PR3a | 2.5 | remaining |
-| Multi-authority harness — topology, generator routing, authority-aware verification | PR3b | 2.7 | remaining |
+| Placement, booking policy, and confirm/cancel ownership | PR3a | 3.0 | remaining |
+| Multi-authority harness — topology, generator routing, authority-aware verification | PR3b | 2.5 | remaining |
 | Multi-authority correctness and failure-isolation evidence | PR3c | 2.0 | remaining |
-| Container and local scale-out — replicas, exporters, controls | PR4 | 4.3 | remaining |
+| Container and local scale-out — replicas, exporters, controls | PR4 | 4.5 | remaining |
 | Architecture conclusions and one justified boundary | PR5 | 1.5 | remaining |
-| **Committed** | | **17.5** | 13.0 of it remaining |
-| Unallocated contingency | | 2.0 | remaining |
+| **Committed** | | **18.0** | 13.5 of it remaining |
+| Unallocated contingency | | 1.5 | remaining |
 | **Total milestone budget** | | **19.5** | |
 
 **Every PR is funded at what its scope costs.** No PR carries a deliberate shortfall, and no
@@ -211,20 +215,24 @@ before service replica scaling. This is the direct consequence of PR2's finding 
 database, not the application, sets the frontier — measuring replicas harder against an
 unchanged writer would refine a number the milestone has already explained.
 
-**The 2.0 unallocated days are contingency, not scope.** They are drawn on before §16's descope
-order, and three things could plausibly claim them, in this order:
+**PR3a rose from 2.5 to 3.0 before implementation started, and that is the contingency working
+as intended.** The design note's revision of 2026-08-05 settled the three contract questions
+raised in its review, and one of them resolved towards *build it*: confirm and cancel gain an
+explicit `UserRef` ownership check, which the earlier estimate priced as a decision rather than
+a domain-contract correction with its own normative updates and tests
+([`ag-sept-pr3-scope.md`](ag-sept-pr3-scope.md) §5.5). The half day came from contingency rather
+than from another PR.
 
-1. **PR3a's contract questions landing differently than assumed.** §14 PR3a prices the
-   confirm/cancel ownership decision as settled, not as implemented; implementing a real
-   ownership check is roughly a further 0.4 days plus its normative updates
-   ([`ag-sept-pr3-scope.md`](ag-sept-pr3-scope.md) §6.1).
-2. **PR2's unexplained ~2× excursions turning out to be reproducible and diagnosable** once
+**The 1.5 remaining unallocated days are contingency, not scope.** They are drawn on before
+§16's descope order, and two things could plausibly claim them, in this order:
+
+1. **PR2's unexplained ~2× excursions turning out to be reproducible and diagnosable** once
    PR4's node exporter can see them. That would be a real finding, and chasing it is worth more
    than another matrix cell.
-3. **Group A of the PR2 deferral register** — the overload question, roughly 1.5 days (§14).
+2. **Group A of the PR2 deferral register** — the overload question, roughly 1.5 days (§14).
    It is the founding unreproduced question in `high-level-design.md` §1.1, and it is the one
    candidate here that is *new scope* rather than insurance. Adding it is Nancy's call, not a
-   default.
+   default, and at 1.5 days it would now consume nearly all of what remains.
 
 Unspent contingency is not a licence to expand a PR. It returns to the reserve.
 
@@ -365,10 +373,14 @@ writable authorities**.
 
 Required properties:
 
-- several organisations, assigned across authorities by the versioned placement map (§8.2);
-- `slot_organisation_id == user_organisation_id` on every generated booking request, which is
-  the only pattern Phase 1 supports;
-- a declared, deliberate share of **cross-organisation** requests, used to exercise the refusal
+- several organisations, assigned across authorities by the versioned placement map (§8.2),
+  **including at least two organisations colocated on one authority**;
+- `authority(slot_organisation_id) == authority(user_organisation_id)` on every generated
+  booking request, which is the condition Phase 1 supports. It is deliberately weaker than
+  organisation-identifier equality: a user registered with one organisation booking a slot owned
+  by another is supported whenever the two are colocated, which is what keeps INV-13 exercised
+  end to end;
+- a declared, deliberate share of **cross-authority** requests, used to exercise the refusal
   path rather than to measure throughput;
 - a reported organisation-to-authority distribution for every run, since equal organisation
   counts do not imply equal load.
@@ -532,8 +544,11 @@ The design is owned by
 This plan states only what AG-Sept must build and prove, and does not restate the design.
 
 Phase 1 assigns each organisation one writable PostgreSQL home authority holding its complete
-transactional state, supports booking only where the user and slot organisations share an
-authority, and keeps every supported operation inside the existing single-database transaction.
+transactional state, supports booking wherever the user and slot organisations *resolve to* the
+same authority — placement equality, not organisation-identifier equality — and keeps every
+supported operation inside the existing single-database transaction. Cross-organisation booking
+therefore survives Phase 1 unchanged whenever the two organisations are colocated, including in
+the current one-authority deployment.
 
 The required properties for AG-Sept:
 
@@ -621,7 +636,7 @@ Replacing v0.4's AWS matrix. A recommended `[HYPOTHESIS]` minimum:
 
 | Experiment | Topology | Workloads |
 |---|---|---|
-| Phase 1 correctness | 2 authorities × 1 replica each | multi-organisation dispersed, one-hot-organisation, cross-organisation refusal |
+| Phase 1 correctness | 2 authorities × 1 replica each | multi-organisation dispersed, colocated cross-organisation booking, one-hot-organisation, cross-authority refusal, wrong-`UserRef` confirm and cancel |
 | Phase 1 failure isolation | 2 authorities × 1 replica each | multi-organisation dispersed, with one authority taken down and restored |
 | Replica matrix | 1 authority × 1, 2, 4 replicas | dispersed at 1/2/4; hot slot at 1/4; hot identity at 1/4 |
 | Connection-budget control | 1 authority × 2, 4 replicas | dispersed, both budget configurations |
@@ -730,9 +745,12 @@ controlled workloads, telemetry comparison, generator-bottleneck control, fronti
 note: [`ag-sept-pr2-scope.md`](ag-sept-pr2-scope.md). Result: the frontier is set by PostgreSQL,
 not by `alloca-go`; this is what reordered the milestone (§0).
 
-### PR3a — Placement and same-shard booking policy
+### PR3a — Placement, booking policy, and confirm/cancel ownership
 
-**Indicative budget:** 2.5 days.
+**Indicative budget:** 3.0 days. The three contract questions raised in review of the design
+note were settled in its revision of 2026-08-05
+([PR #12](https://github.com/nancysworld/alloca-go/pull/12)), and one of them resolved towards
+building rather than documenting; §4 records where the extra half day came from.
 
 **Scope:**
 
@@ -742,33 +760,37 @@ not by `alloca-go`; this is what reordered the milestone (§0).
 - bind each service unit to exactly one authority and its assigned organisation set;
 - **enforce placement server-side** — reject a request for an organisation the unit does not
   own, and prove it with the §12.5 control;
-- implement the Phase 1 booking policy as an explicit outcome, and take that outcome through the
-  closed sets it touches: the domain reason set, the HTTP status mapping,
+- implement the Phase 1 booking policy on **resolved authorities, not organisation identifiers**
+  (§8.2), so colocated cross-organisation booking keeps working and INV-13 stays exercised;
+- add `cross_authority_unsupported` as a normative domain reason, through every closed set it
+  touches: the domain reason set and its validation, the HTTP status mapping,
   [`api-surface.md`](../design/api-surface.md), the invariant register in
   [`transaction-semantics.md`](../design/transaction-semantics.md), the
-  [`measurement-contract.md`](../design/measurement-contract.md) §4 taxonomy, and the metric
-  label allowlist;
-- settle the three contract questions raised in review of the design note before implementing
-  against it — confirm/cancel ownership semantics, whether the policy is unconditional or
-  derived from placement, and which outcome an unavailable authority produces
-  ([PR #12 review](https://github.com/nancysworld/alloca-go/pull/12));
+  [`measurement-contract.md`](../design/measurement-contract.md) §4 taxonomy, the metric label
+  allowlist, and reconciliation;
+- **add the explicit `UserRef` ownership check to confirm and cancel**, returning the existing
+  `unknown_target` on mismatch. The service does not validate ownership today, so this is a
+  deliberate domain-contract correction with its own normative updates and tests — and it is
+  what stops the result of a wrong identity depending on whether two organisations happen to be
+  colocated;
 - extend `/meta` with authority identifier, routing version, and schema version;
 - add the placement invariants to the invariant register with discriminating tests, each proved
   to fail without the property it asserts.
 
-**Evidence:** the closed-set and contract changes with their tests; the misrouting control; a
-recorded decision for each of the three contract questions.
+**Evidence:** the closed-set and contract changes with their tests; the misrouting control; the
+ownership check proved to change behaviour in both placements identically.
 
 **Exit:** a service unit cannot be started against an inconsistent placement map or an
 incompatible schema; a misrouted request is refused rather than written; the booking policy is
-one named outcome across every closed set that must know about it; and no accepted AG-M1
-invariant has been weakened to make any of it fit.
+one named outcome across every closed set that must know about it; a wrong `UserRef` gets the
+same answer whether or not the organisations are colocated; and no accepted AG-M1 invariant has
+been weakened to make any of it fit.
 
 **Not in PR3a:** multi-authority runs, generator changes, verifier changes, any measurement.
 
 ### PR3b — Multi-authority harness
 
-**Indicative budget:** 2.7 days.
+**Indicative budget:** 2.5 days.
 
 **Scope:**
 
@@ -801,13 +823,21 @@ attribution — per-authority work is read from per-service scrapes instead (§6
 
 **Scope:**
 
-- seed several organisations across both authorities and run the §11 correctness experiments;
-- prove the Phase 1 gates: no supported request reaches the wrong authority; cross-organisation
-  reserve is refused before persistence; capacity, schedule, idempotency, lifecycle, and
-  outcome-reconciliation gates pass independently on every authority;
+- seed several organisations across both authorities, at least two of them colocated, and run
+  the §11 correctness experiments;
+- prove the Phase 1 gates: same-organisation and **colocated cross-organisation** booking both
+  succeed through the local transaction and preserve global schedule non-overlap; cross-authority
+  reserve is refused before persistence; confirm and cancel with a wrong `UserRef` return
+  `unknown_target` regardless of colocation; no supported request reaches the wrong authority;
+  and capacity, schedule, idempotency, lifecycle, and outcome reconciliation pass independently
+  on every authority;
 - run the failure-isolation experiment — take one authority down, show only its organisations
   are affected and that the other continues to serve, then restore it and show recovery needs no
   writes on the other authority;
+- **report the failure experiment as its own evidence class.** Requests to a down authority fail
+  through the existing `timeout_db` and `internal_failure` classifications, so affected and
+  unaffected populations are reported separately and the run is not judged against the aggregate
+  SLO gates that govern a healthy capacity run;
 - verify under the quiesced consistency rule (§3.2, §6.5);
 - report, with the organisation-to-authority distribution each run measured.
 
@@ -818,14 +848,14 @@ failure-isolation result, and the routing and schema metadata for every run.
 authorities; every accepted transaction semantic on the supported path is unchanged; and no
 result claims a throughput multiplier from this workstation.
 
-**Not in PR3c:** cross-shard booking, rebalancing, replica scaling, any capacity-composition
+**Not in PR3c:** cross-authority booking, rebalancing, replica scaling, any capacity-composition
 claim.
 
 ### PR4 — Container and local scale-out
 
-**Indicative budget:** 4.3 days — 0.5 for replica orchestration, 0.8 for the exporters and
-dashboard extension, 1.0 for the §11 replica matrix, 0.4 for the connection-budget control, 0.5
-for the prediction test and the operating-capacity number, 0.3 for the composed run, and 0.8 for
+**Indicative budget:** 4.5 days — 0.5 for replica orchestration, 1.0 for the exporters and
+dashboard extension, 1.0 for the §11 replica matrix, 0.5 for the connection-budget control, 0.5
+for the prediction test and the operating-capacity number, 0.5 for the composed run, and 0.5 for
 the report.
 
 **Scope:**
@@ -965,7 +995,7 @@ session is this document. The register is resolved as follows; the full reasonin
 
 ### Explicitly out of scope
 
-- cross-shard booking, and any distributed commit or saga protocol (design note §10);
+- cross-authority booking, and any distributed commit or saga protocol (design note §10);
 - splitting one organisation across writable authorities;
 - online rebalancing or dual-write migration between authorities;
 - a shared global workflow database;
@@ -997,7 +1027,7 @@ failure-isolation experiment, the PostgreSQL and node exporters, the one-instanc
 minimal diagnostic time-series visibility, measurement validity, or the architecture report.
 
 **The correctness work is not a source of budget.** If PR3a–PR3c overrun, the difference comes
-first from §4's 2.0 unallocated days and then from PR4's measurement scope through this list —
+first from §4's unallocated contingency and then from PR4's measurement scope through this list —
 never from the gates that make a run admissible. That is the direct expression of §3.2, and it
 is the order in which the two reserves are spent: contingency, then descope, and the 2–3 day
 reserve last and only for what it is for.

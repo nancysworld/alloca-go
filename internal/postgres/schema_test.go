@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -63,6 +62,14 @@ func TestCheckSchemaRefusesToServeAnIncompatibleAuthority(t *testing.T) {
 			row:  stubRow{version: version(expected - 1)},
 			want: "run alloca-migrate before serving",
 		},
+		{
+			// Refused rather than tolerated: accepting it would trust that every
+			// migration in between was additive, which this gate cannot check, and
+			// would admit a multi-authority run whose units are ahead of their binary.
+			name: "authority ahead of this binary",
+			row:  stubRow{version: version(expected + 1)},
+			want: "roll the schema back or deploy the matching binary",
+		},
 	}
 
 	for _, tc := range tests {
@@ -81,24 +88,19 @@ func TestCheckSchemaRefusesToServeAnIncompatibleAuthority(t *testing.T) {
 	}
 }
 
-// A rollout migrates before the new version serves (ADR-0002), so every not-yet-replaced
-// replica runs against a schema newer than itself. Refusing that would make the gate
-// reject the normal deploy.
-func TestCheckSchemaAcceptsAnAuthorityAtOrAheadOfThisBinary(t *testing.T) {
+// The one accepted state, and the control for the refusals above: without it the gate
+// could be satisfied by refusing everything.
+func TestCheckSchemaAcceptsTheVersionThisBinaryExpects(t *testing.T) {
 	expected, err := ExpectedSchemaVersion()
 	if err != nil {
 		t.Fatalf("reading the expected version: %v", err)
 	}
 
-	for _, applied := range []int64{expected, expected + 1} {
-		t.Run(fmt.Sprintf("applied=%d", applied), func(t *testing.T) {
-			got, err := CheckSchema(context.Background(), stubQuerier{row: stubRow{version: version(applied)}})
-			if err != nil {
-				t.Fatalf("a compatible authority was refused: %v", err)
-			}
-			if got != applied {
-				t.Errorf("reported version = %d, want %d", got, applied)
-			}
-		})
+	got, err := CheckSchema(context.Background(), stubQuerier{row: stubRow{version: version(expected)}})
+	if err != nil {
+		t.Fatalf("the matching version was refused: %v", err)
+	}
+	if got != expected {
+		t.Errorf("reported version = %d, want %d", got, expected)
 	}
 }

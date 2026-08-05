@@ -106,14 +106,31 @@ func ExpectedSchemaVersion() (int64, error) {
 // organisations wrongly while its peers served theirs correctly, and the blast radius
 // would follow the placement map (horizontal-database-authority §5.1).
 //
-// **Applied ahead of the binary is allowed.** ADR-0002's rollout migrates before the new
-// version serves, so during a deploy every not-yet-replaced replica is running against a
-// schema newer than itself; refusing that would make the gate reject the normal rollout.
-// Additive migrations are what make it safe, and that constraint belongs to whoever writes
-// the migration — this gate cannot check it, and says so rather than implying otherwise.
+// **The rule is exact equality**, in both directions.
 //
-// **Applied behind the binary is refused**: the binary carries migrations that have not
-// run, so it expects schema that does not exist.
+// Behind is obvious: the binary carries migrations that have not run, so it expects schema
+// that does not exist.
+//
+// Ahead is refused deliberately, and it is the interesting half. Accepting it would trust
+// something this gate cannot check — that every migration between the two versions was
+// additive. When one is not, the binary fails at runtime on whichever query first touches
+// the changed column, which is exactly the "one failing query at a time, under load"
+// failure the gate exists to prevent; a gate that delegates its own precondition to a
+// convention is not a gate. It also protects the *evidence*: `>=` would admit a run whose
+// authorities are uniformly ahead of the binary, or ahead of each other, and a
+// multi-authority result is only comparable when every unit runs the schema its binary
+// expects (horizontal-database-authority §5.1).
+//
+// **The cost is that rollback across a migration is blocked.** Deploy v2, migrate, find a
+// problem, roll back to v1 — v1 will refuse to start. That is accepted rather than
+// overlooked: the refusal is loud, immediate and actionable, where the alternative failure
+// is silent and arrives under load, and a rollback across a *destructive* migration is
+// genuinely unsafe, so forcing a schema decision is the correct outcome.
+//
+// A rolling deploy, where not-yet-replaced replicas legitimately run behind the schema,
+// would need an explicit opt-in set for the window it applies to. This project has no such
+// deploy — `alloca-migrate` runs, then the service starts — so building one now would be
+// speculative generality inside a safety gate. Add it when a rollout actually requires it.
 // SchemaQuerier is the single read CheckSchema needs. It is an interface rather than the
 // pool so the gate's refusal paths — unreadable, unapplied, behind — can be tested without
 // a database; *pgxpool.Pool satisfies it.
@@ -142,6 +159,10 @@ func CheckSchema(ctx context.Context, q SchemaQuerier) (applied int64, err error
 	}
 	if *version < expected {
 		return 0, fmt.Errorf("%w: authority is at version %d but this binary expects %d; run alloca-migrate before serving (ADR-0002)",
+			ErrSchemaIncompatible, *version, expected)
+	}
+	if *version > expected {
+		return 0, fmt.Errorf("%w: authority is at version %d but this binary expects %d; the authority has migrations this build does not carry, so roll the schema back or deploy the matching binary",
 			ErrSchemaIncompatible, *version, expected)
 	}
 	return *version, nil

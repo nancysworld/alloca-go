@@ -1,6 +1,8 @@
 # AG-Sept PR3 — Horizontal database authority, Phase 1 (scope)
 
-**Status:** Proposed — §6 needs Nancy before implementation starts
+**Status:** Frozen for implementation. The design is accepted (design note §8), the budget and
+PR split are agreed, and §6 holds no blocker — its one remaining item is a starting fixture, not
+a contract.
 **Budget:** 7.5 development days across three PRs ([AG-Sept plan](ag-sept-plan-new.md) §4) —
 3.0 for PR3a, 2.5 for PR3b, 2.0 for PR3c
 **Owner doc:** [ag-sept-plan-new.md](ag-sept-plan-new.md) §8.2 and §6.5 are normative for what
@@ -8,9 +10,9 @@ this PR builds; this note records only how PR3 discharges them and the choices m
 way
 **Design input:**
 [`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md)
-owns the design, at its revision of 2026-08-05 (`bc80d20`), which settled the three contract
-questions this note previously carried as open (§5.5). This note does not restate the design,
-and where the two disagree the design note wins.
+owns the design, at `a6e4c21` (indexed by `5017fed`), whose §8 lists the settled Phase 1
+contracts and the mechanics left to implementation. This note does not restate the design, and
+where the two disagree the design note wins.
 
 ## 1. Exit gates
 
@@ -38,8 +40,9 @@ that reached its topology by relaxing an invariant would have moved the problem,
 generator, and the telemetry stack share one 10-vCPU WSL2 allocation
 ([`../measurements/environment.md`](../measurements/environment.md)). Authority composition
 cannot be quoted as a capacity multiplier from this machine, and PR2's unexplained ~2×
-excursions are still open, so any single reading carries a ±2× caveat until PR4's node exporter
-exists. PR3 is correctness-first by design, not by descope.
+excursions are still open, so any single reading carries a ±2× caveat — which PR4's node
+exporter does not discharge merely by existing, only by explaining, excluding, or bounding the
+excursion. PR3 is correctness-first by design, not by descope.
 
 ## 2. What PR3 delivers
 
@@ -53,11 +56,12 @@ exists. PR3 is correctness-first by design, not by descope.
 | 6 | `/meta` extended with authority identifier, routing version, schema version | 3a | §6.4 |
 | 7 | Placement invariants in the register, each with a discriminating test | 3a | §3.2 |
 | 8 | Containerised two-authority topology, per-authority migration | 3b | §9.1 |
-| 9 | Generator routes by organisation; multi-organisation and one-hot-organisation workloads | 3b | §5.6, §6.3 |
+| 9 | Generator routes mutations by user organisation and reads by slot organisation; multi-organisation, one-hot-organisation, and cross-authority-refusal workloads | 3b | §5.6, §6.3 |
 | 10 | Placement, authority count, and assignment in the manifest; multi-service certification | 3b | §6.4 |
 | 11 | Authority-aware verifier with one aggregated verdict | 3b | §6.5 |
 | 12 | Phase 1 correctness experiments and per-authority verdicts | 3c | §11 |
-| 13 | Failure-isolation experiment — one authority down, then restored | 3c | §11 |
+| 13 | Failure-isolation experiment — one authority down, ambiguous mutations replayed, then restored | 3c | §11 |
+| 14 | Ambiguous-request register and post-restoration replay pass (§5.7) | 3b/3c | §6.5 |
 
 ## 3. What the existing code makes cheap, and what it does not
 
@@ -71,9 +75,17 @@ takes an organisation, and `capacityCheck`, `idempotencyCheck`, and `claimsCheck
 in turn (`internal/reconcile/reconcile.go`). The checks are already local to one organisation's
 rows, which is exactly the granularity Phase 1 places on one authority.
 
-Authority-aware verification is therefore mostly a loop over `(authority → organisations)` with
-the right pool, plus verdict aggregation — not a rewrite. `cmd/alloca-verify` needs the
-placement map in place of its single `--database-url` and `--org` flags.
+So the plan's §6.5 contract — local safety invariants per authority, then aggregate persisted
+and server totals compared once against global client totals — lands close to the existing
+shape, and authority-aware verification is an extension rather than a rewrite.
+`cmd/alloca-verify` needs the placement map in place of its single `--database-url` and `--org`
+flags.
+
+**This is an observation about cost, not a design.** Whether PR3b loops the existing entry point
+per organisation, refactors the checks behind an authority-scoped querier, or restructures them
+another way is PR3b's to choose. The normative requirement is the plan's §6.5 contract, and in
+particular that one organisation's persisted rows are never compared against the run's
+unpartitioned global summary.
 
 ### 3.2 Per-authority attribution comes free from per-service scrapes
 
@@ -126,6 +138,17 @@ Estimates, not measurements. Recorded per component so an overrun is attributabl
 **Half a day is the unit.** Finer granularity would be false precision: nothing here is
 estimated well enough to distinguish 0.3 from 0.4, and a plan that pretends otherwise invites
 its own overrun. Nancy's call, 2026-08-05.
+
+**Two late additions are absorbed rather than added.** The ambiguous-request register (§5.7)
+sits inside PR3b's generator line, and the post-restoration replay pass inside PR3c's
+failure-isolation line. Both are small, and both make those two lines tight rather than
+comfortable; if either overruns, the plan's contingency covers it before anything is descoped.
+
+**The INV-21 discharge is explicitly not funded here.** Proving it needs a *deliberately timed*
+connection loss during `COMMIT`, which a generic authority shutdown does not produce. If the
+targeted fault-injection mechanism proves cheap it can be taken inside PR3c; if it does not, it
+is a contingency draw of about 0.5 days or it is left open, exactly as it has been since AG-M1.
+What PR3c must not do is claim the discharge from a generic shutdown.
 
 **PR3a — 3.0 days**
 
@@ -220,26 +243,66 @@ the shape of the work rather than merely confirming it.
    populations separately and are not judged against the aggregate SLO gates that govern a
    healthy capacity run (design note §6.1 and §7.7, plan §14 PR3c).
 
-## 6. Open — these need Nancy before or during implementation
+### 5.6 A misrouted request is `invalid_request` at the edge, with its own counter
 
-### 6.1 How many organisations, and how skewed
+Design note §5.2 classes a request arriving at a unit that does not own its user organisation as
+a routing or deployment fault rather than the `cross_authority_unsupported` business policy, and
+delegates the edge classification here. Within the closed outcome set the honest candidates are
+`invalid_request` (400) and `internal_failure` (500). **PR3a uses `invalid_request`**, for two
+reasons:
 
-The design note's example map is three organisations across two authorities. The correctness
-gates do not need more, but the one-hot-organisation workload and the distribution reporting of
-§5.6 are more informative with a deliberate skew. Proposed `[HYPOTHESIS]`: four organisations,
-2:2 by count and deliberately unequal by load. Cheap to change; recorded so the run is not
-designed by accident.
+- the note forbids recording it as the user's durable domain outcome on the wrong authority, and
+  `invalid_request` is precisely the outcome INV-7 exempts from the recording rule — it is
+  rejected at the transport edge and may carry no scope to record against;
+- routing identity is caller-asserted until authentication exists (design note §7.6), so
+  `internal_failure` would let a client drive the service's internal-failure rate, which is an
+  SLO-relevant signal.
 
-### 6.2 PR3a changes current behaviour in one respect, and that needs a deliberate yes
+The deployment fault must still be visible to an operator, so the refusal increments a dedicated
+bounded counter and logs the unit's authority and the requested organisation. A 400 that is
+really a misconfiguration should not hide among client errors. The §12.5 misrouting control
+asserts both the outcome and the counter.
 
-With the policy comparing resolved authorities, PR3a's booking half is inert in the current
-one-authority deployment (§5.1). Its **ownership half is not**: today a caller holding a
-reservation identifier can confirm or cancel it while asserting a different `UserRef`, and after
-PR3a that returns `unknown_target`. No known client depends on it and the current behaviour is
-almost certainly not intended, but it is a live API behaviour change on a merged contract rather
-than new functionality, so it should be an explicit approval rather than a consequence of
-sharding. It also wants a line in the invariant register and in `api-surface.md`, since the
-change is observable to any caller.
+### 5.7 Resolving `unknown_replayable` is a post-run pass, not a load control
+
+The plan's §6.5 requires ambiguous mutations to be resolved by replaying their own idempotency
+keys after an authority is restored. That needs the generator to retain the keys of
+`unknown_replayable` responses during the run and reissue them afterwards.
+
+The machinery is close to hand: keys are already derived deterministically per workload
+(`key(name, seq, op)` in `internal/loadgen/workload.go`), and the `Replay` workload already
+issues a second request under the same key and checks the response against §4.2. What is missing
+is that `Response` and `Total` retain no key, so PR3b adds a small register of ambiguous
+requests and PR3c adds the resolution pass.
+
+**This is deliberately not group A's retry-on-timeout control.** That control shapes load during
+a run — timeout, retry, amplification — and remains unassigned (`ag-sept-plan-new.md` §14). This
+is a bounded post-restoration pass whose only purpose is to collapse ambiguity before the
+correctness verdict. Conflating them is how group A creeps into a PR that cannot fund it.
+
+## 6. Settled by the freeze, and the one thing left open
+
+### 6.1 The ownership correction is an accepted API behaviour change
+
+PR3a's booking half is inert in the current one-authority deployment, where every organisation
+is colocated (§5.1). Its **ownership half is not**: today a caller holding a reservation
+identifier can confirm or cancel it while asserting a different `UserRef`, and after PR3a that
+returns `404 unknown_target`.
+
+That is a live behaviour change on a merged contract rather than new functionality, so it was
+raised for an explicit decision rather than allowed to arrive as a side effect of sharding. It
+is **accepted** as part of the design freeze (design note §8, decision 5; Nancy, 2026-08-05).
+PR3a therefore carries its normative consequences with it: a line in the invariant register, the
+behaviour stated in [`api-surface.md`](../design/api-surface.md), and a discriminating test that
+fails without the comparison.
+
+### 6.2 Organisation count and skew — a starting fixture, not a contract
+
+The design note's map is now four organisations across two authorities (§5.1 of the note).
+`[HYPOTHESIS]`: 2:2 by count and deliberately unequal by load, so the one-hot-organisation
+workload and the distribution reporting of the plan's §5.6 have something to show. It stays a
+run parameter that implementation may change on evidence, not an architectural commitment —
+recorded only so the fixture is chosen rather than defaulted into.
 
 ## 7. Not in PR3
 

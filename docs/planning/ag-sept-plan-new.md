@@ -380,10 +380,13 @@ Required properties:
   organisation-identifier equality: a user registered with one organisation booking a slot owned
   by another is supported whenever the two are colocated, which is what keeps INV-13 exercised
   end to end;
-- a declared, deliberate share of **cross-authority** requests, used to exercise the refusal
-  path rather than to measure throughput;
 - a reported organisation-to-authority distribution for every run, since equal organisation
   counts do not imply equal load.
+
+**Cross-authority requests are a separate control, not a share of this workload.** Deliberate
+policy refusals are cheap compared with a real booking, so mixing them into the supported
+workload would flatter both goodput and latency. The refusal control is a bounded run of its own
+and is reported as its own evidence class (design note §6.2).
 
 A one-hot-organisation variant is required for the failure-isolation experiment: it shows that
 one saturated or unavailable authority bounds its own organisations and no others.
@@ -438,8 +441,11 @@ The load generator must:
 - emit machine-readable summaries;
 - run separately from the service for publishable claims;
 - expose enough utilisation to rule out generator saturation;
-- **route each request to the service unit that owns its organisation, using the same versioned
-  placement map the services use** (new in v0.5, §8.2).
+- **route by the same versioned placement map the services use** (new in v0.5, §8.2):
+  **mutations by `user_organisation_id`**, since user-home owns the schedule claim and the
+  client idempotency scope and is therefore the stable home for a mutation and every replay of
+  it; **reads by `slot_organisation_id`**, which is the authority that holds the rows they
+  return.
 
 Closed-loop sweeps are sufficient initially. Open-loop rate control is desirable where it
 materially improves overload analysis.
@@ -494,10 +500,21 @@ PR1 established a self-check used by every later measured run. At minimum it mus
 
 A run with unreconciled client totals, server totals, or persisted state is not quotable.
 
-**Extended for multiple authorities in PR3b.** Each check runs per authority over the
-organisations that authority owns; the verdict aggregates without treating sequential
-cross-database reads as one atomic snapshot; and the run is quiesced before any authority is
-read (§3.2, design note §6).
+**Extended for multiple authorities in PR3b.** The contract, not the mechanism:
+
+1. the run is quiesced, and any `unknown_replayable` mutation is resolved by replaying its own
+   idempotency key before verification begins;
+2. **local safety invariants are checked independently on each authority** — capacity, schedule
+   non-overlap, idempotency, and lifecycle are all local properties of the rows one authority
+   owns;
+3. **persisted and server totals are aggregated across authorities and compared once** with the
+   run's global client totals;
+4. the verdict aggregates without treating sequential cross-database reads as one atomic
+   snapshot.
+
+The architectural requirement is that a multi-organisation run must never compare one
+organisation's persisted rows against the run's unpartitioned global summary. The verifier's
+data structures, query factoring, and scrape aggregation are PR3b's to choose (design note §6.3).
 
 ## 7. Single-instance baseline — discharged
 
@@ -510,9 +527,10 @@ Two obligations survive into later PRs:
 
 - the **recommended operating capacity** term, deferred by PR2 because two of its three
   components need more than one replica to be meaningful. It is PR4's (§14);
-- the **±2× caveat** on every figure from this machine, which stands until a node exporter can
-  see the unexplained excursions. That exporter is PR4's, and it is required rather than
-  desirable.
+- the **±2× caveat** on every figure from this machine. PR4's node exporter is required rather
+  than desirable, but installing it does not discharge the caveat: the caveat stands until
+  instrumented reruns *explain* the excursions, *exclude* them, or *bound* them conservatively.
+  An instrument that can see a thing is not yet an answer about it.
 
 Peak observed throughput, SLO-safe capacity, recommended operating capacity, and scale
 efficiency use the normative definitions in
@@ -636,8 +654,9 @@ Replacing v0.4's AWS matrix. A recommended `[HYPOTHESIS]` minimum:
 
 | Experiment | Topology | Workloads |
 |---|---|---|
-| Phase 1 correctness | 2 authorities × 1 replica each | multi-organisation dispersed, colocated cross-organisation booking, one-hot-organisation, cross-authority refusal, wrong-`UserRef` confirm and cancel |
-| Phase 1 failure isolation | 2 authorities × 1 replica each | multi-organisation dispersed, with one authority taken down and restored |
+| Phase 1 supported correctness | 2 authorities × 1 replica each | multi-organisation dispersed, colocated cross-organisation booking, one-hot-organisation, wrong-`UserRef` confirm and cancel |
+| Cross-authority refusal control | 2 authorities × 1 replica each | bounded cross-authority reserves — its own evidence class, never mixed into a goodput or latency comparison |
+| Phase 1 failure isolation | 2 authorities × 1 replica each | multi-organisation dispersed, with one authority taken down, ambiguous mutations replayed, and the authority restored |
 | Replica matrix | 1 authority × 1, 2, 4 replicas | dispersed at 1/2/4; hot slot at 1/4; hot identity at 1/4 |
 | Connection-budget control | 1 authority × 2, 4 replicas | dispersed, both budget configurations |
 | Composed run | 2 authorities × chosen replica count | multi-organisation dispersed |
@@ -797,8 +816,14 @@ been weakened to make any of it fit.
 - containerise the service to the §9.1 gate and stand up the two-authority topology
   reproducibly, with per-authority migration as a separate step (ADR-0002 — serving replicas
   never migrate);
-- teach the generator to route by organisation to the owning service unit (§6.3), and add the
-  multi-organisation dispersed and one-hot-organisation workloads of §5.6;
+- teach the generator to route by the placement map — **mutations by `user_organisation_id`,
+  reads by `slot_organisation_id`** (§6.3) — and add the multi-organisation dispersed and
+  one-hot-organisation workloads of §5.6, plus the bounded cross-authority refusal control as a
+  separate workload rather than a share of the dispersed one;
+- retain the idempotency keys of any `unknown_replayable` response so PR3c can replay them after
+  an authority is restored (§6.5). Keys are already derived deterministically per workload, so
+  this is a small register and a resolution pass, **not** the retry-on-timeout load control of
+  the PR2 deferral register's group A, which stays out of scope;
 - record placement, authority count, and assignment in the manifest, and require every
   participating unit's `/meta` to agree on revision and schema before a run is certifiable
   (§6.4);
@@ -825,19 +850,30 @@ attribution — per-authority work is read from per-service scrapes instead (§6
 
 - seed several organisations across both authorities, at least two of them colocated, and run
   the §11 correctness experiments;
-- prove the Phase 1 gates: same-organisation and **colocated cross-organisation** booking both
-  succeed through the local transaction and preserve global schedule non-overlap; cross-authority
-  reserve is refused before persistence; confirm and cancel with a wrong `UserRef` return
-  `unknown_target` regardless of colocation; no supported request reaches the wrong authority;
-  and capacity, schedule, idempotency, lifecycle, and outcome reconciliation pass independently
-  on every authority;
+- prove the supported-workload gates: same-organisation and **colocated cross-organisation**
+  booking both succeed through the local transaction and preserve global schedule non-overlap;
+  confirm and cancel with a wrong `UserRef` return `404 unknown_target` regardless of
+  colocation; no supported request reaches the wrong authority; and capacity, schedule,
+  idempotency, lifecycle, and outcome reconciliation pass independently on every authority;
+- run the **cross-authority refusal control** as its own bounded evidence class: user-home
+  records `cross_authority_unsupported` before any slot-authority work or booking-state
+  mutation, replay returns the recorded refusal, no reservation, claim, booking, or slot-side
+  row is created, and the slot authority receives no request. Reported separately, so deliberate
+  refusals never enter a goodput or latency comparison;
 - run the failure-isolation experiment — take one authority down, show only its organisations
   are affected and that the other continues to serve, then restore it and show recovery needs no
   writes on the other authority;
-- **report the failure experiment as its own evidence class.** Requests to a down authority fail
-  through the existing `timeout_db` and `internal_failure` classifications, so affected and
-  unaffected populations are reported separately and the run is not judged against the aggregate
-  SLO gates that govern a healthy capacity run;
+- **report the failure experiment as its own evidence class.** A down authority may produce
+  `internal_failure` (unreachable before the transaction begins), `timeout_db` (an acquisition,
+  lock, or statement bound fires), or **`unknown_replayable`** (the connection is lost while the
+  commit acknowledgement is in flight). After restoration, ambiguous mutations are resolved by
+  replaying their own idempotency keys *before* the final correctness verdict. Affected and
+  unaffected populations are reported separately, and the run is not judged against the
+  aggregate SLO gates that govern a healthy capacity run;
+- **if a deliberately timed mid-commit connection loss can be produced, discharge INV-21** —
+  the register's longest-standing "not directly proven" entry, open because no test kills a
+  connection mid-`COMMIT`. A generic authority shutdown does not claim that proof; only the
+  targeted fault does, and the mechanism is implementation's to choose;
 - verify under the quiesced consistency rule (§3.2, §6.5);
 - report, with the organisation-to-authority distribution each run measured.
 

@@ -47,6 +47,21 @@ type Manifest struct {
 	DeploymentTopology string `json:"deployment_topology"`
 	Environment        string `json:"environment"`
 
+	// AuthorityCount, RoutingVersion and PlacementAssignment describe the writable
+	// authorities this run reached (§6.4). They are read back from the units' own /meta
+	// rather than copied from the placement file the harness loaded: those are two
+	// different facts — what the operator intended and what is actually serving — and
+	// recording the intention as the observation is how a misconfigured run comes to look
+	// correct in its own artifact.
+	AuthorityCount      int                 `json:"authority_count,omitempty"`
+	RoutingVersion      string              `json:"routing_version,omitempty"`
+	PlacementAssignment map[string][]string `json:"placement_assignment,omitempty"`
+
+	// TopologyDisagreement names how the units failed to describe one deployment, empty
+	// when they agreed. A non-empty value makes the run uncertifiable: its numbers describe
+	// two services averaged together, and nothing in the totals would say so.
+	TopologyDisagreement string `json:"topology_disagreement,omitempty"`
+
 	// Service-side shape the service publishes about itself at /meta. Discovered rather
 	// than transcribed: a value the service already reports is one an operator should never
 	// be asked to retype, since a typo there is indistinguishable from a measurement.

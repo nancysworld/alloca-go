@@ -110,15 +110,15 @@ Because both business authorities are colocated for every supported booking, res
                     ┌─────────────┴─────────────┐
                     │                           │
                     ▼                           ▼
-          shard-affine service A      shard-affine service B
+          shard-affine service 1      shard-affine service 2
           one database pool           one database pool
                     │                           │
                     ▼                           ▼
-          PostgreSQL authority A      PostgreSQL authority B
+          PostgreSQL authority 1      PostgreSQL authority 2
           organisations A, C          organisations B, D
 ```
 
-A user from A may book a C-owned slot through authority A. A user from A cannot book a B- or D-owned slot in Phase 1 because that booking would span authorities A and B.
+A user from A may book a C-owned slot through authority 1. A user from A cannot book a B- or D-owned slot in Phase 1 because that booking would span authorities 1 and 2.
 
 Each service instance remains shard-affine and opens one database pool. This avoids a `service replicas x shard count x pool size` connection fan-out and gives readiness one clear dependency.
 
@@ -195,10 +195,10 @@ Phase 1 must leave Phase 2 open by preserving the following seams:
 The smallest experiment uses a versioned static mapping:
 
 ```text
-organisation A -> authority A
-organisation B -> authority B
-organisation C -> authority A
-organisation D -> authority B
+organisation A -> authority 1
+organisation B -> authority 2
+organisation C -> authority 1
+organisation D -> authority 2
 ```
 
 The mapping is immutable for the duration of a run. Every artifact records its routing version and authority assignment. Setup fails if an organisation is absent, assigned more than once, or if participating authorities report incompatible schema versions.
@@ -220,9 +220,9 @@ A request sent to a service unit that does not own its user organisation is a ro
 Once database authority composition succeeds, AG-Sept may add stateless replicas within each shard group if budget remains:
 
 ```text
-service A1 ─┐
-service A2 ─┼── PostgreSQL authority A
-service A3 ─┘
+service 1a ─┐
+service 1b ─┼── PostgreSQL authority 1
+service 1c ─┘
 ```
 
 That is application scaling inside one authority unit. It is deliberately subsequent to proving that independent database authorities route and reconcile correctly.

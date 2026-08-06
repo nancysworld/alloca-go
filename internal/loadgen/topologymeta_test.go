@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nancysworld/alloca-go/internal/domain"
 	"github.com/nancysworld/alloca-go/internal/loadgen"
 )
 
@@ -121,6 +122,68 @@ func TestDuplicateAuthorityAmongLaterUnitsIsCaught(t *testing.T) {
 	}
 }
 
+// The manifest records one value per run-shaping field, projected from the first unit. That
+// projection is only honest if the units agree, so each of these must be a disagreement.
+//
+// None of them would show up in any total. A run against one unit with telemetry off and one
+// with it on produces a perfectly well-formed report whose observation cost is described by
+// whichever unit happened to be read first.
+func TestUnitsRunningDifferentConfigurationsAreNotOneDeployment(t *testing.T) {
+	tests := []struct {
+		name   string
+		differ func(*loadgen.ServiceMeta)
+		want   string
+	}{
+		{"source-modified", func(m *loadgen.ServiceMeta) { m.Modified = true }, "source-modified"},
+		{"Go version", func(m *loadgen.ServiceMeta) { m.GoVersion = "go1.25.0" }, "Go version"},
+		{"GOMAXPROCS", func(m *loadgen.ServiceMeta) { m.GOMAXPROCS = 2 }, "GOMAXPROCS"},
+		{"telemetry mode", func(m *loadgen.ServiceMeta) { m.TelemetryMode = "off" }, "telemetry mode"},
+		{"reservation TTL", func(m *loadgen.ServiceMeta) { m.ReservationTTL = "5m0s" }, "reservation TTL"},
+		{"timeout budget", func(m *loadgen.ServiceMeta) {
+			m.RequestBudget = map[string]string{"reserve": "9s"}
+		}, "timeout budget"},
+		{"PostgreSQL version", func(m *loadgen.ServiceMeta) { m.Database.Version = "15.1" }, "PostgreSQL version"},
+		{"pool ceiling", func(m *loadgen.ServiceMeta) { m.Database.PoolMaxConns = 80 }, "pool ceiling"},
+	}
+
+	shaped := func(target, authority string) loadgen.UnitMeta {
+		u := unit(target, "abc123", authority, "pr3b-v1", 1)
+		u.Meta.GoVersion = "go1.26.5"
+		u.Meta.GOMAXPROCS = 8
+		u.Meta.TelemetryMode = "full"
+		u.Meta.ReservationTTL = "2m0s"
+		u.Meta.RequestBudget = map[string]string{"reserve": "5s"}
+		u.Meta.Database.Version = "16.4"
+		u.Meta.Database.PoolMaxConns = 20
+		return u
+	}
+
+	// The positive control: identical shape is not a disagreement.
+	agreeing := loadgen.TopologyMeta{Units: []loadgen.UnitMeta{
+		shaped("http://unit-1", "authority-1"), shaped("http://unit-2", "authority-2"),
+	}}
+	if got := agreeing.Disagreement(); got != "" {
+		t.Fatalf("units running the same configuration were refused: %s", got)
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			one := shaped("http://unit-1", "authority-1")
+			two := shaped("http://unit-2", "authority-2")
+			tc.differ(&two.Meta)
+
+			got := loadgen.TopologyMeta{Units: []loadgen.UnitMeta{one, two}}.Disagreement()
+			if got == "" {
+				t.Fatalf("units differing in %s certified: the manifest would record one value "+
+					"for a run that had two", tc.name)
+			}
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("reason %q does not name the field %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // Authority and organisations are *supposed* to differ between units — that is what makes
 // them separate authorities. Comparing them would refuse every correct topology.
 func TestLegitimateDifferencesBetweenUnitsAreNotDisagreement(t *testing.T) {
@@ -137,6 +200,159 @@ func TestLegitimateDifferencesBetweenUnitsAreNotDisagreement(t *testing.T) {
 	assignment := topology.Assignment()
 	if len(assignment["authority-1"]) != 2 || assignment["authority-2"][0] != "org-b" {
 		t.Errorf("assignment = %v, want each authority's own organisations", assignment)
+	}
+}
+
+// serving builds a unit that reports the organisations it serves, so the observed assignment
+// can be compared with the map the generator routed by.
+func serving(target, authority, routing string, orgs ...string) loadgen.UnitMeta {
+	u := unit(target, "abc123", authority, routing, 1)
+	u.Meta.Placement.Organisations = orgs
+	u.Meta.Placement.Sharded = true
+	return u
+}
+
+func placement(t *testing.T, document string) domain.Placement {
+	t.Helper()
+	p, err := domain.ParsePlacement([]byte(document))
+	if err != nil {
+		t.Fatalf("parsing placement: %v", err)
+	}
+	return p
+}
+
+const routedV1 = `{"version":"pr3b-v1","homes":{
+  "org-a":"authority-1","org-b":"authority-2",
+  "org-c":"authority-1","org-d":"authority-2"}}`
+
+// Equal routing-version labels do not establish equal routing content.
+//
+// Every topology below passes Disagreement — same revision, same schema version, same version
+// *string*, distinct authorities — while the generator is routing by a different map from the
+// one the units are enforcing. A run in that state produces refusals that look like a service
+// defect, or admissions the placement never sanctioned, and the version label says everything
+// is fine.
+func TestCertificationComparesPlacementContentNotItsLabel(t *testing.T) {
+	routed := placement(t, routedV1)
+
+	tests := []struct {
+		name  string
+		units []loadgen.UnitMeta
+		want  string
+	}{
+		{
+			name: "an authority serves organisations the generator does not route to it",
+			units: []loadgen.UnitMeta{
+				serving("http://unit-1", "authority-1", "pr3b-v1", "org-a"),
+				serving("http://unit-2", "authority-2", "pr3b-v1", "org-b", "org-c", "org-d"),
+			},
+			want: "different placements",
+		},
+		{
+			name: "an organisation is served by nobody",
+			units: []loadgen.UnitMeta{
+				serving("http://unit-1", "authority-1", "pr3b-v1", "org-a"),
+				serving("http://unit-2", "authority-2", "pr3b-v1", "org-b", "org-d"),
+			},
+			want: "different placements",
+		},
+		{
+			name: "an authority the generator never routes to is serving",
+			units: []loadgen.UnitMeta{
+				serving("http://unit-1", "authority-1", "pr3b-v1", "org-a", "org-c"),
+				serving("http://unit-2", "authority-2", "pr3b-v1", "org-b", "org-d"),
+				serving("http://unit-3", "authority-3", "pr3b-v1", "org-e"),
+			},
+			want: "routes nothing to it",
+		},
+		{
+			name: "an authority the generator routes to is absent",
+			units: []loadgen.UnitMeta{
+				serving("http://unit-1", "authority-1", "pr3b-v1", "org-a", "org-c"),
+				serving("http://unit-3", "authority-3", "pr3b-v1", "org-b", "org-d"),
+			},
+			want: "no unit in this run reported serving it",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			topology := loadgen.TopologyMeta{Units: tc.units}
+			if got := topology.Disagreement(); got != "" {
+				t.Fatalf("precondition: these units must agree on labels, but Disagreement said %q", got)
+			}
+			got := topology.DisagreementWith(routed)
+			if got == "" {
+				t.Fatal("the generator and the services were routing by different maps, and the " +
+					"run certified")
+			}
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("reason %q does not mention %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// A unit that believes it is unsharded will not refuse the organisations it does not own, so
+// its presence in a multi-unit run is a split-brain that no assignment comparison catches:
+// its own list may still be correct.
+func TestAUnitReportingItselfUnshardedInAMultiUnitRunIsRefused(t *testing.T) {
+	one := serving("http://unit-1", "authority-1", "pr3b-v1", "org-a", "org-c")
+	two := serving("http://unit-2", "authority-2", "pr3b-v1", "org-b", "org-d")
+	two.Meta.Placement.Sharded = false
+
+	got := loadgen.TopologyMeta{Units: []loadgen.UnitMeta{one, two}}.DisagreementWith(placement(t, routedV1))
+	if got == "" {
+		t.Fatal("a unit serving every organisation was accepted as one shard of a topology")
+	}
+	if !strings.Contains(got, "unsharded") {
+		t.Errorf("reason %q does not name the unsharded unit", got)
+	}
+}
+
+// The correct topology must pass, or every test above would pass for the wrong reason.
+func TestATopologyMatchingTheGeneratorsMapCertifies(t *testing.T) {
+	topology := loadgen.TopologyMeta{Units: []loadgen.UnitMeta{
+		serving("http://unit-1", "authority-1", "pr3b-v1", "org-a", "org-c"),
+		serving("http://unit-2", "authority-2", "pr3b-v1", "org-b", "org-d"),
+	}}
+	if got := topology.DisagreementWith(placement(t, routedV1)); got != "" {
+		t.Fatalf("a topology serving exactly the generator's map was refused: %s", got)
+	}
+	// A single-target run has no map to compare against and must not be refused for it.
+	if got := topology.DisagreementWith(domain.Placement{}); got != "" {
+		t.Errorf("a run with no placement to compare was refused: %s", got)
+	}
+}
+
+// The digest exists because the version label is an operator's assertion: a map edited
+// without a version bump produces two runs that look comparable and are not.
+func TestPlacementDigestTracksContentRatherThanTheVersionLabel(t *testing.T) {
+	original := loadgen.TopologyMeta{Units: []loadgen.UnitMeta{
+		serving("http://unit-1", "authority-1", "pr3b-v1", "org-a", "org-c"),
+		serving("http://unit-2", "authority-2", "pr3b-v1", "org-b", "org-d"),
+	}}
+	// The same assignment, read in the other order and with each unit's list unsorted.
+	reordered := loadgen.TopologyMeta{Units: []loadgen.UnitMeta{
+		serving("http://unit-2", "authority-2", "pr3b-v1", "org-d", "org-b"),
+		serving("http://unit-1", "authority-1", "pr3b-v1", "org-c", "org-a"),
+	}}
+	// One organisation moved, version label untouched — the case the label cannot report.
+	moved := loadgen.TopologyMeta{Units: []loadgen.UnitMeta{
+		serving("http://unit-1", "authority-1", "pr3b-v1", "org-a"),
+		serving("http://unit-2", "authority-2", "pr3b-v1", "org-b", "org-c", "org-d"),
+	}}
+
+	if original.PlacementDigest() != reordered.PlacementDigest() {
+		t.Error("the digest changed when only the read order did: it must fingerprint the " +
+			"assignment, not the order units happened to answer in")
+	}
+	if original.PlacementDigest() == moved.PlacementDigest() {
+		t.Error("moving an organisation between authorities left the digest unchanged, so two " +
+			"runs on different placements would compare as identical")
+	}
+	if original.PlacementDigest() == "" {
+		t.Error("digest is empty")
 	}
 }
 

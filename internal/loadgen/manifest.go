@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nancysworld/alloca-go/internal/buildinfo"
+	"github.com/nancysworld/alloca-go/internal/domain"
 )
 
 // Manifest is the provenance block ag-sept-plan §6.4 requires of every quotable run:
@@ -57,6 +58,19 @@ type Manifest struct {
 	AuthorityCount      int                 `json:"authority_count,omitempty"`
 	RoutingVersion      string              `json:"routing_version,omitempty"`
 	PlacementAssignment map[string][]string `json:"placement_assignment,omitempty"`
+
+	// PlacementDigest fingerprints the assignment above. The routing version is a label an
+	// operator chooses and can forget to bump, so two runs sharing a version are not thereby
+	// known to have run the same placement; this is derived from the content and answers that
+	// question directly.
+	PlacementDigest string `json:"placement_digest,omitempty"`
+
+	// UnitCount is how many service units the run addressed, which is known from the
+	// endpoints even when none of them answered /meta. It is what lets the capacity gate tell
+	// a single-authority run — where an unconfigured deployment legitimately reports no
+	// authority at all — from a multi-authority run that failed to record the topology it
+	// reached.
+	UnitCount int `json:"unit_count,omitempty"`
 
 	// TopologyDisagreement names how the units failed to describe one deployment, empty
 	// when they agreed. A non-empty value makes the run uncertifiable: its numbers describe
@@ -185,7 +199,8 @@ func NewManifest(target, workload string, opts Options, location string, svc Ser
 // The targets are passed in rather than read off the units, because the case that most needs
 // them recorded is the one where a unit did not answer /meta. Deriving them from the units
 // would drop exactly the endpoint the operator has to go and look at.
-func NewTopologyManifest(targets []string, workload string, opts Options, location string, topology TopologyMeta) Manifest {
+func NewTopologyManifest(targets []string, workload string, opts Options, location string,
+	topology TopologyMeta, routed domain.Placement) Manifest {
 	var first ServiceMeta
 	if len(topology.Units) > 0 {
 		first = topology.Units[0].Meta
@@ -203,10 +218,12 @@ func NewTopologyManifest(targets []string, workload string, opts Options, locati
 	// the one field that says which service the numbers came from.
 	m := NewManifest("", workload, opts, location, first)
 	m.Target = strings.Join(named, ",")
+	m.UnitCount = len(targets)
 	m.AuthorityCount = len(topology.Authorities())
 	m.RoutingVersion = topology.RoutingVersion()
 	m.PlacementAssignment = topology.Assignment()
-	m.TopologyDisagreement = topology.Disagreement()
+	m.PlacementDigest = topology.PlacementDigest()
+	m.TopologyDisagreement = topology.DisagreementWith(routed)
 	return m
 }
 
@@ -296,6 +313,28 @@ func (m Manifest) Validate(level Level) []string {
 		// Topology — PR3 supplies these.
 		add(m.ReplicaCount < 1, "replica_count is not positive (operator-supplied, PR3)")
 		add(m.DeploymentTopology == "", "deployment_topology is empty (operator-supplied, PR3)")
+
+		// The writable authorities the run reached. routing_version is required of every run,
+		// because /meta always answers it — "unsharded" for a single-authority deployment — so
+		// a report that cannot say which routing produced it did not read /meta at all.
+		add(m.RoutingVersion == "", "routing_version is empty: /meta was not read, so the run "+
+			"cannot say which routing produced it")
+
+		// The rest are required only of a run that addressed more than one unit. A
+		// single-authority deployment with no placement configured legitimately reports no
+		// authority id at all, and demanding one would refuse every run made before PR3b —
+		// but a multi-unit run that names no authorities is one whose artifact does not
+		// describe the topology it reached, which is exactly what a capacity claim rests on.
+		if m.UnitCount > 1 {
+			add(m.AuthorityCount != m.UnitCount, fmt.Sprintf(
+				"the run addressed %d units but the report names %d authorities: a capacity "+
+					"claim must say which writable authorities produced it, and one that "+
+					"names fewer describes a smaller deployment than the run used",
+				m.UnitCount, m.AuthorityCount))
+			add(len(m.PlacementAssignment) == 0, "placement_assignment is empty: a "+
+				"multi-authority run that does not record which organisations each authority "+
+				"served cannot be compared with another, or reproduced")
+		}
 
 		// Aggregate pool capacity is a claim about the whole deployment, so it must be
 		// consistent with the two fields it is derived from. An inconsistency here means one

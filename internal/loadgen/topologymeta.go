@@ -2,10 +2,14 @@ package loadgen
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/nancysworld/alloca-go/internal/domain"
 )
 
 // UnitMeta is one service unit's self-description, together with where the harness reached
@@ -73,9 +77,17 @@ func FetchTopologyMeta(ctx context.Context, targets []string, timeout time.Durat
 //     authorities and divide its source of truth. It is the most dangerous of the three and
 //     the least visible in any total.
 //
+// **The run-shaping fields are compared too**, and for a reason that is about the manifest
+// rather than about the deployment: the manifest records one Go version, one GOMAXPROCS, one
+// telemetry mode, one timeout budget, one reservation TTL, one PostgreSQL version and one
+// pool ceiling for the whole run, projected from the first unit. That projection is honest
+// only if the units agree. Two units at different pool ceilings, or one with telemetry off,
+// produce a report describing a deployment that does not exist — and every one of those
+// fields changes what the numbers mean.
+//
 // Configuration that differs *legitimately* between units — the authority each is bound to,
-// the organisations each serves — is deliberately not compared. Those are supposed to differ;
-// that is what makes them separate authorities.
+// the organisations each serves, when each process started — is deliberately not compared.
+// Those are supposed to differ; that is what makes them separate authorities.
 //
 // The three equality properties are compared against the first unit, which is sufficient
 // because equality is transitive: if every unit matches the first, they all match each other.
@@ -108,6 +120,13 @@ func (t TopologyMeta) Disagreement() string {
 				first.Target, first.Meta.Database.SchemaVersion, unit.Target, unit.Meta.Database.SchemaVersion)
 		}
 
+		if field, mine, theirs := runShapeMismatch(first.Meta, unit.Meta); field != "" {
+			return fmt.Sprintf("units were not running the same configuration: %s reports %s %s and "+
+				"%s reports %s. The manifest records one value for the whole run, so a report built "+
+				"from these describes a deployment that does not exist",
+				first.Target, field, mine, unit.Target, theirs)
+		}
+
 		// Every unit is checked against every earlier one, not against the first alone. With
 		// three or more units, two *later* units can share an authority the first does not
 		// hold — one endpoint pointed at the wrong service, say — which leaves an authority
@@ -123,6 +142,38 @@ func (t TopologyMeta) Disagreement() string {
 		}
 	}
 	return ""
+}
+
+// runShapeMismatch names the first field two units disagree on that the manifest records
+// once for the whole run, or returns "" for field when they agree.
+//
+// These are the fields NewTopologyManifest projects from the first unit. Each of them
+// changes what the numbers mean rather than merely describing the deployment: a pool ceiling
+// is one of the admission boundaries a frontier is read against, a telemetry mode decides the
+// observation cost, and a reservation TTL decides how long each admitted reserve holds
+// capacity and therefore the contention the workload produced.
+func runShapeMismatch(first, other ServiceMeta) (field, mine, theirs string) {
+	switch {
+	case other.Modified != first.Modified:
+		return "source-modified", fmt.Sprintf("%t", first.Modified), fmt.Sprintf("%t", other.Modified)
+	case other.GoVersion != first.GoVersion:
+		return "Go version", first.GoVersion, other.GoVersion
+	case other.GOMAXPROCS != first.GOMAXPROCS:
+		return "GOMAXPROCS", fmt.Sprintf("%d", first.GOMAXPROCS), fmt.Sprintf("%d", other.GOMAXPROCS)
+	case other.TelemetryMode != first.TelemetryMode:
+		return "telemetry mode", first.TelemetryMode, other.TelemetryMode
+	case other.TimeoutBudgetString() != first.TimeoutBudgetString():
+		return "timeout budget", first.TimeoutBudgetString(), other.TimeoutBudgetString()
+	case other.ReservationTTL != first.ReservationTTL:
+		return "reservation TTL", first.ReservationTTL, other.ReservationTTL
+	case other.Database.Version != first.Database.Version:
+		return "PostgreSQL version", first.Database.Version, other.Database.Version
+	case other.Database.PoolMaxConns != first.Database.PoolMaxConns:
+		return "pool ceiling", fmt.Sprintf("%d", first.Database.PoolMaxConns),
+			fmt.Sprintf("%d", other.Database.PoolMaxConns)
+	default:
+		return "", "", ""
+	}
 }
 
 // Authorities lists the authorities the units reported, sorted. It is the manifest's record
@@ -167,6 +218,126 @@ func (t TopologyMeta) RoutingVersion() string {
 		return ""
 	}
 	return t.Units[0].Meta.Placement.RoutingVersion
+}
+
+// DisagreementWith is the full certification gate: the units describe one deployment, *and*
+// that deployment is the one the generator routed by.
+//
+// Disagreement alone compares the units with each other, which leaves a gap that equal
+// routing-version *labels* cannot close. A version string is an assertion about placement,
+// not the placement itself, so units can agree on the label while serving a different map
+// from the generator's — and a run in which the generator routes by one assignment and the
+// services enforce another produces refusals that look like a service defect, or worse,
+// admissions the placement never sanctioned.
+//
+// The comparison is therefore over content: the authority set, and the exact set of
+// organisations each authority claims. A zero placement skips it — a single-target run has no
+// map to compare against, and inventing one would refuse every run made before PR3b.
+func (t TopologyMeta) DisagreementWith(routed domain.Placement) string {
+	if disagreement := t.Disagreement(); disagreement != "" {
+		return disagreement
+	}
+	if routed.IsZero() || routed.IsUnsharded() {
+		return ""
+	}
+
+	// The generator's map, rendered the same way the units' answers are, so the two are
+	// compared as like with like rather than through two different normalisations.
+	intended := map[string][]string{}
+	for _, authority := range routed.Authorities() {
+		orgs := make([]string, 0)
+		for _, org := range routed.Organisations(authority) {
+			orgs = append(orgs, string(org))
+		}
+		sort.Strings(orgs)
+		intended[string(authority)] = orgs
+	}
+	observed := t.Assignment()
+
+	for _, authority := range sortedKeys(intended) {
+		serving, reached := observed[authority]
+		if !reached {
+			return fmt.Sprintf("the generator routes organisations %v to authority %q under "+
+				"version %q, but no unit in this run reported serving it: that organisation's "+
+				"traffic went to a unit that does not own it",
+				intended[authority], authority, routed.Version())
+		}
+		if !equalStrings(intended[authority], serving) {
+			return fmt.Sprintf("authority %q serves %v but the generator routes %v to it under "+
+				"version %q: the two are working from different placements while reporting the "+
+				"same version",
+				authority, serving, intended[authority], routed.Version())
+		}
+	}
+	for _, authority := range sortedKeys(observed) {
+		if _, routes := intended[authority]; !routes {
+			return fmt.Sprintf("authority %q is serving in this run but version %q routes nothing "+
+				"to it: the run reached a unit it never exercised, and whatever that unit owns "+
+				"went somewhere else", authority, routed.Version())
+		}
+	}
+
+	// Sharded mode last, because a topology whose assignment already matches is far more
+	// likely to be misreporting this flag than to be genuinely unsharded.
+	for _, unit := range t.Units {
+		if len(t.Units) > 1 && !unit.Meta.Placement.Sharded {
+			return fmt.Sprintf("%s reports itself unsharded, but the run reached %d units under "+
+				"routing version %q: a unit that believes it owns every organisation will not "+
+				"refuse the ones it does not", unit.Target, len(t.Units), routed.Version())
+		}
+	}
+	return ""
+}
+
+func sortedKeys(m map[string][]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// PlacementDigest is a stable fingerprint of the assignment the units actually reported.
+//
+// The routing version is a label an operator chooses, so two runs carrying the same version
+// are not thereby known to have run the same placement — a map edited without a version bump
+// is exactly the mistake that produces two incomparable runs which look comparable. This is
+// derived from the content, so comparing two reports' digests answers the question the label
+// only claims to.
+// The canonical form is built first and hashed once, with separators that cannot occur in an
+// identifier, so no pair of distinct assignments can render to the same bytes.
+func (t TopologyMeta) PlacementDigest() string {
+	assignment := t.Assignment()
+	if len(assignment) == 0 {
+		return ""
+	}
+
+	var canonical strings.Builder
+	for _, authority := range sortedKeys(assignment) {
+		canonical.WriteString(authority)
+		canonical.WriteByte(0)
+		for _, org := range assignment[authority] {
+			canonical.WriteString(org)
+			canonical.WriteByte(1)
+		}
+		canonical.WriteByte(2)
+	}
+
+	sum := sha256.Sum256([]byte(canonical.String()))
+	return hex.EncodeToString(sum[:])
 }
 
 // DriftFrom names how the topology changed between two reads of every unit's /meta, or

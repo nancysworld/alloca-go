@@ -238,7 +238,12 @@ func run(args []string) error {
 		drift = after.DriftFrom(before)
 	}
 
-	manifest := loadgen.NewTopologyManifest(targets, workload.Name(), opts, *location, before)
+	// The router's own placement is handed to the manifest so certification can compare what
+	// the generator routed by against what the units report they serve. Equal version labels
+	// do not establish equal maps, and a run where the two differ produces refusals that read
+	// as a service defect.
+	manifest := loadgen.NewTopologyManifest(targets, workload.Name(), opts, *location, before,
+		router.Placement())
 	manifest.DatasetSlots = datasetSlots
 	manifest.ServiceIdentityDrift = drift
 

@@ -57,6 +57,19 @@ TOPOCOMPOSE  ?= deploy/topology/docker-compose.yml
 # `git diff --quiet` — worktree against index — does not see. A tag reading clean on an image
 # whose /meta reports modified=true is worse than no tag: it is the one field an operator
 # would use to decide the run is reproducible.
+#
+# **`-dirty` is a warning, not an identifier.** Two different uncommitted trees both tag
+# `abc1234-dirty`, and the second build silently replaces the first under that tag — so two
+# runs carrying the same dirty tag are not known to have used the same image, and must never
+# be compared on the strength of it. Only the clean form satisfies §9.1's "an image that can
+# be rebuilt". That is consistent with the manifest, which refuses `service_source_modified`
+# at `local` and so declines to quote a dirty run at any level; the tag is what tells an
+# operator *why* before they get that far.
+#
+# Note this counts *any* uncommitted change, including one to a document that cannot affect
+# the binary. That is deliberate: `modified` is a claim about whether the tree matched the
+# commit, and narrowing it to "changes I judge to affect the build" would report clean for a
+# tree that is not. Commit or stash before building an image meant for an experiment.
 ALLOCA_IMAGE_TAG ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell test -z "$$(git status --porcelain 2>/dev/null)" || echo -dirty)
 SERVICE_1_PORT   ?= 8081
 SERVICE_2_PORT   ?= 8082

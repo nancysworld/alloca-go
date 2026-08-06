@@ -258,39 +258,76 @@ Seeding is per authority and per organisation, because `alloca-seed` takes one D
 organisation:
 
 ```sh
-for spec in "15433 org-a" "15433 org-c" "15434 org-b" "15434 org-d"; do
-  set -- $spec
-  go run ./cmd/alloca-seed -reset \
+seed() {  # seed <pgport> <organisation> [reset]
+  go run ./cmd/alloca-seed ${3:+-reset} \
     -database-url "postgres://alloca:alloca@localhost:$1/alloca?sslmode=disable" \
     -org "$2" -slots 100
-done
+}
+
+seed 15433 org-a reset   # authority-1: reset once, on the first organisation
+seed 15433 org-c
+seed 15434 org-b reset   # authority-2: likewise
+seed 15434 org-d
 ```
 
-`-reset` truncates booking state before seeding. The clean-start assertion runs either
-way, *after* seeding, and checks two things: zero live claims **and** zero idempotency
-records. The second is the half that zero claims does not imply — a record outlives the
-entity it describes, so a fixture whose holds were all cancelled or expired holds no claims
-and still turns the next run into a replay that commits nothing.
+**`-reset` goes on the first organisation of each authority only, and nowhere else.** It
+runs `TRUNCATE user_time_claims, user_identities, idempotency_records, bookings,
+reservations, slots CASCADE` — the whole authority, not the organisation named on the
+command line. Passing it on every call therefore deletes the slots seeded for the previous
+organisation, leaving only the last one on each authority with any.
+
+That failure does not announce itself. The run proceeds, the surviving half books normally,
+and the missing half comes back `business_refusal / unknown_target` — a legitimate outcome
+that looks like ordinary contention rather than a broken fixture. It was measured here at
+exactly 200 of 400 requests before the recipe was corrected. Check the fixture rather than
+trusting it:
+
+```sh
+docker exec alloca-authority-1-db psql -U alloca -d alloca -tAc \
+  "select slot_organisation_id, count(*) from slots group by 1 order by 1"
+# org-a|100
+# org-c|100
+```
+
+The clean-start assertion runs with or without `-reset`, *after* seeding, and checks two
+things: zero live claims **and** zero idempotency records. The second is the half that zero
+claims does not imply — a record outlives the entity it describes, so a fixture whose holds
+were all cancelled or expired holds no claims and still turns the next run into a replay
+that commits nothing.
 
 Skipping the seed step altogether is the dangerous case, because it does not fail loudly:
 a confirmed claim has `expires_at IS NULL` and is never reaped, so re-running against a used
 fixture yields a plausible all-`schedule_conflict` result that passes every correctness gate
 and measures nothing.
 
-Then drive the run against both units, routed by the same placement document the services
-enforce:
+Record what the containers are actually serving, then drive the run against both units,
+routed by the same placement document the services enforce:
 
 ```sh
 go build -o bin/alloca-load ./cmd/alloca-load
+
+make topo-deployment > test/results/deployment.json
 
 ./bin/alloca-load \
   -placement deploy/topology/placement.json \
   -endpoint authority-1=http://localhost:8081 \
   -endpoint authority-2=http://localhost:8082 \
   -workload multi-org-dispersed \
+  -deployment test/results/deployment.json \
   -concurrency 32 -duration 60s -slots 100 \
   -out test/results/topo-run.json
 ```
+
+`make topo-deployment` inspects the running containers and records the immutable image ID
+every unit must share — §6.4's identity of the deployed artifact. It is a separate step
+rather than something `alloca-load` does, for two reasons: a process cannot see which image
+wraps it, so a service asked this question could only repeat back an environment variable;
+and reading it needs the Docker socket, which is root on the host and precisely what §6.3
+keeps the generator away from so it can later move to separate compute.
+
+It refuses a topology whose units are on different images. That is the failure the commit
+SHA cannot see — the same code served from a stale `:dev` tag, or rebuilt on a newer base
+layer, carries an identical revision on every unit.
 
 Build the generator rather than `go run`-ing it: `go run` does not stamp VCS data, so the
 report cannot say which harness produced it.
@@ -353,20 +390,36 @@ Deliberately, and recorded in [`ag-sept-pr3-scope.md`](../planning/ag-sept-pr3-s
   authority returns, before the correctness verdict — is PR3c, along with the summary
   accounting it needs (§6c).
 
-## 10. What has and has not been run
+## 10. What has been run
 
-Every command above is read off the `Makefile`, the Compose file and the binaries' flags,
-and the routing and refusal behaviours were exercised against real containers when PR3b's
-evidence was produced.
+Everything on this page was executed end to end against real containers on 2026-08-06, at
+`57748fc`, on the WSL2 workstation:
 
-Two gaps worth knowing before you trust this page end to end:
+| Step | Result |
+|---|---|
+| `make image` | 14.7 s cold, 8.3 s warm — the ~110 MB context costs seconds |
+| `make image-provenance` | passes: revision `57748fc`, `modified=false` |
+| `make topo-up` | both units ready |
+| `make topo-deployment` | one image ID across both units |
+| seeding, corrected recipe | 100 slots for each of the four organisations |
+| `multi-org-dispersed`, 400 requests | 400 `admitted_success`, `measurement_sound: true` |
+| §5 routing checks 1–4 | 200, 200, 409 `cross_authority_unsupported`, 400 `invalid_request` |
+| failure isolation | unit 1 `503`, unit 2 `200` and still booking; `200` again after restart |
 
-- **`make image-provenance` has never been executed.** The script is written and its
-  parsing was checked against a real binary, but no run has been made against a Docker
-  daemon.
-- **`.dockerignore` changed after the topology evidence was produced**, so `make image`
-  now ships a larger build context than the one that was exercised. The image should build
-  the same way — the context gained files rather than losing them — but that has not been
-  confirmed by a build.
+Two things are worth recording because they were found by running rather than reading.
 
-If you run either and it disagrees with this page, this page is wrong; fix it here.
+**The build-context defect is now confirmed in a real build, not inferred.** A clean
+checkout — zero uncommitted changes — with the pre-fix `.dockerignore` produces a binary
+stamped `vcs.modified=true`; with the current one, `modified=false`. The containerised
+service reports `"modified": false` at `/meta`, which is what makes a run against it
+quotable at all.
+
+**The seeding recipe on this page was wrong until it was run.** `-reset` truncates the whole
+authority, so passing it per organisation deleted the previous one's slots; the run then
+returned exactly 200 of 400 as `unknown_target`, which reads as contention rather than as a
+broken fixture. §7 now carries the corrected form and the check that catches it.
+
+Still not covered here: `make test-integration` is a separate suite with its own database,
+and CI runs it.
+
+If you run something and it disagrees with this page, this page is wrong; fix it here.

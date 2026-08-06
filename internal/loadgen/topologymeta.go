@@ -168,3 +168,48 @@ func (t TopologyMeta) RoutingVersion() string {
 	}
 	return t.Units[0].Meta.Placement.RoutingVersion
 }
+
+// DriftFrom names how the topology changed between two reads of every unit's /meta, or
+// returns "" when it did not. It is ServiceMeta.DriftFrom raised to a multi-unit run: the
+// pre-run read establishes only which units were behind the endpoints when the run began,
+// and this is what turns that into a claim about the whole sample (DEBT-3).
+//
+// The unit *set* is compared before any unit's contents, because a topology that lost or
+// gained a unit mid-run is a different failure from one whose units changed underneath it —
+// and reporting the second when the first happened sends the operator to the wrong terminal.
+// A unit that stopped answering /meta is drift by itself: the run cannot confirm what it
+// measured, which is exactly the state that must not certify.
+func (t TopologyMeta) DriftFrom(before TopologyMeta) string {
+	seen := make(map[string]ServiceMeta, len(before.Units))
+	for _, unit := range before.Units {
+		seen[unit.Target] = unit.Meta
+	}
+
+	for _, unit := range t.Units {
+		if _, ok := seen[unit.Target]; !ok {
+			return fmt.Sprintf("%s answered /meta after the run but not before, so part of the "+
+				"workload ran against a topology that did not include it", unit.Target)
+		}
+	}
+
+	for _, unit := range t.Units {
+		if drift := unit.Meta.DriftFrom(seen[unit.Target]); drift != "" {
+			return fmt.Sprintf("%s: %s", unit.Target, drift)
+		}
+		delete(seen, unit.Target)
+	}
+
+	// Sorted, so a topology that lost several units names the same one every time. A drift
+	// message that varies between identical runs is one an operator learns to distrust.
+	missing := make([]string, 0, len(seen))
+	for target := range seen {
+		missing = append(missing, target)
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		return fmt.Sprintf("%s answered /meta before the run but not after: the unit that served "+
+			"part of the workload is no longer reachable, so the run cannot confirm what it measured",
+			strings.Join(missing, ", "))
+	}
+	return ""
+}

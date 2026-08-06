@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/url"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -164,6 +165,49 @@ func NewManifest(target, workload string, opts Options, location string, svc Ser
 		Target:              redact(target),
 		Timestamp:           time.Now().UTC(),
 	}
+}
+
+// NewTopologyManifest builds the manifest for a run that spanned several service units.
+//
+// The service-side identity is taken from the first unit, which is sound *only because*
+// TopologyDisagreement is recorded alongside it. Disagreement compares every field this
+// projection depends on — revision, schema and routing version, and the run-shaping fields
+// that decide what was measured — and a non-empty value drops the run to LevelNone. So
+// either the units agree and the first one describes them all, or they do not and no level
+// is claimed from the projection. Recording each unit's copy separately would leave the
+// manifest with several answers to questions like "what was GOMAXPROCS", none of them
+// wrong and none of them the run's.
+//
+// Target is every unit the run addressed, not one of them: an artifact naming a single
+// endpoint for a multi-authority run reads as a single-authority run to anything that
+// consumes it later.
+//
+// The targets are passed in rather than read off the units, because the case that most needs
+// them recorded is the one where a unit did not answer /meta. Deriving them from the units
+// would drop exactly the endpoint the operator has to go and look at.
+func NewTopologyManifest(targets []string, workload string, opts Options, location string, topology TopologyMeta) Manifest {
+	var first ServiceMeta
+	if len(topology.Units) > 0 {
+		first = topology.Units[0].Meta
+	}
+
+	named := make([]string, 0, len(targets))
+	for _, target := range targets {
+		named = append(named, redact(target))
+	}
+	sort.Strings(named)
+
+	// Each target is redacted individually and the list assembled afterwards. Handing the
+	// joined string to NewManifest would put it through redact a second time, where it is no
+	// longer a URL — url.Parse rejects it and the manifest records no target at all, which is
+	// the one field that says which service the numbers came from.
+	m := NewManifest("", workload, opts, location, first)
+	m.Target = strings.Join(named, ",")
+	m.AuthorityCount = len(topology.Authorities())
+	m.RoutingVersion = topology.RoutingVersion()
+	m.PlacementAssignment = topology.Assignment()
+	m.TopologyDisagreement = topology.Disagreement()
+	return m
 }
 
 // Validate reports the §6.4 fields a claim at the given level requires and this manifest

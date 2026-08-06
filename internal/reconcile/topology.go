@@ -65,8 +65,15 @@ type TopologyResult struct {
 	Quotability loadgen.Quotability `json:"quotability"`
 }
 
-// OK reports whether every check in the verdict passed.
-func (r TopologyResult) OK() bool {
+// ChecksOK reports whether every check in the verdict passed.
+//
+// **Passing checks are not a certified run**, which is why this is no longer called OK: a
+// report whose manifest is incomplete, or whose summary is unsound, or whose units did not
+// describe one deployment, can still have every check pass — the checks compare the numbers
+// the run produced, and Certify decides whether those numbers may be quoted at all. A caller
+// reading `OK()` as "this run is good" would be wrong in exactly the cases the quotability
+// ladder exists for. Read Quotability for that, or Certified below for both together.
+func (r TopologyResult) ChecksOK() bool {
 	for _, checks := range r.PerAuthority {
 		for _, c := range checks {
 			if !c.OK {
@@ -80,6 +87,12 @@ func (r TopologyResult) OK() bool {
 		}
 	}
 	return true
+}
+
+// Certified reports whether the run may be quoted: every check passed *and* the verdict
+// reached a level. This is the question a caller almost always means to ask.
+func (r TopologyResult) Certified() bool {
+	return r.ChecksOK() && r.Quotability.Level != loadgen.LevelNone
 }
 
 // RunTopology reconciles a run that spanned several writable authorities.
@@ -105,6 +118,9 @@ func RunTopology(ctx context.Context, scopes []AuthorityScope, r loadgen.Report)
 	res := TopologyResult{PerAuthority: map[string][]Check{}}
 	if len(scopes) == 0 {
 		return res, fmt.Errorf("reconcile: no authorities to verify")
+	}
+	if err := scopesMatchReport(scopes, r); err != nil {
+		return res, err
 	}
 
 	ordered := append([]AuthorityScope(nil), scopes...)
@@ -146,6 +162,83 @@ func RunTopology(ctx context.Context, scopes []AuthorityScope, r loadgen.Report)
 
 	res.Aggregate = aggregateChecks(total, serverTotals, r.Summary)
 	return finish(res, r), nil
+}
+
+// scopesMatchReport refuses to verify a topology that is not the one the report certified.
+//
+// Without it, RunTopology verifies whichever scopes the caller supplies and says nothing
+// about whether they are the run's. Every one of these produces a clean verdict over a
+// topology the report does not describe:
+//
+//   - an authority omitted, so a one-hot run "passes" with the idle authority never read —
+//     and an idle authority is exactly where an unnoticed write would sit;
+//   - an authority supplied twice, whose rows are then counted twice into the aggregate;
+//   - an organisation omitted, so its rows are excluded from every total;
+//   - an organisation added, or moved to the wrong authority, which reads rows the placement
+//     says belong elsewhere and folds them into the wrong authority's local safety checks.
+//
+// The manifest's placement assignment is the report's own record of the topology it reached,
+// read back from the units. Comparing against it is what makes the verdict a statement about
+// *this run* rather than about whatever the caller happened to pass.
+//
+// A report carrying no assignment is not refused: single-authority runs legitimately record
+// none, and refusing them would make the multi-authority entry point unusable for the
+// one-authority case it must still handle.
+func scopesMatchReport(scopes []AuthorityScope, r loadgen.Report) error {
+	assignment := r.Manifest.PlacementAssignment
+	if len(assignment) == 0 {
+		return nil
+	}
+
+	supplied := map[string][]string{}
+	for _, scope := range scopes {
+		name := string(scope.Authority)
+		if _, repeated := supplied[name]; repeated {
+			return fmt.Errorf("reconcile: authority %q was supplied twice; its rows would be "+
+				"counted twice in every aggregate total", name)
+		}
+		orgs := make([]string, 0, len(scope.Orgs))
+		for _, org := range scope.Orgs {
+			orgs = append(orgs, string(org))
+		}
+		sort.Strings(orgs)
+		supplied[name] = orgs
+	}
+
+	for name, want := range assignment {
+		got, present := supplied[name]
+		if !present {
+			return fmt.Errorf("reconcile: the report reached authority %q but no scope was "+
+				"supplied for it; the run would be certified without that authority's rows "+
+				"ever being read", name)
+		}
+		sorted := append([]string(nil), want...)
+		sort.Strings(sorted)
+		if !equalStrings(sorted, got) {
+			return fmt.Errorf("reconcile: authority %q served organisations %v in this run but "+
+				"the scope supplied is %v; the verdict would describe a different partition "+
+				"from the one the run used", name, sorted, got)
+		}
+	}
+	for name := range supplied {
+		if _, reached := assignment[name]; !reached {
+			return fmt.Errorf("reconcile: a scope was supplied for authority %q, which this run "+
+				"never reached; its rows belong to some other run", name)
+		}
+	}
+	return nil
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func finish(res TopologyResult, r loadgen.Report) TopologyResult {
@@ -290,5 +383,14 @@ func aggregateChecks(total authorityCounts, server ServerTotals, s loadgen.Summa
 			total.IdempotencyRecords, fresh)
 	}
 
-	return []Check{reservations, claims, records, serverTotalsCheckFromMeasured(s, server)}
+	// §6.5's fourth rule, taken once globally. It is a statement about the client's own
+	// totals — every completed request inside the closed terminal-outcome set, with replay
+	// folded in as an orthogonal flag rather than counted as a peer outcome — so it needs no
+	// database and belongs at the aggregate, exactly once. Running it per authority would ask
+	// each one about totals that are a property of the run; leaving it out, as this did,
+	// drops the check that catches a service answering with something the contract does not
+	// define. It cannot fail on its Querier because it never uses one.
+	closure, _ := outcomeClosureCheck(context.Background(), nil, "", s)
+
+	return []Check{reservations, claims, records, closure, serverTotalsCheckFromMeasured(s, server)}
 }

@@ -20,7 +20,7 @@ import (
 // comparison until it stopped failing.
 func TestATwoAuthorityRunReconcilesAgainstGlobalClientTotals(t *testing.T) {
 	// Ten admitted reserves, five landing on each authority.
-	report := reportWith(10, 10)
+	report := reportWith(10)
 
 	res, err := reconcile.RunTopology(context.Background(), []reconcile.AuthorityScope{
 		// Two organisations each, counts stated per organisation: 5 per authority, 10 in all.
@@ -31,7 +31,7 @@ func TestATwoAuthorityRunReconcilesAgainstGlobalClientTotals(t *testing.T) {
 		t.Fatalf("RunTopology: %v", err)
 	}
 
-	if !res.OK() {
+	if !res.ChecksOK() {
 		for name, checks := range res.PerAuthority {
 			for _, c := range checks {
 				if !c.OK {
@@ -58,7 +58,7 @@ func TestATwoAuthorityRunReconcilesAgainstGlobalClientTotals(t *testing.T) {
 // A safety violation on one authority must not be diluted by the other being clean. Local
 // invariants are properties of one authority's rows and mean nothing averaged.
 func TestASafetyViolationOnOneAuthorityFailsTheVerdict(t *testing.T) {
-	report := reportWith(10, 10)
+	report := reportWith(10)
 
 	res, err := reconcile.RunTopology(context.Background(), []reconcile.AuthorityScope{
 		scope(t, "authority-1", []domain.OrganisationID{"org-a"}, counts{live: 5, claims: 5, records: 5, overCapacity: 1}, 5),
@@ -68,7 +68,7 @@ func TestASafetyViolationOnOneAuthorityFailsTheVerdict(t *testing.T) {
 		t.Fatalf("RunTopology: %v", err)
 	}
 
-	if res.OK() {
+	if res.ChecksOK() {
 		t.Fatal("an over-capacity slot on one authority produced a clean verdict")
 	}
 	var named bool
@@ -91,7 +91,7 @@ func TestASafetyViolationOnOneAuthorityFailsTheVerdict(t *testing.T) {
 // two authorities is ten, and ten admitted reserves reconcile with it.
 func TestAggregateComparisonUsesTheWholeTopology(t *testing.T) {
 	// Twelve persisted across two authorities, but only ten admitted.
-	report := reportWith(10, 10)
+	report := reportWith(10)
 
 	res, err := reconcile.RunTopology(context.Background(), []reconcile.AuthorityScope{
 		scope(t, "authority-1", []domain.OrganisationID{"org-a"}, counts{live: 6, claims: 6, records: 5}, 5),
@@ -101,7 +101,7 @@ func TestAggregateComparisonUsesTheWholeTopology(t *testing.T) {
 		t.Fatalf("RunTopology: %v", err)
 	}
 
-	if res.OK() {
+	if res.ChecksOK() {
 		t.Fatal("12 persisted reservations against 10 admitted reserves reconciled")
 	}
 	var found bool
@@ -120,7 +120,7 @@ func TestVerdictNamesEveryAuthorityItRead(t *testing.T) {
 	res, err := reconcile.RunTopology(context.Background(), []reconcile.AuthorityScope{
 		scope(t, "authority-2", []domain.OrganisationID{"org-b"}, counts{live: 5, claims: 5, records: 5}, 5),
 		scope(t, "authority-1", []domain.OrganisationID{"org-a"}, counts{live: 5, claims: 5, records: 5}, 5),
-	}, reportWith(10, 10))
+	}, reportWith(10))
 	if err != nil {
 		t.Fatalf("RunTopology: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestVerdictNamesEveryAuthorityItRead(t *testing.T) {
 func TestAnAuthorityWithNoOrganisationsIsASetupError(t *testing.T) {
 	_, err := reconcile.RunTopology(context.Background(), []reconcile.AuthorityScope{
 		scope(t, "authority-1", nil, counts{}, 0),
-	}, reportWith(0, 0))
+	}, reportWith(0))
 	if err == nil {
 		t.Fatal("an authority owning no organisations was verified")
 	}
@@ -145,7 +145,7 @@ func TestAnAuthorityWithNoOrganisationsIsASetupError(t *testing.T) {
 }
 
 func TestNoAuthoritiesIsASetupError(t *testing.T) {
-	if _, err := reconcile.RunTopology(context.Background(), nil, reportWith(0, 0)); err == nil {
+	if _, err := reconcile.RunTopology(context.Background(), nil, reportWith(0)); err == nil {
 		t.Fatal("a run with no authorities produced a verdict")
 	}
 }
@@ -214,7 +214,204 @@ func scope(t *testing.T, authority domain.AuthorityID, orgs []domain.Organisatio
 // reportWith builds a report claiming `admitted` fresh reserves and `mutations` fresh
 // mutations, with a manifest complete enough that a verdict below LevelLocal means
 // reconciliation refused it rather than provenance.
-func reportWith(admitted, mutations int) loadgen.Report {
+// reportReaching is a report whose manifest records the topology the run actually reached,
+// which is what the scopes are checked against.
+func reportReaching(admitted int, assignment map[string][]string) loadgen.Report {
+	r := reportWith(admitted)
+	r.Manifest.UnitCount = len(assignment)
+	r.Manifest.AuthorityCount = len(assignment)
+	r.Manifest.RoutingVersion = "pr3b-v1"
+	r.Manifest.PlacementAssignment = assignment
+	return r
+}
+
+var twoAuthorityRun = map[string][]string{
+	"authority-1": {"org-a", "org-c"},
+	"authority-2": {"org-b", "org-d"},
+}
+
+// Verifying whichever scopes the caller passes says nothing about whether they are the run's.
+//
+// Each case below produces a clean verdict over a topology the report does not describe, and
+// nothing in the numbers would reveal it: the omitted authority is never read, so its rows
+// cannot contradict anything, and the duplicated one contributes its rows twice to totals
+// that are then compared against themselves.
+func TestScopesThatDoNotMatchTheCertifiedTopologyAreRefused(t *testing.T) {
+	tests := []struct {
+		name   string
+		scopes func(*testing.T) []reconcile.AuthorityScope
+		want   string
+	}{
+		{
+			name: "an authority omitted",
+			scopes: func(t *testing.T) []reconcile.AuthorityScope {
+				return []reconcile.AuthorityScope{
+					scope(t, "authority-1", []domain.OrganisationID{"org-a", "org-c"}, counts{live: 5, claims: 5, records: 5}, 10),
+				}
+			},
+			want: "no scope was supplied for it",
+		},
+		{
+			name: "an authority supplied twice",
+			scopes: func(t *testing.T) []reconcile.AuthorityScope {
+				return []reconcile.AuthorityScope{
+					scope(t, "authority-1", []domain.OrganisationID{"org-a", "org-c"}, counts{live: 2, claims: 2, records: 2}, 4),
+					scope(t, "authority-1", []domain.OrganisationID{"org-a", "org-c"}, counts{live: 2, claims: 2, records: 2}, 4),
+					scope(t, "authority-2", []domain.OrganisationID{"org-b", "org-d"}, counts{live: 3, claims: 3, records: 3}, 6),
+				}
+			},
+			want: "supplied twice",
+		},
+		{
+			name: "an organisation omitted from an authority's scope",
+			scopes: func(t *testing.T) []reconcile.AuthorityScope {
+				return []reconcile.AuthorityScope{
+					scope(t, "authority-1", []domain.OrganisationID{"org-a"}, counts{live: 2, claims: 2, records: 2}, 4),
+					scope(t, "authority-2", []domain.OrganisationID{"org-b", "org-d"}, counts{live: 3, claims: 3, records: 3}, 6),
+				}
+			},
+			want: "different partition",
+		},
+		{
+			name: "an organisation attributed to the wrong authority",
+			scopes: func(t *testing.T) []reconcile.AuthorityScope {
+				return []reconcile.AuthorityScope{
+					scope(t, "authority-1", []domain.OrganisationID{"org-a", "org-b"}, counts{live: 2, claims: 2, records: 2}, 4),
+					scope(t, "authority-2", []domain.OrganisationID{"org-c", "org-d"}, counts{live: 3, claims: 3, records: 3}, 6),
+				}
+			},
+			want: "different partition",
+		},
+		{
+			name: "an authority this run never reached",
+			scopes: func(t *testing.T) []reconcile.AuthorityScope {
+				return []reconcile.AuthorityScope{
+					scope(t, "authority-1", []domain.OrganisationID{"org-a", "org-c"}, counts{live: 2, claims: 2, records: 2}, 4),
+					scope(t, "authority-2", []domain.OrganisationID{"org-b", "org-d"}, counts{live: 3, claims: 3, records: 3}, 6),
+					scope(t, "authority-3", []domain.OrganisationID{"org-e"}, counts{}, 0),
+				}
+			},
+			want: "never reached",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := reconcile.RunTopology(context.Background(), tc.scopes(t),
+				reportReaching(10, twoAuthorityRun))
+			if err == nil {
+				t.Fatal("a verdict was produced over a topology the report does not describe")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not mention %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// The positive control: scopes that do match the certified topology must still verify, or
+// every case above would pass for the wrong reason.
+func TestScopesMatchingTheCertifiedTopologyStillVerify(t *testing.T) {
+	res, err := reconcile.RunTopology(context.Background(), []reconcile.AuthorityScope{
+		scope(t, "authority-1", []domain.OrganisationID{"org-a", "org-c"}, counts{live: 2, claims: 2, records: 2}, 4),
+		scope(t, "authority-2", []domain.OrganisationID{"org-b", "org-d"}, counts{live: 3, claims: 3, records: 3}, 6),
+	}, reportReaching(10, twoAuthorityRun))
+	if err != nil {
+		t.Fatalf("scopes matching the report were refused: %v", err)
+	}
+	if !res.ChecksOK() {
+		t.Error("a correct two-authority run did not reconcile")
+	}
+}
+
+// §6.5's fourth rule was absent from the topology path: RunTopology checked local safety,
+// reservations, claims, idempotency records and server totals, and never asked whether the
+// client's own outcomes were inside the closed set.
+//
+// Both halves are exercised because they fail differently: an outcome the contract does not
+// define, and totals that do not sum to the completed count — the shape a replay counted as
+// its own outcome produces.
+func TestTheAggregateVerdictChecksOutcomeClosure(t *testing.T) {
+	tests := []struct {
+		name    string
+		corrupt func(*loadgen.Summary)
+		want    string
+	}{
+		{
+			name: "an outcome outside the closed set",
+			corrupt: func(s *loadgen.Summary) {
+				s.Totals[0].Outcome = domain.Outcome("teapot")
+			},
+			want: "closed terminal-outcome set",
+		},
+		{
+			name: "totals that do not sum to the completed count",
+			corrupt: func(s *loadgen.Summary) {
+				s.Completed = 11
+			},
+			want: "double-counted or missing",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			report := reportReaching(10, twoAuthorityRun)
+			tc.corrupt(&report.Summary)
+
+			res, err := reconcile.RunTopology(context.Background(), []reconcile.AuthorityScope{
+				scope(t, "authority-1", []domain.OrganisationID{"org-a", "org-c"}, counts{live: 2, claims: 2, records: 2}, 4),
+				scope(t, "authority-2", []domain.OrganisationID{"org-b", "org-d"}, counts{live: 3, claims: 3, records: 3}, 6),
+			}, report)
+			if err != nil {
+				t.Fatalf("RunTopology: %v", err)
+			}
+			if res.ChecksOK() {
+				t.Fatal("a run whose client outcomes break §6.5's closure rule reconciled cleanly")
+			}
+
+			var named bool
+			for _, c := range res.Aggregate {
+				if !c.OK && strings.Contains(c.Detail, tc.want) {
+					named = true
+				}
+			}
+			if !named {
+				t.Errorf("no aggregate check reported %q; the closure rule is not being applied "+
+					"once globally", tc.want)
+			}
+		})
+	}
+}
+
+// Passing checks are not a certified run, and a caller that conflates them would quote a run
+// whose provenance the ladder refused.
+func TestPassingChecksAreNotACertifiedRun(t *testing.T) {
+	report := reportReaching(10, twoAuthorityRun)
+	// Sound summary, correct rows, every check passes — but the manifest cannot support a
+	// claim, because the units did not describe one deployment.
+	report.Manifest.TopologyDisagreement = "units are running different code"
+
+	res, err := reconcile.RunTopology(context.Background(), []reconcile.AuthorityScope{
+		scope(t, "authority-1", []domain.OrganisationID{"org-a", "org-c"}, counts{live: 2, claims: 2, records: 2}, 4),
+		scope(t, "authority-2", []domain.OrganisationID{"org-b", "org-d"}, counts{live: 3, claims: 3, records: 3}, 6),
+	}, report)
+	if err != nil {
+		t.Fatalf("RunTopology: %v", err)
+	}
+
+	if !res.ChecksOK() {
+		t.Fatal("precondition: the checks themselves must pass for this test to mean anything")
+	}
+	if res.Quotability.Level != loadgen.LevelNone {
+		t.Errorf("level = %q, want none: the units did not describe one deployment",
+			res.Quotability.Level)
+	}
+	if res.Certified() {
+		t.Error("a run whose topology did not describe one deployment reported itself certified")
+	}
+}
+
+func reportWith(admitted int) loadgen.Report {
 	s := loadgen.Summary{
 		Sound:     true,
 		Completed: admitted,
@@ -261,12 +458,12 @@ func TestOneUnitRestartingMidRunIsNotMaskedByAnother(t *testing.T) {
 	}
 
 	res, err := reconcile.RunTopology(context.Background(),
-		[]reconcile.AuthorityScope{restarted, healthy}, reportWith(20, 20))
+		[]reconcile.AuthorityScope{restarted, healthy}, reportWith(20))
 	if err != nil {
 		t.Fatalf("RunTopology: %v", err)
 	}
 
-	if res.OK() {
+	if res.ChecksOK() {
 		t.Fatal("a unit that restarted mid-run produced a clean verdict: the restart was " +
 			"masked by the other unit's increase, which is exactly what differencing the " +
 			"sums instead of the pairs would do")

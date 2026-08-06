@@ -329,6 +329,9 @@ It refuses a topology whose units are on different images. That is the failure t
 SHA cannot see — the same code served from a stale `:dev` tag, or rebuilt on a newer base
 layer, carries an identical revision on every unit.
 
+Why it works this way, and the alternatives rejected, are
+[ADR-0003](../decisions/0003-deployed-artifact-identity.md).
+
 Build the generator rather than `go run`-ing it: `go run` does not stamp VCS data, so the
 report cannot say which harness produced it.
 

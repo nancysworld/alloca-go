@@ -490,7 +490,8 @@ Every quotable run must record:
   host** by inspecting the running containers, never self-reported by the service: a process
   cannot see which image wraps it, so anything it reported would be an environment variable
   repeated back. A run built and served from source has no image to name and is not asked
-  for one;
+  for one. The decision and the alternatives it rejects are
+  [ADR-0003](../decisions/0003-deployed-artifact-identity.md);
 - Go version and observed `GOMAXPROCS`;
 - replica count and application resources;
 - PostgreSQL version and configuration identity;

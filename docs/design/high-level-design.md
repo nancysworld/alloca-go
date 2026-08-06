@@ -231,6 +231,7 @@ them all; the entries below **own** their subject and are the authority for it.
 | Latency bands, deadline-budget rationale, retry policy | [`latency-timeouts-and-retries.md`](latency-timeouts-and-retries.md) |
 | Modular monolith first | [`../decisions/0001-modular-monolith-first.md`](../decisions/0001-modular-monolith-first.md) |
 | PostgreSQL as transactional authority | [`../decisions/0002-postgresql-transactional-authority.md`](../decisions/0002-postgresql-transactional-authority.md) |
+| How a run identifies the artifact it measured, and why that is observed rather than self-reported | [`../decisions/0003-deployed-artifact-identity.md`](../decisions/0003-deployed-artifact-identity.md) |
 | Predecessor lineage — what Alloca-Go inherits from RuntimeIQ and what it does not | this document §1.1 |
 | Public-release disclosure rules, predecessor naming rule, pre-release checks | [`../public-disclosure-policy.md`](../public-disclosure-policy.md), [`../pre-public-checklist.md`](../pre-public-checklist.md) |
 | How to drive an AG-Sept measurement run locally — the procedure, not the rules | [`../operations/load-harness.md`](../operations/load-harness.md) |

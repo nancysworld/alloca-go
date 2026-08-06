@@ -10,6 +10,10 @@ import (
 
 // Deployment is what a host-side observation of the running containers established.
 //
+// The decision this implements, with the alternatives it rejects, is ADR-0003
+// (docs/decisions/0003-deployed-artifact-identity.md). The summary below is why *this file*
+// looks as it does; the ADR is why the approach was chosen at all.
+//
 // **Why this is a file and not a field of `/meta`.** The plan's §6.4 image identity is a fact
 // about the deployed *artifact*, and a process cannot observe which image wraps it. Asking
 // the service would only have it repeat an environment variable back, which is asserted

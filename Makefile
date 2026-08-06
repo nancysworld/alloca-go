@@ -48,16 +48,23 @@ OBSCOMPOSE   ?= deploy/observability/docker-compose.yml
 # raised and torn down without disturbing whatever is scraping it.
 TOPOCOMPOSE  ?= deploy/topology/docker-compose.yml
 # Immutable experiment tagging (§9.1). Defaults to the working tree's commit so a run's
-# artifacts name an image that can be rebuilt; `dirty` when the tree has uncommitted changes,
+# artifacts name an image that can be rebuilt; `-dirty` when the tree has uncommitted changes,
 # which is a warning that the image is not reproducible from any commit.
-ALLOCA_IMAGE_TAG ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell git diff --quiet 2>/dev/null || echo -dirty)
+#
+# The dirty test is `git status --porcelain`, not `git diff --quiet`, for one reason: it must
+# agree with the flag the *binary* carries. `go build` decides `vcs.modified` from
+# `git status --porcelain` being non-empty, so it counts staged and untracked files, which
+# `git diff --quiet` — worktree against index — does not see. A tag reading clean on an image
+# whose /meta reports modified=true is worse than no tag: it is the one field an operator
+# would use to decide the run is reproducible.
+ALLOCA_IMAGE_TAG ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell test -z "$$(git status --porcelain 2>/dev/null)" || echo -dirty)
 SERVICE_1_PORT   ?= 8081
 SERVICE_2_PORT   ?= 8082
 
 all: ci
 
 ## ci: run the full local gate, identical to CI (fmt, vet, lint, build, test, race)
-ci: fmt-check vet lint build test test-race
+ci: fmt-check vet lint build test test-race build-context-check
 
 ## fmt: format all Go files
 fmt:
@@ -216,14 +223,37 @@ clean:
 	rm -rf $(TOOLBIN)
 	$(GO) clean
 
+## build-context-check: fail if .dockerignore excludes any tracked file
+#
+# In `ci` because the defect it catches is introduced by editing .dockerignore, which anyone
+# can do without ever building an image — and the symptom appears much later, as a run the
+# manifest refuses for reasons that look like a harness bug. Needs no Docker daemon.
+build-context-check:
+	@./test/scripts/check-build-context.sh
+
 ## image: build the production-shaped service image, tagged with the current commit
 #
 # The build context includes .git on purpose: `go build` stamps the VCS revision into the
 # binary, /meta reports it, and the load harness records it as the identity of the code under
 # test. An unstamped image serves runs that cannot be certified (§6.4).
-image:
+#
+# It depends on build-context-check because that stamp is only truthful if the context holds
+# every tracked file: git reports an excluded tracked path as *deleted*, which stamps the
+# binary modified=true and makes the image uncertifiable at the floor of the ladder. Better
+# to refuse the build than to ship an image whose provenance quietly disqualifies every run
+# made against it.
+image: build-context-check
 	docker build -t alloca-go:$(ALLOCA_IMAGE_TAG) -t alloca-go:dev .
 	@echo "built alloca-go:$(ALLOCA_IMAGE_TAG)"
+
+## image-provenance: build an image and prove its binary carries the expected VCS stamp
+#
+# The end-to-end control for §6.4: it extracts the binary and asserts the revision is this
+# commit and modified=false. Refuses to run on a dirty tree, where modified=true is the
+# correct answer and the control could prove nothing. Needs a Docker daemon, so it is not in
+# `ci`; build-context-check covers the same rule there.
+image-provenance:
+	@./test/scripts/check-image-provenance.sh
 
 ## topo-up: build the image, then raise the two-authority topology and wait for readiness
 #

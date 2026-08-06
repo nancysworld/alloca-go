@@ -55,6 +55,13 @@ jobs:
       - name: race test
         run: go test -race ./...
 
+      # Guards the container image's provenance: .dockerignore may exclude only paths git
+      # already ignores. Excluding a tracked path makes git report it as deleted inside the
+      # build context, which stamps the binary vcs.modified=true and makes every run against
+      # the image unquotable at the floor of the ladder. Cheap, and needs no daemon.
+      - name: build context (docker provenance gate)
+        run: ./test/scripts/check-build-context.sh
+
   integration:
     name: postgres integration
     runs-on: ubuntu-latest

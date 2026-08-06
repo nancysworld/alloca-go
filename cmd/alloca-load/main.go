@@ -116,12 +116,15 @@ func run(args []string) error {
 		slots    = fs.Int("slots", 100,
 			"slots seeded per organisation (dispersed, hot-identity, and the multi-organisation "+
 				"shapes, which seed this many for every organisation the placement names)")
-		slotID   = fs.String("slot", "slot-0", "the contended slot (hot-slot)")
-		userID   = fs.String("user", "user-0", "the contended identity (hot-identity)")
-		location = fs.String("generator-location", "local", "where the generator runs")
-		out      = fs.String("out", "", "write the JSON report here (default stdout)")
-		confirm  = fs.Bool("confirm", false, "dispersed: drive reserve→confirm")
-		require  = fs.String("require", string(loadgen.LevelLocal),
+		slotID     = fs.String("slot", "slot-0", "the contended slot (hot-slot)")
+		userID     = fs.String("user", "user-0", "the contended identity (hot-identity)")
+		location   = fs.String("generator-location", "local", "where the generator runs")
+		deployment = fs.String("deployment", "",
+			"path to a deployment record written by test/scripts/record-deployment.sh; supplies "+
+				"the image identity a containerised run must name (§6.4)")
+		out     = fs.String("out", "", "write the JSON report here (default stdout)")
+		confirm = fs.Bool("confirm", false, "dispersed: drive reserve→confirm")
+		require = fs.String("require", string(loadgen.LevelLocal),
 			"fail unless the run reaches this level: local | capacity | publishable")
 	)
 	// The flag package's own output is discarded so a bad flag is reported once, by main,
@@ -246,6 +249,22 @@ func run(args []string) error {
 		router.Placement())
 	manifest.DatasetSlots = datasetSlots
 	manifest.ServiceIdentityDrift = drift
+
+	// The identity of the deployed artifact, observed from the host rather than reported by
+	// the service — a process cannot see which image wraps it, and a generator that could
+	// look would need a Docker socket, which is root and exactly what §6.3 keeps it away
+	// from. A malformed or disagreeing record fails the run rather than being dropped: a
+	// containerised run that cannot name its image is one the gate must refuse, and silently
+	// carrying on would produce a report that simply omits the field.
+	if *deployment != "" {
+		observed, err := loadgen.LoadDeployment(*deployment)
+		if err != nil {
+			return err
+		}
+		manifest.ContainerDeployment = true
+		manifest.ImageID = observed.ImageID
+		manifest.ImageTag = observed.ImageTag
+	}
 
 	report := loadgen.Report{Manifest: manifest, Summary: summary}
 	report.Quotability = loadgen.Certify(manifest, summary)

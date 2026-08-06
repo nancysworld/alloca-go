@@ -35,7 +35,28 @@ type Manifest struct {
 	ServiceCommitSHA      string `json:"service_commit_sha"`
 	ServiceSourceModified bool   `json:"service_source_modified"`
 	ServiceGoVersion      string `json:"service_go_version"`
-	ImageTag              string `json:"image_tag,omitempty"`
+
+	// Identity of the deployed artifact, which is a different fact from the identity of the
+	// code and cannot be derived from it. The commit SHA binds the running *binary* to a
+	// revision; it says nothing about the image wrapping it — so the same code served from a
+	// stale `:dev` tag, or rebuilt on a newer base layer, is indistinguishable by SHA alone.
+	//
+	// **These are observed from outside, never reported by the service.** A process cannot
+	// see which image wraps it, so anything it said here would be an environment variable
+	// repeated back — asserted provenance sitting beside the compiler-observed SHA under
+	// names that do not admit the difference. Instead a host-side step inspects the running
+	// containers and records what they are actually running (`Deployment`, deployment.go).
+	//
+	// ImageID is the immutable content identity and is what a claim rests on. ImageTag is
+	// kept only as a human-readable alias, and is not evidence of anything: a tag is mutable,
+	// two builds can carry the same one, and the second silently replaces the first.
+	ImageID  string `json:"image_id,omitempty"`
+	ImageTag string `json:"image_tag,omitempty"`
+
+	// ContainerDeployment records that the run was served by containers, and is what makes
+	// the image identity *required* rather than merely welcome. A run built and served from
+	// source has no image to name, and demanding one would refuse every local run.
+	ContainerDeployment bool `json:"container_deployment,omitempty"`
 
 	// Identity of the harness that produced the numbers. Kept because "which generator ran
 	// this?" is a real question when a run looks anomalous — but kept under names that
@@ -351,9 +372,23 @@ func (m Manifest) Validate(level Level) []string {
 		// interpretable, even unpublished.
 		add(m.Environment == "", "environment is empty (operator-supplied, PR4)")
 
-		// image_tag is deliberately absent: §14 allows it to be conditional for a local
-		// source build, provided the manifest identifies the deployment mode — which
-		// deployment_topology, required above, is what does that.
+		// Image identity, required of a containerised run and meaningless without one.
+		//
+		// §6.4 asks every quotable run to identify the artifact it measured. A run built and
+		// served from source has no image to name — demanding one would refuse every local
+		// run — so the requirement is conditional on the deployment mode, and
+		// container_deployment is what declares it. A containerised run that records no
+		// image id measured an artifact it cannot name: the commit SHA binds the binary to a
+		// revision, but a stale tag serving older code, or the same code on a different base
+		// layer, is invisible to it.
+		//
+		// image_tag is deliberately *not* required even then. A tag is a mutable alias, two
+		// builds can wear the same one, and the second replaces the first — so it is an
+		// operator convenience, never the thing a claim rests on.
+		add(m.ContainerDeployment && m.ImageID == "",
+			"container_deployment is set but image_id is empty: the run was served by "+
+				"containers whose image it cannot name, and service_commit_sha does not "+
+				"cover that — the same code from a stale tag carries the same revision")
 	}
 
 	if level.AtLeast(LevelPublishable) {

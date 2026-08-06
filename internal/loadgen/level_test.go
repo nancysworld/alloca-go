@@ -78,6 +78,16 @@ func multiAuthorityManifest() loadgen.Manifest {
 	return m
 }
 
+// containerManifest is a run served by containers, which is what makes §6.4's image identity
+// required. A run built and served from source has no image to name.
+func containerManifest() loadgen.Manifest {
+	m := multiAuthorityManifest()
+	m.ContainerDeployment = true
+	m.ImageID = "sha256:1111111111111111"
+	m.ImageTag = "alloca-go:6e2f7ac"
+	return m
+}
+
 // publishableManifest additionally moves the generator off the service host, which is the
 // one §6.3 requirement a manifest can record.
 func publishableManifest() loadgen.Manifest {
@@ -98,6 +108,7 @@ func TestCompleteManifestReachesEachLevel(t *testing.T) {
 		{"generator fields only", localManifest(), loadgen.LevelLocal},
 		{"service shape and topology", capacityManifest(), loadgen.LevelCapacity},
 		{"two authorities, both named", multiAuthorityManifest(), loadgen.LevelCapacity},
+		{"served by containers, image named", containerManifest(), loadgen.LevelCapacity},
 		{"generator on separate compute", publishableManifest(), loadgen.LevelPublishable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -205,6 +216,17 @@ func TestIncompleteManifestCannotBeCertified(t *testing.T) {
 			from:    multiAuthorityManifest(),
 			want:    loadgen.LevelLocal,
 			mention: "placement_assignment",
+		},
+		{
+			// §6.4's image identity. The commit SHA binds the binary to a revision, but the
+			// same code served from a stale tag carries the same revision — so a
+			// containerised run that cannot name its image measured an artifact it cannot
+			// identify.
+			name:    "containerised run naming no image stops at local",
+			corrupt: func(m *loadgen.Manifest) { m.ImageID = "" },
+			from:    containerManifest(),
+			want:    loadgen.LevelLocal,
+			mention: "image_id",
 		},
 		{
 			name:    "missing environment stops at local",

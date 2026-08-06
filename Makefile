@@ -292,6 +292,18 @@ topo-up: image
 	done
 	@echo "topology up. authority-1 -> localhost:$(SERVICE_1_PORT), authority-2 -> localhost:$(SERVICE_2_PORT)"
 
+## topo-deployment: record what the running topology is actually serving (§6.4 image identity)
+#
+# Inspects the live containers and writes the immutable image ID every unit must share. It is
+# a separate step, not something alloca-load does, for two reasons: a process cannot see which
+# image wraps it, so the service could only repeat back an environment variable; and reading
+# it needs the Docker socket, which is root on the host and the last thing a generator that
+# must later move to separate compute should hold (§6.3).
+#
+# Pass the result to a run with `alloca-load -deployment <file>`.
+topo-deployment:
+	@./test/scripts/record-deployment.sh
+
 ## topo-down: stop the topology and remove its volumes
 #
 # -v because each run starts from a known fixture. A topology that kept its data between runs

@@ -481,7 +481,16 @@ honoured by labelling: every AG-Sept run is a bounded local result, `quotability
 
 Every quotable run must record:
 
-- commit SHA and image tag;
+- commit SHA, and — for a run served by containers — the **image ID or digest** of the
+  artifact that served it (v0.6). The two are different facts and neither implies the other:
+  the SHA is stamped into the binary and identifies the *code*, so the same code served from
+  a stale tag, or rebuilt on a different base layer, carries an identical SHA. The identity
+  is an **image ID or registry digest, never a tag** — a tag is a mutable alias that two
+  builds can wear, and the second silently replaces the first. It is **observed from the
+  host** by inspecting the running containers, never self-reported by the service: a process
+  cannot see which image wraps it, so anything it reported would be an environment variable
+  repeated back. A run built and served from source has no image to name and is not asked
+  for one;
 - Go version and observed `GOMAXPROCS`;
 - replica count and application resources;
 - PostgreSQL version and configuration identity;
@@ -637,9 +646,10 @@ composed run at the chosen replica count across both authorities shows the two a
 
 ### 9.1 Container gate
 
-The service must have a reproducible, production-shaped image with immutable experiment tagging,
-environment-driven configuration, health probes, graceful termination, and no development-only
-runtime tooling.
+The service must have a reproducible, production-shaped image identified for an experiment by
+its **image ID or registry digest** (v0.6 — a tag is a mutable alias, so it labels a build but
+cannot identify one), environment-driven configuration, health probes, graceful termination,
+and no development-only runtime tooling.
 
 **The gate moves earlier in v0.5.** Phase 1 needs two service units and two databases from PR3b
 onward. Running that topology as containers from the start is cheaper than converting it

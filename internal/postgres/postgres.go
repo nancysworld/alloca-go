@@ -194,7 +194,8 @@ func (r *Repo) classify(ctx context.Context, txCtx context.Context, err error) e
 // as definite failures is precisely the dangerous direction this function exists to avoid,
 // so they are ambiguous. Found by the deliberately-timed fault in
 // `commit_fault_test.go`, which is also why INV-21 sat unproven for two milestones: the
-// classification looked right until something actually killed a connection mid-COMMIT.
+// classification looked right until something actually killed the session a COMMIT was
+// about to be sent on.
 //
 // Reporting an ambiguous commit as a definite failure would be the more dangerous
 // error of the two: a client told "failed" may reasonably reissue with a new key, and

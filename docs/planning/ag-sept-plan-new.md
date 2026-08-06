@@ -906,9 +906,13 @@ attribution — per-authority work is read from per-service scrapes instead (§6
   replaying their own idempotency keys *before* the final correctness verdict. Affected and
   unaffected populations are reported separately, and the run is not judged against the
   aggregate SLO gates that govern a healthy capacity run;
-- **if a deliberately timed mid-commit connection loss can be produced, discharge INV-21** —
-  the register's longest-standing "not directly proven" entry, open because no test kills a
-  connection mid-`COMMIT`. A generic authority shutdown does not claim that proof; only the
+- **if a deliberately timed mid-commit connection loss can be produced, discharge the rest of
+  INV-21** — the register's longest-standing "not directly proven" entry. PR3b closed the
+  narrower half: a `COMMIT` attempted on a session already terminated is proven to classify
+  as `unknown_replayable` and to leave no row. What remains is the fault the entry was
+  actually named for — the connection lost *while* the commit or its acknowledgement is in
+  flight — which needs something interposed between client and server rather than a
+  terminated backend. A generic authority shutdown does not claim that proof; only the
   targeted fault does, and the mechanism is implementation's to choose;
 - verify under the quiesced consistency rule (§3.2, §6.5);
 - report, with the organisation-to-authority distribution each run measured.

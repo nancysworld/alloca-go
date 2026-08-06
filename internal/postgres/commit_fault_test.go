@@ -14,7 +14,8 @@ import (
 )
 
 // INV-21 has sat in the invariant register's *not directly proven* section since AG-M1
-// for one reason: no test killed a connection mid-`COMMIT`. This is that test.
+// for one reason: no test ever killed the session a `COMMIT` was about to be sent on. This
+// is that test.
 //
 // The fault is deliberately timed rather than incidental. A generic shutdown tears down
 // every connection at once and proves only that the service notices a dead database. What
@@ -24,17 +25,24 @@ import (
 // exactly what breaks the one-key-one-mutation gate (transaction-semantics §5.4).
 //
 // **What this proves, and what it does not.** The transaction's own backend is terminated
-// from a second pool with its work done and its `COMMIT` not yet sent, so the commit fails
-// on a broken connection. That is the *did-not-commit* half of the ambiguity: the server
-// rolled back, the client cannot know that, and the contract requires it be told the
-// outcome is unknown rather than failed.
+// from a second pool with its work done and its `COMMIT` **not yet sent**, so the commit is
+// attempted on a session already dead. That is the *did-not-commit* half of the ambiguity:
+// the server rolled back, the client cannot know that, and the contract requires it be told
+// the outcome is unknown rather than failed.
+//
+// **This is not connection loss while `COMMIT` is in flight**, and the name says so. Nothing
+// here interposes between the client sending `COMMIT` and the server acting on it; the
+// session is destroyed beforehand, and what is tested is that the resulting SQLSTATE is
+// classified conservatively. The distinction matters because the two produce the same client
+// obligation from different server states, and a test named for the case it does not cover
+// is how the register comes to record proof that does not exist.
 //
 // The other half — the commit landing durably and only its acknowledgement being lost —
 // is **not** proven here, and cannot be by a test that speaks to PostgreSQL directly:
 // there is no instant between the server's durable write and its reply that a client can
 // interpose on. Producing it needs a proxy that drops the reply. The register says so,
 // rather than letting this test read as the whole invariant.
-func TestCommitInterruptedMidFlightIsUnknownReplayable(t *testing.T) {
+func TestCommitOnATerminatedSessionIsUnknownReplayable(t *testing.T) {
 	h := newHarness(t, testBudget(), 30*time.Second)
 	base := h.dbNow(t)
 	h.seedWindow(t, testOrg, "fault-slot", 5, base, time.Hour, 2*time.Hour)

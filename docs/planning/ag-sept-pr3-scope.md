@@ -63,7 +63,7 @@ excursion. PR3 is correctness-first by design, not by descope.
 | 12 | Phase 1 correctness experiments and per-authority verdicts | 3c | §11 |
 | 13 | Failure-isolation experiment — one authority down, ambiguous mutations replayed, then restored | 3c | §11 |
 | 14 | Ambiguous-request register and `ResolveAmbiguous` (§5.7) | 3b | §6.5 |
-| 15 | `classifyCommit` ambiguity fix and the INV-21 mid-`COMMIT` fault test | 3b, early | §3.2 |
+| 15 | `classifyCommit` ambiguity fix and the INV-21 terminated-session fault test | 3b, early | §3.2 |
 
 ## 3. What the existing code makes cheap, and what it does not
 
@@ -321,14 +321,18 @@ built. Fewer branches, one review, and nothing parked where it cannot be seen.
 - the **`classifyCommit` ambiguity fix**: class 57 (operator intervention) and class 08
   (connection exception) SQLSTATEs are the session ending, not the server answering the
   `COMMIT`, so they are now `unknown_replayable` rather than definite failures;
-- the **INV-21 mid-`COMMIT` fault test** that found that defect, and INV-21's revised
-  register entry.
+- the **INV-21 terminated-session fault test** that found that defect, and INV-21's revised
+  register entry. **It is deliberately not named for connection loss mid-`COMMIT`:** the
+  session is destroyed with the transaction's work done and `COMMIT` not yet sent, so what
+  is proven is that a commit attempted on a dead session is classified conservatively.
+  Nothing interposes between the client sending `COMMIT` and the server acting on it, and
+  the *acknowledgement-lost* half stays PR3c's, unproven.
 
 The last two were nominally PR3c's and explicitly unfunded (§4). They are here because
 they are *done*, and because the fix is a correctness change to merged code that should not
 wait on a measurement PR. **Consequence, accepted rather than overlooked:** the fix reaches
-`main` when PR3b merges, so until then `main` misclassifies a mid-`COMMIT` session death as
-a definite failure. Low risk — no production deployment exists, and the experiment that
+`main` when PR3b merges, so until then `main` misclassifies a terminated session under
+`COMMIT` as a definite failure. Low risk — no production deployment exists, and the experiment that
 would deliberately trigger it is PR3c, which lands after.
 
 **Still PR3c's, and still to be built:**
@@ -340,7 +344,8 @@ would deliberately trigger it is PR3c, which lands after.
 1. the **post-restoration resolution pass** as a step of the failure-isolation experiment —
    calling `ResolveAmbiguous` after the authority is back and before the correctness
    verdict, and refusing to reconcile a run with anything left unresolved
-   (`ag-sept-plan-new.md` §6.5);
+   (`ag-sept-plan-new.md` §6.5). **This includes the logical-summary contract that pass
+   needs, which PR3b deliberately does not define** — see §6c;
 2. the **failure-isolation experiment** itself, with affected and unaffected populations
    reported separately as their own evidence class. **It must state which failure mode it
    injected**, because the outcome depends on it — see §6b;
@@ -378,6 +383,44 @@ Two consequences for PR3c:
    is adjacent to the PR2 deferral register's standing item that the timeout budget has never
    been observed doing its job under load (`ag-sept-plan-old.md` §14, group A). Investigate
    before asserting, and do not fix it on the strength of one observation.
+
+### 6c. Resolution accounting is PR3c's, and PR3b stops short of it deliberately
+
+Raised in review of PR3b (ChatGPT, 2026-08-06) and deferred with Nancy's agreement. Recorded
+here so PR3c inherits the problem stated rather than discovers it.
+
+`ResolveAmbiguous` replays each ambiguous mutation and returns `[]Resolution`. Those replays
+are **real HTTP requests that PR3b does not account for anywhere**: they happen outside
+`Runner`, they are not folded into `Report.Summary`, and `RunTopology` takes no resolution
+input. So after a resolution pass the server's counters include the replay traffic while the
+client totals still describe only the original run, and three-way reconciliation over that
+state cannot be correct.
+
+The *acknowledgement-lost* branch is the sharp end. A resolution returning `Replay=true`
+proves the original mutation committed — the database holds one fresh logical mutation — but
+appending the replay's response to the totals would leave `FreshMutations()` at zero for that
+logical request, because the replay itself is not fresh. The mutation is real and the summary
+would say it never happened.
+
+**What PR3c must define**, as one contract rather than as four separate patches:
+
+- resolution HTTP traffic incorporated into request and server accounting, so the scrape
+  comparison is over the same population as the client totals;
+- a logical mutation counted **once as fresh** when the replay proves the original committed;
+- counted **once** when resolution performs it with `Replay=false`;
+- anything still ambiguous rejected outright — `Unresolved` already reports it, and a run
+  carrying any is not reconcilable.
+
+It needs end-to-end tests on both branches: original committed then replayed, and original
+rolled back then performed during resolution.
+
+**Why not in PR3b.** The same reasoning that left `RunTopology`'s CLI flags to PR3c: the
+shape of this contract depends on how the resolution pass is actually driven, and a summary
+contract guessed at before its only caller exists is one PR3c would have to redesign while
+also producing the experiment. The register's own defect — a failed replay re-registering
+itself and growing the outstanding work on every pass — was a live bug in shipped code and
+**was** fixed in PR3b; deduplication does not solve the accounting problem, and is not
+claimed to.
 
 ## 7. Not in PR3
 

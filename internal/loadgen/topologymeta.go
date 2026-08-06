@@ -233,12 +233,27 @@ func (t TopologyMeta) RoutingVersion() string {
 // The comparison is therefore over content: the authority set, and the exact set of
 // organisations each authority claims. A zero placement skips it — a single-target run has no
 // map to compare against, and inventing one would refuse every run made before PR3b.
+//
+// **Content equality and version equality are separate gates, and both are required.** The
+// contract is the same *versioned* map, so equal content under different version labels is
+// still a disagreement: the manifest records the version the units report, and a generator
+// routing by a document labelled differently makes that record name a map the run did not
+// use. Two documents agreeing today is not evidence they are the same document, and the
+// artifact has to say which one produced the numbers.
 func (t TopologyMeta) DisagreementWith(routed domain.Placement) string {
 	if disagreement := t.Disagreement(); disagreement != "" {
 		return disagreement
 	}
 	if routed.IsZero() || routed.IsUnsharded() {
 		return ""
+	}
+
+	if serving := t.RoutingVersion(); routed.Version() != serving {
+		return fmt.Sprintf("the generator routed by placement version %q but the units are "+
+			"serving %q: the manifest records the version the units report, so it would name "+
+			"a map this run did not route by — and two documents agreeing on content today is "+
+			"not evidence they are the same document",
+			routed.Version(), serving)
 	}
 
 	// The generator's map, rendered the same way the units' answers are, so the two are

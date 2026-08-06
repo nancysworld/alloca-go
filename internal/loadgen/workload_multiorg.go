@@ -75,13 +75,27 @@ func (MultiOrgDispersed) Name() string { return "multi-org-dispersed" }
 
 func (m MultiOrgDispersed) Do(ctx context.Context, c *Client, seq int) []Response {
 	group := m.Groups[seq%len(m.Groups)]
-	slot := group.Slots[(seq/len(m.Groups))%len(group.Slots)]
 
-	// The user's organisation walks the group independently of the slot's, so consecutive
-	// requests alternate between same-organisation and colocated cross-organisation pairs
-	// whenever an authority owns more than one organisation. Both are supported; both must
-	// be exercised.
-	userOrg := group.Orgs[seq%len(group.Orgs)]
+	// requestsIntoGroup is this group's own request counter, so each authority walks its
+	// dataset independently of how many authorities there are.
+	//
+	// **The user's organisation must not advance on the same cadence as the group.** It
+	// selected with `seq % len(Orgs)` before, which is the *same* expression that picks the
+	// group whenever the counts are equal — and with the committed fixture, two authorities
+	// owning two organisations each, they are. Authority 1 then only ever drew its first
+	// organisation as the user and authority 2 only ever its second, so half the placed
+	// organisations appeared as slot owners and never exercised mutation routing as a user
+	// home at all — the routing that decides which authority owns the schedule claim and the
+	// idempotency scope. Deriving it from the quotient breaks the lock.
+	requestsIntoGroup := seq / len(m.Groups)
+	userOrg := group.Orgs[requestsIntoGroup%len(group.Orgs)]
+
+	// The slot then advances once the user's organisation has walked its own cycle, so
+	// consecutive requests alternate between same-organisation and colocated
+	// cross-organisation pairs. Both are supported; both must be exercised, and INV-13 is
+	// about the second.
+	slot := group.Slots[(requestsIntoGroup/len(group.Orgs))%len(group.Slots)]
+
 	user := User{OrganisationID: userOrg, UserID: domain.UserID(fmt.Sprintf("u-%d", seq))}
 
 	reserved := c.Reserve(ctx, user, slot, key(m.Name(), seq, "reserve"))

@@ -293,6 +293,40 @@ func TestCertificationComparesPlacementContentNotItsLabel(t *testing.T) {
 	}
 }
 
+// Equal content under different version labels is still a disagreement.
+//
+// The contract is the same *versioned* map, so content equality and version equality are
+// separate gates. The manifest records the version the **units** report, so certifying this
+// would produce an artifact naming `pr3b-v1` for a run the generator drove from a document
+// labelled `pr3b-v2` — and two documents agreeing on content today is not evidence they are
+// the same document tomorrow.
+func TestGeneratorAndUnitsMustAgreeOnTheRoutingVersionNotOnlyItsContent(t *testing.T) {
+	units := loadgen.TopologyMeta{Units: []loadgen.UnitMeta{
+		serving("http://unit-1", "authority-1", "pr3b-v1", "org-a", "org-c"),
+		serving("http://unit-2", "authority-2", "pr3b-v1", "org-b", "org-d"),
+	}}
+	// Byte-for-byte the same assignment as routedV1, under a different version label.
+	relabelled := placement(t, `{"version":"pr3b-v2","homes":{
+	  "org-a":"authority-1","org-b":"authority-2",
+	  "org-c":"authority-1","org-d":"authority-2"}}`)
+
+	got := units.DisagreementWith(relabelled)
+	if got == "" {
+		t.Fatal("a run whose generator and services carried different placement versions " +
+			"certified, because their content happened to match")
+	}
+	if !strings.Contains(got, "pr3b-v1") || !strings.Contains(got, "pr3b-v2") {
+		t.Errorf("reason %q should name both versions", got)
+	}
+
+	// The positive control: the matching version must still certify, or the check above
+	// would pass for the wrong reason.
+	if got := units.DisagreementWith(placement(t, routedV1)); got != "" {
+		t.Fatalf("a run whose generator and services agreed on version and content was "+
+			"refused: %s", got)
+	}
+}
+
 // A unit that believes it is unsharded will not refuse the organisations it does not own, so
 // its presence in a multi-unit run is a split-brain that no assignment comparison catches:
 // its own list may still be correct.

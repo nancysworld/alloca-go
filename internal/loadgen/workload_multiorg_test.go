@@ -132,6 +132,83 @@ func TestMultiOrgDispersedGeneratesOnlySupportedColocatedPairs(t *testing.T) {
 	}
 }
 
+// Every placed organisation must appear as a *user home*, not merely as a slot owner.
+//
+// This uses the shipped fixture's shape — two authorities, two organisations each, exactly
+// `deploy/topology/placement.json` — because that is where the defect lived. The group and
+// the user organisation were both selected with `seq % 2`, so the two indices moved in
+// lockstep: authority 1 only ever drew its first organisation as the user and authority 2
+// only ever its second. The other two appeared as slot owners throughout, which looks like
+// coverage and is not.
+//
+// It matters because user-home is the routing that decides which authority owns the
+// schedule claim and the idempotency scope. An organisation that is never a user home never
+// has that path exercised, so a run reports having driven the dispersed control while half
+// the placement's mutation routing was never touched.
+func TestMultiOrgDispersedExercisesEveryOrganisationAsAUserHome(t *testing.T) {
+	placement, err := domain.ParsePlacement([]byte(
+		`{"version":"pr3b-v1","homes":{"org-a":"authority-1","org-b":"authority-2",
+		  "org-c":"authority-1","org-d":"authority-2"}}`))
+	if err != nil {
+		t.Fatalf("parsing placement: %v", err)
+	}
+
+	units, endpoints := newRecordingUnits(t, "authority-1", "authority-2")
+	router, err := loadgen.NewRouter(placement, endpoints)
+	if err != nil {
+		t.Fatalf("building router: %v", err)
+	}
+	groups, err := loadgen.NewOrgGroups(placement, map[domain.OrganisationID][]loadgen.Slot{
+		"org-a": {{OrganisationID: "org-a", SlotID: "a-1"}, {OrganisationID: "org-a", SlotID: "a-2"}},
+		"org-b": {{OrganisationID: "org-b", SlotID: "b-1"}, {OrganisationID: "org-b", SlotID: "b-2"}},
+		"org-c": {{OrganisationID: "org-c", SlotID: "c-1"}, {OrganisationID: "org-c", SlotID: "c-2"}},
+		"org-d": {{OrganisationID: "org-d", SlotID: "d-1"}, {OrganisationID: "org-d", SlotID: "d-2"}},
+	})
+	if err != nil {
+		t.Fatalf("building groups: %v", err)
+	}
+
+	client := loadgen.NewRoutedClient(router, 5*time.Second, true)
+	workload := loadgen.MultiOrgDispersed{Groups: groups}
+	for seq := range 64 {
+		for _, resp := range workload.Do(context.Background(), client, seq) {
+			if resp.Invalid != "" {
+				t.Fatalf("seq %d: %s", seq, resp.Invalid)
+			}
+		}
+	}
+
+	userHomes := map[string]int{}
+	var sameOrg, crossOrg int
+	for _, authority := range []domain.AuthorityID{"authority-1", "authority-2"} {
+		for _, pair := range units.pairs(authority) {
+			userHomes[pair[0]]++
+			if pair[0] == pair[1] {
+				sameOrg++
+			} else {
+				crossOrg++
+			}
+		}
+	}
+
+	for _, org := range []string{"org-a", "org-b", "org-c", "org-d"} {
+		if userHomes[org] == 0 {
+			t.Errorf("%q never appeared as a user organisation: its mutation routing — the "+
+				"authority owning its schedule claim and idempotency scope — is unexercised, "+
+				"while the run reports having driven the dispersed control. Saw %v",
+				org, userHomes)
+		}
+	}
+
+	// The properties the previous cadence did hold must survive the change.
+	if sameOrg == 0 {
+		t.Error("no same-organisation bookings were generated")
+	}
+	if crossOrg == 0 {
+		t.Error("no colocated cross-organisation bookings were generated; INV-13's path is unexercised")
+	}
+}
+
 // The refusal control must generate pairs Phase 1 refuses, routed to the user's own unit —
 // so the request is understood and refused on policy, not bounced at the edge as a misroute.
 func TestCrossAuthorityControlGeneratesOnlyUnsupportedPairsRoutedToUserHome(t *testing.T) {

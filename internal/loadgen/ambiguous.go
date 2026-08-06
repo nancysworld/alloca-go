@@ -31,41 +31,89 @@ type Ambiguous struct {
 	path string
 }
 
+// scopedIdentity is what makes two ambiguous mutations the same one.
+//
+// **It is the idempotency scope, not the raw key.** The normative scope is
+// `(user organisation, user id, operation, key)` — `domain.ScopeKey`, which is what the
+// service records a mutation under (transaction-semantics §5.1). A raw key is unique only
+// *within* that scope: two users may legitimately both send `k-1`, and one user may send
+// `k-1` for a reserve and again for a confirm. Deduplicating on the key alone would treat
+// those as one mutation and silently drop every one after the first, leaving a real
+// mutation unresolved and unreplayed — the failure the register exists to prevent.
+type scopedIdentity struct {
+	Organisation domain.OrganisationID
+	User         domain.UserID
+	Operation    string
+	Key          string
+}
+
+func (a Ambiguous) identity() scopedIdentity {
+	return scopedIdentity{
+		Organisation: a.User.OrganisationID,
+		User:         a.User.UserID,
+		Operation:    a.Operation,
+		Key:          a.Key,
+	}
+}
+
 // ambiguityRegister collects ambiguous mutations during a run.
 //
 // It is deliberately not part of Response or Total. Those describe what the run
 // *observed*, and an ambiguous mutation is precisely the thing observation could not
 // settle; folding it in would report an unresolved question as a measured answer.
 //
-// The register holds at most one entry per idempotency key, because a key *is* the identity
-// of a logical mutation — that is the property the whole idempotency contract rests on. Two
-// entries under one key would not be two mutations to resolve; they would be one mutation
-// replayed twice, which is exactly what the resolution pass promises never to do.
+// It holds at most one entry per scoped identity, and holds it only while the mutation is
+// still unsettled: entries arrive from record and leave through retire.
 type ambiguityRegister struct {
 	mu      sync.Mutex
-	seen    map[string]bool
+	seen    map[scopedIdentity]bool
 	entries []Ambiguous
 }
 
-// record adds an ambiguous mutation, ignoring a key already registered.
+// record adds an ambiguous mutation, ignoring a scope already registered.
 //
 // The repeat is not hypothetical: ResolveAmbiguous replays through the same request path
 // that populates this register, so a replay that is *itself* ambiguous arrives back here
-// under the original's key. Appending it would add a second entry for one logical mutation,
-// and every later resolution pass would replay both — the register growing with each
-// attempt against an authority that is still down, inflating the post-run control and
+// under the original's identity. Appending it would add a second entry for one logical
+// mutation, and every later resolution pass would replay both — the register growing with
+// each attempt against an authority that is still down, inflating the post-run control and
 // breaking the "replayed exactly once" guarantee that makes replay safe at all.
 func (r *ambiguityRegister) record(entry Ambiguous) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.seen[entry.Key] {
+	identity := entry.identity()
+	if r.seen[identity] {
 		return
 	}
 	if r.seen == nil {
-		r.seen = map[string]bool{}
+		r.seen = map[scopedIdentity]bool{}
 	}
-	r.seen[entry.Key] = true
+	r.seen[identity] = true
 	r.entries = append(r.entries, entry)
+}
+
+// retire drops a mutation the resolution pass settled.
+//
+// A settled mutation is no longer outstanding work, and leaving it registered has two
+// consequences that compound: the next pass replays it again — a second replay of a
+// mutation already known to have committed, which is the amplification this register
+// exists to prevent — and Ambiguous() never empties, so a fully resolved run can never
+// report itself reconcilable.
+func (r *ambiguityRegister) retire(identity scopedIdentity) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.seen[identity] {
+		return
+	}
+	delete(r.seen, identity)
+
+	kept := r.entries[:0]
+	for _, entry := range r.entries {
+		if entry.identity() != identity {
+			kept = append(kept, entry)
+		}
+	}
+	r.entries = kept
 }
 
 func (r *ambiguityRegister) snapshot() []Ambiguous {
@@ -111,17 +159,25 @@ type Resolution struct {
 // Conflating the two is how that group creeps into a PR that cannot fund it.
 //
 // It iterates a snapshot, and the replays reissue through the ordinary request path — so a
-// replay that is itself ambiguous re-enters the register under the original's key, where
-// record absorbs it. Neither this pass nor a later one grows the work to be done.
+// replay that is itself ambiguous re-enters the register under the original's identity,
+// where record absorbs it. **A replay that settles the mutation retires it**, so the
+// register holds exactly the work still outstanding. Together those two make the pass
+// idempotent in the way that matters: running it twice replays each unsettled mutation once
+// more and each settled one not at all, and once everything resolves Ambiguous() is empty
+// and a further pass is a no-op.
 func (c *Client) ResolveAmbiguous(ctx context.Context) []Resolution {
 	entries := c.Ambiguous()
 	resolutions := make([]Resolution, 0, len(entries))
 	for _, entry := range entries {
 		replayed := c.do(ctx, entry.Operation, entry.path, entry.User, entry.Key)
+		stillAmbiguous := replayed.Outcome == domain.OutcomeUnknownReplayable
+		if !stillAmbiguous {
+			c.ambiguous.retire(entry.identity())
+		}
 		resolutions = append(resolutions, Resolution{
 			Ambiguous:      entry,
 			Response:       replayed,
-			StillAmbiguous: replayed.Outcome == domain.OutcomeUnknownReplayable,
+			StillAmbiguous: stillAmbiguous,
 		})
 	}
 	return resolutions

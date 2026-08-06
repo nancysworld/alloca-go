@@ -159,6 +159,141 @@ func TestRepeatedFailedResolutionDoesNotGrowTheRegister(t *testing.T) {
 	}
 }
 
+// A raw idempotency key is unique only within its scope, so the register cannot key on it.
+//
+// The normative scope is (user organisation, user id, operation, key) — domain.ScopeKey,
+// what the service records a mutation under. Two users may legitimately both send "k-1",
+// and one user may send "k-1" for a reserve and again for a confirm. Deduplicating on the
+// key alone collapses those into one entry, so every mutation after the first is dropped
+// from the register: never replayed, never resolved, and invisible in the post-run control
+// that exists to catch exactly that.
+func TestTheRegisterKeysOnTheFullIdempotencyScopeNotTheRawKey(t *testing.T) {
+	var requests atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"outcome": domain.OutcomeUnknownReplayable, "replay": false,
+		})
+	}))
+	defer srv.Close()
+
+	c := loadgen.NewClient(srv.URL, 5*time.Second, true)
+	ctx := context.Background()
+	slot := loadgen.Slot{OrganisationID: "org-a", SlotID: "slot-1"}
+
+	// Four genuinely distinct logical mutations, every one of them under the raw key "k-1":
+	// two users in one organisation, a third in another, and one repeat of the first user's
+	// key under a different operation.
+	userOne := loadgen.User{OrganisationID: "org-a", UserID: "u-1"}
+	userTwo := loadgen.User{OrganisationID: "org-a", UserID: "u-2"}
+	userThree := loadgen.User{OrganisationID: "org-b", UserID: "u-1"}
+
+	c.Reserve(ctx, userOne, slot, "k-1")
+	c.Reserve(ctx, userTwo, slot, "k-1")
+	c.Reserve(ctx, userThree, slot, "k-1")
+	c.Confirm(ctx, userOne, "res-1", "k-1")
+
+	pending := c.Ambiguous()
+	if len(pending) != 4 {
+		t.Fatalf("register holds %d entries, want 4: four distinct scopes shared one raw key, "+
+			"and every one of them is a mutation that must be replayed", len(pending))
+	}
+
+	// And the same scope twice really is one entry — the property the dedup exists for.
+	c.Reserve(ctx, userOne, slot, "k-1")
+	if n := len(c.Ambiguous()); n != 4 {
+		t.Errorf("register holds %d entries after repeating one scope, want 4", n)
+	}
+}
+
+// A settled mutation is no longer outstanding work.
+//
+// Leaving it registered compounds: the next pass replays a mutation already known to have
+// committed — the amplification the register exists to prevent — and Ambiguous() never
+// empties, so a fully resolved run can never report itself reconcilable.
+func TestResolvedEntriesAreRetiredAndUnresolvedOnesAreNot(t *testing.T) {
+	// "k-stuck" stays ambiguous while its authority is down; every other key resolves on
+	// replay. Flipping authorityBack is the authority coming back.
+	var requests atomic.Int64
+	var authorityBack atomic.Bool
+	seenKeys := map[string]bool{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := r.Header.Get("Idempotency-Key")
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+
+		if (key == "k-stuck" && !authorityBack.Load()) || !seenKeys[key] {
+			seenKeys[key] = true
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"outcome": domain.OutcomeUnknownReplayable, "replay": false,
+			})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"outcome": domain.OutcomeAdmittedSuccess, "replay": true, "reservation_id": "res-1",
+		})
+	}))
+	defer srv.Close()
+
+	c := loadgen.NewClient(srv.URL, 5*time.Second, true)
+	ctx := context.Background()
+	user := loadgen.User{OrganisationID: "org-a", UserID: "u-1"}
+	slot := loadgen.Slot{OrganisationID: "org-a", SlotID: "slot-1"}
+
+	c.Reserve(ctx, user, slot, "k-ok")
+	c.Reserve(ctx, user, slot, "k-stuck")
+	if n := len(c.Ambiguous()); n != 2 {
+		t.Fatalf("register holds %d entries, want 2", n)
+	}
+
+	// Pass 1: one resolves, one does not. Only the unresolved entry may remain.
+	first := c.ResolveAmbiguous(ctx)
+	if len(first) != 2 {
+		t.Fatalf("pass 1 resolved %d entries, want 2", len(first))
+	}
+	if loadgen.Unresolved(first) != 1 {
+		t.Fatalf("pass 1 reported %d unresolved, want 1", loadgen.Unresolved(first))
+	}
+	pending := c.Ambiguous()
+	if len(pending) != 1 {
+		t.Fatalf("register holds %d entries after pass 1, want 1: the settled mutation was "+
+			"not retired", len(pending))
+	}
+	if pending[0].Key != "k-stuck" {
+		t.Errorf("the entry left pending is %q, want k-stuck", pending[0].Key)
+	}
+
+	// Pass 2 replays only the entry still outstanding — not the one already settled.
+	before := requests.Load()
+	second := c.ResolveAmbiguous(ctx)
+	if len(second) != 1 {
+		t.Fatalf("pass 2 resolved %d entries, want 1: a settled mutation was replayed again",
+			len(second))
+	}
+	if issued := requests.Load() - before; issued != 1 {
+		t.Errorf("pass 2 issued %d requests, want 1", issued)
+	}
+
+	// Once everything resolves, the register empties and a further pass is a no-op.
+	authorityBack.Store(true)
+	c.ResolveAmbiguous(ctx)
+	if n := len(c.Ambiguous()); n != 0 {
+		t.Fatalf("register holds %d entries after everything resolved, want 0: a fully "+
+			"resolved run could never report itself reconcilable", n)
+	}
+	before = requests.Load()
+	if final := c.ResolveAmbiguous(ctx); len(final) != 0 {
+		t.Errorf("a pass over an empty register resolved %d entries, want 0", len(final))
+	}
+	if issued := requests.Load() - before; issued != 0 {
+		t.Errorf("a pass over an empty register issued %d requests, want 0", issued)
+	}
+}
+
 // A healthy run registers nothing, so the resolution pass is a no-op rather than
 // something a run has to remember not to do.
 func TestHealthyRunRegistersNothing(t *testing.T) {

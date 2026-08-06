@@ -36,14 +36,35 @@ type Ambiguous struct {
 // It is deliberately not part of Response or Total. Those describe what the run
 // *observed*, and an ambiguous mutation is precisely the thing observation could not
 // settle; folding it in would report an unresolved question as a measured answer.
+//
+// The register holds at most one entry per idempotency key, because a key *is* the identity
+// of a logical mutation — that is the property the whole idempotency contract rests on. Two
+// entries under one key would not be two mutations to resolve; they would be one mutation
+// replayed twice, which is exactly what the resolution pass promises never to do.
 type ambiguityRegister struct {
 	mu      sync.Mutex
+	seen    map[string]bool
 	entries []Ambiguous
 }
 
+// record adds an ambiguous mutation, ignoring a key already registered.
+//
+// The repeat is not hypothetical: ResolveAmbiguous replays through the same request path
+// that populates this register, so a replay that is *itself* ambiguous arrives back here
+// under the original's key. Appending it would add a second entry for one logical mutation,
+// and every later resolution pass would replay both — the register growing with each
+// attempt against an authority that is still down, inflating the post-run control and
+// breaking the "replayed exactly once" guarantee that makes replay safe at all.
 func (r *ambiguityRegister) record(entry Ambiguous) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.seen[entry.Key] {
+		return
+	}
+	if r.seen == nil {
+		r.seen = map[string]bool{}
+	}
+	r.seen[entry.Key] = true
 	r.entries = append(r.entries, entry)
 }
 
@@ -88,6 +109,10 @@ type Resolution struct {
 // under the key the original used. The retry-on-timeout control that shapes load during
 // a run is separate work and remains unassigned (ag-sept-plan-new.md §14, group A).
 // Conflating the two is how that group creeps into a PR that cannot fund it.
+//
+// It iterates a snapshot, and the replays reissue through the ordinary request path — so a
+// replay that is itself ambiguous re-enters the register under the original's key, where
+// record absorbs it. Neither this pass nor a later one grows the work to be done.
 func (c *Client) ResolveAmbiguous(ctx context.Context) []Resolution {
 	entries := c.Ambiguous()
 	resolutions := make([]Resolution, 0, len(entries))

@@ -92,6 +92,35 @@ func TestUnitsThatDoNotDescribeOneDeploymentAreNamed(t *testing.T) {
 	}
 }
 
+// Two *later* units sharing an authority is the case a first-unit-only comparison misses.
+//
+// The topology below is a real misconfiguration, not a contrived one: unit-3's endpoint
+// points at unit-2's service, so authority-3 is never reached at all. Every unit agrees on
+// revision, routing version and schema version, and none of them collides with unit-1 — so a
+// check that compares each unit against the first returns no disagreement, and the run
+// certifies as a healthy three-authority deployment while holding two.
+func TestDuplicateAuthorityAmongLaterUnitsIsCaught(t *testing.T) {
+	topology := loadgen.TopologyMeta{Units: []loadgen.UnitMeta{
+		unit("http://unit-1", "abc123", "authority-1", "pr3b-v1", 1),
+		unit("http://unit-2", "abc123", "authority-2", "pr3b-v1", 1),
+		unit("http://unit-3", "abc123", "authority-2", "pr3b-v1", 1),
+	}}
+
+	got := topology.Disagreement()
+	if got == "" {
+		t.Fatal("a topology that reached one authority twice and missed another was accepted " +
+			"as three authorities")
+	}
+	if !strings.Contains(got, "authority-2") {
+		t.Errorf("reason %q does not name the repeated authority", got)
+	}
+	// Both ends of the clash, so the operator knows which endpoint to correct. Naming only
+	// the newcomer leaves them checking a unit that is configured correctly.
+	if !strings.Contains(got, "unit-2") || !strings.Contains(got, "unit-3") {
+		t.Errorf("reason %q should name both units claiming the authority", got)
+	}
+}
+
 // Authority and organisations are *supposed* to differ between units — that is what makes
 // them separate authorities. Comparing them would refuse every correct topology.
 func TestLegitimateDifferencesBetweenUnitsAreNotDisagreement(t *testing.T) {

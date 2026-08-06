@@ -76,13 +76,22 @@ func FetchTopologyMeta(ctx context.Context, targets []string, timeout time.Durat
 // Configuration that differs *legitimately* between units — the authority each is bound to,
 // the organisations each serves — is deliberately not compared. Those are supposed to differ;
 // that is what makes them separate authorities.
+//
+// The three equality properties are compared against the first unit, which is sufficient
+// because equality is transitive: if every unit matches the first, they all match each other.
+// **Authority distinctness is not transitive that way**, so it is tracked separately, in a
+// set covering every unit — see the loop.
 func (t TopologyMeta) Disagreement() string {
 	if len(t.Units) < 2 {
 		return ""
 	}
 
+	// Which unit first claimed each authority, so a repeat can name both ends of the clash
+	// rather than only the newcomer.
+	claimedBy := make(map[string]string, len(t.Units))
+
 	first := t.Units[0]
-	for _, unit := range t.Units[1:] {
+	for _, unit := range t.Units {
 		switch {
 		case unit.Meta.Revision != first.Meta.Revision:
 			return fmt.Sprintf("units are running different code: %s reports revision %q and %s reports %q, "+
@@ -97,10 +106,20 @@ func (t TopologyMeta) Disagreement() string {
 			return fmt.Sprintf("authorities are at different schema versions: %s at %d and %s at %d, "+
 				"so a per-authority result cannot be compared with its peer's",
 				first.Target, first.Meta.Database.SchemaVersion, unit.Target, unit.Meta.Database.SchemaVersion)
-		case unit.Meta.Placement.AuthorityID == first.Meta.Placement.AuthorityID:
-			return fmt.Sprintf("%s and %s both report authority %q: either the topology is misconfigured or "+
-				"the run reached one unit twice, and in both cases it is not the topology it claims",
-				first.Target, unit.Target, first.Meta.Placement.AuthorityID)
+		}
+
+		// Every unit is checked against every earlier one, not against the first alone. With
+		// three or more units, two *later* units can share an authority the first does not
+		// hold — one endpoint pointed at the wrong service, say — which leaves an authority
+		// unreached while the run believes it covered the whole topology. Comparing only with
+		// the first unit returns no disagreement for exactly that case.
+		if id := unit.Meta.Placement.AuthorityID; id != "" {
+			if earlier, repeated := claimedBy[id]; repeated {
+				return fmt.Sprintf("%s and %s both report authority %q: either the topology is misconfigured or "+
+					"the run reached one unit twice, and in both cases it is not the topology it claims",
+					earlier, unit.Target, id)
+			}
+			claimedBy[id] = unit.Target
 		}
 	}
 	return ""

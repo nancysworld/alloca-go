@@ -108,6 +108,57 @@ func TestResolutionThatIsStillAmbiguousIsReportedUnresolved(t *testing.T) {
 	}
 }
 
+// The register must not grow when resolution fails.
+//
+// Resolution replays through the ordinary request path, so a replay that is itself
+// ambiguous comes back to the register under the original's key. If that appended, an
+// authority that stays down would double the outstanding work on every pass: the second
+// pass would replay one logical mutation twice, the third four times, and the post-run
+// control would report mutations the run never issued. The expected operator behaviour —
+// wait, retry the resolution, wait again — is exactly what triggers it.
+func TestRepeatedFailedResolutionDoesNotGrowTheRegister(t *testing.T) {
+	var requests atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"outcome": domain.OutcomeUnknownReplayable, "replay": false,
+		})
+	}))
+	defer srv.Close()
+
+	c := loadgen.NewClient(srv.URL, 5*time.Second, true)
+	ctx := context.Background()
+	c.Reserve(ctx, loadgen.User{OrganisationID: "org-a", UserID: "u-1"},
+		loadgen.Slot{OrganisationID: "org-a", SlotID: "slot-1"}, "k-1")
+
+	if n := len(c.Ambiguous()); n != 1 {
+		t.Fatalf("register holds %d entries after one ambiguous reserve, want 1", n)
+	}
+
+	for pass := 1; pass <= 3; pass++ {
+		before := requests.Load()
+		resolutions := c.ResolveAmbiguous(ctx)
+
+		if len(resolutions) != 1 {
+			t.Fatalf("pass %d resolved %d entries, want 1: one logical mutation is outstanding",
+				pass, len(resolutions))
+		}
+		if issued := requests.Load() - before; issued != 1 {
+			t.Fatalf("pass %d issued %d requests for one outstanding mutation, want 1: "+
+				"a resolution pass must never replay a mutation more than once", pass, issued)
+		}
+		if n := len(c.Ambiguous()); n != 1 {
+			t.Fatalf("register holds %d entries after pass %d, want 1: the failed replay "+
+				"registered itself as new work", n, pass)
+		}
+		if loadgen.Unresolved(resolutions) != 1 {
+			t.Fatalf("pass %d reported the mutation resolved, but the authority is still down", pass)
+		}
+	}
+}
+
 // A healthy run registers nothing, so the resolution pass is a no-op rather than
 // something a run has to remember not to do.
 func TestHealthyRunRegistersNothing(t *testing.T) {

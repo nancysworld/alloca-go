@@ -60,7 +60,7 @@ func TestAmbiguousMutationsAreRegisteredAndResolvedUnderTheirOwnKeys(t *testing.
 	if len(pending) != 1 {
 		t.Fatalf("register holds %d entries, want 1", len(pending))
 	}
-	if pending[0].Key != "k-1" || pending[0].Operation != string(domain.OpReserve) {
+	if pending[0].Key != "k-1" || pending[0].Operation != domain.OpReserve {
 		t.Errorf("registered %+v, want the reserve under k-1", pending[0])
 	}
 

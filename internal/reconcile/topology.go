@@ -341,7 +341,7 @@ func localSafetyChecks(scope AuthorityScope, c authorityCounts) []Check {
 // aggregateChecks compare the whole topology's persisted state, and the whole topology's
 // server counters, against the run's global client totals — once each.
 func aggregateChecks(total authorityCounts, server ServerTotals, s loadgen.Summary) []Check {
-	admitted := s.FreshAdmittedFor(string(domain.OpReserve))
+	admitted := s.FreshAdmittedFor(domain.OpReserve)
 	fresh := s.FreshMutations()
 
 	reservations := Check{Name: "persisted reservations vs admitted reserves (all authorities)", Invariant: "INV-1"}

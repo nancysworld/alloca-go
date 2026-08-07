@@ -38,7 +38,7 @@ import (
 // Response is one completed request as the client saw it: the two dimensions that must
 // agree, the orthogonal replay flag, and the latency the client measured.
 type Response struct {
-	Operation string
+	Operation domain.Operation
 	Status    int
 	Outcome   domain.Outcome
 	Reason    domain.Reason
@@ -124,30 +124,30 @@ func (c *Client) Router() Router { return c.router }
 func (c *Client) Reserve(ctx context.Context, u User, slot Slot, key string) Response {
 	base, err := c.router.For(u.OrganisationID)
 	if err != nil {
-		return unroutable(string(domain.OpReserve), err)
+		return unroutable(domain.OpReserve, err)
 	}
 	path := fmt.Sprintf("%s/v1/slots/%s/%s/reservations", base, slot.OrganisationID, slot.SlotID)
-	return c.do(ctx, string(domain.OpReserve), path, u, key)
+	return c.do(ctx, domain.OpReserve, path, u, key)
 }
 
 // Confirm turns a held reservation into a booking.
 func (c *Client) Confirm(ctx context.Context, u User, reservationID, key string) Response {
 	base, err := c.router.For(u.OrganisationID)
 	if err != nil {
-		return unroutable(string(domain.OpConfirm), err)
+		return unroutable(domain.OpConfirm, err)
 	}
 	path := fmt.Sprintf("%s/v1/reservations/%s/confirm", base, reservationID)
-	return c.do(ctx, string(domain.OpConfirm), path, u, key)
+	return c.do(ctx, domain.OpConfirm, path, u, key)
 }
 
 // Cancel releases a held reservation or an active booking.
 func (c *Client) Cancel(ctx context.Context, u User, reservationID, key string) Response {
 	base, err := c.router.For(u.OrganisationID)
 	if err != nil {
-		return unroutable(string(domain.OpCancel), err)
+		return unroutable(domain.OpCancel, err)
 	}
 	path := fmt.Sprintf("%s/v1/reservations/%s/cancel", base, reservationID)
-	return c.do(ctx, string(domain.OpCancel), path, u, key)
+	return c.do(ctx, domain.OpCancel, path, u, key)
 }
 
 // do issues one mutation and classifies what came back.
@@ -155,7 +155,7 @@ func (c *Client) Cancel(ctx context.Context, u User, reservationID, key string) 
 // A transport failure is classified as a timeout or an internal failure rather than
 // discarded: a request the client gave up on still happened, and dropping it is how a
 // client-side stall gets reported as server capacity.
-func (c *Client) do(ctx context.Context, op, url string, u User, key string) Response {
+func (c *Client) do(ctx context.Context, op domain.Operation, url string, u User, key string) Response {
 	payload, err := json.Marshal(map[string]string{
 		"user_organisation_id": string(u.OrganisationID),
 		"user_id":              string(u.UserID),
@@ -213,7 +213,7 @@ func (c *Client) do(ctx context.Context, op, url string, u User, key string) Res
 // request may still have committed, but that is the timeout contract's problem, not this
 // register's. What lands here is the server's own admission that its commit outcome is
 // unknown.
-func (c *Client) recordIfAmbiguous(op, url string, u User, key string, resp Response) {
+func (c *Client) recordIfAmbiguous(op domain.Operation, url string, u User, key string, resp Response) {
 	if resp.Outcome != domain.OutcomeUnknownReplayable {
 		return
 	}
@@ -281,7 +281,7 @@ func isTimeout(err error) bool {
 // request was sent, so there is no server behaviour to classify, and counting it as an
 // internal_failure would attribute a harness error to the thing being measured. Invalid is
 // the harness's own channel for "this run is not trustworthy" (measurement-contract §5).
-func unroutable(op string, err error) Response {
+func unroutable(op domain.Operation, err error) Response {
 	return Response{
 		Operation: op,
 		Outcome:   domain.OutcomeInternalFailure,

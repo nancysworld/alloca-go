@@ -21,7 +21,7 @@ import (
 type Ambiguous struct {
 	// Operation, User and Key identify the logical mutation. Key is the whole point:
 	// resolving with a *new* key would be a new request and could double-book.
-	Operation string
+	Operation domain.Operation
 	User      User
 	Key       string
 	// path is the exact URL the original request used, kept so the replay reissues that
@@ -31,28 +31,30 @@ type Ambiguous struct {
 	path string
 }
 
-// scopedIdentity is what makes two ambiguous mutations the same one.
+// identity is what makes two ambiguous mutations the same one.
 //
 // **It is the idempotency scope, not the raw key.** The normative scope is
-// `(user organisation, user id, operation, key)` — `domain.ScopeKey`, which is what the
-// service records a mutation under (transaction-semantics §5.1). A raw key is unique only
-// *within* that scope: two users may legitimately both send `k-1`, and one user may send
-// `k-1` for a reserve and again for a confirm. Deduplicating on the key alone would treat
-// those as one mutation and silently drop every one after the first, leaving a real
-// mutation unresolved and unreplayed — the failure the register exists to prevent.
-type scopedIdentity struct {
-	Organisation domain.OrganisationID
-	User         domain.UserID
-	Operation    string
-	Key          string
-}
-
-func (a Ambiguous) identity() scopedIdentity {
-	return scopedIdentity{
-		Organisation: a.User.OrganisationID,
-		User:         a.User.UserID,
-		Operation:    a.Operation,
-		Key:          a.Key,
+// `(user organisation, user id, operation, key)`, which is what the service records a
+// mutation under (transaction-semantics §5.1). A raw key is unique only *within* that
+// scope: two users may legitimately both send `k-1`, and one user may send `k-1` for a
+// reserve and again for a confirm. Deduplicating on the key alone would treat those as one
+// mutation and silently drop every one after the first, leaving a real mutation unresolved
+// and unreplayed — the failure the register exists to prevent.
+//
+// It is `domain.ScopeKey` rather than a shape of this package's own. The register's notion
+// of "the same mutation" has to be the service's, or the two disagree about what a replay
+// replays; sharing the type is what stops them drifting. This is the one place the harness
+// reaches for a domain identity rather than its own — `User` and `Slot` stay local
+// precisely because they are the client's view of the HTTP contract, while the scope is a
+// fact about how the mutation was recorded.
+func (a Ambiguous) identity() domain.ScopeKey {
+	return domain.ScopeKey{
+		UserRef: domain.UserRef{
+			OrganisationID: a.User.OrganisationID,
+			UserID:         a.User.UserID,
+		},
+		Operation: a.Operation,
+		Key:       a.Key,
 	}
 }
 
@@ -66,7 +68,7 @@ func (a Ambiguous) identity() scopedIdentity {
 // still unsettled: entries arrive from record and leave through retire.
 type ambiguityRegister struct {
 	mu      sync.Mutex
-	seen    map[scopedIdentity]bool
+	seen    map[domain.ScopeKey]bool
 	entries []Ambiguous
 }
 
@@ -86,7 +88,7 @@ func (r *ambiguityRegister) record(entry Ambiguous) {
 		return
 	}
 	if r.seen == nil {
-		r.seen = map[scopedIdentity]bool{}
+		r.seen = map[domain.ScopeKey]bool{}
 	}
 	r.seen[identity] = true
 	r.entries = append(r.entries, entry)
@@ -99,7 +101,7 @@ func (r *ambiguityRegister) record(entry Ambiguous) {
 // mutation already known to have committed, which is the amplification this register
 // exists to prevent — and Ambiguous() never empties, so a fully resolved run can never
 // report itself reconcilable.
-func (r *ambiguityRegister) retire(identity scopedIdentity) {
+func (r *ambiguityRegister) retire(identity domain.ScopeKey) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !r.seen[identity] {

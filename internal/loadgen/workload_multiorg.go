@@ -150,7 +150,7 @@ func (x CrossAuthorityControl) Do(ctx context.Context, c *Client, seq int) []Res
 		// invalid response rather than a misleading success keeps a single-authority run
 		// from reporting that it exercised a control it could not.
 		return []Response{{
-			Operation: string(domain.OpReserve),
+			Operation: domain.OpReserve,
 			Invalid:   "cross-authority control needs at least two authorities; this topology has one",
 		}}
 	}

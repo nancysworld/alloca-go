@@ -6,10 +6,12 @@ import (
 	"io"
 	"net/url"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/nancysworld/alloca-go/internal/buildinfo"
+	"github.com/nancysworld/alloca-go/internal/domain"
 )
 
 // Manifest is the provenance block ag-sept-plan §6.4 requires of every quotable run:
@@ -33,7 +35,28 @@ type Manifest struct {
 	ServiceCommitSHA      string `json:"service_commit_sha"`
 	ServiceSourceModified bool   `json:"service_source_modified"`
 	ServiceGoVersion      string `json:"service_go_version"`
-	ImageTag              string `json:"image_tag,omitempty"`
+
+	// Identity of the deployed artifact, which is a different fact from the identity of the
+	// code and cannot be derived from it. The commit SHA binds the running *binary* to a
+	// revision; it says nothing about the image wrapping it — so the same code served from a
+	// stale `:dev` tag, or rebuilt on a newer base layer, is indistinguishable by SHA alone.
+	//
+	// **These are observed from outside, never reported by the service.** A process cannot
+	// see which image wraps it, so anything it said here would be an environment variable
+	// repeated back — asserted provenance sitting beside the compiler-observed SHA under
+	// names that do not admit the difference. Instead a host-side step inspects the running
+	// containers and records what they are actually running (`Deployment`, deployment.go).
+	//
+	// ImageID is the immutable content identity and is what a claim rests on. ImageTag is
+	// kept only as a human-readable alias, and is not evidence of anything: a tag is mutable,
+	// two builds can carry the same one, and the second silently replaces the first.
+	ImageID  string `json:"image_id,omitempty"`
+	ImageTag string `json:"image_tag,omitempty"`
+
+	// ContainerDeployment records that the run was served by containers, and is what makes
+	// the image identity *required* rather than merely welcome. A run built and served from
+	// source has no image to name, and demanding one would refuse every local run.
+	ContainerDeployment bool `json:"container_deployment,omitempty"`
 
 	// Identity of the harness that produced the numbers. Kept because "which generator ran
 	// this?" is a real question when a run looks anomalous — but kept under names that
@@ -46,6 +69,34 @@ type Manifest struct {
 	ReplicaCount       int    `json:"replica_count"`
 	DeploymentTopology string `json:"deployment_topology"`
 	Environment        string `json:"environment"`
+
+	// AuthorityCount, RoutingVersion and PlacementAssignment describe the writable
+	// authorities this run reached (§6.4). They are read back from the units' own /meta
+	// rather than copied from the placement file the harness loaded: those are two
+	// different facts — what the operator intended and what is actually serving — and
+	// recording the intention as the observation is how a misconfigured run comes to look
+	// correct in its own artifact.
+	AuthorityCount      int                 `json:"authority_count,omitempty"`
+	RoutingVersion      string              `json:"routing_version,omitempty"`
+	PlacementAssignment map[string][]string `json:"placement_assignment,omitempty"`
+
+	// PlacementDigest fingerprints the assignment above. The routing version is a label an
+	// operator chooses and can forget to bump, so two runs sharing a version are not thereby
+	// known to have run the same placement; this is derived from the content and answers that
+	// question directly.
+	PlacementDigest string `json:"placement_digest,omitempty"`
+
+	// UnitCount is how many service units the run addressed, which is known from the
+	// endpoints even when none of them answered /meta. It is what lets the capacity gate tell
+	// a single-authority run — where an unconfigured deployment legitimately reports no
+	// authority at all — from a multi-authority run that failed to record the topology it
+	// reached.
+	UnitCount int `json:"unit_count,omitempty"`
+
+	// TopologyDisagreement names how the units failed to describe one deployment, empty
+	// when they agreed. A non-empty value makes the run uncertifiable: its numbers describe
+	// two services averaged together, and nothing in the totals would say so.
+	TopologyDisagreement string `json:"topology_disagreement,omitempty"`
 
 	// Service-side shape the service publishes about itself at /meta. Discovered rather
 	// than transcribed: a value the service already reports is one an operator should never
@@ -151,6 +202,52 @@ func NewManifest(target, workload string, opts Options, location string, svc Ser
 	}
 }
 
+// NewTopologyManifest builds the manifest for a run that spanned several service units.
+//
+// The service-side identity is taken from the first unit, which is sound *only because*
+// TopologyDisagreement is recorded alongside it. Disagreement compares every field this
+// projection depends on — revision, schema and routing version, and the run-shaping fields
+// that decide what was measured — and a non-empty value drops the run to LevelNone. So
+// either the units agree and the first one describes them all, or they do not and no level
+// is claimed from the projection. Recording each unit's copy separately would leave the
+// manifest with several answers to questions like "what was GOMAXPROCS", none of them
+// wrong and none of them the run's.
+//
+// Target is every unit the run addressed, not one of them: an artifact naming a single
+// endpoint for a multi-authority run reads as a single-authority run to anything that
+// consumes it later.
+//
+// The targets are passed in rather than read off the units, because the case that most needs
+// them recorded is the one where a unit did not answer /meta. Deriving them from the units
+// would drop exactly the endpoint the operator has to go and look at.
+func NewTopologyManifest(targets []string, workload string, opts Options, location string,
+	topology TopologyMeta, routed domain.Placement) Manifest {
+	var first ServiceMeta
+	if len(topology.Units) > 0 {
+		first = topology.Units[0].Meta
+	}
+
+	named := make([]string, 0, len(targets))
+	for _, target := range targets {
+		named = append(named, redact(target))
+	}
+	sort.Strings(named)
+
+	// Each target is redacted individually and the list assembled afterwards. Handing the
+	// joined string to NewManifest would put it through redact a second time, where it is no
+	// longer a URL — url.Parse rejects it and the manifest records no target at all, which is
+	// the one field that says which service the numbers came from.
+	m := NewManifest("", workload, opts, location, first)
+	m.Target = strings.Join(named, ",")
+	m.UnitCount = len(targets)
+	m.AuthorityCount = len(topology.Authorities())
+	m.RoutingVersion = topology.RoutingVersion()
+	m.PlacementAssignment = topology.Assignment()
+	m.PlacementDigest = topology.PlacementDigest()
+	m.TopologyDisagreement = topology.DisagreementWith(routed)
+	return m
+}
+
 // Validate reports the §6.4 fields a claim at the given level requires and this manifest
 // does not carry. An empty result means the provenance bar for that level is met.
 //
@@ -238,6 +335,28 @@ func (m Manifest) Validate(level Level) []string {
 		add(m.ReplicaCount < 1, "replica_count is not positive (operator-supplied, PR3)")
 		add(m.DeploymentTopology == "", "deployment_topology is empty (operator-supplied, PR3)")
 
+		// The writable authorities the run reached. routing_version is required of every run,
+		// because /meta always answers it — "unsharded" for a single-authority deployment — so
+		// a report that cannot say which routing produced it did not read /meta at all.
+		add(m.RoutingVersion == "", "routing_version is empty: /meta was not read, so the run "+
+			"cannot say which routing produced it")
+
+		// The rest are required only of a run that addressed more than one unit. A
+		// single-authority deployment with no placement configured legitimately reports no
+		// authority id at all, and demanding one would refuse every run made before PR3b —
+		// but a multi-unit run that names no authorities is one whose artifact does not
+		// describe the topology it reached, which is exactly what a capacity claim rests on.
+		if m.UnitCount > 1 {
+			add(m.AuthorityCount != m.UnitCount, fmt.Sprintf(
+				"the run addressed %d units but the report names %d authorities: a capacity "+
+					"claim must say which writable authorities produced it, and one that "+
+					"names fewer describes a smaller deployment than the run used",
+				m.UnitCount, m.AuthorityCount))
+			add(len(m.PlacementAssignment) == 0, "placement_assignment is empty: a "+
+				"multi-authority run that does not record which organisations each authority "+
+				"served cannot be compared with another, or reproduced")
+		}
+
 		// Aggregate pool capacity is a claim about the whole deployment, so it must be
 		// consistent with the two fields it is derived from. An inconsistency here means one
 		// of the three was typed from memory, and none of them can be trusted after that.
@@ -253,9 +372,23 @@ func (m Manifest) Validate(level Level) []string {
 		// interpretable, even unpublished.
 		add(m.Environment == "", "environment is empty (operator-supplied, PR4)")
 
-		// image_tag is deliberately absent: §14 allows it to be conditional for a local
-		// source build, provided the manifest identifies the deployment mode — which
-		// deployment_topology, required above, is what does that.
+		// Image identity, required of a containerised run and meaningless without one.
+		//
+		// §6.4 asks every quotable run to identify the artifact it measured. A run built and
+		// served from source has no image to name — demanding one would refuse every local
+		// run — so the requirement is conditional on the deployment mode, and
+		// container_deployment is what declares it. A containerised run that records no
+		// image id measured an artifact it cannot name: the commit SHA binds the binary to a
+		// revision, but a stale tag serving older code, or the same code on a different base
+		// layer, is invisible to it.
+		//
+		// image_tag is deliberately *not* required even then. A tag is a mutable alias, two
+		// builds can wear the same one, and the second replaces the first — so it is an
+		// operator convenience, never the thing a claim rests on.
+		add(m.ContainerDeployment && m.ImageID == "",
+			"container_deployment is set but image_id is empty: the run was served by "+
+				"containers whose image it cannot name, and service_commit_sha does not "+
+				"cover that — the same code from a stale tag carries the same revision")
 	}
 
 	if level.AtLeast(LevelPublishable) {

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nancysworld/alloca-go/internal/domain"
 	"github.com/nancysworld/alloca-go/internal/loadgen"
 )
 
@@ -49,12 +50,41 @@ func localManifest() loadgen.Manifest {
 // capacityManifest adds the fields no endpoint reports. After PR2 extended /meta these are
 // only the deployment-wide ones: the aggregate pool needs a replica count, and topology and
 // environment are facts about a deployment rather than about a process.
+// The topology fields come from the units' own /meta rather than from an operator, and a
+// single-authority run is the shape every run before PR3b had: one unit, reporting the
+// "unsharded" routing version.
 func capacityManifest() loadgen.Manifest {
 	m := localManifest()
 	m.AggregatePoolSize = 25
 	m.ReplicaCount = 1
 	m.DeploymentTopology = "single-instance-local"
 	m.Environment = "workstation"
+	m.UnitCount = 1
+	m.RoutingVersion = domain.UnshardedVersion
+	return m
+}
+
+// multiAuthorityManifest is the PR3b shape: two units, two authorities, and the assignment
+// each of them reported serving.
+func multiAuthorityManifest() loadgen.Manifest {
+	m := capacityManifest()
+	m.UnitCount = 2
+	m.RoutingVersion = "pr3b-v1"
+	m.AuthorityCount = 2
+	m.PlacementAssignment = map[string][]string{
+		"authority-1": {"org-a", "org-c"},
+		"authority-2": {"org-b", "org-d"},
+	}
+	return m
+}
+
+// containerManifest is a run served by containers, which is what makes §6.4's image identity
+// required. A run built and served from source has no image to name.
+func containerManifest() loadgen.Manifest {
+	m := multiAuthorityManifest()
+	m.ContainerDeployment = true
+	m.ImageID = "sha256:1111111111111111"
+	m.ImageTag = "alloca-go:6e2f7ac"
 	return m
 }
 
@@ -77,6 +107,8 @@ func TestCompleteManifestReachesEachLevel(t *testing.T) {
 	}{
 		{"generator fields only", localManifest(), loadgen.LevelLocal},
 		{"service shape and topology", capacityManifest(), loadgen.LevelCapacity},
+		{"two authorities, both named", multiAuthorityManifest(), loadgen.LevelCapacity},
+		{"served by containers, image named", containerManifest(), loadgen.LevelCapacity},
 		{"generator on separate compute", publishableManifest(), loadgen.LevelPublishable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -149,6 +181,52 @@ func TestIncompleteManifestCannotBeCertified(t *testing.T) {
 			from:    capacityManifest(),
 			want:    loadgen.LevelLocal,
 			mention: "replica_count",
+		},
+		{
+			// A run that cannot say which routing produced it did not read /meta, and every
+			// run has an answer — "unsharded" when there is no placement to serve.
+			name:    "missing routing version stops at local",
+			corrupt: func(m *loadgen.Manifest) { m.RoutingVersion = "" },
+			from:    capacityManifest(),
+			want:    loadgen.LevelLocal,
+			mention: "routing_version",
+		},
+		{
+			// Codex's finding: with no disagreement recorded, nothing else in the ladder
+			// looked at the topology, so a two-unit run could be promoted to capacity
+			// without naming a single authority it reached.
+			name:    "multi-authority run naming no authorities stops at local",
+			corrupt: func(m *loadgen.Manifest) { m.AuthorityCount = 0 },
+			from:    multiAuthorityManifest(),
+			want:    loadgen.LevelLocal,
+			mention: "names 0 authorities",
+		},
+		{
+			// Half a topology is the more dangerous version: two units reached, one named,
+			// and the artifact reads as a healthy single-authority run.
+			name:    "multi-authority run naming too few authorities stops at local",
+			corrupt: func(m *loadgen.Manifest) { m.AuthorityCount = 1 },
+			from:    multiAuthorityManifest(),
+			want:    loadgen.LevelLocal,
+			mention: "addressed 2 units",
+		},
+		{
+			name:    "multi-authority run without an assignment stops at local",
+			corrupt: func(m *loadgen.Manifest) { m.PlacementAssignment = nil },
+			from:    multiAuthorityManifest(),
+			want:    loadgen.LevelLocal,
+			mention: "placement_assignment",
+		},
+		{
+			// §6.4's image identity. The commit SHA binds the binary to a revision, but the
+			// same code served from a stale tag carries the same revision — so a
+			// containerised run that cannot name its image measured an artifact it cannot
+			// identify.
+			name:    "containerised run naming no image stops at local",
+			corrupt: func(m *loadgen.Manifest) { m.ImageID = "" },
+			from:    containerManifest(),
+			want:    loadgen.LevelLocal,
+			mention: "image_id",
 		},
 		{
 			name:    "missing environment stops at local",

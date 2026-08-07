@@ -3,7 +3,7 @@
 **Status:** Draft v0.5 — normative for all remaining AG-Sept work
 **Created:** 5 August 2026, superseding [`ag-sept-plan-old.md`](ag-sept-plan-old.md) (v0.4, 31 July 2026)
 **Delivery window:** August 2026
-**Development budget:** 15 focused development days remaining — 19.5 for the milestone, of which 4.5 are spent — followed by 2–3 days for reruns, review, refinement, documentation, and public-release preparation
+**Development budget:** 19.5 focused development days for the milestone, of which 5.5 are spent (PR1, PR2, PR3a) and 14.0 remain — followed by 2–3 days for reruns, review, refinement, documentation, and public-release preparation
 **Predecessor:** AG-M1 — correct transactional core and end-to-end service path
 
 ## 0. What changed from v0.4, and why
@@ -20,7 +20,7 @@ Four changes follow.
 
 1. **Horizontal database authority becomes the milestone's primary work**, ahead of stateless
    replica scaling. Its design is
-   [`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md),
+   [`../design/horizontal-database-authority.md`](../design/horizontal-database-authority.md),
    which phases the route: Phase 1 composes independent organisation-home authorities and
    supports every booking whose participating organisations resolve to the same authority;
    Phase 2 adds a cross-authority protocol and is deliberately deferred beyond AG-Sept.
@@ -134,7 +134,7 @@ At minimum, each measured run must preserve:
 **Extended for multiple authorities.** A run spanning several writable authorities must
 reconcile outcomes against persisted state on *every* participating authority, and must not
 treat sequential cross-database reads as one atomic snapshot. The quiesced verification rule is
-in the design note §6 and is normative for PR3.
+in the formal design §6 and is normative for PR3.
 
 ### 3.3 Three scaling axes, three separate claims
 
@@ -186,23 +186,34 @@ label according to the evidence convention in
 
 ## 4. Time budget and priority
 
-The development allocation is a planning constraint. 4.5 days are spent; 15 remain. **Half a day
+The development allocation is a planning constraint. 5.5 days are spent; 14.0 remain. **Half a day
 is the unit**, here and in the scope notes: nothing is estimated well enough to distinguish 0.3
 from 0.4, and finer granularity is false precision that invites its own overrun (Nancy's call,
 2026-08-05).
 
-| Workstream | PR | Days | Status |
+| Workstream | PR | Allocated | Status |
 |---|---|---:|---|
-| Measurement harness and load generator | PR1 | 2.0 | spent |
-| Single-instance frontier, with the diagnostic time-series minimum | PR2 | 2.5 | spent |
-| Placement, booking policy, and confirm/cancel ownership | PR3a | 3.0 | remaining |
-| Multi-authority harness — topology, generator routing, authority-aware verification | PR3b | 2.5 | remaining |
+| Measurement harness and load generator | PR1 | 2.0 | spent 2.0 — merged `71914a4` |
+| Single-instance frontier, with the diagnostic time-series minimum | PR2 | 2.5 | spent 2.5 — merged `0d40de4` |
+| Placement, booking policy, and confirm/cancel ownership | PR3a | 3.0 | **done in 1.0 — merged `aa1e3a5`; 2.0 returned to contingency** |
+| Multi-authority harness — topology, generator routing, authority-aware verification | PR3b | 2.5 | in progress, PR #14 |
 | Multi-authority correctness and failure-isolation evidence | PR3c | 2.0 | remaining |
-| Container and local scale-out — replicas, exporters, controls | PR4 | 4.5 | remaining |
+| Container and local scale-out — replicas, exporters, controls | PR4 | 4.5 | remaining, provisional envelope |
 | Architecture conclusions and one justified boundary | PR5 | 1.5 | remaining |
-| **Committed** | | **18.0** | 13.5 of it remaining |
-| Unallocated contingency | | 1.5 | remaining |
-| **Total milestone budget** | | **19.5** | |
+| **Committed** | | **16.0** | 5.5 spent, 10.5 remaining |
+| Unallocated contingency | | 3.5 | remaining |
+| **Total milestone budget** | | **19.5** | unchanged |
+
+**PR3a came in at 1.0 against 3.0, and the 2.0 goes to contingency rather than to scope.**
+The figure recorded is the conservative one: implementation alone was about half a day, and
+1.0 is what it cost including the design decisions and the re-planning around it. Being
+generous to ourselves on our own favourable numbers is how estimates stop meaning anything.
+
+The gain is **not** an invitation to widen PR3b or PR4. It is held for where this milestone
+is most likely to need it — reruns, an investigation that does not resolve on the first
+attempt, a hard problem that turns out to deserve more argument than a day allows. PR2's
+unexplained ~2× excursion is the standing example of work that consumed far more than its
+share, and nothing about PR3a going well makes that less likely to recur.
 
 **Every PR is funded at what its scope costs.** No PR carries a deliberate shortfall, and no
 part of §14 depends on the reserve to be reachable. This is the difference the increased budget
@@ -216,15 +227,15 @@ database, not the application, sets the frontier — measuring replicas harder a
 unchanged writer would refine a number the milestone has already explained.
 
 **PR3a rose from 2.5 to 3.0 before implementation started, and that is the contingency working
-as intended.** The design note's revision of 2026-08-05 settled the three contract questions
+as intended.** The formal design's revision of 2026-08-05 settled the three contract questions
 raised in its review, and one of them resolved towards *build it*: confirm and cancel gain an
 explicit `UserRef` ownership check, which the earlier estimate priced as a decision rather than
 a domain-contract correction with its own normative updates and tests
-([`ag-sept-pr3-scope.md`](ag-sept-pr3-scope.md) §5.5). The half day came from contingency rather
+([`ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md) §5.5). The half day came from contingency rather
 than from another PR.
 
-**The 1.5 remaining unallocated days are contingency, not scope.** They are drawn on before
-§16's descope order, and two things could plausibly claim them, in this order:
+**The 3.5 unallocated days are contingency, not scope.** They are drawn on before §16's
+descope order, and two things could plausibly claim them, in this order:
 
 1. **PR2's unexplained ~2× excursions turning out to be reproducible and diagnosable** once
    PR4's node exporter can see them. That would be a real finding, and chasing it is worth more
@@ -232,7 +243,18 @@ than from another PR.
 2. **Group A of the PR2 deferral register** — the overload question, roughly 1.5 days (§14).
    It is the founding unreproduced question in `high-level-design.md` §1.1, and it is the one
    candidate here that is *new scope* rather than insurance. Adding it is Nancy's call, not a
-   default, and at 1.5 days it would now consume nearly all of what remains.
+   default — and PR3a's returned 2.0 makes it affordable for the first time, which is a
+   reason to decide it deliberately rather than to let it drift in.
+
+**Review depth is the throughput control, and it is Nancy's to set** (2026-08-05). The
+implementation side of this milestone is not the constraint; the review step is, and it can
+be traded for speed when momentum matters more than scrutiny. The consequence is stated
+rather than left implicit: less detailed review moves the burden of catching errors onto
+the implementation side's own verification — the mutation tests, the live SQL checks, the
+re-measurement of quoted figures. Where that verification is weak, a lighter review does not
+find it. PR3a's own record is the argument: three of nine review findings were comments of
+mine asserting the opposite of the truth, and a pre-merge audit found six more stale claims.
+Those were caught by review. Going faster means catching more of them before review.
 
 Unspent contingency is not a licence to expand a PR. It returns to the reserve.
 
@@ -386,7 +408,7 @@ Required properties:
 **Cross-authority requests are a separate control, not a share of this workload.** Deliberate
 policy refusals are cheap compared with a real booking, so mixing them into the supported
 workload would flatter both goodput and latency. The refusal control is a bounded run of its own
-and is reported as its own evidence class (design note §6.2).
+and is reported as its own evidence class (formal design §6.2).
 
 A one-hot-organisation variant is required for the failure-isolation experiment: it shows that
 one saturated or unavailable authority bounds its own organisations and no others.
@@ -459,7 +481,17 @@ honoured by labelling: every AG-Sept run is a bounded local result, `quotability
 
 Every quotable run must record:
 
-- commit SHA and image tag;
+- commit SHA, and — for a run served by containers — the **image ID or digest** of the
+  artifact that served it (v0.6). The two are different facts and neither implies the other:
+  the SHA is stamped into the binary and identifies the *code*, so the same code served from
+  a stale tag, or rebuilt on a different base layer, carries an identical SHA. The identity
+  is an **image ID or registry digest, never a tag** — a tag is a mutable alias that two
+  builds can wear, and the second silently replaces the first. It is **observed from the
+  host** by inspecting the running containers, never self-reported by the service: a process
+  cannot see which image wraps it, so anything it reported would be an environment variable
+  repeated back. A run built and served from source has no image to name and is not asked
+  for one. The decision and the alternatives it rejects are
+  [ADR-0003](../decisions/0003-deployed-artifact-identity.md);
 - Go version and observed `GOMAXPROCS`;
 - replica count and application resources;
 - PostgreSQL version and configuration identity;
@@ -521,14 +553,14 @@ organisation's persisted rows against the run's unpartitioned global summary. In
 looping the existing organisation-scoped entry point against the unchanged global report is
 **not** a discharge of this contract — it would compare one organisation's rows with every
 organisation's totals. The verifier's data structures, query factoring, and scrape aggregation
-are otherwise PR3b's to choose (design note §6.3).
+are otherwise PR3b's to choose (formal design §6.3).
 
 ## 7. Single-instance baseline — discharged
 
 The one-replica run is the control for every scale-out claim. **PR2 discharged this section.**
 Its results, limitations, and the one deferred term are in
 [`../measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../measurements/reports/ag-sept-pr2-single-instance-frontier.md)
-and [`ag-sept-pr2-scope.md`](ag-sept-pr2-scope.md) §5.6.
+and [`ag-sept-pr2.md`](../development/implementation/ag-sept-pr2.md) §5.6.
 
 Two obligations survive into later PRs:
 
@@ -565,7 +597,7 @@ pool_size`, not `replicas × authorities × pool_size`. The control is run per s
 ### 8.2 Horizontal database authority — Phase 1
 
 The design is owned by
-[`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md).
+[`../design/horizontal-database-authority.md`](../design/horizontal-database-authority.md).
 This plan states only what AG-Sept must build and prove, and does not restate the design.
 
 Phase 1 assigns each organisation one writable PostgreSQL home authority holding its complete
@@ -615,9 +647,16 @@ composed run at the chosen replica count across both authorities shows the two a
 
 ### 9.1 Container gate
 
-The service must have a reproducible, production-shaped image with immutable experiment tagging,
-environment-driven configuration, health probes, graceful termination, and no development-only
-runtime tooling.
+The service must have a version-controlled, production-shaped container build whose exact
+deployed artifact is identified by its **image ID or registry digest** (v0.6 — a tag is a
+mutable alias, so it labels a build but cannot identify one), environment-driven
+configuration, health probes, graceful termination, and no development-only runtime tooling.
+
+Identifying the artifact is not the same as rebuilding it. The image ID says exactly which
+artifact served a run; it does not establish that the same revision rebuilds to identical
+bytes, which depends on base image digests and every other build input
+([ADR-0003](../decisions/0003-deployed-artifact-identity.md)). The separate PR3b requirement
+that the **topology** be reproducible from version control is unaffected.
 
 **The gate moves earlier in v0.5.** Phase 1 needs two service units and two databases from PR3b
 onward. Running that topology as containers from the start is cheaper than converting it
@@ -769,13 +808,13 @@ PR1 and PR2 are complete and their scopes are unchanged from
 
 2.0 days. Metrics recorder, telemetry-overhead measurement, reset and seed tooling, external
 generator, run manifest, persisted-state verifier, response-validation control, operator
-documentation. Scope note: [`ag-sept-pr1-scope.md`](ag-sept-pr1-scope.md).
+documentation. Implementation record: [`ag-sept-pr1.md`](../development/implementation/ag-sept-pr1.md).
 
 ### PR2 — Single-instance frontier — merged
 
 2.5 days. Prometheus retention path, diagnostic panels, one-instance sweeps for all three
-controlled workloads, telemetry comparison, generator-bottleneck control, frontier report. Scope
-note: [`ag-sept-pr2-scope.md`](ag-sept-pr2-scope.md). Result: the frontier is set by PostgreSQL,
+controlled workloads, telemetry comparison, generator-bottleneck control, frontier report. Implementation
+record: [`ag-sept-pr2.md`](../development/implementation/ag-sept-pr2.md). Result: the frontier is set by PostgreSQL,
 not by `alloca-go`; this is what reordered the milestone (§0).
 
 ### PR3a — Placement, booking policy, and confirm/cancel ownership
@@ -884,9 +923,13 @@ attribution — per-authority work is read from per-service scrapes instead (§6
   replaying their own idempotency keys *before* the final correctness verdict. Affected and
   unaffected populations are reported separately, and the run is not judged against the
   aggregate SLO gates that govern a healthy capacity run;
-- **if a deliberately timed mid-commit connection loss can be produced, discharge INV-21** —
-  the register's longest-standing "not directly proven" entry, open because no test kills a
-  connection mid-`COMMIT`. A generic authority shutdown does not claim that proof; only the
+- **if a deliberately timed mid-commit connection loss can be produced, discharge the rest of
+  INV-21** — the register's longest-standing "not directly proven" entry. PR3b closed the
+  narrower half: a `COMMIT` attempted on a session already terminated is proven to classify
+  as `unknown_replayable` and to leave no row. What remains is the fault the entry was
+  actually named for — the connection lost *while* the commit or its acknowledgement is in
+  flight — which needs something interposed between client and server rather than a
+  terminated backend. A generic authority shutdown does not claim that proof; only the
   targeted fault does, and the mechanism is implementation's to choose;
 - verify under the quiesced consistency rule (§3.2, §6.5);
 - report, with the organisation-to-authority distribution each run measured.
@@ -932,7 +975,7 @@ exporters — survive that re-scoping as obligations; their order, depth, and ma
   got wrong. See the PR2 report §5.4;
 - **report the recommended operating capacity PR2 deferred**, which needs a second replica
   before two of its three components mean anything. See
-  [`ag-sept-pr2-scope.md`](ag-sept-pr2-scope.md) §5.6 and §5.6.1;
+  [`ag-sept-pr2.md`](../development/implementation/ag-sept-pr2.md) §5.6 and §5.6.1;
 - populate the replica-count and aggregate-pool-capacity manifest fields;
 - reuse PR2's Prometheus and dashboard path, adding bounded replica and authority identity and
   only the views scale-out diagnosis needs;
@@ -1053,7 +1096,7 @@ session is this document. The register is resolved as follows; the full reasonin
 
 ### Explicitly out of scope
 
-- cross-authority booking, and any distributed commit or saga protocol (design note §10);
+- cross-authority booking, and any distributed commit or saga protocol (formal design §10);
 - splitting one organisation across writable authorities;
 - online rebalancing or dual-write migration between authorities;
 - a shared global workflow database;

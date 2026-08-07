@@ -333,7 +333,7 @@ func (c *rewindClock) Now() time.Time {
 	return c.base.Add(-c.rewind)
 }
 
-// A backwards clock step must not reverse terminal state (design note §5, §6's third
+// A backwards clock step must not reverse terminal state (authoritative-time design note §5, §6's third
 // negative control). Centralising wall time in PostgreSQL makes decisions coherent
 // across API nodes; it does not make the clock monotonic, so irreversibility has to be
 // a property of the state machine rather than an assumption about time.

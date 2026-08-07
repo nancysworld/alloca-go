@@ -1,9 +1,10 @@
-# AG-Sept PR1 — Measurement substrate and load harness (scope)
+# AG-Sept PR1 — Measurement substrate and load harness
 
-**Status:** Complete — every decision in §3 settled, exit gate discharged in §3.6
-**Budget:** 2 development days ([AG-Sept plan](ag-sept-plan-old.md) §14)
-**Owner doc:** [ag-sept-plan-old.md](ag-sept-plan-old.md) §6 is normative for what this PR builds; this
-note records only how PR1 discharges it and the choices settled along the way.
+**Type:** Implementation record
+**Status:** Shipped and merged — every decision in §3 settled, exit gate discharged in §3.6
+**Budget:** 2 development days ([AG-Sept plan](../../planning/ag-sept-plan-old.md) §14)
+**Owner doc:** [ag-sept-plan-old.md](../../planning/ag-sept-plan-old.md) §6 is normative for what this PR built; this
+record covers only how PR1 discharged it and the choices settled along the way.
 
 ## 1. Exit gate
 
@@ -87,8 +88,8 @@ evidence rather than on assumption, which is the change that matters.
 #### Result — the asynchronous sink stays deferred
 
 `[MEASURED]` — raw results:
-[`docs/measurements/pr1-telemetry-overhead/raw.txt`](../measurements/pr1-telemetry-overhead/raw.txt),
-environment: [`environment.txt`](../measurements/pr1-telemetry-overhead/environment.txt).
+[`docs/measurements/pr1-telemetry-overhead/raw.txt`](../../measurements/pr1-telemetry-overhead/raw.txt),
+environment: [`environment.txt`](../../measurements/pr1-telemetry-overhead/environment.txt).
 Source `internal/telemetry/overhead_test.go`; reproduce with:
 
 ```console
@@ -108,7 +109,7 @@ Quoted from the artifact rather than from a terminal, per `measurement-contract`
 | **`Tee` (what the service runs)** | **file** | **1793** | 1743–1900 | 88 | 2 |
 | `Tee`, parallel | `io.Discard` | 227 | 216–231 | 88 | 2 |
 
-**The sink column is the point.** An earlier revision of this note measured only against
+**The sink column is the point.** An earlier revision of this record measured only against
 `io.Discard` and quoted 994 ns as the cost of what the service runs. That removed the one
 part of emission the service cannot avoid: a synchronous write to a descriptor. Pricing it
 against a real file roughly doubles the figure — `Tee` goes from 964 ns to 1793 ns, and the
@@ -153,7 +154,7 @@ off, reporting the throughput and p99 delta. **PR1 does not do that, and does no
 §6.2 is discharged.** What PR1 discharges is the decision §6.2 gates — whether to build the
 asynchronous sink now — on the evidence that a healthy sink costs under 0.2% of a request.
 The end-to-end comparison belongs with the sweeps that can run it, and is scoped to PR2 in
-[`ag-sept-plan-old.md`](ag-sept-plan-old.md) §14.
+[`ag-sept-plan-old.md`](../../planning/ag-sept-plan-old.md) §14.
 
 ### 3.4 Quotability is a level, not a boolean (settled 2026-08-03)
 
@@ -167,7 +168,7 @@ Reports now carry `quotability.level` — `none`, `local`, `capacity`, `publisha
 next level up and what blocks it. Both binaries take `-require` so the bar is declared by the
 caller, who is the only one who knows what the number is for. The ladder and the per-level
 field lists are in
-[`../operations/load-harness.md`](../operations/load-harness.md) §4; the staging they
+[`docs/operations/load-harness.md`](../../operations/load-harness.md) §4; the staging they
 implement is `ag-sept-plan-old.md` §14's.
 
 Levels are named for the claim rather than for the PR that first reaches them. A report in
@@ -212,13 +213,13 @@ revision and no run against it can be certified. `make dev-measured` builds the 
 nothing records provenance.
 
 The limitation this leaves is recorded as **DEBT-3** in
-[`tech-debts.md`](tech-debts.md): `/meta` is read once before the run, so the identity means
+[`tech-debts.md`](../../planning/tech-debts.md): `/meta` is read once before the run, so the identity means
 "the service behind the target when the run began" rather than a proof that one binary served
 the whole sample.
 
 ### 3.6 Exit gate — discharged
 
-`[MEASURED]` — artifacts in [`docs/measurements/pr1-smoke-run/`](../measurements/pr1-smoke-run/):
+`[MEASURED]` — artifacts in [`docs/measurements/pr1-smoke-run/`](../../measurements/pr1-smoke-run/):
 `run.json` (generator report), `verdict.json` (reconciliation), `metrics.txt` (server scrape).
 Local PostgreSQL 16, one replica, dispersed workload, 20 slots, capacity 5, concurrency 8,
 60 iterations.

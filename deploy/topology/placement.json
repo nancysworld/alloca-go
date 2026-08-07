@@ -1,0 +1,9 @@
+{
+  "version": "pr3b-v1",
+  "homes": {
+    "org-a": "authority-1",
+    "org-b": "authority-2",
+    "org-c": "authority-1",
+    "org-d": "authority-2"
+  }
+}

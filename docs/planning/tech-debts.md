@@ -39,6 +39,7 @@ code comment or a PR description can cite one and still be right in a year.
 | [**DEBT-4**](#6-debt-4--lockbyreservation-returns-a-six-value-maybe-answered-protocol) | The shared confirm/cancel prologue returns six values, three of which encode "I may already have answered"; a caller that mishandles them proceeds on zero values | service orchestration | 2026-08-05, AG-Sept PR3a | open |
 | [**DEBT-5**](#7-debt-5--no-automated-line-length-guardrail) | Nothing in CI bounds line length, so declarations grow until a human notices; ~104 code lines exceed 110 columns, the longest at 205 | tooling, readability | 2026-08-05, AG-Sept PR3a | open |
 | [**DEBT-6**](#8-debt-6--res-denotes-three-unrelated-types) | `res` names a Reservation, a Result and a Response in different files, and the obvious mechanical rename is wrong in three separate ways | naming, readability | 2026-08-05, AG-Sept PR3a | open |
+| [**DEBT-7**](#9-debt-7--implementation-records-that-still-read-as-scope-notes) | The three per-PR records were moved and re-headed, not rewritten; they still present planned scope in a form indistinguishable from a record of what shipped | documentation taxonomy | 2026-08-07, AG-Sept PR3b | open |
 
 ## 3. DEBT-1 — no reaper for abandoned schedule claims
 
@@ -387,7 +388,7 @@ Any one of:
 3. **Phase 2's cross-authority coordinator.** The horizontal-database-authority note's
    compatibility obligation 3 requires a future coordinator to dispatch to this same-authority
    path rather than rewrite it
-   ([design note](../design-notes/horizontal-database-authority.md) §4.3). A coordinator calling
+   ([formal design](../design/horizontal-database-authority.md) §4.3). A coordinator calling
    it from a different package cannot rely on two callers in one file agreeing by eye, and it is
    the first caller that will not have been written by someone who just read the function.
 
@@ -625,3 +626,83 @@ names are a readability problem for humans. The rename was started and **stopped
 seeing the survey** — the right call: what looked like renaming one variable in one file was
 156 occurrences across 15 files with three different correct answers. Recorded so the next
 person to reach for the regex finds the survey rather than repeating it.
+
+## 9. DEBT-7 — implementation records that still read as scope notes
+
+### What it is
+
+The three documents under [`../development/implementation/`](../development/implementation/)
+were moved out of `docs/planning/` and re-headed on 2026-08-07. They were not rewritten. They
+still carry the shape of the scope notes they were: §1 quotes the plan's exit gates forward as
+intent, the "What PR-n delivers" tables list what was *planned*, and budgets appear as
+estimates. Only §6d of [`ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md) was
+written as a record of what was built.
+
+Residual wording elsewhere still calls them scope notes:
+[`ag-sept-plan-new.md`](ag-sept-plan-new.md) §0 and §4,
+[`horizontal-database-authority.md`](../design/horizontal-database-authority.md) §9, and the
+PR2 frontier report.
+
+### Why it is this way
+
+The directory convention arrived after the work it classifies. Moving the files cost one commit
+and fixed the taxonomy immediately; rewriting three documents covering two merged PRs and one in
+flight is a different job, and doing it inside an open review would have churned the branch the
+review was reading.
+
+### Why it is acceptable today
+
+PR1 and PR2 are merged, and their conclusions live where a reader looks for conclusions — the
+measurement reports and the plan's own per-PR entries — not in these records. The
+forward-looking sections are visibly forward-looking: they quote the plan verbatim and say so.
+No document currently cites a "delivers" row as evidence that something shipped.
+
+### Trigger — when it stops being acceptable
+
+- When one is next materially updated. This is the convention's own rule, already stated in
+  [`../development/implementation/README.md`](../development/implementation/README.md).
+- When PR3c closes and `ag-sept-pr3.md` has to state outcomes for three PRs rather than a
+  delivery plan for two.
+- **Immediately, if anyone cites a "What PR-n delivers" row as evidence that something
+  shipped.** That is the actual failure mode: in a directory named `implementation/`, a table
+  of planned deliverables is indistinguishable in form from a record of built ones.
+
+### What a fix must preserve
+
+- **Section numbers.** [`ag-sept-plan-old.md`](ag-sept-plan-old.md) §5.6 and §5.6.1,
+  [`ag-sept-plan-new.md`](ag-sept-plan-new.md) §5.5 and §5.6,
+  [`container-topology.md`](../operations/container-topology.md) §6a and §6b,
+  [ADR-0003](../decisions/0003-deployed-artifact-identity.md) §6d, and
+  `test/scripts/sweep.sh` §5.4 all cite into these documents. Renumbering silently invalidates
+  a shell comment that nothing tests.
+- **The historical statements about what these documents were.** `ag-sept-pr1.md` §1 records
+  that an earlier revision misquoted its own exit gate, and `ag-sept-pr2.md` §5.8 cites "PR1's
+  own scope note" for quoting a range that matched neither its table nor its artifact. Both are
+  accurate about the review round of 2026-08-03. Rewriting them to say "record" would falsify
+  the history these documents exist to keep.
+- **Estimates stay labelled as estimates.** Turning "2.5 days budgeted" into "2.5 days spent"
+  without evidence would manufacture a measurement, which is the one thing this repository
+  must not do to itself.
+
+### Options, none decided
+
+1. **Opportunistically, per record, as each is next materially updated** — the convention's
+   stated rule. Cheapest, no churn, but leaves mixed state for as long as it takes.
+2. **One pass over all three when PR3c closes**, when PR3's outcomes are finally knowable and
+   PR1/PR2 have been stable long enough that rewriting them is bounded.
+3. **Leave them, and let the `Type:` header carry the distinction.** Does nothing for a reader
+   who opens §2 and reads a plan as a result.
+
+### Related
+
+[`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md)
+is now a pointer with no inbound references left outside its own directory. It can be deleted
+whenever link stability for external bookmarks stops mattering — the same class of transitional
+artifact, kept deliberately rather than forgotten.
+
+### Evidence
+
+Raised 2026-08-07 during AG-Sept PR3b review, in the change that moved the records out of
+`docs/planning/`. The move was mechanical and verified by resolving every relative link in
+`docs/`; the conversion was deliberately not attempted in the same change, and this entry
+records that as a decision rather than leaving it to be rediscovered as an inconsistency.

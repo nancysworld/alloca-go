@@ -1,11 +1,12 @@
-# AG-Sept PR2 — Single-instance frontier (scope)
+# AG-Sept PR2 — Single-instance frontier
 
-**Status:** Complete — every decision in §5 settled, nothing open in §6. Results and the
-frontier report are in [`../measurements/pr2-frontier/`](../measurements/pr2-frontier/)
-**Budget:** 2.5 development days ([AG-Sept plan](ag-sept-plan-old.md) §14) — 1.0 for the retention
+**Type:** Implementation record
+**Status:** Shipped and merged — every decision in §5 settled, nothing open in §6. Results and the
+frontier report are in [`docs/measurements/pr2-frontier/`](../../measurements/pr2-frontier/)
+**Budget:** 2.5 development days ([AG-Sept plan](../../planning/ag-sept-plan-old.md) §14) — 1.0 for the retention
 path and diagnostic panels, 1.5 for the sweeps, controls, and report
-**Owner doc:** [ag-sept-plan-old.md](ag-sept-plan-old.md) §7 and §12.2 are normative for what this PR
-measures; this note records only how PR2 discharges them and the choices made along the way.
+**Owner doc:** [ag-sept-plan-old.md](../../planning/ag-sept-plan-old.md) §7 and §12.2 are normative for what this PR
+measured; this record covers only how PR2 discharged them and the choices made along the way.
 
 ## 1. Exit gate
 
@@ -107,7 +108,7 @@ reconcilable, not merely allowed. The mechanism is settled in §5.4.
 
 ### 4.2 DEBT-3's trigger fires here
 
-[`tech-debts.md`](tech-debts.md) DEBT-3 records that `/meta` is read once before a run, so
+[`tech-debts.md`](../../planning/tech-debts.md) DEBT-3 records that `/meta` is read once before a run, so
 `service_commit_sha` means "the service behind the target when the run began". Its first
 listed trigger is **this PR**: "PR2 introduces long-running sweeps where an unattended service
 restart becomes plausible during one measured run."
@@ -303,7 +304,7 @@ PR2 therefore now reports, loudly and in its own §5:
 
 The contract's *recommended operating capacity* term stays deferred, under its own name, so the
 vocabulary is not quietly redefined to make a number reportable. See
-[`../measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../measurements/reports/ag-sept-pr2-single-instance-frontier.md) §5.4–§5.6.
+[`docs/measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../../measurements/reports/ag-sept-pr2-single-instance-frontier.md) §5.4–§5.6.
 
 ### 5.7 What a sweep cell produced, measured 2026-08-03
 
@@ -311,7 +312,7 @@ vocabulary is not quietly redefined to make a number reportable. See
 > unlike everything in the report they cannot be re-derived — which §5.8 immediately below
 > otherwise requires. They are kept because they record *why* the design was accepted, not as
 > evidence for any result. The published numbers are in
-> [the report](../measurements/reports/ag-sept-pr2-single-instance-frontier.md).
+> [the report](../../measurements/reports/ag-sept-pr2-single-instance-frontier.md).
 >
 > One difference will otherwise look like a contradiction: the `hot_slot` goodput here is 5/s
 > and the report's is 1.7/s. Both are the same behaviour — goodput is the slot's capacity ÷ the

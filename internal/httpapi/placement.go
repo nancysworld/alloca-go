@@ -41,7 +41,7 @@ func (g placementGuard) serves(org domain.OrganisationID) bool {
 // wrong with the request (api-surface §2.3).
 //
 // invalid_request rather than internal_failure, deliberately, for two reasons. The
-// design note forbids recording a misroute as the user's durable domain outcome on the
+// horizontal-database design forbids recording a misroute as the user's durable domain outcome on the
 // wrong authority, and invalid_request is precisely the outcome INV-7 exempts from the
 // recording rule — it is rejected at the transport edge and never reaches the domain
 // path. And routing identity is caller-asserted until authentication exists (design

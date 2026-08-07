@@ -84,7 +84,7 @@ func TestColocatedCrossOrganisationReserveSucceeds(t *testing.T) {
 }
 
 // The refusal is a recorded terminal outcome like any other, so replaying the same key
-// returns it rather than re-deciding (design note §5.3).
+// returns it rather than re-deciding (horizontal-database design §5.3).
 func TestCrossAuthorityRefusalIsReplayable(t *testing.T) {
 	f := shardedFixture(t, "org-a")
 
@@ -224,7 +224,7 @@ func TestOwnerConfirmAndCancelStillSucceed(t *testing.T) {
 // be untouched, and the cited negative control would look stronger than the test. This
 // proves the stronger thing the design actually requires: the refusal never enters the
 // slot path at all ("no slot lookup, reservation, claim, booking, or other slot-authority
-// work" — design note §5.3).
+// work" — horizontal-database design §5.3).
 type refusingSlotRepo struct {
 	inner  domain.Repository
 	locked bool

@@ -413,7 +413,8 @@ Deliberately, and recorded in [`ag-sept-pr3.md`](../development/implementation/a
 ## 10. What has been run
 
 Everything on this page was executed end to end against real containers on 2026-08-06, at
-`57748fc`, on the WSL2 workstation:
+`57748fc`, on the WSL2 workstation. That is the full pass; the provenance path was re-run at
+the merge head afterwards, recorded below it:
 
 | Step | Result |
 |---|---|
@@ -425,6 +426,22 @@ Everything on this page was executed end to end against real containers on 2026-
 | `multi-org-dispersed`, 400 requests | 400 `admitted_success`, `measurement_sound: true` |
 | §5 routing checks 1–4 | 200, 200, 409 `cross_authority_unsupported`, 400 `invalid_request` |
 | failure isolation | unit 1 `503`, unit 2 `200` and still booking; `200` again after restart |
+
+The provenance path was re-run on the merge head, `ce7cd66`, on 2026-08-07, after the
+observation was bound to the routed units and moved ahead of the workload:
+
+| Step | Result |
+|---|---|
+| `make image-provenance` | passes: revision `ce7cd66`, `modified=false` |
+| both units' `/meta` | `authority-1`/`authority-2`, one `pr3b-v1`, schema 1 each |
+| `make topo-deployment` | `sha256:52015bb7…` on both containers, matching both targets |
+| `multi-org-dispersed`, 100 requests | 100 `admitted_success`, 0 invalid, no drift, no disagreement |
+| the report | `container_deployment: true`, the observed `image_id`, `unit_count: 2`, certified `local` |
+| the same run with no `-deployment` and `-require none` | refused, exit 1, **no report written** |
+
+The last row is the control for §7's rule that no level excuses the record. It stops before
+any measured request, which is why there is no report to inspect — a refusal that produced
+one would mean the check had moved back after the workload.
 
 Two things are worth recording because they were found by running rather than reading.
 

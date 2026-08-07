@@ -1,6 +1,6 @@
 # 0003 — A run identifies its deployed artifact by observation, not by self-report
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-08-06
 **Milestone:** AG-Sept
 
@@ -42,9 +42,10 @@ or registry digest. Human-readable tags or deployment labels may be recorded as 
 do not substitute for artifact identity.
 
 The mechanism used to observe, transport, bind, validate, and record that identity is an
-implementation concern. The current AG-Sept implementation is documented in
-[`../development/implementation/ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md), with operating
-procedure in [`../operations/container-topology.md`](../operations/container-topology.md).
+implementation concern. The current AG-Sept implementation is recorded in
+[`../development/implementation/ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md)
+§6d, with operating procedure in
+[`../operations/container-topology.md`](../operations/container-topology.md) §7.
 
 ## Consequences
 

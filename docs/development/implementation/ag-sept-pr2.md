@@ -304,7 +304,7 @@ PR2 therefore now reports, loudly and in its own §5:
 
 The contract's *recommended operating capacity* term stays deferred, under its own name, so the
 vocabulary is not quietly redefined to make a number reportable. See
-[`../measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../../measurements/reports/ag-sept-pr2-single-instance-frontier.md) §5.4–§5.6.
+[`docs/measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../../measurements/reports/ag-sept-pr2-single-instance-frontier.md) §5.4–§5.6.
 
 ### 5.7 What a sweep cell produced, measured 2026-08-03
 

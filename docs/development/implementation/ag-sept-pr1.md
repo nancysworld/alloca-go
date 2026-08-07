@@ -168,7 +168,7 @@ Reports now carry `quotability.level` — `none`, `local`, `capacity`, `publisha
 next level up and what blocks it. Both binaries take `-require` so the bar is declared by the
 caller, who is the only one who knows what the number is for. The ladder and the per-level
 field lists are in
-[`../operations/load-harness.md`](../../operations/load-harness.md) §4; the staging they
+[`docs/operations/load-harness.md`](../../operations/load-harness.md) §4; the staging they
 implement is `ag-sept-plan-old.md` §14's.
 
 Levels are named for the claim rather than for the PR that first reaches them. A report in

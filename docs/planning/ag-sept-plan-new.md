@@ -647,10 +647,16 @@ composed run at the chosen replica count across both authorities shows the two a
 
 ### 9.1 Container gate
 
-The service must have a reproducible, production-shaped image identified for an experiment by
-its **image ID or registry digest** (v0.6 — a tag is a mutable alias, so it labels a build but
-cannot identify one), environment-driven configuration, health probes, graceful termination,
-and no development-only runtime tooling.
+The service must have a version-controlled, production-shaped container build whose exact
+deployed artifact is identified by its **image ID or registry digest** (v0.6 — a tag is a
+mutable alias, so it labels a build but cannot identify one), environment-driven
+configuration, health probes, graceful termination, and no development-only runtime tooling.
+
+Identifying the artifact is not the same as rebuilding it. The image ID says exactly which
+artifact served a run; it does not establish that the same revision rebuilds to identical
+bytes, which depends on base image digests and every other build input
+([ADR-0003](../decisions/0003-deployed-artifact-identity.md)). The separate PR3b requirement
+that the **topology** be reproducible from version control is unaffected.
 
 **The gate moves earlier in v0.5.** Phase 1 needs two service units and two databases from PR3b
 onward. Running that topology as containers from the start is cheaper than converting it

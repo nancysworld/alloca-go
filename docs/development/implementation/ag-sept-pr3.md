@@ -41,7 +41,7 @@ that reached its topology by relaxing an invariant would have moved the problem,
 
 **What PR3 may not claim, whatever it measures.** Both authorities, both service units, the
 generator, and the telemetry stack share one 10-vCPU WSL2 allocation
-([`../measurements/environment.md`](../../measurements/environment.md)). Authority composition
+([`docs/measurements/environment.md`](../../measurements/environment.md)). Authority composition
 cannot be quoted as a capacity multiplier from this machine, and PR2's unexplained ~2×
 excursions are still open, so any single reading carries a ±2× caveat — which PR4's node
 exporter does not discharge merely by existing, only by explaining, excluding, or bounding the
@@ -423,6 +423,55 @@ also producing the experiment. The register's own defect — a failed replay re-
 itself and growing the outstanding work on every pass — was a live bug in shipped code and
 **was** fixed in PR3b; deduplication does not solve the accounting problem, and is not
 claimed to.
+
+### 6d. The deployed artifact is bound to the routed units, and checked before load
+
+The architectural decision is [ADR-0003](../../decisions/0003-deployed-artifact-identity.md):
+code identity and deployed-artifact identity are separate provenance facts, and the second
+must be observed from outside the measured process rather than reported by it. What the ADR
+deliberately does not fix is the mechanism, which is recorded here because two parts of it
+were wrong in a way that read as correct.
+
+**Observation alone is unbound evidence.** A record proving that some containers on this host
+share an image says nothing about the units a run addressed. A stack raised yesterday, a
+second stack on other ports, or a unit nothing routes to would all satisfy it. So each
+observation now also carries the address its container publishes, read from the port binding
+rather than assumed from the compose file, and the run requires an exact one-to-one
+correspondence with the targets it is about to drive. Both directions fail for their own
+reason: a routed unit nobody observed is an artifact the run cannot name — the whole gap §6.4
+exists to close — while an observed unit nothing routes to means the record describes a
+different topology, and a record wrong about the unit set is not evidence that its image
+identity is right either.
+
+**Ordering is the other half.** The check previously ran after `Runner.Run`, where it could
+only annotate numbers that already existed: the operator discovered the mismatch once the
+measurement had been taken. It now runs before any measured request, ahead even of the `/meta`
+reads, so a wrong record costs a re-record rather than a run. That property is easy to lose in
+a later refactor and is held by a test that asserts the units served **zero** requests when the
+preflight refuses; moving the call back after the workload fails it with four requests per
+unit rather than failing on the error text.
+
+**Why the requirement keys on the topology, not on a flag.** The certification gate refuses a
+containerised run whose `image_id` is empty, but it is armed by `container_deployment`, which
+the record itself sets. Omitting the record therefore also disarmed the gate, and the run
+reported a clean lower-provenance result whose missing artifact identity looked like a choice.
+A run that reaches more than one unit is the containerised topology whatever the operator
+remembered to pass, so that is what the requirement keys on. `-require none` remains the
+escape, because a run declaring it supports no claim has nothing for artifact identity to
+qualify — and a requirement with no honest escape teaches people to fabricate records.
+
+**What was deliberately not built.** No per-unit map in the manifest: once the preflight has
+established full coverage and one common artifact, the per-unit observations are validation
+evidence, and copying them into the report would be a second representation of what the single
+`image_id` already states. No general `source | container` deployment-mode abstraction either;
+making the one known containerised evidence path non-bypassable is what PR3b needs, and an
+abstraction invented before a second caller exists is one the second caller redesigns.
+
+The record schema, the flag, the matching rules, and the tests live in
+`internal/loadgen/deployment.go`, `cmd/alloca-load/main.go` and
+`test/scripts/record-deployment.sh`; the operating procedure is
+[`../../operations/container-topology.md`](../../operations/container-topology.md) §7. None of
+that is restated here.
 
 ## 7. Not in PR3
 

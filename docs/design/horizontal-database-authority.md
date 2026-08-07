@@ -3,7 +3,7 @@
 **Status:** Accepted — normative for the Phase 1 horizontal-database architecture.  
 **Origin:** promoted from the AG-Sept horizontal-database design note after PR3a settled the placement and booking contracts.  
 **Scope:** define how Alloca's logical correctness authorities map onto independently writable PostgreSQL database authorities, what same- and cross-database-authority booking mean, and which Phase 1 constraints must remain stable for a future cross-authority protocol.  
-**Does not replace:** [`transaction-semantics.md`](transaction-semantics.md), which remains authoritative for the local transaction, state machines, lock order, idempotency, authoritative time, and outcome semantics.
+**Does not replace:** [`transaction-semantics.md`](transaction-semantics.md), which remains authoritative for the local transaction, state machines, exact lock participation/order, idempotency, authoritative time, and outcome semantics.
 
 ## 1. Why this design exists
 
@@ -30,7 +30,7 @@ Alloca scalability is not one maximum-throughput number. It is the behaviour of 
 - writable database capacity can increase through independent database authorities;
 - unrelated organisations should be able to progress without sharing one PostgreSQL lock manager, WAL/commit stream, buffer/cache working set, connection ceiling, or storage bottleneck;
 - one hot slot remains serialized by its slot-capacity logical authority;
-- one hot user's schedule remains serialized by its user-schedule logical authorities;
+- one hot user's claim creation remains serialized by the user-schedule serialization authority, while claim validity remains protected by the claim-validity authority;
 - the service-to-database resource ratio is a property of a topology and workload, not a constant.
 
 A useful scale experiment therefore names both dimensions, for example:
@@ -54,18 +54,18 @@ A **logical authority** owns one correctness decision or invariant. Alloca's boo
 | Logical authority | Correctness responsibility | Natural key | Ownership axis |
 |---|---|---|---|
 | slot-capacity authority | capacity is never oversold | `SlotRef = (slot_organisation_id, slot_id)` | slot axis |
-| user-schedule serialization authority | concurrent mutations of one user's schedule are ordered | `UserRef = (user_organisation_id, user_id)` | user axis |
+| user-schedule serialization authority | claim-creating schedule mutations for one user are ordered before claim validation | `UserRef = (user_organisation_id, user_id)` | user axis |
 | claim-validity authority | one user cannot hold overlapping active schedule claims | `UserRef` plus claim interval | user axis |
 
 These remain three distinct logical authorities even when all of their rows live in one PostgreSQL database.
 
 The slot row is the capacity authority: capacity-changing operations serialize on the slot aggregate lock.
 
-The user identity row is the schedule-serialization authority: concurrent schedule mutations for one `UserRef` take the same identity lock before changing that user's claims.
+The user identity row is the schedule-serialization authority for claim creation. Claim-creating operations — currently `reserve` — for one `UserRef` take the same identity lock before attempting claim insertion, so concurrent overlapping inserts do not use the GiST exclusion index itself as their ordering mechanism. Other claim lifecycle mutations are not redefined by this statement; [`transaction-semantics.md`](transaction-semantics.md) owns their exact lock participation and race semantics.
 
-The `user_time_claims` relation and exclusion constraint are the claim-validity authority: they are the durable proof that the resulting schedule contains no overlapping active claims.
+The `user_time_claims` relation and exclusion constraint are the claim-validity authority: they are the durable proof that the resulting schedule contains no overlapping active claims. Even if a writer skipped the identity lock, the exclusion constraint would preserve validity; the lost property would be orderly/liveness-safe claim creation, not schedule correctness.
 
-The identity lock and claim relation are separate logical authorities because they guarantee different properties. They belong to one ownership axis because both govern the same user's schedule and are naturally keyed by the same `UserRef`.
+The identity row and claim relation are therefore separate logical authorities because they guarantee different properties. They belong to one ownership axis because both govern the same user's schedule and are naturally keyed by the same `UserRef`.
 
 ### 3.2 Ownership axis — how logical authority naturally partitions
 
@@ -84,9 +84,9 @@ SlotRef                           UserRef
 
 The three logical authorities therefore produce **two**, not three, database-placement axes.
 
-The user-schedule serialization and claim-validity authorities are colocated by design in the current PostgreSQL model. The identity lock orders access to the claims, and the lock, claim settlement, conflict decision, and claim mutation participate in one local transaction. Splitting the identity row and claims across independent writable databases is not physically impossible, but it would remove that local atomicity and require another distributed-coordination protocol merely to preserve one user's schedule. Phase 1 introduces no such protocol.
+The user-schedule serialization and claim-validity authorities are colocated by design in the current PostgreSQL model. For reserve, the identity lock orders claim creation before the exclusion-constraint validation; identity-scoped settlement, conflict decision, and claim creation then remain inside the same local transaction on user-home. Splitting the identity row and claims across independent writable databases is not physically impossible, but it would remove that local coordination and require another distributed protocol merely to preserve one user's schedule path. Phase 1 introduces no such protocol.
 
-The deeper reason for the colocation is not the implementation accident of `SELECT ... FOR UPDATE`; it is that both logical authorities jointly own one user schedule. The row lock is the current mechanism that gives that shared ownership an ordered local mutation path.
+The deeper reason for the colocation is not the implementation detail of `SELECT ... FOR UPDATE`; it is that both logical authorities jointly govern one user schedule. The identity-row lock is the current mechanism that gives claim creation an ordered local path before validity is decided by the claim relation.
 
 The two ownership axes are independent. A `UserRef` does not determine which `SlotRef` it will book, and a `SlotRef` does not determine which `UserRef` will consume it. A reserve operation joins them.
 
@@ -128,7 +128,7 @@ A reserve is **same-database-authority** when:
 authority(user_organisation_id) == authority(slot_organisation_id)
 ```
 
-All three logical authorities still remain distinct, but the two ownership axes are hosted by one PostgreSQL transaction domain, so one local transaction can coordinate them.
+All three logical authorities still remain distinct, but the two ownership axes are hosted by one PostgreSQL transaction domain, so one local transaction can coordinate the reserve path.
 
 Same-database-authority does **not** mean same organisation. For example:
 
@@ -222,18 +222,18 @@ slot_organisation_id == user_organisation_id
 
 Cross-organisation booking is an existing capability. Phase 1 preserves it whenever the participating organisations are colocated on the same database authority, including the original one-authority deployment where every organisation is colocated.
 
-For a supported reserve, the local transaction still coordinates all three logical authorities:
+For a supported reserve, the local transaction coordinates the three logical authorities involved in claim creation:
 
 ```text
 BEGIN
     lock slot row                  # slot-capacity logical authority
     lock user identity row         # schedule-serialization logical authority
-    settle/check/mutate claims     # claim-validity logical authority
+    settle/check/create claim      # claim-validity logical authority
     write mutation + idempotency
 COMMIT
 ```
 
-The exact lock order and transaction details remain owned by [`transaction-semantics.md`](transaction-semantics.md). The important horizontal-scaling property is that Phase 1 keeps the complete sequence inside one database authority.
+The exact lock order and lifecycle-operation details remain owned by [`transaction-semantics.md`](transaction-semantics.md). The important horizontal-scaling property is that Phase 1 keeps the complete supported reserve sequence inside one database authority.
 
 #### Phase 1 topology
 
@@ -540,7 +540,7 @@ For Phase 1:
 
 1. Alloca has **three logical authorities** over **two independent ownership axes**.
 2. The slot-capacity logical authority belongs to the slot axis keyed by `SlotRef`.
-3. User-schedule serialization and claim validity belong to the user axis keyed by `UserRef`; they remain colocated in one database authority and one local transaction model.
+3. User-schedule serialization and claim validity belong to the user axis keyed by `UserRef`; they remain colocated in one database authority so the local reserve protocol can order claim creation and enforce validity without a distributed user-schedule protocol.
 4. A **database authority** is an independently writable PostgreSQL transaction domain, not a service replica or a logical authority.
 5. Organisation-home placement maps both ownership axes to database authorities at organisation granularity.
 6. Same-database-authority booking is defined by placement equality, not organisation-ID equality.

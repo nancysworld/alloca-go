@@ -11,7 +11,8 @@ A useful test is:
 > If a detail can change without reopening the architectural decision, it does not belong
 > in the ADR.
 
-Implementation mechanics belong in the implementation/planning record, operating procedures,
+Implementation mechanics belong in the
+[`../development/implementation/`](../development/implementation/) record, operating procedures,
 or code documentation. An ADR may link to those documents, but should not duplicate their
 file formats, flags, scripts, internal APIs, test fixtures, or current PR staging unless one
 of those facts is itself the architectural decision.
@@ -54,7 +55,9 @@ ADRs should normally not contain:
 - details that can be replaced locally while the architectural decision remains unchanged.
 
 The owning implementation document should explain how the current code realizes the ADR and
-carry the detailed review/discovery history needed to maintain it.
+carry the detailed review/discovery history needed to maintain it. The repository-wide boundary
+between architecture, implementation, evidence, and review roles is defined in
+[`../development/engineering-process.md`](../development/engineering-process.md).
 
 ## Lifecycle
 

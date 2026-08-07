@@ -808,13 +808,13 @@ PR1 and PR2 are complete and their scopes are unchanged from
 
 2.0 days. Metrics recorder, telemetry-overhead measurement, reset and seed tooling, external
 generator, run manifest, persisted-state verifier, response-validation control, operator
-documentation. Scope note: [`ag-sept-pr1.md`](../development/implementation/ag-sept-pr1.md).
+documentation. Implementation record: [`ag-sept-pr1.md`](../development/implementation/ag-sept-pr1.md).
 
 ### PR2 — Single-instance frontier — merged
 
 2.5 days. Prometheus retention path, diagnostic panels, one-instance sweeps for all three
-controlled workloads, telemetry comparison, generator-bottleneck control, frontier report. Scope
-note: [`ag-sept-pr2.md`](../development/implementation/ag-sept-pr2.md). Result: the frontier is set by PostgreSQL,
+controlled workloads, telemetry comparison, generator-bottleneck control, frontier report. Implementation
+record: [`ag-sept-pr2.md`](../development/implementation/ag-sept-pr2.md). Result: the frontier is set by PostgreSQL,
 not by `alloca-go`; this is what reordered the milestone (§0).
 
 ### PR3a — Placement, booking policy, and confirm/cancel ownership

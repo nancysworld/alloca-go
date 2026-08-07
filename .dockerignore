@@ -17,7 +17,7 @@
 # `.github/` and `*.md`, which put 1,330 deleted paths in the context. The cost of the rule
 # is a large context, because `docs/measurements/` is tracked and holds ~108 MB of result
 # data; everything else tracked is under 2 MB. `make image-provenance` is the control that
-# proves the stamp is honest, and `make dockerignore-check` fails if anything tracked is
+# proves the stamp is honest, and `make build-context-check` fails if anything tracked is
 # excluded here again.
 #
 # Every entry below is matched by .gitignore. Keep it that way.

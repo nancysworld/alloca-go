@@ -1,20 +1,75 @@
 # Architecture decision records
 
-This directory holds architecture decision records (ADRs): short, immutable notes
-capturing a significant decision, why it was made, and what it commits us to.
+This directory holds architecture decision records (ADRs): short notes that preserve a
+significant architectural choice, the forces behind it, the trade-offs it accepts, and the
+conditions that should cause it to be reconsidered.
+
+An ADR records **why and what**, not the detailed **how** of one implementation.
+
+A useful test is:
+
+> If a detail can change without reopening the architectural decision, it does not belong
+> in the ADR.
+
+Implementation mechanics belong in the implementation/planning record, operating procedures,
+or code documentation. An ADR may link to those documents, but should not duplicate their
+file formats, flags, scripts, internal APIs, test fixtures, or current PR staging unless one
+of those facts is itself the architectural decision.
 
 ## Format
 
 Each ADR is a numbered file `NNNN-short-title.md` with:
 
 - **Status** — Proposed / Accepted / Superseded (by `NNNN`).
-- **Context** — the forces and constraints in play when the decision was made.
-- **Decision** — what was decided, stated plainly.
-- **Consequences** — what follows, including what is now harder or deferred.
-- **Revisit when** — the concrete evidence or event that should reopen the decision.
+- **Context** — the durable forces and constraints that make a decision necessary.
+- **Decision** — the architectural choice, stated plainly and independently of incidental
+  implementation details.
+- **Consequences** — what the choice enables, costs, constrains, or deliberately leaves open.
+- **Rejected alternatives** — optional; include only alternatives whose rejection explains
+  the decision materially.
+- **Revisit when** — concrete evidence or changed conditions that should reopen the decision.
 
-ADRs are append-only: to change a decision, add a new ADR that supersedes the old
-one rather than rewriting history. Numbers are assigned in order.
+A good ADR should still make sense after implementation details, package names, deployment
+scripts, or milestone boundaries have changed.
+
+## Scope boundary
+
+ADRs should normally contain:
+
+- authority, ownership, consistency, deployment, trust, or decomposition choices that shape
+  more than one implementation component;
+- technology choices when choosing that technology is itself architecturally consequential;
+- important trade-offs and rejected architectural alternatives;
+- invariants or constraints that future implementations must preserve;
+- explicit triggers for reconsidering the decision.
+
+ADRs should normally not contain:
+
+- command-line flags, JSON/file schemas, shell commands, package/function names, or script
+  paths except as links to the current implementation record;
+- exact sequencing of one PR's workflow unless the ordering is itself an architectural
+  invariant;
+- test cases, fixtures, current topology counts, or temporary milestone mechanics;
+- debugging history or implementation archaeology that explains how a defect was found;
+- details that can be replaced locally while the architectural decision remains unchanged.
+
+The owning implementation document should explain how the current code realizes the ADR and
+carry the detailed review/discovery history needed to maintain it.
+
+## Lifecycle
+
+A **Proposed** ADR is a design under review. It may be revised freely while the architectural
+choice is being clarified and while implementation is testing whether the decision is viable.
+
+An **Accepted** ADR is a historical record of a decision the project has adopted. Accepted
+ADRs are append-only in substance: if the architecture later changes, add a new ADR that
+supersedes the old one rather than rewriting the old decision as though history had always
+been different.
+
+Minor corrections that do not change an accepted decision's meaning — spelling, broken links,
+or equivalent editorial fixes — are fine.
+
+Numbers are assigned in order when an ADR is created; they are not reserved in advance.
 
 ## Index
 

@@ -3,7 +3,7 @@
 **Status:** Draft v0.5 — normative for all remaining AG-Sept work
 **Created:** 5 August 2026, superseding [`ag-sept-plan-old.md`](ag-sept-plan-old.md) (v0.4, 31 July 2026)
 **Delivery window:** August 2026
-**Development budget:** 19.5 focused development days for the milestone, of which 5.5 are spent (PR1, PR2, PR3a) and 14.0 remain — followed by 2–3 days for reruns, review, refinement, documentation, and public-release preparation
+**Development budget:** 19.5 focused development days for the milestone, of which 8.0 are spent (PR1, PR2, PR3a, PR3b) and 11.5 remain — followed by 2–3 days for reruns, review, refinement, documentation, and public-release preparation
 **Predecessor:** AG-M1 — correct transactional core and end-to-end service path
 
 ## 0. What changed from v0.4, and why
@@ -186,7 +186,7 @@ label according to the evidence convention in
 
 ## 4. Time budget and priority
 
-The development allocation is a planning constraint. 5.5 days are spent; 14.0 remain. **Half a day
+The development allocation is a planning constraint. 8.0 days are spent; 11.5 remain. **Half a day
 is the unit**, here and in the scope notes: nothing is estimated well enough to distinguish 0.3
 from 0.4, and finer granularity is false precision that invites its own overrun (Nancy's call,
 2026-08-05).
@@ -196,11 +196,11 @@ from 0.4, and finer granularity is false precision that invites its own overrun 
 | Measurement harness and load generator | PR1 | 2.0 | spent 2.0 — merged `71914a4` |
 | Single-instance frontier, with the diagnostic time-series minimum | PR2 | 2.5 | spent 2.5 — merged `0d40de4` |
 | Placement, booking policy, and confirm/cancel ownership | PR3a | 3.0 | **done in 1.0 — merged `aa1e3a5`; 2.0 returned to contingency** |
-| Multi-authority harness — topology, generator routing, authority-aware verification | PR3b | 2.5 | in progress, PR #14 |
+| Multi-authority harness — topology, generator routing, authority-aware verification | PR3b | 2.5 | spent 2.5 — merged `57f501d` |
 | Multi-authority correctness and failure-isolation evidence | PR3c | 2.0 | remaining |
 | Container and local scale-out — replicas, exporters, controls | PR4 | 4.5 | remaining, provisional envelope |
 | Architecture conclusions and one justified boundary | PR5 | 1.5 | remaining |
-| **Committed** | | **16.0** | 5.5 spent, 10.5 remaining |
+| **Committed** | | **16.0** | 8.0 spent, 8.0 remaining |
 | Unallocated contingency | | 3.5 | remaining |
 | **Total milestone budget** | | **19.5** | unchanged |
 

@@ -1,7 +1,8 @@
 # AG-Sept PR3 — Horizontal database authority, Phase 1
 
 **Type:** Implementation record, spanning PR3a/3b/3c
-**Status:** In progress. PR3a is merged (#13); PR3b is in review; PR3c is not started. The
+**Status:** In progress. PR3a is merged (#13); PR3b is merged (#14, `57f501d`); PR3c is not
+started. The
 design was accepted before implementation began (formal design §8), and §6 holds no blocker —
 its one remaining item is a starting fixture, not a contract.
 **Budget:** 7.5 development days across three PRs ([AG-Sept plan](../../planning/ag-sept-plan-new.md) §4) —

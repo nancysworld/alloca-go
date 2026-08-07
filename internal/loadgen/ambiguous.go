@@ -43,19 +43,9 @@ type Ambiguous struct {
 //
 // It is `domain.ScopeKey` rather than a shape of this package's own. The register's notion
 // of "the same mutation" has to be the service's, or the two disagree about what a replay
-// replays; sharing the type is what stops them drifting. This is the one place the harness
-// reaches for a domain identity rather than its own — `User` and `Slot` stay local
-// precisely because they are the client's view of the HTTP contract, while the scope is a
-// fact about how the mutation was recorded.
+// replays; sharing the type is what stops them drifting.
 func (a Ambiguous) identity() domain.ScopeKey {
-	return domain.ScopeKey{
-		UserRef: domain.UserRef{
-			OrganisationID: a.User.OrganisationID,
-			UserID:         a.User.UserID,
-		},
-		Operation: a.Operation,
-		Key:       a.Key,
-	}
+	return domain.ScopeKey{UserRef: a.User, Operation: a.Operation, Key: a.Key}
 }
 
 // ambiguityRegister collects ambiguous mutations during a run.

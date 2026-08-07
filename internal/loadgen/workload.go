@@ -8,18 +8,23 @@ import (
 	"github.com/nancysworld/alloca-go/internal/domain"
 )
 
-// User and Slot are the harness's view of the two identities, each a pair scoped to an
-// organisation (transaction-semantics §1.1, §1.2). They are the client's own types rather
-// than the domain's refs so the generator stays a consumer of the HTTP contract.
-type User struct {
-	OrganisationID domain.OrganisationID
-	UserID         domain.UserID
-}
-
-type Slot struct {
-	OrganisationID domain.OrganisationID
-	SlotID         domain.SlotID
-}
+// User and Slot are the two identities a workload addresses, each a pair scoped to an
+// organisation (transaction-semantics §1.1, §1.2). Both are aliases for the domain's own
+// refs, not copies of their shape.
+//
+// They are in-memory inputs used to *build* a request, not the wire format: what crosses
+// the boundary is the JSON that `do` marshals and the JSON the service answers with, and
+// those shapes stay local to this package. An identity, by contrast, is the same fact on
+// both sides — the pair is what the service locks and scopes by — so a second declaration
+// of it here would be a copy that nothing keeps in step.
+//
+// Note the target of each alias. `Slot` is `domain.SlotRef`, the *reference*, not
+// `domain.Slot`, the aggregate the service owns; the harness names a slot and never holds
+// one. The names stay short because a workload reads better for it.
+type (
+	User = domain.UserRef
+	Slot = domain.SlotRef
+)
 
 // Workload is one controlled shape from ag-sept-plan §5. Each isolates a single mechanism,
 // which is why they are separate types rather than one parameterised workload: a composite

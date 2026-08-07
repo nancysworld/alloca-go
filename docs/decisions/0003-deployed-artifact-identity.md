@@ -43,7 +43,7 @@ do not substitute for artifact identity.
 
 The mechanism used to observe, transport, bind, validate, and record that identity is an
 implementation concern. The current AG-Sept implementation is documented in
-[`../planning/ag-sept-pr3-scope.md`](../planning/ag-sept-pr3-scope.md), with operating
+[`../development/implementation/ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md), with operating
 procedure in [`../operations/container-topology.md`](../operations/container-topology.md).
 
 ## Consequences

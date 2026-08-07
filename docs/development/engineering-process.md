@@ -226,9 +226,8 @@ implementation is underway, it becomes the durable record of the work actually p
 belongs under `docs/development/implementation/`. It should remain selective: the code and tests
 own the precise mechanics, while the record preserves context that would otherwise be lost.
 
-Existing `docs/planning/*-scope.md` files predate this convention. They may be migrated when
-next materially touched; pure path churn is not required in an active review merely to satisfy
-the directory convention.
+The AG-Sept per-PR records were migrated from `docs/planning/*-scope.md` when this directory was
+created; `docs/planning/` no longer holds implementation history.
 
 The document owner principle is simple:
 

@@ -35,11 +35,21 @@ ag-sept-pr4.md
 A single implementation record may span several PRs when they implement one coherent scoped
 change and the document benefits from preserving their shared history.
 
-## Existing scope records
+## Records
 
-Some implementation records currently live under `docs/planning/` with names such as
-`*-scope.md`. They predate this directory convention. Migrate them when they are next materially
-updated; do not create path churn in an active review solely for classification.
+| Record | Work | State |
+|---|---|---|
+| [`ag-sept-pr1.md`](ag-sept-pr1.md) | measurement substrate and load harness | merged |
+| [`ag-sept-pr2.md`](ag-sept-pr2.md) | single-instance frontier | merged |
+| [`ag-sept-pr3.md`](ag-sept-pr3.md) | horizontal database authority Phase 1, across PR3a/3b/3c | in progress |
+
+These three began as `docs/planning/ag-sept-pr*-scope.md` and moved here once the directory
+existed. They are named for the work unit, not the branch, and PR3's record spans three PRs
+because they implement one coherent scoped change.
+
+They still read as scope notes in places, because that is what they were written as. Sections
+that state intent rather than what was built are the parts to revise as each is next materially
+updated — not a reason to rewrite their history.
 
 The repository-wide process and role boundaries are defined in
 [`../engineering-process.md`](../engineering-process.md).

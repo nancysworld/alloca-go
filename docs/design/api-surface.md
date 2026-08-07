@@ -167,8 +167,8 @@ catalogue. A cursor contract is query-platform work and is out of scope.
 ### 2.6 Three behaviours a sharded deployment adds
 
 Both arrive with AG-Sept PR3a and are visible to any client, so they are stated here
-rather than left to the design note that decided them
-([`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md)).
+rather than left to the formal design that decided them
+([`horizontal-database-authority.md`](horizontal-database-authority.md)).
 
 **A reserve whose organisations live on different database authorities is refused**
 with `business_refusal` / `cross_authority_unsupported` / 409:

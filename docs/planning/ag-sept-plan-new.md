@@ -20,7 +20,7 @@ Four changes follow.
 
 1. **Horizontal database authority becomes the milestone's primary work**, ahead of stateless
    replica scaling. Its design is
-   [`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md),
+   [`../design/horizontal-database-authority.md`](../design/horizontal-database-authority.md),
    which phases the route: Phase 1 composes independent organisation-home authorities and
    supports every booking whose participating organisations resolve to the same authority;
    Phase 2 adds a cross-authority protocol and is deliberately deferred beyond AG-Sept.
@@ -134,7 +134,7 @@ At minimum, each measured run must preserve:
 **Extended for multiple authorities.** A run spanning several writable authorities must
 reconcile outcomes against persisted state on *every* participating authority, and must not
 treat sequential cross-database reads as one atomic snapshot. The quiesced verification rule is
-in the design note §6 and is normative for PR3.
+in the formal design §6 and is normative for PR3.
 
 ### 3.3 Three scaling axes, three separate claims
 
@@ -227,11 +227,11 @@ database, not the application, sets the frontier — measuring replicas harder a
 unchanged writer would refine a number the milestone has already explained.
 
 **PR3a rose from 2.5 to 3.0 before implementation started, and that is the contingency working
-as intended.** The design note's revision of 2026-08-05 settled the three contract questions
+as intended.** The formal design's revision of 2026-08-05 settled the three contract questions
 raised in its review, and one of them resolved towards *build it*: confirm and cancel gain an
 explicit `UserRef` ownership check, which the earlier estimate priced as a decision rather than
 a domain-contract correction with its own normative updates and tests
-([`ag-sept-pr3-scope.md`](ag-sept-pr3-scope.md) §5.5). The half day came from contingency rather
+([`ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md) §5.5). The half day came from contingency rather
 than from another PR.
 
 **The 3.5 unallocated days are contingency, not scope.** They are drawn on before §16's
@@ -408,7 +408,7 @@ Required properties:
 **Cross-authority requests are a separate control, not a share of this workload.** Deliberate
 policy refusals are cheap compared with a real booking, so mixing them into the supported
 workload would flatter both goodput and latency. The refusal control is a bounded run of its own
-and is reported as its own evidence class (design note §6.2).
+and is reported as its own evidence class (formal design §6.2).
 
 A one-hot-organisation variant is required for the failure-isolation experiment: it shows that
 one saturated or unavailable authority bounds its own organisations and no others.
@@ -553,14 +553,14 @@ organisation's persisted rows against the run's unpartitioned global summary. In
 looping the existing organisation-scoped entry point against the unchanged global report is
 **not** a discharge of this contract — it would compare one organisation's rows with every
 organisation's totals. The verifier's data structures, query factoring, and scrape aggregation
-are otherwise PR3b's to choose (design note §6.3).
+are otherwise PR3b's to choose (formal design §6.3).
 
 ## 7. Single-instance baseline — discharged
 
 The one-replica run is the control for every scale-out claim. **PR2 discharged this section.**
 Its results, limitations, and the one deferred term are in
 [`../measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../measurements/reports/ag-sept-pr2-single-instance-frontier.md)
-and [`ag-sept-pr2-scope.md`](ag-sept-pr2-scope.md) §5.6.
+and [`ag-sept-pr2.md`](../development/implementation/ag-sept-pr2.md) §5.6.
 
 Two obligations survive into later PRs:
 
@@ -597,7 +597,7 @@ pool_size`, not `replicas × authorities × pool_size`. The control is run per s
 ### 8.2 Horizontal database authority — Phase 1
 
 The design is owned by
-[`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md).
+[`../design/horizontal-database-authority.md`](../design/horizontal-database-authority.md).
 This plan states only what AG-Sept must build and prove, and does not restate the design.
 
 Phase 1 assigns each organisation one writable PostgreSQL home authority holding its complete
@@ -802,13 +802,13 @@ PR1 and PR2 are complete and their scopes are unchanged from
 
 2.0 days. Metrics recorder, telemetry-overhead measurement, reset and seed tooling, external
 generator, run manifest, persisted-state verifier, response-validation control, operator
-documentation. Scope note: [`ag-sept-pr1-scope.md`](ag-sept-pr1-scope.md).
+documentation. Scope note: [`ag-sept-pr1.md`](../development/implementation/ag-sept-pr1.md).
 
 ### PR2 — Single-instance frontier — merged
 
 2.5 days. Prometheus retention path, diagnostic panels, one-instance sweeps for all three
 controlled workloads, telemetry comparison, generator-bottleneck control, frontier report. Scope
-note: [`ag-sept-pr2-scope.md`](ag-sept-pr2-scope.md). Result: the frontier is set by PostgreSQL,
+note: [`ag-sept-pr2.md`](../development/implementation/ag-sept-pr2.md). Result: the frontier is set by PostgreSQL,
 not by `alloca-go`; this is what reordered the milestone (§0).
 
 ### PR3a — Placement, booking policy, and confirm/cancel ownership
@@ -969,7 +969,7 @@ exporters — survive that re-scoping as obligations; their order, depth, and ma
   got wrong. See the PR2 report §5.4;
 - **report the recommended operating capacity PR2 deferred**, which needs a second replica
   before two of its three components mean anything. See
-  [`ag-sept-pr2-scope.md`](ag-sept-pr2-scope.md) §5.6 and §5.6.1;
+  [`ag-sept-pr2.md`](../development/implementation/ag-sept-pr2.md) §5.6 and §5.6.1;
 - populate the replica-count and aggregate-pool-capacity manifest fields;
 - reuse PR2's Prometheus and dashboard path, adding bounded replica and authority identity and
   only the views scale-out diagnosis needs;
@@ -1090,7 +1090,7 @@ session is this document. The register is resolved as follows; the full reasonin
 
 ### Explicitly out of scope
 
-- cross-authority booking, and any distributed commit or saga protocol (design note §10);
+- cross-authority booking, and any distributed commit or saga protocol (formal design §10);
 - splitting one organisation across writable authorities;
 - online rebalancing or dual-write migration between authorities;
 - a shared global workflow database;

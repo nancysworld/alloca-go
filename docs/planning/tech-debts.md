@@ -387,7 +387,7 @@ Any one of:
 3. **Phase 2's cross-authority coordinator.** The horizontal-database-authority note's
    compatibility obligation 3 requires a future coordinator to dispatch to this same-authority
    path rather than rewrite it
-   ([design note](../design-notes/horizontal-database-authority.md) §4.3). A coordinator calling
+   ([formal design](../design/horizontal-database-authority.md) §4.3). A coordinator calling
    it from a different package cannot rely on two callers in one file agreeing by eye, and it is
    the first caller that will not have been written by someone who just read the function.
 

@@ -1,19 +1,21 @@
-# AG-Sept PR3 — Horizontal database authority, Phase 1 (scope)
+# AG-Sept PR3 — Horizontal database authority, Phase 1
 
-**Status:** Frozen for implementation. The design is accepted (design note §8), the budget and
-PR split are agreed, and §6 holds no blocker — its one remaining item is a starting fixture, not
-a contract.
-**Budget:** 7.5 development days across three PRs ([AG-Sept plan](ag-sept-plan-new.md) §4) —
+**Type:** Implementation record, spanning PR3a/3b/3c
+**Status:** In progress. PR3a is merged (#13); PR3b is in review; PR3c is not started. The
+design was accepted before implementation began (formal design §8), and §6 holds no blocker —
+its one remaining item is a starting fixture, not a contract.
+**Budget:** 7.5 development days across three PRs ([AG-Sept plan](../../planning/ag-sept-plan-new.md) §4) —
 3.0 for PR3a, 2.5 for PR3b, 2.0 for PR3c. **PR3a came in at 1.0**; the 2.0 difference went
 to the plan's contingency, not to PR3b or PR3c.
-**Owner doc:** [ag-sept-plan-new.md](ag-sept-plan-new.md) §8.2 and §6.5 are normative for what
-this PR builds; this note records only how PR3 discharges them and the choices made along the
-way
+**Owner doc:** [ag-sept-plan-new.md](../../planning/ag-sept-plan-new.md) §8.2 and §6.5 are normative for what
+this PR builds; this record covers only how PR3 discharges them and the choices made along the
+way.
 **Design input:**
-[`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md)
-owns the design, at `a6e4c21` (indexed by `5017fed`), whose §8 lists the settled Phase 1
-contracts and the mechanics left to implementation. This note does not restate the design, and
-where the two disagree the design note wins.
+[`../../design/horizontal-database-authority.md`](../../design/horizontal-database-authority.md)
+owns the design. It was frozen for this work as the design note at `a6e4c21` (indexed by
+`5017fed`) and promoted to formal design afterwards, retaining its section numbering. Its §8
+lists the settled Phase 1 contracts and the mechanics left to implementation. This record does
+not restate the design, and where the two disagree the formal design wins.
 
 ## 1. Exit gates
 
@@ -39,7 +41,7 @@ that reached its topology by relaxing an invariant would have moved the problem,
 
 **What PR3 may not claim, whatever it measures.** Both authorities, both service units, the
 generator, and the telemetry stack share one 10-vCPU WSL2 allocation
-([`../measurements/environment.md`](../measurements/environment.md)). Authority composition
+([`../measurements/environment.md`](../../measurements/environment.md)). Authority composition
 cannot be quoted as a capacity multiplier from this machine, and PR2's unexplained ~2×
 excursions are still open, so any single reading carries a ±2× caveat — which PR4's node
 exporter does not discharge merely by existing, only by explaining, excluding, or bounding the
@@ -117,7 +119,7 @@ is the bulk of PR3b's generator cost.
 
 `metaResponse` inlines `buildinfo.Info` plus timing configuration and a database block
 (`internal/httpapi/meta.go`, `internal/buildinfo/buildinfo.go`). There is no authority
-identifier, routing version, or schema version. §5.1 of the design note gates setup on schema
+identifier, routing version, or schema version. §5.1 of the formal design gates setup on schema
 compatibility, and §5.2 on reporting authority identity — both are new fields, and both flow
 into `loadgen/servicemeta.go`, which is what makes a run certifiable.
 
@@ -130,7 +132,7 @@ per-authority migration is a loop over DSNs, not a design change.
 `:120-128`), and the HTTP mapping is keyed by outcome and total over the contract
 (`api-surface.md` §2.3). A new reason touches the domain set, the mapping, `api-surface.md`, the
 invariant register, the `measurement-contract.md` §4 taxonomy, and the metric label allowlist.
-The design note names it `cross_authority_unsupported` and states the same list. Priced into
+The formal design names it `cross_authority_unsupported` and states the same list. Priced into
 PR3a at 0.5 days, and part of why PR3a is not the smallest of the three.
 
 ## 4. Budget, by component
@@ -177,7 +179,7 @@ What PR3c must not do is claim the discharge from a generic shutdown.
 | Component | Days |
 |---|---:|
 | Multi-organisation seeding across authorities, with at least two organisations colocated | 0.5 |
-| Correctness matrix — the six cases in design note §6 | 0.5 |
+| Correctness matrix — the six cases in formal design §6 | 0.5 |
 | Failure-isolation experiment: down, observe, restore, verify | 0.5 |
 | Report with per-authority verdicts and the organisation-to-authority distribution | 0.5 |
 
@@ -194,7 +196,7 @@ colocated and nothing is refused that is not refused today.
 
 ### 5.2 Routing lives in the generator *and* is enforced by the service
 
-The design note §4.1 allows static routing to live in the generator for the first experiment,
+The formal design §4.1 allows static routing to live in the generator for the first experiment,
 which is right — a production routing gateway is not needed to prove authority composition. But
 if the generator is the *only* router, then "no supported request reached the wrong authority"
 is a property of the generator's routing table, not of Alloca, and the placement invariant is
@@ -215,7 +217,7 @@ See §3.2. This is a design choice with a budget consequence, not a descope.
 
 ### 5.5 The three contract questions are settled, and one of them cost 0.5 days
 
-Raised against the design note in
+Raised against the formal design in
 [PR #12](https://github.com/nancysworld/alloca-go/pull/12) and settled by its revision of
 2026-08-05. Recorded here because each decides what PR3a builds, and because two of them changed
 the shape of the work rather than merely confirming it.
@@ -243,7 +245,7 @@ the shape of the work rather than merely confirming it.
    unavailable outcome is added to the closed set. The consequence lands on the evidence
    contract rather than the domain: failure-isolation runs report affected and unaffected
    populations separately and are not judged against the aggregate SLO gates that govern a
-   healthy capacity run (design note §6.1 and §7.7, plan §14 PR3c).
+   healthy capacity run (formal design §6.1 and §7.7, plan §14 PR3c).
 
 ### 5.6 A misrouted request is `invalid_request` at the edge, with its own counter
 
@@ -256,7 +258,7 @@ reasons:
 - the note forbids recording it as the user's durable domain outcome on the wrong authority, and
   `invalid_request` is precisely the outcome INV-7 exempts from the recording rule — it is
   rejected at the transport edge and may carry no scope to record against;
-- routing identity is caller-asserted until authentication exists (design note §7.6), so
+- routing identity is caller-asserted until authentication exists (formal design §7.6), so
   `internal_failure` would let a client drive the service's internal-failure rate, which is an
   SLO-relevant signal.
 
@@ -293,14 +295,14 @@ returns `404 unknown_target`.
 
 That is a live behaviour change on a merged contract rather than new functionality, so it was
 raised for an explicit decision rather than allowed to arrive as a side effect of sharding. It
-is **accepted** as part of the design freeze (design note §8, decision 5; Nancy, 2026-08-05).
+is **accepted** as part of the design freeze (formal design §8, decision 5; Nancy, 2026-08-05).
 PR3a therefore carries its normative consequences with it: a line in the invariant register, the
-behaviour stated in [`api-surface.md`](../design/api-surface.md), and a discriminating test that
+behaviour stated in [`api-surface.md`](../../design/api-surface.md), and a discriminating test that
 fails without the comparison.
 
 ### 6.2 Organisation count and skew — a starting fixture, not a contract
 
-The design note's map is now four organisations across two authorities (§5.1 of the note).
+The formal design's map is now four organisations across two authorities (§5.1 of the formal design).
 `[HYPOTHESIS]`: 2:2 by count and deliberately unequal by load, so the one-hot-organisation
 workload and the distribution reporting of the plan's §5.6 have something to show. It stays a
 run parameter that implementation may change on evidence, not an architectural commitment —
@@ -360,8 +362,8 @@ Observed on the containerised topology while validating it (PR3b), and recorded 
 it changes what PR3c's expected-outcome set may assert.
 
 Stopping an authority's container and issuing a request to its unit produced
-**`timeout_server` (504)**, not one of the three outcomes the design note enumerates for an
-unavailable authority — `internal_failure`, `timeout_db`, `unknown_replayable` (design note
+**`timeout_server` (504)**, not one of the three outcomes the formal design enumerates for an
+unavailable authority — `internal_failure`, `timeout_db`, `unknown_replayable` (formal design
 §6.4). The unit's `/readyz` correctly reported 503 throughout, and the healthy authority
 continued serving its own organisations, so failure *isolation* held exactly as designed.
 
@@ -424,7 +426,7 @@ claimed to.
 
 ## 7. Not in PR3
 
-- cross-authority booking, distributed commit, or any saga (design note §10, plan §15);
+- cross-authority booking, distributed commit, or any saga (formal design §10, plan §15);
 - splitting one organisation across authorities;
 - online rebalancing, dual-write migration, or a placement change during a run;
 - a production routing gateway or dynamic shard catalogue;
@@ -432,15 +434,15 @@ claimed to.
 - replica scaling, exporters, dashboards, or the connection-budget control — all PR4;
 - any capacity or throughput-multiplier claim;
 - per-authority client-side attribution (§3.2, §5.4);
-- authentication, which §7.6 of the design note correctly identifies as the real fix for
+- authentication, which §7.6 of the formal design correctly identifies as the real fix for
   caller-asserted routing identity and which no part of AG-Sept delivers.
 
 ## 8. Evidence labels
 
 Every figure in PR3's report carries the `[HYPOTHESIS]`, `[MEASURED]`, `[DERIVED]`, or
 `[PRIOR-UNREPRODUCED]` label required by
-[`measurement-contract.md`](../design/measurement-contract.md) §2. Organisation counts,
-authority counts, and the placement map in this note are `[HYPOTHESIS]` until a run uses them.
+[`measurement-contract.md`](../../design/measurement-contract.md) §2. Organisation counts,
+authority counts, and the placement map in this record are `[HYPOTHESIS]` until a run uses them.
 
 Correctness verdicts are not measurements and carry no label: a gate passes or the run is not
 admissible.

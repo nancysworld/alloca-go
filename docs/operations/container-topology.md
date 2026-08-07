@@ -5,9 +5,9 @@ machine, check it is actually serving what it claims, and tear it down again.
 
 **This document owns the procedure, not the design.** Why the topology has two independent
 writers, what a placement map is, and what Phase 1 supports are owned by
-[`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md);
+[`../design/horizontal-database-authority.md`](../design/horizontal-database-authority.md);
 what PR3 builds against it is
-[`../planning/ag-sept-pr3-scope.md`](../planning/ag-sept-pr3-scope.md). The per-line
+[`../development/implementation/ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md). The per-line
 reasoning for each container lives in the comments of
 [`../../deploy/topology/docker-compose.yml`](../../deploy/topology/docker-compose.yml) and
 [`../../Dockerfile`](../../Dockerfile), which are the authority on *why* each setting is
@@ -239,7 +239,7 @@ docker start alloca-authority-1-db
 drops packets rather than refusing them, so a request hangs to the server deadline and
 returns `timeout_server` rather than failing fast. Killing the container, or a database that
 refuses connections, classifies differently. This is recorded as
-[`ag-sept-pr3-scope.md`](../planning/ag-sept-pr3-scope.md) §6b, and any experiment must name
+[`ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md) §6b, and any experiment must name
 which fault it injected.
 
 ## 6. Down
@@ -383,7 +383,7 @@ a dirty tree, or the build context is missing tracked files. Run
 
 ## 9. What is not wired yet
 
-Deliberately, and recorded in [`ag-sept-pr3-scope.md`](../planning/ag-sept-pr3-scope.md) §6a:
+Deliberately, and recorded in [`ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md) §6a:
 
 - **`cmd/alloca-verify` is still single-authority.** It takes one `--database-url` and one
   `--org`. The authority-aware verifier (`reconcile.RunTopology`) is built and tested as a

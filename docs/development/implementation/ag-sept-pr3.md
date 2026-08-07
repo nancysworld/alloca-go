@@ -308,7 +308,7 @@ workload and the distribution reporting of the plan's §5.6 have something to sh
 run parameter that implementation may change on evidence, not an architectural commitment —
 recorded only so the fixture is chosen rather than defaulted into.
 
-## 6a. What PR3b carries early, and what stays PR3c
+### 6a. What PR3b carries early, and what stays PR3c
 
 Nancy's call, 2026-08-05, after PR3a merged: rather than hold finished work on a branch of
 its own, PR3b takes everything that already exists and PR3c keeps only what still has to be

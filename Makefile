@@ -48,23 +48,27 @@ OBSCOMPOSE   ?= deploy/observability/docker-compose.yml
 # raised and torn down without disturbing whatever is scraping it.
 TOPOCOMPOSE  ?= deploy/topology/docker-compose.yml
 # Immutable experiment tagging (§9.1). Defaults to the working tree's commit so a run's
-# artifacts name an image that can be rebuilt; `-dirty` when the tree has uncommitted changes,
-# which is a warning that the image is not reproducible from any commit.
+# artifacts name the revision the image was built from; `-dirty` when the tree has uncommitted
+# changes, which is a warning that no commit describes what went into it.
+#
+# The tag is a convenience label, not the artifact's identity. §9.1 and ADR-0003 identify the
+# deployed artifact by its immutable image ID or digest, observed off the running container;
+# a tag is a mutable alias that can be reassigned to different content.
 #
 # The dirty test is `git status --porcelain`, not `git diff --quiet`, for one reason: it must
 # agree with the flag the *binary* carries. `go build` decides `vcs.modified` from
 # `git status --porcelain` being non-empty, so it counts staged and untracked files, which
 # `git diff --quiet` — worktree against index — does not see. A tag reading clean on an image
 # whose /meta reports modified=true is worse than no tag: it is the one field an operator
-# would use to decide the run is reproducible.
+# would use to decide the run came from a known commit.
 #
 # **`-dirty` is a warning, not an identifier.** Two different uncommitted trees both tag
 # `abc1234-dirty`, and the second build silently replaces the first under that tag — so two
 # runs carrying the same dirty tag are not known to have used the same image, and must never
-# be compared on the strength of it. Only the clean form satisfies §9.1's "an image that can
-# be rebuilt". That is consistent with the manifest, which refuses `service_source_modified`
-# at `local` and so declines to quote a dirty run at any level; the tag is what tells an
-# operator *why* before they get that far.
+# be compared on the strength of it. Only the clean form satisfies §9.1's requirement that the
+# build be version-controlled. That is consistent with the manifest, which refuses
+# `service_source_modified` at `local` and so declines to quote a dirty run at any level; the
+# tag is what tells an operator *why* before they get that far.
 #
 # Note this counts *any* uncommitted change, including one to a document that cannot affect
 # the binary. That is deliberate: `modified` is a claim about whether the tree matched the

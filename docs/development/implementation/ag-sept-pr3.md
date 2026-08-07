@@ -456,9 +456,19 @@ containerised run whose `image_id` is empty, but it is armed by `container_deplo
 the record itself sets. Omitting the record therefore also disarmed the gate, and the run
 reported a clean lower-provenance result whose missing artifact identity looked like a choice.
 A run that reaches more than one unit is the containerised topology whatever the operator
-remembered to pass, so that is what the requirement keys on. `-require none` remains the
-escape, because a run declaring it supports no claim has nothing for artifact identity to
-qualify — and a requirement with no honest escape teaches people to fabricate records.
+remembered to pass, so that is what the requirement keys on.
+
+**Why `-require` is not the exception it looks like.** The requirement first exempted
+`-require none`, on the reading that a run declaring it supports no claim has nothing for
+artifact identity to qualify. That reading is wrong about the flag. `-require` is the floor a
+run must clear to exit zero, not a ceiling on what its report claims: certification always
+computes the highest level the manifest and summary actually reach, so a stamped binary
+passing `-require none` exits zero *and* writes a report certified at `local` or above —
+naming no artifact. The exemption reopened exactly the bypass the requirement was added to
+close, and under the phrasing an operator is most likely to reach for. There is no level at
+which skipping the record is safe, so there is now no exception. A genuine
+no-evidence mode would have to cap certification, which `-require` does not do; it can be
+built when something needs it.
 
 **What was deliberately not built.** No per-unit map in the manifest: once the preflight has
 established full coverage and one common artifact, the per-unit observations are validation

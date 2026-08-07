@@ -227,7 +227,7 @@ func run(args []string) error {
 	// It runs ahead of the /meta reads deliberately: this check needs no network, so the
 	// failure that is purely local fails first and its message is not preceded by timeouts
 	// from units the run was never going to be able to certify anyway.
-	observed, derr := preflightDeployment(*deployment, targets, want)
+	observed, derr := preflightDeployment(*deployment, targets)
 	if derr != nil {
 		return derr
 	}
@@ -321,20 +321,22 @@ func run(args []string) error {
 // record also clears the flag that arms it: the run reports a clean lower-provenance result
 // and the missing provenance looks like a choice rather than an omission.
 //
-// The requirement is tied to the level the run asks for rather than to a deployment-mode
-// flag. `-require none` is the operator saying this run supports no claim at all — a routing
-// probe, a fixture check — and there is nothing for artifact identity to qualify. Every other
-// level is a claim, and the default is `local`, so forgetting the record is caught by
-// default while deliberately claiming nothing still costs nothing.
-func preflightDeployment(path string, targets []string, want loadgen.Level) (*loadgen.Deployment, error) {
+// **Why no level excuses it.** The requirement keys on the routed topology alone, and
+// deliberately not on -require. That flag is the floor a run must clear to exit zero, not a
+// ceiling on what its report claims: Certify always computes the highest level the manifest
+// and summary actually reach, so a VCS-stamped binary passing `-require none` still writes a
+// report certified at `local` or above — one making a provenance-backed claim while naming no
+// artifact. There is no level at which skipping the record is safe, so there is no exception.
+// A mode that genuinely produces no evidence would have to cap certification, which -require
+// does not do.
+func preflightDeployment(path string, targets []string) (*loadgen.Deployment, error) {
 	if path == "" {
-		if len(targets) > 1 && want != loadgen.LevelNone {
+		if len(targets) > 1 {
 			return nil, fmt.Errorf("a run across %d units needs -deployment: this is the "+
 				"containerised topology, and §6.4 asks it to identify the artifact it measured. "+
 				"service_commit_sha does not cover that — the same code from a stale tag, or "+
 				"rebuilt on a different base layer, carries the same revision on every unit. "+
-				"Record it with `make topo-deployment > test/results/deployment.json`, or pass "+
-				"-require none if this run is not meant to support a claim", len(targets))
+				"Record it with `make topo-deployment > test/results/deployment.json`", len(targets))
 		}
 		return nil, nil
 	}

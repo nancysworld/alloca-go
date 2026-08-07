@@ -142,6 +142,9 @@ func TestMultiAuthorityRunRoutesByPlacementAndRecordsTheTopology(t *testing.T) {
 		"-workload", "multi-org-dispersed",
 		"-concurrency", "4", "-n", "40", "-slots", "5",
 		"-out", reportPath,
+		// Every multi-unit run names its artifact, including this one: asking for no level
+		// does not excuse the record, because -require does not cap what the report certifies.
+		"-deployment", writeDeploymentFor(t, one.server.URL, two.server.URL),
 		// A `go test` binary carries no VCS stamp, so the generator identity the local level
 		// requires can never be present here. What this test is for is the wiring; the
 		// quotability ladder has its own tests, against manifests built directly.
@@ -236,6 +239,7 @@ func TestCrossAuthorityControlRoutesToTheUsersOwnAuthority(t *testing.T) {
 		"-workload", "cross-authority-control",
 		"-concurrency", "2", "-n", "20", "-slots", "4",
 		"-out", filepath.Join(t.TempDir(), "report.json"),
+		"-deployment", writeDeploymentFor(t, one.server.URL, two.server.URL),
 		"-require", "none",
 	})
 	if err != nil {
@@ -435,10 +439,16 @@ func TestAMatchingDeploymentRecordCarriesTheArtifactIdentity(t *testing.T) {
 	}
 }
 
-// A run that declares it supports no claim is the one case with nothing for artifact identity
-// to qualify — a routing probe or a fixture check. Without this escape the requirement would
-// have no way to say "measuring nothing", and operators would learn to fabricate records.
-func TestARunRequiringNoLevelMayOmitTheDeploymentRecord(t *testing.T) {
+// Asking for no level must not buy an exemption, which is the failure the obvious reading of
+// `-require` invites.
+//
+// `-require` is the floor a run must clear to exit zero, not a ceiling on what its report
+// claims: `Certify` computes the level the manifest and summary actually reach whatever the
+// flag says. So a VCS-stamped binary passing `-require none` would exit zero *and* write a
+// report certified at `local` or above — a provenance-backed claim naming no artifact. That
+// makes `-require none` the one phrasing under which an operator would reasonably expect the
+// record to be optional, and the one that must still be refused.
+func TestRequiringNoLevelDoesNotExcuseTheDeploymentRecord(t *testing.T) {
 	one := newUnit(t, "authority-1", []string{"org-a", "org-c"}, "test-v1")
 	two := newUnit(t, "authority-2", []string{"org-b", "org-d"}, "test-v1")
 
@@ -451,8 +461,12 @@ func TestARunRequiringNoLevelMayOmitTheDeploymentRecord(t *testing.T) {
 		"-require", "none",
 		"-out", filepath.Join(t.TempDir(), "report.json"),
 	})
-	if err != nil {
-		t.Fatalf("a run claiming nothing was refused for naming no artifact: %v", err)
+	if err == nil {
+		t.Fatal("a two-unit run measured an artifact it could not name because it asked " +
+			"for no level: -require does not cap what the report certifies")
+	}
+	if !strings.Contains(err.Error(), "-deployment") {
+		t.Errorf("error %q does not name the flag that fixes it", err)
 	}
 }
 

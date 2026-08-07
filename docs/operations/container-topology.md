@@ -337,7 +337,10 @@ things therefore fail the run up front rather than after the numbers exist:
   name;
 - a recorded unit the run does not route to — the record describes some other topology,
   usually because it was taken before the stack was raised again;
-- a run across several units with no `-deployment` at all, unless it declares `-require none`.
+- a run across several units with no `-deployment` at all. No value of `-require` excuses it:
+  that flag sets the level a run must clear to exit zero, not a ceiling on what its report
+  certifies, so `-require none` would still produce a report claiming `local` or above while
+  naming no artifact.
 
 Re-record after anything that recreates a container. `make topo-up` following a rebuild gives
 the units new image IDs, and a record from the previous stack will be refused rather than

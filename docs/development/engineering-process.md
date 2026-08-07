@@ -4,10 +4,12 @@
 
 This document records how engineering work moves from an open question to an architectural
 decision, an implementation, and evidence. It exists to keep decision ownership clear and to
-keep reviews at the right abstraction level.
+keep reviews at the right abstraction level without turning those boundaries into rigid
+permission gates.
 
 The process is tool-assisted, but responsibility remains human: the repository maintainer owns
-goals, scope, accepted trade-offs, merge decisions, and what the project ultimately claims.
+goals, scope, accepted trade-offs, merge decisions, and what the project ultimately claims,
+while participating directly in architecture, implementation reasoning, and review.
 
 ## 1. Principles
 
@@ -36,12 +38,14 @@ property.
 
 ### 1.3 Challenge across the boundary; do not silently cross it
 
-An architecture reviewer should challenge implementation only where it affects the architectural
+An architecture reviewer should challenge implementation where it affects the architectural
 contract or where the contract is not implementable as written. An implementation reviewer
 should challenge architecture where feasibility, complexity, or observed behaviour exposes a
 flaw in the model.
 
-Neither role should quietly rewrite the other layer to make a local review easier.
+These are review emphases, not exclusive permissions. A participant may contribute at both
+layers. The important rule is that a change crossing the architecture/implementation boundary
+is made explicit rather than hidden inside a local implementation choice.
 
 ### 1.4 Evidence closes the loop
 
@@ -54,29 +58,38 @@ The project's evidence labels and quotability rules remain owned by
 
 ## 2. Roles and decision ownership
 
-The roles below describe responsibilities, not particular products. Tools may change without
-changing the process.
+The roles below describe **responsibility and review emphasis, not permissions**. One participant
+may occupy several roles at once, and a question does not have to be routed away merely because
+it falls outside someone's primary role. Anyone should answer or contribute when the reasoning
+is clear; uncertainty, high-impact trade-offs, or boundary-crossing consequences are what
+trigger additional review.
 
-| Role | Owns | Does not own |
+| Role | Primary responsibility | Boundary |
 |---|---|---|
-| **Project owner** | goals, scope, priorities, accepted trade-offs, final decisions, merge and publication | automatic acceptance of any reviewer or agent output |
-| **Architecture / design reviewer** | problem framing, invariants, authority and trust boundaries, formal design, ADR review, cross-cutting architectural consistency | replaceable implementation mechanics unless they affect the architectural contract |
-| **Implementation agent / reviewer** | concrete implementation, tests, implementation records, operational mechanics, feasibility feedback, local validation | silently changing accepted architecture to simplify implementation |
-| **Independent reviewer** | adversarial checks of code, tests, contracts, and evidence; finding assumptions the primary implementation path missed | project ownership or unilateral scope changes |
+| **Project owner** | goals, scope, priorities, accepted trade-offs, final decisions, merge and publication; active participation in architecture and implementation reasoning | does not automatically accept reviewer or agent output; seeks additional review when uncertain or when a decision has material architectural or implementation consequences |
+| **Architecture / design reviewer** | problem framing, invariants, authority and trust boundaries, formal design, ADR review, cross-cutting architectural consistency | avoids prescribing replaceable implementation mechanics unless they affect the architectural contract |
+| **Implementation agent / reviewer** | concrete implementation, tests, implementation records, operational mechanics, feasibility feedback, local validation | does not silently change accepted architecture to simplify implementation; raises the conflict instead |
+| **Independent reviewer** | adversarial checks of code, tests, contracts, and evidence; finding assumptions the primary path missed | does not own project scope or make unilateral architectural changes |
+
+Roles overlap deliberately. In particular, the project owner may act as a **co-architecture /
+design reviewer** and a **co-implementation reviewer**: answering design or implementation
+questions directly when confident, challenging proposals, and helping choose mechanisms and
+trade-offs. The purpose of specialist reviewers is to add depth and independent challenge, not
+to prevent that participation.
 
 ### 2.1 Current AG-Sept working mapping
 
-For transparency, the current tool mapping is:
+For transparency, the current working arrangement is:
 
-| Role | Current tool / owner |
+| Role | Current participant / tool |
 |---|---|
-| Project owner | repository maintainer |
+| Project owner + co-architecture/design reviewer + co-implementation reviewer | repository maintainer |
 | Architecture / design reviewer | ChatGPT |
 | Implementation agent / reviewer | Claude |
 | Additional independent review | Codex when used |
 
-This mapping is descriptive, not architectural. Changing tools does not require changing any
-system design.
+This mapping is descriptive, not architectural. It records how the work is currently shared;
+changing tools or redistributing responsibilities does not require changing system design.
 
 ## 3. Working boundary between architecture and implementation
 
@@ -91,17 +104,22 @@ Examples include:
 - what evidence is required before a claim is admissible;
 - where a trust or provenance boundary belongs.
 
-The preferred flow is:
+For a genuinely unresolved architectural question, the preferred flow is:
 
 1. frame the problem and constraints;
-2. draft or revise the formal design or ADR;
-3. have the implementation role challenge feasibility and hidden cost;
-4. resolve architectural disagreements explicitly;
-5. implement against the accepted contract.
+2. let participants contribute directly where they have a clear answer;
+3. draft or revise the formal design or ADR when the decision needs a durable architectural home;
+4. have implementation challenge feasibility and hidden cost;
+5. resolve material disagreement explicitly;
+6. implement against the accepted contract.
 
 This is the preferred "reverse review" path when the unresolved question is architectural:
 the architecture is made explicit first, then implementation reviews it rather than discovering
 the contract implicitly in code.
+
+The flow is not a requirement to escalate every architecture-related question. Routine questions
+can be answered directly. Escalation is useful when the answer is uncertain, changes a durable
+contract, or would materially constrain later implementation.
 
 ### 3.2 Implementation questions
 
@@ -114,9 +132,11 @@ Examples include:
 - exact preflight sequencing;
 - how an accepted invariant is enforced in the current code.
 
-The implementation role should choose these mechanisms and record why where maintenance needs
-that history. Architecture review should focus on whether the mechanism satisfies the contract,
-not on prescribing an equivalent local implementation unnecessarily.
+Implementation decisions may be made collaboratively. The implementation agent normally turns
+the chosen mechanism into code, tests, and implementation documentation, while the project
+owner and reviewers may propose, answer, challenge, or refine those choices directly.
+Architecture review should focus on whether the mechanism satisfies the contract, not on
+prescribing an equivalent local implementation unnecessarily.
 
 ### 3.3 When an implementation issue becomes architectural
 
@@ -200,8 +220,9 @@ reviews, and explanations produced with AI tools are subject to the same correct
 evidence, and review requirements as human-authored work.
 
 Public documentation may name the tools used when that is useful provenance, but durable rules
-are written in terms of roles so the process survives tool changes. The human project owner is
-responsible for accepting technical decisions and repository claims.
+are written in terms of roles so the process survives tool changes. The human project owner
+participates in technical reasoning across layers and remains responsible for accepting
+technical decisions and repository claims.
 
-No architectural argument is accepted because of which model proposed it. It is accepted
-because the reasoning, implementation, tests, and evidence support it.
+No architectural argument is accepted because of which participant or model proposed it. It is
+accepted because the reasoning, implementation, tests, and evidence support it.

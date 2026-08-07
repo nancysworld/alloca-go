@@ -173,7 +173,7 @@ func capacityCheck(ctx context.Context, q Querier, org domain.OrganisationID, s 
 		return c, nil
 	}
 
-	admitted := s.FreshAdmittedFor(string(domain.OpReserve))
+	admitted := s.FreshAdmittedFor(domain.OpReserve)
 	if live > admitted {
 		c.Detail = fmt.Sprintf("%d live reservations persisted but only %d fresh reserves "+
 			"were admitted: the database holds units the client was never told about",
@@ -269,7 +269,7 @@ func claimsCheck(ctx context.Context, q Querier, org domain.OrganisationID, s lo
 		return c, nil
 	}
 
-	admitted := s.FreshAdmittedFor(string(domain.OpReserve))
+	admitted := s.FreshAdmittedFor(domain.OpReserve)
 	if claims < admitted {
 		c.Detail = fmt.Sprintf("%d live claims for %d fresh admitted reserves: the client "+
 			"was told about holds the schedule does not record", claims, admitted)

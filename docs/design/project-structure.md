@@ -1,6 +1,6 @@
 # Project structure
 
-**Status:** AG-M0 draft
+**Status:** Living — current through AG-Sept PR3b
 **Scope:** the *source-code* architecture — directory purposes, package layout,
 and the dependency rules that make the modular-monolith decision
 ([`../decisions/0001-modular-monolith-first.md`](../decisions/0001-modular-monolith-first.md))
@@ -8,9 +8,9 @@ enforceable at the source level rather than only as a logical diagram.
 
 [`system-context.md`](system-context.md) describes the runtime/logical architecture
 and authority boundaries; this document describes how that maps onto Go packages and
-which imports are allowed. AG-M1 introduces the most consequential package
-boundaries (domain, idempotency, repository, telemetry), so the rules are fixed here
-before that code lands.
+which imports are allowed. AG-M1 introduced the most consequential package boundaries
+(domain, idempotency, repository, telemetry); AG-Sept adds the measurement side —
+`loadgen` and `reconcile` — and the deployed topology those runs address.
 
 ---
 
@@ -21,11 +21,12 @@ before that code lands.
 | `cmd/` | Executable composition roots — `main` packages only. One subdirectory per binary. |
 | `internal/` | All application code. `internal/` prevents import by anything outside this module, keeping the package layout a private implementation detail. |
 | `docs/` | Design docs, decision records, planning, reports, disclosure policy. |
-| `test/` | **Manual, local verification only.** Nothing under here runs in CI. See below. |
-| `test/scripts/` | Operator and developer shell scripts invoked by hand from the Makefile. Never application logic: anything a Go test or a Go binary should own belongs in `internal/` or `cmd/`. |
+| `test/` | **Operator-run verification, with one deliberate exception wired into CI.** See below. |
+| `test/scripts/` | Operator and developer shell scripts invoked from the Makefile. Never application logic: anything a Go test or a Go binary should own belongs in `internal/` or `cmd/`. |
 | `test/results/` | Local load-harness output (git-ignored). Scratch only — a run worth keeping is promoted into `docs/measurements/` deliberately. |
+| `deploy/` | Deployment artifacts — Compose files, configuration, and the placement document. Never Go source. `deploy/topology/` is the PR3b two-authority topology; `deploy/observability/` is the PR2 diagnostic stack. |
 | `.github/` | CI workflows. |
-| `bin/` | Locally provisioned dev tools (git-ignored); never source. |
+| `bin/` | Locally provisioned dev tools and built binaries (git-ignored); never source. |
 
 ### `test/` is the manual tier, not the automated one
 
@@ -36,23 +37,28 @@ The name invites two wrong assumptions, so both are answered here.
 looking for a package's tests will look first. Nothing under `test/` is compiled, and no Go
 tooling treats the name specially — only `testdata/` is special to the toolchain.
 
-**Nothing under it runs in CI.** The automated gates are Go-only: `gofmt`, `go vet`,
-`go build`, `go test ./...`, the race pass, the `-tags=integration` suite against a
-PostgreSQL service, and `golangci-lint`. That is the whole of `.github/workflows/ci.yml`,
-and every one of those targets code under `internal/` and `cmd/`.
+**One thing under it runs in CI, deliberately.** The gates are otherwise Go-only: `gofmt`,
+`go vet`, `go build`, `go test ./...`, the race pass, the `-tags=integration` suite against a
+PostgreSQL service, and `golangci-lint`. Beside them `.github/workflows/ci.yml` runs
+`test/scripts/check-build-context.sh`, which asserts that `.dockerignore` excludes no tracked
+file — the property whose absence stamps every containerised run `vcs.modified=true` and makes
+it uncertifiable at any level (AG-Sept PR3b). It qualifies as a gate because it needs nothing
+an operator would have to provide: no daemon, no database, no judgement. Its end-to-end
+counterpart, `check-image-provenance.sh`, needs Docker and so stays a `make` target.
 
-The split is by *how a check is run*, not by how much it is worth. A merge gate has to
-reproduce on a clean runner with no operator present. What lives in `test/` needs a service
-somebody started, a database holding a fixture they seeded, and — for a load run — judgement
-about whether the numbers mean anything at all (`../operations/load-harness.md` §8). Those
-are properties of the check, not deficiencies to fix later.
+The split is by *what a check needs*, not by how much it is worth. A merge gate has to
+reproduce on a clean runner with no operator present. Most of what lives in `test/` needs a
+service somebody started, a database holding a fixture they seeded, and — for a load run —
+judgement about whether the numbers mean anything at all (`../operations/load-harness.md` §8).
+Those are properties of the check, not deficiencies to fix later.
 
 So a red CI run means the code is broken; a green one is silent about whether the service
 answers over a real socket, and silent about every number the harness produces. That is
 what `make smoke` and the harness are for, and why they are invoked by a person.
 
-If something here ever earns a merge gate, wire it into CI deliberately and move it out —
-the directory records where a check runs, never how much it is trusted.
+When something here earns a merge gate, wire it into CI deliberately and record it above, as
+`check-build-context.sh` is. The directory records what a check needs in order to run, never
+how much it is trusted.
 
 There is no `pkg/` directory: this module publishes no library API for external
 consumers, so everything lives under `internal/`. A `pkg/` tree would be added only
@@ -72,15 +78,16 @@ if we deliberately export reusable packages, which is out of scope for AG-M0–M
   signal that the dependency should be passed in (via a constructor argument or an
   interface), not reached for.
 
-Current composition root: `cmd/alloca-go/main.go` builds `config` → `httpapi` and
-runs the server. As AG-M1 adds a database and services, `main` grows the wiring for
-those; the packages themselves stay ignorant of how they are assembled.
+The service's composition root is `cmd/alloca-go/main.go`: it builds `config` → `postgres` →
+`service` → `httpapi`, starts the expiry worker, and manages lifecycle. The measurement
+binaries are composition roots of their own over the same `internal/` packages — the packages
+stay ignorant of how they are assembled.
 
 ---
 
 ## 3. Intended internal package layout
 
-Present (through AG-M1):
+Present (through AG-Sept PR3b):
 
 ```text
 internal/
@@ -95,7 +102,11 @@ internal/
   httpapi/      # transport adapter: HTTP <-> service calls, outcome->status mapping
   worker/       # background expiry scheduling
   telemetry/    # observation types + Recorder port; slog implementation
+  metrics/      # adapter leaf: the aggregated Recorder AG-Sept measures with
   ids/          # server-minted random identifiers (implements domain.IDGen)
+  loadgen/      # external load harness: routing, workloads, run manifest, certification
+  reconcile/    # post-run correctness self-check against persisted state and scrapes
+  observability/# no shipped code: a test pinning the dashboard and the report to one query
 ```
 
 Planned as AG-M2+ land (names indicative, boundaries normative):
@@ -142,6 +153,22 @@ ids
 
 telemetry
     -> domain                     (outcome vocabulary only; injected by cmd)
+
+loadgen                           (AG-Sept: the external harness)
+    -> domain, buildinfo, httpapi (an HTTP client of the service, not a part of it;
+                                   httpapi is imported for StatusForOutcome alone, so
+                                   response validation checks the service's own
+                                   status<->outcome mapping rather than a copy of it)
+
+reconcile                         (AG-Sept: the post-run self-check)
+    -> domain, loadgen            (reads persisted state through a Querier it declares
+                                   itself, so the pool is supplied by cmd and this
+                                   package never imports postgres)
+
+cmd/alloca-load    -> domain, loadgen
+cmd/alloca-verify  -> domain, loadgen, reconcile
+cmd/alloca-seed    -> config, domain, postgres
+cmd/alloca-migrate -> postgres
 ```
 
 `httpapi` and `worker` declare the narrow interfaces they consume (`BookingService`,
@@ -164,8 +191,12 @@ transactional core be tested and reasoned about without a database.
   any other adapter — nor any PostgreSQL-specific/`pgx` package.
 - `service` must not import `httpapi`, `cmd`, or `postgres`.
 - No `internal/` package may import `cmd/`.
-- Adapters (`postgres`, `telemetry`) must not import `httpapi` or each other; they are
-  leaves wired together only by `cmd`.
+- Adapters (`postgres`, `telemetry`, `metrics`) must not import `httpapi` or each other; they
+  are leaves wired together only by `cmd`.
+- `loadgen` must not import `postgres` or hold database credentials. It is a client of the
+  service's HTTP contract, and a published capacity claim requires it to be able to run on
+  separate compute (ag-sept-plan §6.3); reconciling client totals against persisted state is
+  `reconcile`'s job, reached through the `Querier` it declares.
 - Transport concerns (HTTP status codes, request/response encoding) stay in
   `httpapi`; database concerns (SQL, transactions, driver types) stay in `postgres`.
   Neither leaks into `domain` or `service`.
@@ -201,19 +232,23 @@ advisory-lock key.
 
 ---
 
-## 5. Future executables
+## 5. Executables
 
-Additional binaries are added as `cmd/<name>/` composition roots that reuse
-`internal/` packages. Planned:
+Additional binaries are `cmd/<name>/` composition roots that reuse `internal/` packages.
+Present:
 
-- `cmd/loadgen/` — the external Go load generator (AG-M2). It is a **separate binary**
-  and, for any published capacity claim, runs on **separate compute** from the
-  service. It may import shared `internal/` packages (e.g. domain outcome types for
-  response validation) but must not import the service's transport or database
-  adapters.
+- `cmd/alloca-go/` — the service.
+- `cmd/alloca-load/` — the external load generator (AG-Sept; the binary the AG-M0 draft
+  anticipated as `cmd/loadgen`). It is a **separate binary** and, for any published capacity
+  claim, runs on **separate compute** from the service. It holds no database credentials and
+  imports neither `postgres` nor `service`.
+- `cmd/alloca-verify/` — the post-run reconciler, which does hold credentials because reading
+  persisted state is the whole point of it. Keeping it out of the generator is what lets the
+  generator move.
+- `cmd/alloca-migrate/`, `cmd/alloca-seed/` — migration and fixture tools.
 
-Migrations, one-off operational tools, etc. follow the same pattern: a thin `main`
-under `cmd/` over reusable `internal/` code.
+Further one-off operational tools follow the same pattern: a thin `main` under `cmd/` over
+reusable `internal/` code.
 
 ---
 
@@ -258,7 +293,9 @@ planned remain indicative until code lands.
 | Request admission and per-node ordering | `internal/admission` (indicative) | optional domain/service integration | Planned, AG-M2+ |
 | Background expiry and settlement | expiry policy in `internal/service` (`SettleSlot`); scheduling in `internal/worker` | `internal/postgres` candidate query | Implemented, AG-M1 |
 | Telemetry | `internal/telemetry` | observation boundary per [`observability.md`](observability.md); metrics backend AG-M2+ | Emission implemented, AG-M1 |
-| External load generation | `cmd/loadgen` | experiment/load-generation packages under `internal/` | Planned, AG-M2 |
+| External load generation | `cmd/alloca-load` | `internal/loadgen` — routing, workloads, run manifest, certification | Implemented, AG-Sept PR1–PR3b |
+| Post-run reconciliation and the quotability verdict | `cmd/alloca-verify` | `internal/reconcile` over a `Querier` it declares; `internal/loadgen` for the manifest it checks against | Implemented, AG-Sept PR1–PR3b |
+| Multi-authority deployment topology | `deploy/topology` | placement document enforced by `internal/domain`/`internal/httpapi` and routed by `internal/loadgen` | Implemented, AG-Sept PR3b |
 
 The mapping does not weaken the dependency rules in §4. In particular, the fact
 that a logical module spans packages does not permit transport or persistence types

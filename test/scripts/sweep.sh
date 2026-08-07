@@ -2,7 +2,7 @@
 #
 # Run one bounded sweep of AG-Sept PR2 cells, one artifact directory each.
 #
-# A cell is not just "run the load generator". ag-sept-pr2-scope.md §5.4 fixes the sequence,
+# A cell is not just "run the load generator". ag-sept-pr2.md §5.4 fixes the sequence,
 # and every step in it exists because of a failure the harness has already met:
 #
 #   seed -> restart service -> warm up -> reset fixture (service keeps running)

@@ -53,7 +53,7 @@ type Service struct {
 	ttl  time.Duration
 	// placement answers which writable authority owns an organisation. The service
 	// needs it for one decision only — whether a booking's two business authorities
-	// are colocated — and never derives a connection from it (design note §4.3).
+	// are colocated — and never derives a connection from it (horizontal-database design §4.3).
 	placement domain.Placement
 }
 

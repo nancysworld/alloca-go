@@ -110,6 +110,18 @@ func Certify(m Manifest, s Summary) Quotability {
 		}
 	}
 
+	// A topology whose units do not describe one deployment is unsound, not merely
+	// under-documented. Its client totals are two services averaged together, and no amount
+	// of manifest completeness makes that a measurement of anything — so it drops to none
+	// rather than stopping partway up the ladder.
+	if m.TopologyDisagreement != "" {
+		return Quotability{
+			Level:          LevelNone,
+			BlockedFrom:    LevelLocal,
+			BlockedBecause: "the topology did not describe one deployment: " + m.TopologyDisagreement,
+		}
+	}
+
 	reached := LevelNone
 	for _, want := range ladder {
 		if missing := m.Validate(want); len(missing) > 0 {

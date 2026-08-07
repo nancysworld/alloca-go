@@ -105,6 +105,42 @@ func TestClassifyCommitTimeoutSQLSTATEs(t *testing.T) {
 			wantOut: domain.OutcomeTimeoutDB,
 		},
 		{
+			// Operator intervention is the server saying the *session* ended, not that
+			// the transaction was refused — and a commit already flushed to WAL survives
+			// a crash and is recovered. Calling these definite failures would invite a
+			// client to reissue under a new key, which is the one thing that breaks the
+			// one-key-one-mutation gate.
+			name:    "backend terminated during commit",
+			ctx:     live,
+			err:     &pgconn.PgError{Code: pgerrcode.AdminShutdown, Message: "terminating connection due to administrator command"},
+			wantIs:  domain.ErrCommitUnknown,
+			wantOut: domain.OutcomeUnknownReplayable,
+		},
+		{
+			name:    "server crashed during commit",
+			ctx:     live,
+			err:     &pgconn.PgError{Code: pgerrcode.CrashShutdown, Message: "terminating connection because of crash of another server process"},
+			wantIs:  domain.ErrCommitUnknown,
+			wantOut: domain.OutcomeUnknownReplayable,
+		},
+		{
+			name:    "connection exception during commit",
+			ctx:     live,
+			err:     &pgconn.PgError{Code: pgerrcode.ConnectionFailure, Message: "connection failure"},
+			wantIs:  domain.ErrCommitUnknown,
+			wantOut: domain.OutcomeUnknownReplayable,
+		},
+		{
+			// The control: a genuine rejection is still definite. Without this the two
+			// cases above could be satisfied by classifying every PgError as ambiguous,
+			// which would lose every real constraint violation into "unknown".
+			name:    "constraint violation on commit is a definite failure",
+			ctx:     live,
+			err:     &pgconn.PgError{Code: pgerrcode.UniqueViolation, Message: "duplicate key value"},
+			wantIs:  nil,
+			wantOut: domain.OutcomeInternalFailure,
+		},
+		{
 			name:    "lock_timeout on commit",
 			ctx:     live,
 			err:     &pgconn.PgError{Code: pgerrcode.LockNotAvailable, Message: "canceling statement due to lock timeout"},

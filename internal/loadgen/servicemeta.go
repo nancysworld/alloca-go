@@ -35,7 +35,23 @@ type ServiceMeta struct {
 	Database struct {
 		Version      string `json:"version"`
 		PoolMaxConns int    `json:"pool_max_conns"`
+		// SchemaVersion is the migration version this authority is at, validated by the
+		// unit's own startup gate before it served anything (INV-27). Two authorities at
+		// different versions are not interchangeable, which is what makes this a
+		// certification input rather than a diagnostic.
+		SchemaVersion int64 `json:"schema_version"`
 	} `json:"database"`
+
+	// Placement is which authority this unit is and which routing it is serving under. It
+	// is the field that makes a multi-unit run checkable: nothing in the request totals
+	// would reveal two units disagreeing about placement, and that disagreement is the
+	// split-brain the horizontal-database design records as §7.3.
+	Placement struct {
+		AuthorityID    string   `json:"authority_id"`
+		RoutingVersion string   `json:"routing_version"`
+		Sharded        bool     `json:"sharded"`
+		Organisations  []string `json:"organisations"`
+	} `json:"placement"`
 
 	// TelemetryMode names which recorder the service is running. Two runs under different
 	// observation settings are not comparable, and nothing in the totals would say so — this
@@ -91,6 +107,16 @@ func (m ServiceMeta) DriftFrom(before ServiceMeta) string {
 	case m.Database.Version != before.Database.Version:
 		return fmt.Sprintf("the database version changed during the run, from %q to %q",
 			before.Database.Version, m.Database.Version)
+	case m.Placement.RoutingVersion != before.Placement.RoutingVersion:
+		return fmt.Sprintf("the unit's routing version changed during the run, from %q to %q: "+
+			"part of the workload was routed by a placement the rest was not",
+			before.Placement.RoutingVersion, m.Placement.RoutingVersion)
+	case m.Placement.AuthorityID != before.Placement.AuthorityID:
+		return fmt.Sprintf("the unit's authority changed during the run, from %q to %q",
+			before.Placement.AuthorityID, m.Placement.AuthorityID)
+	case m.Database.SchemaVersion != before.Database.SchemaVersion:
+		return fmt.Sprintf("the authority's schema version changed during the run, from %d to %d",
+			before.Database.SchemaVersion, m.Database.SchemaVersion)
 	case m.Database.PoolMaxConns != before.Database.PoolMaxConns:
 		return fmt.Sprintf("the pool ceiling changed during the run, from %d to %d: it is one "+
 			"of the admission boundaries a frontier is read against",

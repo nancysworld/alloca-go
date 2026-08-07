@@ -7,7 +7,7 @@ produced may be quoted.
 number may be quoted are owned by
 [`../design/measurement-contract.md`](../design/measurement-contract.md) and
 [`ag-sept-plan-new.md`](../planning/ag-sept-plan-new.md) §6; what PR1 built against them is recorded
-in [`ag-sept-pr1-scope.md`](../planning/ag-sept-pr1-scope.md). Where those disagree with
+in [`ag-sept-pr1.md`](../development/implementation/ag-sept-pr1.md). Where those disagree with
 this page, they win.
 
 ## 1. The four binaries

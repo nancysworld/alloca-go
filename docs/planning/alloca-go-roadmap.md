@@ -659,7 +659,8 @@ docs/
   decisions/
     0001-modular-monolith-first.md
     0002-postgresql-authority.md
-    0003-capacity-unit-selection.md
+    0003-deployed-artifact-identity.md
+    0004-capacity-unit-selection.md
   reports/
     local-capacity-frontier.md
     aws-capacity-economics.md

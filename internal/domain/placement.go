@@ -13,7 +13,7 @@ import (
 // AuthorityID names one writable PostgreSQL authority. It is a logical name, not a
 // DSN: business code asks which authority owns an organisation and never derives a
 // connection string, which is the routing boundary the horizontal-database-authority
-// note keeps stable for Phase 2 (design note §4.3, obligation 2).
+// note keeps stable for Phase 2 (horizontal-database design §4.3, obligation 2).
 //
 // It is bounded by topology — a deployment has as many authorities as it has database
 // instances — so unlike an organisation it is safe as a metric label
@@ -25,7 +25,7 @@ type AuthorityID string
 //
 // It is immutable for the duration of a run. That is not a convenience: two components
 // disagreeing about placement would write one organisation to two authorities and
-// silently divide its source of truth, which is the split-brain risk the design note
+// silently divide its source of truth, which is the split-brain risk the horizontal-database design
 // records as §7.3. Every artifact records Version so a result can be read against the
 // routing that produced it.
 //
@@ -130,7 +130,7 @@ func decodeDocument(dec *json.Decoder) (version string, homes json.RawMessage, e
 // into a map cannot see the ambiguity: `{"org-a":"authority-1","org-a":"authority-2"}`
 // becomes a perfectly well-formed one-entry map. That is the single most dangerous thing
 // a placement document can do quietly — an operator reading the file sees one routing and
-// the service uses another — and the design note requires setup to fail when an
+// the service uses another — and the horizontal-database design requires setup to fail when an
 // organisation is "assigned more than once" (§5.1). So the keys are walked as tokens.
 func decodeHomes(raw json.RawMessage, version string) (map[OrganisationID]AuthorityID, error) {
 	if len(raw) == 0 {
@@ -242,7 +242,7 @@ func (p Placement) AuthorityFor(org OrganisationID) (AuthorityID, bool) {
 // Colocated reports whether two organisations resolve to the same writable authority,
 // and whether both are placed at all.
 //
-// This is the Phase 1 support boundary in one call (design note §4.1):
+// This is the Phase 1 support boundary in one call (horizontal-database design §4.1):
 //
 //	authority(slot_organisation_id) == authority(user_organisation_id)
 //

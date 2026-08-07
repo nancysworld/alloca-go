@@ -1,0 +1,36 @@
+# The build context deliberately *includes* .git: `go build` reads the VCS revision from it
+# and stamps it into the binary, which is what /meta reports and what makes a run
+# certifiable (ag-sept-plan-new.md §6.4). An image built without it serves an unstamped
+# binary and every run against it is uncertifiable — the failure looks like a harness bug.
+#
+# **The rule that follows from that: this file may exclude only paths git already ignores.**
+#
+# Go decides `vcs.modified` by running `git status --porcelain` inside the build context and
+# testing whether the output is empty. Excluding a *tracked* path does not hide it from that
+# check — it makes git report the file as deleted, so the context reads as a modified tree
+# and the binary is stamped `modified=true` even when the host checkout is spotless. The
+# manifest refuses `service_source_modified` at `local`, the floor of the ladder, so the
+# effect is not a cosmetic flag: it makes the production-shaped image uncertifiable by
+# construction, and every run against it unquotable at any level.
+#
+# That is not hypothetical — an earlier version of this file excluded `docs/`, `test/`,
+# `.github/` and `*.md`, which put 1,330 deleted paths in the context. The cost of the rule
+# is a large context, because `docs/measurements/` is tracked and holds ~108 MB of result
+# data; everything else tracked is under 2 MB. `make image-provenance` is the control that
+# proves the stamp is honest, and `make build-context-check` fails if anything tracked is
+# excluded here again.
+#
+# Every entry below is matched by .gitignore. Keep it that way.
+bin/
+dist/
+coverage/
+coverage.out
+test/results/
+deploy/observability/targets/
+.env
+.env.*
+.vscode/
+.idea/
+*.log
+*.tfstate
+*.tfstate.*

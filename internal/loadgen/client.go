@@ -38,7 +38,7 @@ import (
 // Response is one completed request as the client saw it: the two dimensions that must
 // agree, the orthogonal replay flag, and the latency the client measured.
 type Response struct {
-	Operation string
+	Operation domain.Operation
 	Status    int
 	Outcome   domain.Outcome
 	Reason    domain.Reason
@@ -70,18 +70,28 @@ type body struct {
 	BookingID     string         `json:"booking_id"`
 }
 
-// Client issues booking requests against one service base URL.
+// Client issues booking requests against the service unit that owns each request's
+// organisation, as decided by its Router.
 type Client struct {
-	http    *http.Client
-	baseURL string
+	http   *http.Client
+	router Router
 	// validate reports whether responses are checked. False is the negative control's
 	// mode and nothing else — see the package comment.
 	validate bool
+	// ambiguous collects mutations whose outcome the client could not settle, so they
+	// can be replayed under their own keys once the authority is back (ambiguous.go).
+	ambiguous ambiguityRegister
 }
 
-// NewClient builds a Client. validate=false is the response-validation negative control
-// and marks every run it produces invalid.
+// NewClient builds a Client routing everything to one base URL — the unsharded case, and
+// what every run before PR3b did. validate=false is the response-validation negative
+// control and marks every run it produces invalid.
 func NewClient(baseURL string, timeout time.Duration, validate bool) *Client {
+	return NewRoutedClient(SingleTarget(baseURL), timeout, validate)
+}
+
+// NewRoutedClient builds a Client that routes by placement.
+func NewRoutedClient(router Router, timeout time.Duration, validate bool) *Client {
 	return &Client{
 		http: &http.Client{
 			Timeout: timeout,
@@ -95,28 +105,49 @@ func NewClient(baseURL string, timeout time.Duration, validate bool) *Client {
 				IdleConnTimeout:     90 * time.Second,
 			},
 		},
-		baseURL:  baseURL,
+		router:   router,
 		validate: validate,
 	}
 }
 
+// Router exposes the routing this client uses, so the manifest can record the version and
+// the harness can reach every unit's /meta without being told where they are twice.
+func (c *Client) Router() Router { return c.router }
+
 // Reserve holds one unit of a slot for a user.
+//
+// Routed by the *user's* organisation, not the slot's: user-home owns the schedule claim
+// and the client idempotency scope, so it is where this mutation and every replay of it
+// belong (horizontal-database-authority §4.1). Whether the slot's organisation is colocated
+// is the service's decision, not the router's — sending it there and being refused is the
+// supported behaviour, and routing around the refusal would hide it.
 func (c *Client) Reserve(ctx context.Context, u User, slot Slot, key string) Response {
-	path := fmt.Sprintf("%s/v1/slots/%s/%s/reservations",
-		c.baseURL, slot.OrganisationID, slot.SlotID)
-	return c.do(ctx, string(domain.OpReserve), path, u, key)
+	base, err := c.router.For(u.OrganisationID)
+	if err != nil {
+		return unroutable(domain.OpReserve, err)
+	}
+	path := fmt.Sprintf("%s/v1/slots/%s/%s/reservations", base, slot.OrganisationID, slot.SlotID)
+	return c.do(ctx, domain.OpReserve, path, u, key)
 }
 
 // Confirm turns a held reservation into a booking.
 func (c *Client) Confirm(ctx context.Context, u User, reservationID, key string) Response {
-	path := fmt.Sprintf("%s/v1/reservations/%s/confirm", c.baseURL, reservationID)
-	return c.do(ctx, string(domain.OpConfirm), path, u, key)
+	base, err := c.router.For(u.OrganisationID)
+	if err != nil {
+		return unroutable(domain.OpConfirm, err)
+	}
+	path := fmt.Sprintf("%s/v1/reservations/%s/confirm", base, reservationID)
+	return c.do(ctx, domain.OpConfirm, path, u, key)
 }
 
 // Cancel releases a held reservation or an active booking.
 func (c *Client) Cancel(ctx context.Context, u User, reservationID, key string) Response {
-	path := fmt.Sprintf("%s/v1/reservations/%s/cancel", c.baseURL, reservationID)
-	return c.do(ctx, string(domain.OpCancel), path, u, key)
+	base, err := c.router.For(u.OrganisationID)
+	if err != nil {
+		return unroutable(domain.OpCancel, err)
+	}
+	path := fmt.Sprintf("%s/v1/reservations/%s/cancel", base, reservationID)
+	return c.do(ctx, domain.OpCancel, path, u, key)
 }
 
 // do issues one mutation and classifies what came back.
@@ -124,7 +155,7 @@ func (c *Client) Cancel(ctx context.Context, u User, reservationID, key string) 
 // A transport failure is classified as a timeout or an internal failure rather than
 // discarded: a request the client gave up on still happened, and dropping it is how a
 // client-side stall gets reported as server capacity.
-func (c *Client) do(ctx context.Context, op, url string, u User, key string) Response {
+func (c *Client) do(ctx context.Context, op domain.Operation, url string, u User, key string) Response {
 	payload, err := json.Marshal(map[string]string{
 		"user_organisation_id": string(u.OrganisationID),
 		"user_id":              string(u.UserID),
@@ -171,7 +202,22 @@ func (c *Client) do(ctx context.Context, op, url string, u User, key string) Res
 	out.Outcome, out.Reason, out.Replay = b.Outcome, b.Reason, b.Replay
 	out.ReservationID, out.BookingID = b.ReservationID, b.BookingID
 	out.Invalid = c.check(out)
+	c.recordIfAmbiguous(op, url, u, key, out)
 	return out
+}
+
+// recordIfAmbiguous registers a mutation the client could not settle.
+//
+// It is called on the one path that produces a parsed response, deliberately: a transport
+// failure is classified as a timeout above and *is* a definite client-side fact — the
+// request may still have committed, but that is the timeout contract's problem, not this
+// register's. What lands here is the server's own admission that its commit outcome is
+// unknown.
+func (c *Client) recordIfAmbiguous(op domain.Operation, url string, u User, key string, resp Response) {
+	if resp.Outcome != domain.OutcomeUnknownReplayable {
+		return
+	}
+	c.ambiguous.record(Ambiguous{Operation: op, User: u, Key: key, path: url})
 }
 
 // check validates the two dimensions §5.4 requires, and returns the first disagreement.
@@ -227,4 +273,18 @@ func transportOutcome(ctx context.Context, err error) domain.Outcome {
 func isTimeout(err error) bool {
 	var nerr net.Error
 	return errors.As(err, &nerr) && nerr.Timeout()
+}
+
+// unroutable reports a request the generator could not address at all.
+//
+// It is marked Invalid rather than given an outcome the service might have produced: no
+// request was sent, so there is no server behaviour to classify, and counting it as an
+// internal_failure would attribute a harness error to the thing being measured. Invalid is
+// the harness's own channel for "this run is not trustworthy" (measurement-contract §5).
+func unroutable(op domain.Operation, err error) Response {
+	return Response{
+		Operation: op,
+		Outcome:   domain.OutcomeInternalFailure,
+		Invalid:   "unroutable request: " + err.Error(),
+	}
 }

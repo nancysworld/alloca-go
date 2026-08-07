@@ -1,18 +1,21 @@
-# AG-Sept PR3 — Horizontal database authority, Phase 1 (scope)
+# AG-Sept PR3 — Horizontal database authority, Phase 1
 
-**Status:** Frozen for implementation. The design is accepted (design note §8), the budget and
-PR split are agreed, and §6 holds no blocker — its one remaining item is a starting fixture, not
-a contract.
-**Budget:** 7.5 development days across three PRs ([AG-Sept plan](ag-sept-plan-new.md) §4) —
-3.0 for PR3a, 2.5 for PR3b, 2.0 for PR3c
-**Owner doc:** [ag-sept-plan-new.md](ag-sept-plan-new.md) §8.2 and §6.5 are normative for what
-this PR builds; this note records only how PR3 discharges them and the choices made along the
-way
+**Type:** Implementation record, spanning PR3a/3b/3c
+**Status:** In progress. PR3a is merged (#13); PR3b is in review; PR3c is not started. The
+design was accepted before implementation began (formal design §8), and §6 holds no blocker —
+its one remaining item is a starting fixture, not a contract.
+**Budget:** 7.5 development days across three PRs ([AG-Sept plan](../../planning/ag-sept-plan-new.md) §4) —
+3.0 for PR3a, 2.5 for PR3b, 2.0 for PR3c. **PR3a came in at 1.0**; the 2.0 difference went
+to the plan's contingency, not to PR3b or PR3c.
+**Owner doc:** [ag-sept-plan-new.md](../../planning/ag-sept-plan-new.md) §8.2 and §6.5 are normative for what
+this PR builds; this record covers only how PR3 discharges them and the choices made along the
+way.
 **Design input:**
-[`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md)
-owns the design, at `a6e4c21` (indexed by `5017fed`), whose §8 lists the settled Phase 1
-contracts and the mechanics left to implementation. This note does not restate the design, and
-where the two disagree the design note wins.
+[`../../design/horizontal-database-authority.md`](../../design/horizontal-database-authority.md)
+owns the design. It was frozen for this work as the design note at `a6e4c21` (indexed by
+`5017fed`) and promoted to formal design afterwards, retaining its section numbering. Its §8
+lists the settled Phase 1 contracts and the mechanics left to implementation. This record does
+not restate the design, and where the two disagree the formal design wins.
 
 ## 1. Exit gates
 
@@ -38,7 +41,7 @@ that reached its topology by relaxing an invariant would have moved the problem,
 
 **What PR3 may not claim, whatever it measures.** Both authorities, both service units, the
 generator, and the telemetry stack share one 10-vCPU WSL2 allocation
-([`../measurements/environment.md`](../measurements/environment.md)). Authority composition
+([`docs/measurements/environment.md`](../../measurements/environment.md)). Authority composition
 cannot be quoted as a capacity multiplier from this machine, and PR2's unexplained ~2×
 excursions are still open, so any single reading carries a ±2× caveat — which PR4's node
 exporter does not discharge merely by existing, only by explaining, excluding, or bounding the
@@ -61,7 +64,8 @@ excursion. PR3 is correctness-first by design, not by descope.
 | 11 | Authority-aware verifier with one aggregated verdict | 3b | §6.5 |
 | 12 | Phase 1 correctness experiments and per-authority verdicts | 3c | §11 |
 | 13 | Failure-isolation experiment — one authority down, ambiguous mutations replayed, then restored | 3c | §11 |
-| 14 | Ambiguous-request register and post-restoration replay pass (§5.7) | 3b/3c | §6.5 |
+| 14 | Ambiguous-request register and `ResolveAmbiguous` (§5.7) | 3b | §6.5 |
+| 15 | `classifyCommit` ambiguity fix and the INV-21 terminated-session fault test | 3b, early | §3.2 |
 
 ## 3. What the existing code makes cheap, and what it does not
 
@@ -115,7 +119,7 @@ is the bulk of PR3b's generator cost.
 
 `metaResponse` inlines `buildinfo.Info` plus timing configuration and a database block
 (`internal/httpapi/meta.go`, `internal/buildinfo/buildinfo.go`). There is no authority
-identifier, routing version, or schema version. §5.1 of the design note gates setup on schema
+identifier, routing version, or schema version. §5.1 of the formal design gates setup on schema
 compatibility, and §5.2 on reporting authority identity — both are new fields, and both flow
 into `loadgen/servicemeta.go`, which is what makes a run certifiable.
 
@@ -128,7 +132,7 @@ per-authority migration is a loop over DSNs, not a design change.
 `:120-128`), and the HTTP mapping is keyed by outcome and total over the contract
 (`api-surface.md` §2.3). A new reason touches the domain set, the mapping, `api-surface.md`, the
 invariant register, the `measurement-contract.md` §4 taxonomy, and the metric label allowlist.
-The design note names it `cross_authority_unsupported` and states the same list. Priced into
+The formal design names it `cross_authority_unsupported` and states the same list. Priced into
 PR3a at 0.5 days, and part of why PR3a is not the smallest of the three.
 
 ## 4. Budget, by component
@@ -150,7 +154,7 @@ targeted fault-injection mechanism proves cheap it can be taken inside PR3c; if 
 is a contingency draw of about 0.5 days or it is left open, exactly as it has been since AG-M1.
 What PR3c must not do is claim the discharge from a generic shutdown.
 
-**PR3a — 3.0 days**
+**PR3a — 3.0 days allocated, 1.0 actual**
 
 | Component | Days |
 |---|---:|
@@ -175,7 +179,7 @@ What PR3c must not do is claim the discharge from a generic shutdown.
 | Component | Days |
 |---|---:|
 | Multi-organisation seeding across authorities, with at least two organisations colocated | 0.5 |
-| Correctness matrix — the six cases in design note §6 | 0.5 |
+| Correctness matrix — the six cases in formal design §6 | 0.5 |
 | Failure-isolation experiment: down, observe, restore, verify | 0.5 |
 | Report with per-authority verdicts and the organisation-to-authority distribution | 0.5 |
 
@@ -192,7 +196,7 @@ colocated and nothing is refused that is not refused today.
 
 ### 5.2 Routing lives in the generator *and* is enforced by the service
 
-The design note §4.1 allows static routing to live in the generator for the first experiment,
+The formal design §4.1 allows static routing to live in the generator for the first experiment,
 which is right — a production routing gateway is not needed to prove authority composition. But
 if the generator is the *only* router, then "no supported request reached the wrong authority"
 is a property of the generator's routing table, not of Alloca, and the placement invariant is
@@ -213,7 +217,7 @@ See §3.2. This is a design choice with a budget consequence, not a descope.
 
 ### 5.5 The three contract questions are settled, and one of them cost 0.5 days
 
-Raised against the design note in
+Raised against the formal design in
 [PR #12](https://github.com/nancysworld/alloca-go/pull/12) and settled by its revision of
 2026-08-05. Recorded here because each decides what PR3a builds, and because two of them changed
 the shape of the work rather than merely confirming it.
@@ -241,7 +245,7 @@ the shape of the work rather than merely confirming it.
    unavailable outcome is added to the closed set. The consequence lands on the evidence
    contract rather than the domain: failure-isolation runs report affected and unaffected
    populations separately and are not judged against the aggregate SLO gates that govern a
-   healthy capacity run (design note §6.1 and §7.7, plan §14 PR3c).
+   healthy capacity run (formal design §6.1 and §7.7, plan §14 PR3c).
 
 ### 5.6 A misrouted request is `invalid_request` at the edge, with its own counter
 
@@ -254,7 +258,7 @@ reasons:
 - the note forbids recording it as the user's durable domain outcome on the wrong authority, and
   `invalid_request` is precisely the outcome INV-7 exempts from the recording rule — it is
   rejected at the transport edge and may carry no scope to record against;
-- routing identity is caller-asserted until authentication exists (design note §7.6), so
+- routing identity is caller-asserted until authentication exists (formal design §7.6), so
   `internal_failure` would let a client drive the service's internal-failure rate, which is an
   SLO-relevant signal.
 
@@ -291,22 +295,197 @@ returns `404 unknown_target`.
 
 That is a live behaviour change on a merged contract rather than new functionality, so it was
 raised for an explicit decision rather than allowed to arrive as a side effect of sharding. It
-is **accepted** as part of the design freeze (design note §8, decision 5; Nancy, 2026-08-05).
+is **accepted** as part of the design freeze (formal design §8, decision 5; Nancy, 2026-08-05).
 PR3a therefore carries its normative consequences with it: a line in the invariant register, the
-behaviour stated in [`api-surface.md`](../design/api-surface.md), and a discriminating test that
+behaviour stated in [`api-surface.md`](../../design/api-surface.md), and a discriminating test that
 fails without the comparison.
 
 ### 6.2 Organisation count and skew — a starting fixture, not a contract
 
-The design note's map is now four organisations across two authorities (§5.1 of the note).
+The formal design's map is now four organisations across two authorities (§5.1 of the formal design).
 `[HYPOTHESIS]`: 2:2 by count and deliberately unequal by load, so the one-hot-organisation
 workload and the distribution reporting of the plan's §5.6 have something to show. It stays a
 run parameter that implementation may change on evidence, not an architectural commitment —
 recorded only so the fixture is chosen rather than defaulted into.
 
+### 6a. What PR3b carries early, and what stays PR3c
+
+Nancy's call, 2026-08-05, after PR3a merged: rather than hold finished work on a branch of
+its own, PR3b takes everything that already exists and PR3c keeps only what still has to be
+built. Fewer branches, one review, and nothing parked where it cannot be seen.
+
+**Already built and riding in PR3b** (branch `agent/ag-sept-pr3b`):
+
+- the generator's **ambiguous-request register** and `ResolveAmbiguous`. The register was
+  always PR3b's — the plan's §14 asks PR3b to "retain the idempotency keys of any
+  `unknown_replayable` response so PR3c can replay them" — and the replay mechanism is
+  built alongside it rather than split across two PRs for the sake of the boundary;
+- the **`classifyCommit` ambiguity fix**: class 57 (operator intervention) and class 08
+  (connection exception) SQLSTATEs are the session ending, not the server answering the
+  `COMMIT`, so they are now `unknown_replayable` rather than definite failures;
+- the **INV-21 terminated-session fault test** that found that defect, and INV-21's revised
+  register entry. **It is deliberately not named for connection loss mid-`COMMIT`:** the
+  session is destroyed with the transaction's work done and `COMMIT` not yet sent, so what
+  is proven is that a commit attempted on a dead session is classified conservatively.
+  Nothing interposes between the client sending `COMMIT` and the server acting on it, and
+  the *acknowledgement-lost* half stays PR3c's, unproven.
+
+The last two were nominally PR3c's and explicitly unfunded (§4). They are here because
+they are *done*, and because the fix is a correctness change to merged code that should not
+wait on a measurement PR. **Consequence, accepted rather than overlooked:** the fix reaches
+`main` when PR3b merges, so until then `main` misclassifies a terminated session under
+`COMMIT` as a definite failure. Low risk — no production deployment exists, and the experiment that
+would deliberately trigger it is PR3c, which lands after.
+
+**Still PR3c's, and still to be built:**
+
+0. **wiring `RunTopology` into `cmd/alloca-verify`.** The package-level verifier is built and
+   tested; the CLI still takes one `--database-url` and one `--org`. The flags it needs — a
+   placement document and one DSN per authority — are shaped by how PR3c actually drives a
+   run, so they are left to the PR that first has a run to drive rather than guessed at now;
+1. the **post-restoration resolution pass** as a step of the failure-isolation experiment —
+   calling `ResolveAmbiguous` after the authority is back and before the correctness
+   verdict, and refusing to reconcile a run with anything left unresolved
+   (`ag-sept-plan-new.md` §6.5). **This includes the logical-summary contract that pass
+   needs, which PR3b deliberately does not define** — see §6c;
+2. the **failure-isolation experiment** itself, with affected and unaffected populations
+   reported separately as their own evidence class. **It must state which failure mode it
+   injected**, because the outcome depends on it — see §6b;
+3. the **Phase 1 correctness matrix** and per-authority verdicts;
+4. **INV-21's remaining half.** The *commit-landed-but-acknowledgement-lost* case is still
+   unproven and needs a proxy that drops the reply; the register says so, and PR3c must not
+   claim the whole invariant on the strength of the half that is tested.
+
+### 6b. The unavailable-authority outcome depends on *how* the authority is unavailable
+
+Observed on the containerised topology while validating it (PR3b), and recorded here because
+it changes what PR3c's expected-outcome set may assert.
+
+Stopping an authority's container and issuing a request to its unit produced
+**`timeout_server` (504)**, not one of the three outcomes the formal design enumerates for an
+unavailable authority — `internal_failure`, `timeout_db`, `unknown_replayable` (formal design
+§6.4). The unit's `/readyz` correctly reported 503 throughout, and the healthy authority
+continued serving its own organisations, so failure *isolation* held exactly as designed.
+
+The reason matters: a **stopped** container drops packets rather than refusing them, so the
+connection attempt hangs instead of failing fast, and the per-request server deadline is the
+first bound to fire. A container that is *killed*, or a database that refuses connections,
+would fail immediately and classify differently.
+
+Two consequences for PR3c:
+
+1. **The experiment must name its failure mode** — stopped, killed, network-partitioned,
+   or process-crashed — because they do not produce the same outcome mix. An expected-outcome
+   set that lists three outcomes and meets a fourth reads as a defect when it is a different
+   experiment.
+2. **`db_acquire_cap` did not bound this wait**, and it is worth understanding before the
+   experiment quotes anything. The observation is that a ~5 s server deadline elapsed where a
+   500 ms acquisition cap might have been expected to fire first; the diagnosis is *not*
+   established, and it may be that the cap does not cover establishing a new connection. This
+   is adjacent to the PR2 deferral register's standing item that the timeout budget has never
+   been observed doing its job under load (`ag-sept-plan-old.md` §14, group A). Investigate
+   before asserting, and do not fix it on the strength of one observation.
+
+### 6c. Resolution accounting is PR3c's, and PR3b stops short of it deliberately
+
+Raised in review of PR3b (ChatGPT, 2026-08-06) and deferred with Nancy's agreement. Recorded
+here so PR3c inherits the problem stated rather than discovers it.
+
+`ResolveAmbiguous` replays each ambiguous mutation and returns `[]Resolution`. Those replays
+are **real HTTP requests that PR3b does not account for anywhere**: they happen outside
+`Runner`, they are not folded into `Report.Summary`, and `RunTopology` takes no resolution
+input. So after a resolution pass the server's counters include the replay traffic while the
+client totals still describe only the original run, and three-way reconciliation over that
+state cannot be correct.
+
+The *acknowledgement-lost* branch is the sharp end. A resolution returning `Replay=true`
+proves the original mutation committed — the database holds one fresh logical mutation — but
+appending the replay's response to the totals would leave `FreshMutations()` at zero for that
+logical request, because the replay itself is not fresh. The mutation is real and the summary
+would say it never happened.
+
+**What PR3c must define**, as one contract rather than as four separate patches:
+
+- resolution HTTP traffic incorporated into request and server accounting, so the scrape
+  comparison is over the same population as the client totals;
+- a logical mutation counted **once as fresh** when the replay proves the original committed;
+- counted **once** when resolution performs it with `Replay=false`;
+- anything still ambiguous rejected outright — `Unresolved` already reports it, and a run
+  carrying any is not reconcilable.
+
+It needs end-to-end tests on both branches: original committed then replayed, and original
+rolled back then performed during resolution.
+
+**Why not in PR3b.** The same reasoning that left `RunTopology`'s CLI flags to PR3c: the
+shape of this contract depends on how the resolution pass is actually driven, and a summary
+contract guessed at before its only caller exists is one PR3c would have to redesign while
+also producing the experiment. The register's own defect — a failed replay re-registering
+itself and growing the outstanding work on every pass — was a live bug in shipped code and
+**was** fixed in PR3b; deduplication does not solve the accounting problem, and is not
+claimed to.
+
+### 6d. The deployed artifact is bound to the routed units, and checked before load
+
+The architectural decision is [ADR-0003](../../decisions/0003-deployed-artifact-identity.md):
+code identity and deployed-artifact identity are separate provenance facts, and the second
+must be observed from outside the measured process rather than reported by it. What the ADR
+deliberately does not fix is the mechanism, which is recorded here because two parts of it
+were wrong in a way that read as correct.
+
+**Observation alone is unbound evidence.** A record proving that some containers on this host
+share an image says nothing about the units a run addressed. A stack raised yesterday, a
+second stack on other ports, or a unit nothing routes to would all satisfy it. So each
+observation now also carries the address its container publishes, read from the port binding
+rather than assumed from the compose file, and the run requires an exact one-to-one
+correspondence with the targets it is about to drive. Both directions fail for their own
+reason: a routed unit nobody observed is an artifact the run cannot name — the whole gap §6.4
+exists to close — while an observed unit nothing routes to means the record describes a
+different topology, and a record wrong about the unit set is not evidence that its image
+identity is right either.
+
+**Ordering is the other half.** The check previously ran after `Runner.Run`, where it could
+only annotate numbers that already existed: the operator discovered the mismatch once the
+measurement had been taken. It now runs before any measured request, ahead even of the `/meta`
+reads, so a wrong record costs a re-record rather than a run. That property is easy to lose in
+a later refactor and is held by a test that asserts the units served **zero** requests when the
+preflight refuses; moving the call back after the workload fails it with four requests per
+unit rather than failing on the error text.
+
+**Why the requirement keys on the topology, not on a flag.** The certification gate refuses a
+containerised run whose `image_id` is empty, but it is armed by `container_deployment`, which
+the record itself sets. Omitting the record therefore also disarmed the gate, and the run
+reported a clean lower-provenance result whose missing artifact identity looked like a choice.
+A run that reaches more than one unit is the containerised topology whatever the operator
+remembered to pass, so that is what the requirement keys on.
+
+**Why `-require` is not the exception it looks like.** The requirement first exempted
+`-require none`, on the reading that a run declaring it supports no claim has nothing for
+artifact identity to qualify. That reading is wrong about the flag. `-require` is the floor a
+run must clear to exit zero, not a ceiling on what its report claims: certification always
+computes the highest level the manifest and summary actually reach, so a stamped binary
+passing `-require none` exits zero *and* writes a report certified at `local` or above —
+naming no artifact. The exemption reopened exactly the bypass the requirement was added to
+close, and under the phrasing an operator is most likely to reach for. There is no level at
+which skipping the record is safe, so there is now no exception. A genuine
+no-evidence mode would have to cap certification, which `-require` does not do; it can be
+built when something needs it.
+
+**What was deliberately not built.** No per-unit map in the manifest: once the preflight has
+established full coverage and one common artifact, the per-unit observations are validation
+evidence, and copying them into the report would be a second representation of what the single
+`image_id` already states. No general `source | container` deployment-mode abstraction either;
+making the one known containerised evidence path non-bypassable is what PR3b needs, and an
+abstraction invented before a second caller exists is one the second caller redesigns.
+
+The record schema, the flag, the matching rules, and the tests live in
+`internal/loadgen/deployment.go`, `cmd/alloca-load/main.go` and
+`test/scripts/record-deployment.sh`; the operating procedure is
+[`../../operations/container-topology.md`](../../operations/container-topology.md) §7. None of
+that is restated here.
+
 ## 7. Not in PR3
 
-- cross-authority booking, distributed commit, or any saga (design note §10, plan §15);
+- cross-authority booking, distributed commit, or any saga (formal design §10, plan §15);
 - splitting one organisation across authorities;
 - online rebalancing, dual-write migration, or a placement change during a run;
 - a production routing gateway or dynamic shard catalogue;
@@ -314,15 +493,15 @@ recorded only so the fixture is chosen rather than defaulted into.
 - replica scaling, exporters, dashboards, or the connection-budget control — all PR4;
 - any capacity or throughput-multiplier claim;
 - per-authority client-side attribution (§3.2, §5.4);
-- authentication, which §7.6 of the design note correctly identifies as the real fix for
+- authentication, which §7.6 of the formal design correctly identifies as the real fix for
   caller-asserted routing identity and which no part of AG-Sept delivers.
 
 ## 8. Evidence labels
 
 Every figure in PR3's report carries the `[HYPOTHESIS]`, `[MEASURED]`, `[DERIVED]`, or
 `[PRIOR-UNREPRODUCED]` label required by
-[`measurement-contract.md`](../design/measurement-contract.md) §2. Organisation counts,
-authority counts, and the placement map in this note are `[HYPOTHESIS]` until a run uses them.
+[`measurement-contract.md`](../../design/measurement-contract.md) §2. Organisation counts,
+authority counts, and the placement map in this record are `[HYPOTHESIS]` until a run uses them.
 
 Correctness verdicts are not measurements and carry no label: a gate passes or the run is not
 admissible.

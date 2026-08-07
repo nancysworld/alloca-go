@@ -235,7 +235,7 @@ func TestAttemptTimestampIsUsedForEveryPersistedValue(t *testing.T) {
 
 // The TTL is measured from the post-lock decision point, so a contended request still
 // receives a full-length hold: lock-wait time does not erode the hold a client is
-// granted (design note §5).
+// granted (authoritative-time design note §5).
 func TestTTLMeasuredFromDecisionPointNotArrival(t *testing.T) {
 	const ttl = 30 * time.Second
 	const lockHeld = 400 * time.Millisecond

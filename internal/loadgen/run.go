@@ -262,10 +262,10 @@ type Summary struct {
 // Counting it would compare N+R client admissions against N persisted rows and fail a
 // service behaving exactly as the idempotency contract requires — which is what an earlier
 // version of this did, caught by the integration suite rather than by reading.
-func (s Summary) FreshAdmittedFor(operation string) int {
+func (s Summary) FreshAdmittedFor(operation domain.Operation) int {
 	n := 0
 	for _, t := range s.Totals {
-		if t.Operation == operation && t.Outcome == domain.OutcomeAdmittedSuccess && !t.Replay {
+		if t.Operation == string(operation) && t.Outcome == domain.OutcomeAdmittedSuccess && !t.Replay {
 			n += t.Count
 		}
 	}
@@ -308,6 +308,10 @@ func isDefiniteTerminal(o domain.Outcome) bool {
 }
 
 // Total is one (operation, outcome, reason, replay) cell.
+//
+// Operation is a plain string, not domain.Operation, because this is the reporting
+// boundary: the cell is serialised into the report and joined against the `operation`
+// label on the server's own counters, which arrives from Prometheus as text.
 type Total struct {
 	Operation string         `json:"operation"`
 	Outcome   domain.Outcome `json:"outcome"`
@@ -354,10 +358,13 @@ func summarise(
 	latencies := make([]float64, 0, len(responses))
 	for _, r := range responses {
 		s.Completed++
-		cells[Total{Operation: r.Operation, Outcome: r.Outcome, Reason: r.Reason, Replay: r.Replay}]++
+		cells[Total{Operation: string(r.Operation), Outcome: r.Outcome, Reason: r.Reason, Replay: r.Replay}]++
 		latencies = append(latencies, float64(r.Latency)/float64(time.Millisecond))
 
-		if r.Outcome == domain.OutcomeAdmittedSuccess && isMutation(r.Operation) {
+		// IsKnown is the mutation test: the read route deliberately does not count toward
+		// booking goodput. A successful listing is admitted_success in the sense that the
+		// service answered correctly, but it is not a booking (observability §3.1).
+		if r.Outcome == domain.OutcomeAdmittedSuccess && r.Operation.IsKnown() {
 			if r.Replay {
 				s.ReplayedMutations++
 			} else {
@@ -447,11 +454,6 @@ func applyWarmUp(responses []Response, started time.Time, warmUp time.Duration) 
 	}
 	return kept, len(responses) - len(kept)
 }
-
-// isMutation reports whether an operation counts toward booking goodput. The read route
-// deliberately does not: a successful listing is admitted_success in the sense that the
-// service answered correctly, but it is not a booking (observability §3.1).
-func isMutation(op string) bool { return domain.Operation(op).IsKnown() }
 
 // percentiles computes the reported quantiles by nearest-rank on the sorted sample.
 func percentiles(v []float64) Percentiles {

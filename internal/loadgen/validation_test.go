@@ -137,7 +137,9 @@ func TestValidRunIsQuotable(t *testing.T) {
 // into goodput and a dispersed workload's headline number inflates by its read traffic.
 func TestListingIsNotGoodput(t *testing.T) {
 	responses := []loadgen.Response{
-		{Operation: string(domain.OpReserve), Outcome: domain.OutcomeAdmittedSuccess},
+		{Operation: domain.OpReserve, Outcome: domain.OutcomeAdmittedSuccess},
+		// Deliberately not a domain.Op* constant: the read route is outside the mutation
+		// vocabulary, which is exactly what IsKnown discriminates on.
 		{Operation: "list_slots", Outcome: domain.OutcomeAdmittedSuccess},
 	}
 	s := loadgen.SummariseForTest(responses)

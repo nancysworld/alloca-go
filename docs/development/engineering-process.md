@@ -56,6 +56,26 @@ implementation. Do not preserve a stale plan merely because it was agreed earlie
 The project's evidence labels and quotability rules remain owned by
 [`../design/measurement-contract.md`](../design/measurement-contract.md).
 
+### 1.5 Prefer executable implementation truth over duplicated prose
+
+For current **implementation mechanics**, code and tests are the authoritative source. Do not
+maintain a second prose version of behaviour that can already be read precisely from the code.
+Detailed parallel documentation is expensive to keep synchronized and becomes misleading when
+implementation changes faster than prose.
+
+Implementation documentation should therefore explain what the code cannot explain well on its
+own: rationale, non-obvious constraints, rejected approaches that matter for maintenance,
+important discoveries, cross-component interactions, operational consequences, and deliberate
+deferrals. It should help a reader understand the code, not restate it function by function.
+
+This does **not** make code the authority for architecture. Formal design documents and ADRs
+remain authoritative for the durable contracts the implementation must satisfy; code is
+expected to realize those contracts.
+
+The project should bias toward a higher code-to-implementation-doc ratio than it has today.
+That is a direction, not a numeric metric: remove or avoid prose that merely mirrors code, while
+retaining documentation that carries information the code alone cannot preserve clearly.
+
 ## 2. Roles and decision ownership
 
 The roles below describe **responsibility and review emphasis, not permissions**. One participant
@@ -133,10 +153,11 @@ Examples include:
 - how an accepted invariant is enforced in the current code.
 
 Implementation decisions may be made collaboratively. The implementation agent normally turns
-the chosen mechanism into code, tests, and implementation documentation, while the project
-owner and reviewers may propose, answer, challenge, or refine those choices directly.
-Architecture review should focus on whether the mechanism satisfies the contract, not on
-prescribing an equivalent local implementation unnecessarily.
+the chosen mechanism into code, tests, and only the implementation documentation that adds
+information beyond the code itself, while the project owner and reviewers may propose, answer,
+challenge, or refine those choices directly. Architecture review should focus on whether the
+mechanism satisfies the contract, not on prescribing an equivalent local implementation
+unnecessarily.
 
 ### 3.3 When an implementation issue becomes architectural
 
@@ -196,13 +217,14 @@ The repository separates documents by what they own:
 | [`../planning/`](../planning/) | forward-looking milestone plans, budgets, sequencing, and intended scope |
 | [`../design/`](../design/) | current normative system design and contracts |
 | [`../decisions/`](../decisions/) | significant architectural choices: why and what, not replaceable implementation mechanics |
-| [`implementation/`](implementation/) | evolving implementation records: how a scoped change was built, discoveries during implementation, review decisions, deferrals, and what actually shipped |
+| [`implementation/`](implementation/) | selective implementation records: rationale, discoveries, review decisions, deferrals, and other context that is not adequately carried by code and tests |
 | [`../operations/`](../operations/) | procedures for building, running, deploying, and operating the system |
 | [`../measurements/`](../measurements/) | experiment inputs, artifacts, reports, and measured conclusions |
 
 An implementation record may begin life as a scope note while work is still being planned. Once
 implementation is underway, it becomes the durable record of the work actually performed and
-belongs under `docs/development/implementation/`.
+belongs under `docs/development/implementation/`. It should remain selective: the code and tests
+own the precise mechanics, while the record preserves context that would otherwise be lost.
 
 Existing `docs/planning/*-scope.md` files predate this convention. They may be migrated when
 next materially touched; pure path churn is not required in an active review merely to satisfy

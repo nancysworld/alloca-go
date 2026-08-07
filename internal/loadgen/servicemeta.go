@@ -45,7 +45,7 @@ type ServiceMeta struct {
 	// Placement is which authority this unit is and which routing it is serving under. It
 	// is the field that makes a multi-unit run checkable: nothing in the request totals
 	// would reveal two units disagreeing about placement, and that disagreement is the
-	// split-brain the design note records as §7.3.
+	// split-brain the horizontal-database design records as §7.3.
 	Placement struct {
 		AuthorityID    string   `json:"authority_id"`
 		RoutingVersion string   `json:"routing_version"`

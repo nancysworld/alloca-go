@@ -7,7 +7,7 @@ import (
 	"github.com/nancysworld/alloca-go/internal/domain"
 )
 
-// twoAuthorities is the design note's example map: four organisations across two
+// twoAuthorities is the horizontal-database design's example map: four organisations across two
 // authorities, with A and C deliberately colocated so the cross-organisation
 // same-authority path has something to exercise.
 const twoAuthorities = `{
@@ -161,7 +161,7 @@ func TestParsePlacementRejectsDocumentsThatCannotDescribeOneRouting(t *testing.T
 		{
 			// Go's decoder lets the last duplicate win, so a map-typed decode cannot see
 			// this: an operator reads one routing out of the file and the service uses
-			// another. The design note requires setup to fail here (§5.1).
+			// another. The horizontal-database design requires setup to fail here (§5.1).
 			name: "organisation assigned twice",
 			doc:  `{"version": "v1", "homes": {"org-a": "authority-1", "org-a": "authority-2"}}`,
 			want: "more than once",
@@ -310,7 +310,7 @@ func TestUnshardedPlacementColocatesEveryOrganisation(t *testing.T) {
 	}
 }
 
-// Immutability for the duration of a run (design note §3, invariant 4) is carried by
+// Immutability for the duration of a run (horizontal-database design §3, invariant 4) is carried by
 // the type, not by this test: homes is unexported and Placement is handed out by value,
 // so there is no API through which a caller could re-home an organisation. What a test
 // *can* discriminate is the one way that could leak — a returned slice aliasing the

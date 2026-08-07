@@ -72,7 +72,7 @@ func FetchTopologyMeta(ctx context.Context, targets []string, timeout time.Durat
 //     per-authority correctness result cannot be compared with its peer's. Equal versions are
 //     not by themselves *compatible* versions — that is each unit's own startup gate (INV-27)
 //     — but unequal ones are definitely not one deployment;
-//   - a **routing version** difference is the split-brain case the design note records as
+//   - a **routing version** difference is the split-brain case the horizontal-database design records as
 //     §7.3: two units disagreeing about placement would write one organisation to two
 //     authorities and divide its source of truth. It is the most dangerous of the three and
 //     the least visible in any total.

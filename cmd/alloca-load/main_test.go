@@ -15,6 +15,31 @@ import (
 	"github.com/nancysworld/alloca-go/internal/loadgen"
 )
 
+// writeDeploymentFor records an observation of exactly the units a run addresses, so a
+// multi-unit run can satisfy the artifact-identity preflight.
+//
+// A run across several units is the containerised topology, and §6.4 asks it to name the
+// artifact it measured; the harness will not drive one that cannot. Tests whose subject is
+// something else therefore need a record that matches their targets, and writing it here
+// rather than inline keeps that fixture from being mistaken for part of what they assert.
+func writeDeploymentFor(t *testing.T, targets ...string) string {
+	t.Helper()
+	units := make([]string, 0, len(targets))
+	for i, target := range targets {
+		units = append(units, fmt.Sprintf(
+			`"alloca-service-%d": {"image_id": "sha256:1111111111111111", "target": %q}`,
+			i+1, target))
+	}
+	document := fmt.Sprintf(`{"image_id": "sha256:1111111111111111", "units": {%s}}`,
+		strings.Join(units, ","))
+
+	path := filepath.Join(t.TempDir(), "deployment.json")
+	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
+		t.Fatalf("writing deployment record: %v", err)
+	}
+	return path
+}
+
 // unit stands in for one shard-affine service unit: it answers /meta with its own authority
 // and organisations, and admits every mutation, recording which organisation each request
 // was routed to it for.
@@ -250,6 +275,7 @@ func TestMultiAuthorityRunRefusesUnitsThatDisagree(t *testing.T) {
 		"-endpoint", "authority-2=" + two.server.URL,
 		"-workload", "multi-org-dispersed",
 		"-concurrency", "2", "-n", "8", "-slots", "2",
+		"-deployment", writeDeploymentFor(t, one.server.URL, two.server.URL),
 		"-out", reportPath,
 	})
 	if err == nil {
@@ -271,6 +297,162 @@ func TestMultiAuthorityRunRefusesUnitsThatDisagree(t *testing.T) {
 	if !strings.Contains(report.Manifest.TopologyDisagreement, "routing") {
 		t.Errorf("disagreement %q does not name the routing split",
 			report.Manifest.TopologyDisagreement)
+	}
+}
+
+// Forgetting the observation must not read as a lower-provenance run.
+//
+// The certification gate refuses a containerised run with no image id, but it is armed by
+// `container_deployment`, which the record itself sets — so omitting the record also disarms
+// the gate, and the run reports a clean `local` result whose missing artifact identity looks
+// like a choice. Keying on the routed topology instead is what closes that: a run reaching
+// several units is the containerised topology whatever the operator remembered to pass.
+func TestAMultiUnitRunWithoutADeploymentRecordIsRefused(t *testing.T) {
+	one := newUnit(t, "authority-1", []string{"org-a", "org-c"}, "test-v1")
+	two := newUnit(t, "authority-2", []string{"org-b", "org-d"}, "test-v1")
+
+	err := run([]string{
+		"-placement", writePlacement(t, twoAuthorities),
+		"-endpoint", "authority-1=" + one.server.URL,
+		"-endpoint", "authority-2=" + two.server.URL,
+		"-workload", "multi-org-dispersed",
+		"-concurrency", "2", "-n", "8", "-slots", "2",
+		"-out", filepath.Join(t.TempDir(), "report.json"),
+	})
+	if err == nil {
+		t.Fatal("a two-unit run measured an artifact it could not name")
+	}
+	if !strings.Contains(err.Error(), "-deployment") {
+		t.Errorf("error %q does not name the flag that fixes it", err)
+	}
+}
+
+// The ordering property, and the one that fails if the check moves back after `Runner.Run`.
+//
+// A record checked afterwards can only annotate numbers that already exist: the operator
+// learns the topology was not the one described once the measurement has been taken. Both
+// refusals below must therefore land with no measured request having been sent — which is
+// also why asserting on the error alone would not discriminate.
+func TestTheDeploymentPreflightRefusesBeforeAnyMeasuredRequest(t *testing.T) {
+	tests := []struct {
+		name       string
+		deployment func(t *testing.T, one, two *unit) []string
+		want       string
+	}{
+		{
+			name:       "no record at all",
+			deployment: func(*testing.T, *unit, *unit) []string { return nil },
+			want:       "-deployment",
+		},
+		{
+			name: "a record that observed only one of the routed units",
+			deployment: func(t *testing.T, one, _ *unit) []string {
+				return []string{"-deployment", writeDeploymentFor(t, one.server.URL)}
+			},
+			want: "does not cover every unit",
+		},
+		{
+			name: "a record describing units this run does not route to",
+			deployment: func(t *testing.T, _, _ *unit) []string {
+				return []string{"-deployment", writeDeploymentFor(t,
+					"http://localhost:19001", "http://localhost:19002")}
+			},
+			want: "different topology",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			one := newUnit(t, "authority-1", []string{"org-a", "org-c"}, "test-v1")
+			two := newUnit(t, "authority-2", []string{"org-b", "org-d"}, "test-v1")
+
+			args := []string{
+				"-placement", writePlacement(t, twoAuthorities),
+				"-endpoint", "authority-1=" + one.server.URL,
+				"-endpoint", "authority-2=" + two.server.URL,
+				"-workload", "multi-org-dispersed",
+				"-concurrency", "2", "-n", "8", "-slots", "2",
+				"-out", filepath.Join(t.TempDir(), "report.json"),
+			}
+			err := run(append(args, tc.deployment(t, one, two)...))
+			if err == nil {
+				t.Fatal("a run whose artifact identity could not be established was driven anyway")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not mention %q", err, tc.want)
+			}
+
+			for _, unit := range []*unit{one, two} {
+				if sent := unit.routedUserOrgs(); len(sent) > 0 {
+					t.Errorf("%s served %d measured requests before the run was refused: the "+
+						"preflight ran after the workload, so the operator learns the topology "+
+						"was wrong only once the measurement has been taken",
+						unit.authority, len(sent))
+				}
+			}
+		})
+	}
+}
+
+// The positive control for both refusals above, without which they could pass because every
+// multi-unit run is refused — which would make the check worthless in the other direction.
+// It also pins what the manifest carries: the common identity, not the per-unit map.
+func TestAMatchingDeploymentRecordCarriesTheArtifactIdentity(t *testing.T) {
+	one := newUnit(t, "authority-1", []string{"org-a", "org-c"}, "test-v1")
+	two := newUnit(t, "authority-2", []string{"org-b", "org-d"}, "test-v1")
+	reportPath := filepath.Join(t.TempDir(), "report.json")
+
+	err := run([]string{
+		"-placement", writePlacement(t, twoAuthorities),
+		"-endpoint", "authority-1=" + one.server.URL,
+		"-endpoint", "authority-2=" + two.server.URL,
+		"-workload", "multi-org-dispersed",
+		"-concurrency", "2", "-n", "8", "-slots", "2",
+		"-deployment", writeDeploymentFor(t, one.server.URL, two.server.URL),
+		// `go test` does not stamp VCS data, so the generator identity keeps this binary
+		// below `local` for reasons that have nothing to do with the artifact record. The
+		// preflight runs whenever a record is passed, whatever level is asked for.
+		"-require", "none",
+		"-out", reportPath,
+	})
+	if err != nil {
+		t.Fatalf("a run whose record describes exactly its units was refused: %v", err)
+	}
+
+	raw, readErr := os.ReadFile(reportPath)
+	if readErr != nil {
+		t.Fatalf("reading report: %v", readErr)
+	}
+	var report loadgen.Report
+	if err := json.Unmarshal(raw, &report); err != nil {
+		t.Fatalf("decoding report: %v", err)
+	}
+	if !report.Manifest.ContainerDeployment {
+		t.Error("container_deployment is false on a run that carried a deployment observation")
+	}
+	if report.Manifest.ImageID != "sha256:1111111111111111" {
+		t.Errorf("image_id = %q, want the observed identity", report.Manifest.ImageID)
+	}
+}
+
+// A run that declares it supports no claim is the one case with nothing for artifact identity
+// to qualify — a routing probe or a fixture check. Without this escape the requirement would
+// have no way to say "measuring nothing", and operators would learn to fabricate records.
+func TestARunRequiringNoLevelMayOmitTheDeploymentRecord(t *testing.T) {
+	one := newUnit(t, "authority-1", []string{"org-a", "org-c"}, "test-v1")
+	two := newUnit(t, "authority-2", []string{"org-b", "org-d"}, "test-v1")
+
+	err := run([]string{
+		"-placement", writePlacement(t, twoAuthorities),
+		"-endpoint", "authority-1=" + one.server.URL,
+		"-endpoint", "authority-2=" + two.server.URL,
+		"-workload", "multi-org-dispersed",
+		"-concurrency", "2", "-n", "8", "-slots", "2",
+		"-require", "none",
+		"-out", filepath.Join(t.TempDir(), "report.json"),
+	})
+	if err != nil {
+		t.Fatalf("a run claiming nothing was refused for naming no artifact: %v", err)
 	}
 }
 

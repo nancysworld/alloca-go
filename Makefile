@@ -294,13 +294,16 @@ topo-up: image
 
 ## topo-deployment: record what the running topology is actually serving (§6.4 image identity)
 #
-# Inspects the live containers and writes the immutable image ID every unit must share. It is
-# a separate step, not something alloca-load does, for two reasons: a process cannot see which
-# image wraps it, so the service could only repeat back an environment variable; and reading
-# it needs the Docker socket, which is root on the host and the last thing a generator that
-# must later move to separate compute should hold (§6.3).
+# Inspects the live containers and writes the immutable image ID every unit must share, along
+# with the address each one publishes. It is a separate step, not something alloca-load does,
+# for two reasons: a process cannot see which image wraps it, so the service could only repeat
+# back an environment variable; and reading it needs the Docker socket, which is root on the
+# host and the last thing a generator that must later move to separate compute should hold
+# (§6.3).
 #
-# Pass the result to a run with `alloca-load -deployment <file>`.
+# Pass the result to a run with `alloca-load -deployment <file>`. The addresses are what let it
+# check that the record describes exactly the units the run is about to drive, before any
+# measured request — so re-record after anything that recreates a container.
 topo-deployment:
 	@./test/scripts/record-deployment.sh
 

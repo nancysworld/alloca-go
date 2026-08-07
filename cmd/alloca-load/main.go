@@ -214,6 +214,24 @@ func run(args []string) error {
 	// different commits, or serving different placements, and a run against those describes
 	// two services averaged together.
 	targets := router.Targets()
+
+	// The deployed artifact's identity is established *before* any measured request, not
+	// folded into the manifest afterwards.
+	//
+	// Ordering is the whole point. A record read after the run can only annotate numbers that
+	// already exist, so a topology the record does not describe is discovered once the
+	// measurement has been taken and the operator has to decide what to do with a result they
+	// cannot certify. Checked here, a record that does not match the units this run addresses
+	// costs nothing but a re-record.
+	//
+	// It runs ahead of the /meta reads deliberately: this check needs no network, so the
+	// failure that is purely local fails first and its message is not preceded by timeouts
+	// from units the run was never going to be able to certify anyway.
+	observed, derr := preflightDeployment(*deployment, targets, want)
+	if derr != nil {
+		return derr
+	}
+
 	before, metaErr := loadgen.FetchTopologyMeta(ctx, targets, *timeout)
 	if metaErr != nil {
 		fmt.Fprintln(os.Stderr, "alloca-load: could not read /meta from every unit:", metaErr)
@@ -250,17 +268,12 @@ func run(args []string) error {
 	manifest.DatasetSlots = datasetSlots
 	manifest.ServiceIdentityDrift = drift
 
-	// The identity of the deployed artifact, observed from the host rather than reported by
-	// the service — a process cannot see which image wraps it, and a generator that could
-	// look would need a Docker socket, which is root and exactly what §6.3 keeps it away
-	// from. A malformed or disagreeing record fails the run rather than being dropped: a
-	// containerised run that cannot name its image is one the gate must refuse, and silently
-	// carrying on would produce a report that simply omits the field.
-	if *deployment != "" {
-		observed, err := loadgen.LoadDeployment(*deployment)
-		if err != nil {
-			return err
-		}
+	// The identity of the deployed artifact, established by the preflight above. Only the
+	// common image identity is carried: once the preflight has proved that every routed unit
+	// was observed and that they share one artifact, the per-unit map has done its work as
+	// validation evidence and copying it into the manifest would be a second representation
+	// of a fact the single field already states.
+	if observed != nil {
 		manifest.ContainerDeployment = true
 		manifest.ImageID = observed.ImageID
 		manifest.ImageTag = observed.ImageTag
@@ -295,6 +308,45 @@ func run(args []string) error {
 			q.Level, want, q.BlockedBecause)
 	}
 	return nil
+}
+
+// preflightDeployment establishes what artifact the run is about to measure, or explains why
+// it cannot, before a single request is sent. It returns nil when the run legitimately has no
+// deployed artifact to name.
+//
+// **Why a multi-unit run must carry one.** A run that routes to several units reaches them
+// through the containerised topology — that is the only way this project raises more than one
+// authority — and it is the shape whose artifact identity §6.4 asks for. Left optional, the
+// gate that refuses a containerised run with no image id never fires, because omitting the
+// record also clears the flag that arms it: the run reports a clean lower-provenance result
+// and the missing provenance looks like a choice rather than an omission.
+//
+// The requirement is tied to the level the run asks for rather than to a deployment-mode
+// flag. `-require none` is the operator saying this run supports no claim at all — a routing
+// probe, a fixture check — and there is nothing for artifact identity to qualify. Every other
+// level is a claim, and the default is `local`, so forgetting the record is caught by
+// default while deliberately claiming nothing still costs nothing.
+func preflightDeployment(path string, targets []string, want loadgen.Level) (*loadgen.Deployment, error) {
+	if path == "" {
+		if len(targets) > 1 && want != loadgen.LevelNone {
+			return nil, fmt.Errorf("a run across %d units needs -deployment: this is the "+
+				"containerised topology, and §6.4 asks it to identify the artifact it measured. "+
+				"service_commit_sha does not cover that — the same code from a stale tag, or "+
+				"rebuilt on a different base layer, carries the same revision on every unit. "+
+				"Record it with `make topo-deployment > test/results/deployment.json`, or pass "+
+				"-require none if this run is not meant to support a claim", len(targets))
+		}
+		return nil, nil
+	}
+
+	observed, err := loadgen.LoadDeployment(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := observed.BindTo(targets); err != nil {
+		return nil, fmt.Errorf("deployment record %s: %w", path, err)
+	}
+	return &observed, nil
 }
 
 // buildRouter settles how the run reaches the service: one target, or one endpoint per

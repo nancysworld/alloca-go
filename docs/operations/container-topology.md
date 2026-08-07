@@ -329,6 +329,20 @@ It refuses a topology whose units are on different images. That is the failure t
 SHA cannot see — the same code served from a stale `:dev` tag, or rebuilt on a newer base
 layer, carries an identical revision on every unit.
 
+The record also names the address each container publishes, and `alloca-load` checks that
+those are exactly the units it is about to drive **before it sends a measured request**. Three
+things therefore fail the run up front rather than after the numbers exist:
+
+- a routed unit the record says nothing about — the run would measure an artifact it cannot
+  name;
+- a recorded unit the run does not route to — the record describes some other topology,
+  usually because it was taken before the stack was raised again;
+- a run across several units with no `-deployment` at all, unless it declares `-require none`.
+
+Re-record after anything that recreates a container. `make topo-up` following a rebuild gives
+the units new image IDs, and a record from the previous stack will be refused rather than
+quietly describing the wrong one.
+
 Why it works this way, and the alternatives rejected, are
 [ADR-0003](../decisions/0003-deployed-artifact-identity.md).
 

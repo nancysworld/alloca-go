@@ -18,6 +18,18 @@ func writeDeployment(t *testing.T, document string) string {
 	return path
 }
 
+// A record describing the two-unit topology, agreeing with itself. Used as the positive
+// control wherever a refusal is being tested, so that a case cannot pass because the fixture
+// was malformed for some unrelated reason.
+const twoUnitRecord = `{
+  "image_id": "sha256:1111111111111111",
+  "image_tag": "alloca-go:6e2f7ac",
+  "units": {
+    "alloca-service-1": {"image_id": "sha256:1111111111111111", "target": "http://localhost:8081"},
+    "alloca-service-2": {"image_id": "sha256:1111111111111111", "target": "http://localhost:8082"}
+  }
+}`
+
 // The property the whole record exists for: units running different images.
 //
 // This is the failure the commit SHA cannot see. The SHA is stamped into the binary, so the
@@ -28,8 +40,8 @@ func writeDeployment(t *testing.T, document string) string {
 func TestUnitsOnDifferentImagesCannotSupportOneIdentity(t *testing.T) {
 	path := writeDeployment(t, `{
 	  "units": {
-	    "alloca-service-1": "sha256:1111111111111111",
-	    "alloca-service-2": "sha256:9999999999999999"
+	    "alloca-service-1": {"image_id": "sha256:1111111111111111", "target": "http://localhost:8081"},
+	    "alloca-service-2": {"image_id": "sha256:9999999999999999", "target": "http://localhost:8082"}
 	  }
 	}`)
 
@@ -48,16 +60,7 @@ func TestUnitsOnDifferentImagesCannotSupportOneIdentity(t *testing.T) {
 // A record that agrees with itself is the positive control, without which every case above
 // could pass for the wrong reason.
 func TestAConsistentDeploymentRecordIsAccepted(t *testing.T) {
-	path := writeDeployment(t, `{
-	  "image_id": "sha256:1111111111111111",
-	  "image_tag": "alloca-go:6e2f7ac",
-	  "units": {
-	    "alloca-service-1": "sha256:1111111111111111",
-	    "alloca-service-2": "sha256:1111111111111111"
-	  }
-	}`)
-
-	d, err := loadgen.LoadDeployment(path)
+	d, err := loadgen.LoadDeployment(writeDeployment(t, twoUnitRecord))
 	if err != nil {
 		t.Fatalf("a consistent deployment record was refused: %v", err)
 	}
@@ -83,8 +86,25 @@ func TestDeploymentRecordsThatCannotSupportAClaimAreRefused(t *testing.T) {
 		},
 		{
 			name:     "a unit with no image id",
-			document: `{"units": {"alloca-service-1": ""}}`,
+			document: `{"units": {"alloca-service-1": {"target": "http://localhost:8081"}}}`,
 			want:     "no image id",
+		},
+		{
+			// Without a target the record cannot be bound to the run, so it describes some
+			// containers on the host rather than the units the measurement addressed.
+			name:     "a unit with no target",
+			document: `{"units": {"alloca-service-1": {"image_id": "sha256:1111111111111111"}}}`,
+			want:     "no target",
+		},
+		{
+			// Two containers cannot serve one address. One of the two observations is stale,
+			// and the run cannot tell which unit it actually reached.
+			name: "two units claiming one target",
+			document: `{"units": {
+			  "alloca-service-1": {"image_id": "sha256:1111111111111111", "target": "http://localhost:8081"},
+			  "alloca-service-2": {"image_id": "sha256:1111111111111111", "target": "http://127.0.0.1:8081"}
+			}}`,
+			want: "both serving",
 		},
 		{
 			// The record claims one image while its own observations say another — so one of
@@ -92,7 +112,7 @@ func TestDeploymentRecordsThatCannotSupportAClaimAreRefused(t *testing.T) {
 			name: "a claimed image its units contradict",
 			document: `{
 			  "image_id": "sha256:deadbeefdeadbeef",
-			  "units": {"alloca-service-1": "sha256:1111111111111111"}
+			  "units": {"alloca-service-1": {"image_id": "sha256:1111111111111111", "target": "http://localhost:8081"}}
 			}`,
 			want: "claims image",
 		},
@@ -119,7 +139,9 @@ func TestDeploymentRecordsThatCannotSupportAClaimAreRefused(t *testing.T) {
 // A single-unit record is legitimate — an unsharded containerised deployment — and the image
 // id may be left to the observation rather than stated twice.
 func TestASingleUnitRecordTakesItsImageFromTheUnit(t *testing.T) {
-	path := writeDeployment(t, `{"units": {"alloca-service-1": "sha256:1111111111111111"}}`)
+	path := writeDeployment(t, `{"units": {
+	  "alloca-service-1": {"image_id": "sha256:1111111111111111", "target": "http://localhost:8081"}
+	}}`)
 
 	d, err := loadgen.LoadDeployment(path)
 	if err != nil {
@@ -127,5 +149,77 @@ func TestASingleUnitRecordTakesItsImageFromTheUnit(t *testing.T) {
 	}
 	if d.ImageID != "sha256:1111111111111111" {
 		t.Errorf("image id = %q, want the unit's own", d.ImageID)
+	}
+}
+
+// Binding is what turns "some containers shared an image" into "the units this run addressed
+// shared an image". Each direction of the correspondence fails for its own reason, and a
+// record that satisfies the image check while describing the wrong topology is precisely the
+// evidence this is here to refuse.
+func TestBindingRequiresTheObservationToDescribeTheRoutedUnits(t *testing.T) {
+	routed := []string{"http://localhost:8081", "http://localhost:8082"}
+
+	tests := []struct {
+		name    string
+		targets []string
+		want    string
+	}{
+		{
+			// A unit the run drove whose artifact is unknown — the gap §6.4 exists to close.
+			name:    "a routed unit nothing was observed for",
+			targets: append(routed, "http://localhost:8083"),
+			want:    "does not cover every unit",
+		},
+		{
+			// The record describes a topology other than the measured one, most often a file
+			// recorded before the topology was raised again.
+			name:    "an observed unit the run does not route to",
+			targets: routed[:1],
+			want:    "does not route to",
+		},
+		{
+			name:    "neither set matches the other",
+			targets: []string{"http://localhost:9001", "http://localhost:9002"},
+			want:    "different topology",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			d, err := loadgen.LoadDeployment(writeDeployment(t, twoUnitRecord))
+			if err != nil {
+				t.Fatalf("fixture record was refused: %v", err)
+			}
+			if err := d.BindTo(tc.targets); err == nil {
+				t.Fatal("a record that does not describe the routed topology was bound to it")
+			} else if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not mention %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// The positive control for the three refusals above. Without it they could all pass because
+// BindTo rejects everything, which would make the check worthless in the other direction.
+func TestBindingAcceptsAnExactCorrespondence(t *testing.T) {
+	d, err := loadgen.LoadDeployment(writeDeployment(t, twoUnitRecord))
+	if err != nil {
+		t.Fatalf("fixture record was refused: %v", err)
+	}
+	if err := d.BindTo([]string{"http://localhost:8081", "http://localhost:8082"}); err != nil {
+		t.Fatalf("the topology the record describes was refused: %v", err)
+	}
+}
+
+// The loopback spellings an operator and a container runtime each prefer name one interface.
+// Failing a run because the record said 127.0.0.1 where -endpoint said localhost would be a
+// false refusal, and a false refusal teaches operators to bypass the check.
+func TestBindingTreatsLoopbackSpellingsAsOneUnit(t *testing.T) {
+	d, err := loadgen.LoadDeployment(writeDeployment(t, twoUnitRecord))
+	if err != nil {
+		t.Fatalf("fixture record was refused: %v", err)
+	}
+	if err := d.BindTo([]string{"http://127.0.0.1:8081", "http://localhost:8082/"}); err != nil {
+		t.Fatalf("loopback spellings of the same units were refused: %v", err)
 	}
 }

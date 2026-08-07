@@ -36,6 +36,12 @@ cd "$(dirname "$0")/../.."
 # deployment than the one under test.
 CONTAINERS="${CONTAINERS:-alloca-service-1 alloca-service-2}"
 
+# The container-side port the service listens on, and the host the generator reaches it by.
+# Both come from the topology (ALLOCA_LISTEN_ADDR is ":8080"; the ports are published to the
+# host the run drives from), and both are overridable for a topology that differs.
+SERVICE_PORT="${SERVICE_PORT:-8080}"
+TARGET_HOST="${TARGET_HOST:-localhost}"
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "record-deployment: docker is not available; this observation needs a daemon" >&2
   exit 1
@@ -81,9 +87,23 @@ for name in $CONTAINERS; do
     exit 1
   fi
 
+  # Where this container is reachable, read from its published port binding rather than
+  # assumed from the compose file. This is what binds the observation to the run: without it
+  # the record says only that some containers on this host shared an image, which a topology
+  # raised yesterday would satisfy just as well as the one about to be measured.
+  hostport="$(docker inspect \
+    --format "{{with index .NetworkSettings.Ports \"${SERVICE_PORT}/tcp\"}}{{(index . 0).HostPort}}{{end}}" \
+    "$name" 2>/dev/null || true)"
+  if [ -z "$hostport" ]; then
+    echo "record-deployment: container '$name' publishes no host port for ${SERVICE_PORT}/tcp." >&2
+    echo "  The run reaches the units over published ports, so an unpublished unit cannot be" >&2
+    echo "  the one it addressed. Set SERVICE_PORT if this topology listens elsewhere." >&2
+    exit 1
+  fi
+
   [ -n "$units_json" ] && units_json="$units_json,"
   units_json="$units_json
-    \"$name\": \"$id\""
+    \"$name\": {\"image_id\": \"$id\", \"target\": \"http://${TARGET_HOST}:${hostport}\"}"
 done
 
 # The tag is recorded as an alias only, and is deliberately taken from the image rather than

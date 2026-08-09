@@ -1,17 +1,33 @@
-# AG-Sept — problems and requirements
+# AG-Sept — goal, problems, and requirements
 
-**Status:** Living — problem/requirement record for the AG-Sept engineering iterations.  
-**Scope:** record the durable problem framing that starts each AG-Sept iteration and identify the
-system requirements that define what “sufficiently resolved” means.  
+**Status:** Living — goal/problem/requirement record for the AG-Sept engineering iterations.  
+**Scope:** record the durable goal that governs AG-Sept, the problem framing that starts each
+iteration, and the system requirements that define what an acceptable resolution must preserve.  
 **Does not own:** design, validation scenarios, PR sequence, budget, or measured results.
 
 The cross-cutting requirements themselves are owned by
 [`system-requirements.md`](system-requirements.md). This document does not redefine them; it
 records which ones a particular AG-Sept problem brings into scope and how evidence changed the
-next problem.
+next problem while the governing goal remained stable.
 
-The engineering loop is defined by
+The engineering model is defined by
 [`../development/engineering-process.md`](../development/engineering-process.md).
+
+## Goal
+
+> **Establish an evidence-backed horizontal-scaling story for Alloca-Go: identify the meaningful
+> scaling boundaries, demonstrate how independent work can use additional service-compute and
+> writable PostgreSQL resources without weakening correctness, and make the resulting architecture,
+> evidence, and limitations explicit.**
+
+The goal is deliberately broader and more stable than any one AG-Sept problem. It does not
+preselect service replicas, database partitioning, Kubernetes, AWS, or another mechanism. Those
+are possible answers only when a problem, requirements, design, and evidence justify them.
+
+AG-Sept is sufficiently complete when Analyse & Review can support the goal for the agreed
+milestone scope with retained evidence and explicit limitations. It does **not** require every
+conceivable scaling problem to be solved; remaining problems may be deferred or become later
+engineering goals.
 
 ## 1. Iteration A — identify the first scaling frontier
 
@@ -56,9 +72,10 @@ limitations, and the still-undischarged telemetry-overhead control remain owned 
 [`../measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../measurements/reports/ag-sept-pr2-single-instance-frontier.md)
 and its retained artifacts.
 
-That evidence ended Iteration A and changed the next problem. Repeating service-replica
-measurements against the unchanged saturated writer could refine behaviour below the frontier,
-but could not answer how end-to-end writable capacity should scale.
+That evidence resolved Iteration A's problem but did **not** yet achieve the AG-Sept goal. It
+changed the next problem: repeating service-replica measurements against the unchanged saturated
+writer could refine behaviour below the frontier, but could not answer how end-to-end writable
+capacity should scale.
 
 ## 2. Iteration B — compose independent writable database authority
 
@@ -126,22 +143,27 @@ Iteration B can end for AG-Sept scope when evidence demonstrates, at minimum:
 The concrete validation is owned by
 [`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md).
 
+Analyse & Review must then ask both whether this problem is resolved **and whether the AG-Sept
+goal is sufficiently achieved**. Those are different questions.
+
 ## 3. Candidate next iteration — stateless service replicas
 
 Service-replica scaling is a plausible next problem, not yet an automatically scheduled
 continuation of Iteration B.
 
-After Iteration B evidence is analysed and reviewed, the project asks whether the remaining
-high-value problem is:
+After Iteration B evidence is analysed and reviewed against the governing goal, the project asks
+whether the remaining high-value problem is:
 
 > **What useful capacity or availability do additional stateless replicas add within one
 > database-authority shard group, and how does per-authority connection pressure change that
 > result?**
 
-If that is still the right problem, it begins a new iteration at **Problem**. Requirements and
-design may remain largely unchanged; the validation plan already records the candidate replica
-and connection-budget validations, and only then should the milestone schedule commit their
-scope and budget.
+If that is still the right problem for achieving the goal, it begins a new iteration at
+**Problem**. Requirements and design may remain largely unchanged; the validation plan already
+records the candidate replica and connection-budget validations, and only then should the
+milestone schedule commit their scope and budget.
 
-If the Iteration B evidence exposes a more important problem, the loop starts from that problem
-instead. The existence of candidate validation work is not itself a scheduling commitment.
+If the Iteration B evidence shows that the AG-Sept goal is already sufficiently achieved for
+scope, the loop ends. If it exposes a more important problem, the next iteration starts from that
+problem instead. The existence of candidate validation work is not itself a scheduling
+commitment.

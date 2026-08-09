@@ -3,14 +3,15 @@
 This directory records **how Alloca-Go is developed**: the engineering process that governs
 iterations and the implementation records that explain how scoped work was actually built.
 
-It is deliberately separate from requirements, architecture, validation planning, milestone
-scheduling, and measurement evidence.
+It is deliberately separate from goals/requirements, architecture, validation planning,
+milestone scheduling, and measurement evidence.
 
 ## What lives here
 
-- [`engineering-process.md`](engineering-process.md) — the engineering iteration loop, roles and
-  decision ownership, architecture/implementation boundaries, readiness and review rules, branch
-  and PR conventions, documentation ownership, and the AI-assisted collaboration model.
+- [`engineering-process.md`](engineering-process.md) — the goal-governed engineering iteration
+  loop, roles and decision ownership, architecture/implementation boundaries, readiness and review
+  rules, branch and PR conventions, documentation ownership, and the AI-assisted collaboration
+  model.
 - [`implementation/`](implementation/) — durable implementation records: scope as realised,
   concrete mechanisms, discoveries, review findings, deferrals, validation performed, and what
   finally shipped.
@@ -21,7 +22,7 @@ Use the document whose purpose matches the question:
 
 | Question | Home |
 |---|---|
-| What durable problem are we solving, and what must be true? | [`../requirements/`](../requirements/) |
+| What worthwhile outcome are we trying to achieve, what durable problem currently blocks it, and what must be true? | [`../requirements/`](../requirements/) |
 | What system shape or contract satisfies it? | [`../design/`](../design/) |
 | How will we prove or falsify the requirement/design claims? | [`../test/validation-plan/`](../test/validation-plan/) |
 | What do we intend to do now, and in what order/budget? | [`../planning/`](../planning/) |
@@ -36,9 +37,9 @@ permanent home for implementation history.
 
 The key boundaries are:
 
-> Requirements define what must be true. Architecture defines durable contracts.
-> Implementation records explain how the current code realises them and what was learned while
-> doing so.
+> Goals define the worthwhile outcome. Problems identify the current gap. Requirements define
+> what must be true. Architecture defines durable contracts. Implementation records explain how
+> the current code realises them and what was learned while doing so.
 
 Implementation details should not leak into requirements, ADRs, or formal design unless changing
 that detail would change the durable contract itself.

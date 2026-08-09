@@ -3,14 +3,20 @@
 This directory records **how Alloca-Go intends to prove or falsify requirements and design
 claims** before implementation or measurement is treated as complete.
 
-Validation planning is one stage of the engineering iteration loop defined by
-[`../../development/engineering-process.md`](../../development/engineering-process.md):
+Validation planning is one stage inside the engineering iteration loop defined by
+[`../../development/engineering-process.md`](../../development/engineering-process.md). The loop
+is governed by a Goal that normally spans several iterations:
 
 ```text
+                               GOAL
+                                |
+                                v
 Problem -> Requirements -> Design -> Validation plan -> Schedule -> Implement
    ^                                                                |
    |                                                                v
-   +------ more problem to solve <- Analyse & Review <- Evidence ---+
+   +------ next problem <- Analyse & Review <- Evidence ------------+
+                            |
+                            +-- goal sufficiently achieved -> END
 ```
 
 ## What a validation plan owns
@@ -27,6 +33,8 @@ A validation plan may define:
 
 It does **not** own:
 
+- the governing goal, problem, or system requirements — `docs/requirements/` does for durable
+  engineering work;
 - repository-wide evidence validity rules —
   [`../../design/measurement-contract.md`](../../design/measurement-contract.md) does;
 - durable architecture — `docs/design/` does;
@@ -36,10 +44,11 @@ It does **not** own:
 - timing, priority, budget, or PR sequence — `docs/planning/` does.
 
 A validation plan can therefore survive substantial replanning. Scheduling may change *when* a
-validation is run without changing what property the validation means.
+validation is run without changing what property the validation means, and a resolved problem may
+lead to a different next validation while the governing goal remains stable.
 
 ## Current plans
 
 - [`ag-sept-validation-plan.md`](ag-sept-validation-plan.md) — AG-Sept validation of the
   single-authority frontier, Phase 1 multi-authority correctness/failure isolation, and service
-  replica scaling when the iteration analysis selects it.
+  replica scaling when Analyse & Review selects it as the next problem toward the AG-Sept goal.

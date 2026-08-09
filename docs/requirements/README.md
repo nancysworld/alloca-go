@@ -47,5 +47,10 @@ System-level requirements use `REQ-*` identifiers so designs, validation plans, 
 records, and reviews can refer to them without depending on mutable milestone-plan section
 numbers.
 
-The current cross-cutting requirement set is
-[`system-requirements.md`](system-requirements.md).
+## Current requirement records
+
+- [`system-requirements.md`](system-requirements.md) — the cross-cutting `REQ-*` set used across
+  milestones and designs.
+- [`ag-sept.md`](ag-sept.md) — the AG-Sept iteration problems, which system requirements each
+  iteration brings into scope, and the evidence-driven transition from the first frontier problem
+  to horizontal database authority.

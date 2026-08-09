@@ -8,8 +8,8 @@ It is deliberately separate from architecture and planning.
 ## What lives here
 
 - [`engineering-process.md`](engineering-process.md) — development and review roles,
-  architecture/implementation boundaries, problem-first review, escalation rules, and the
-  current AI-assisted collaboration model.
+  architecture/implementation boundaries, problem-first review, escalation rules, branch and
+  PR conventions, and the current AI-assisted collaboration model.
 - [`implementation/`](implementation/) — durable implementation records: scope as realised,
   concrete mechanisms, discoveries, review findings, deferrals, validation, and what finally
   shipped.

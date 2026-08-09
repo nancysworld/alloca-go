@@ -208,7 +208,33 @@ Where practical, a correctness or certification gate should have a test or contr
 that fails specifically when that property is removed. Passing a broad suite is weaker evidence
 than demonstrating that the intended gate notices its own absence.
 
-## 5. Documentation ownership and lifecycle
+## 5. Branch and PR conventions
+
+Work happens on a branch named for the **work unit**, not for the change:
+
+```text
+agent/<work-unit>          e.g. agent/ag-sept-pr3b
+agent/<work-unit>-<aspect> e.g. agent/ag-sept-pr3b-status
+```
+
+The work-unit name is the same stable name the implementation record uses
+([`implementation/README.md`](implementation/README.md)), so the branch, its record, and its PR
+are traceable to one another a year later. A second branch against the same work unit adds a
+short suffix naming what it carries rather than inventing a new unit name. The `agent/` prefix
+records that the branch carries agent-implemented work submitted for maintainer review; it is a
+statement about how the change was produced, not about how much it is trusted, and it does not
+shorten the review the change would otherwise get.
+
+A PR opens as a **draft** and stays one until the local gate and the validation the change calls
+for have passed and the template's questions are answered; it is then marked ready, and the
+maintainer merges. [`../../.github/pull_request_template.md`](../../.github/pull_request_template.md)
+owns those questions and the disclosure checklist — they are not restated here.
+
+Branch names are themselves published artifacts. They fall under
+[`../public-disclosure-policy.md`](../public-disclosure-policy.md) exactly as file contents,
+commit messages, and PR text do.
+
+## 6. Documentation ownership and lifecycle
 
 The repository separates documents by what they own:
 
@@ -234,7 +260,7 @@ The document owner principle is simple:
 > A fact should have one normative home. Other documents link to it rather than maintaining a
 > second competing copy.
 
-## 6. AI-assisted engineering and public provenance
+## 7. AI-assisted engineering and public provenance
 
 AI assistance is treated as engineering input, not autonomous authority. Designs, patches,
 reviews, and explanations produced with AI tools are subject to the same correctness,

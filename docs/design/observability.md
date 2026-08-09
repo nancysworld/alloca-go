@@ -68,6 +68,23 @@ Diagnostic context that is useful in a log and ruinous as a metric label therefo
 in the **context**: `telemetry.WithRequestID` / `telemetry.RequestID` carry a per-request
 identifier that the logging recorder reads and a metrics recorder must ignore.
 
+### 2.1 Bounded by topology, not by request content
+
+The rule above bans labels drawn from *request content*. A scaled deployment introduces a second
+question: which **topology** dimensions may label a series.
+
+The test is whether the dimension's cardinality is fixed by the deployment or grows with use.
+
+- **Database-authority identity and replica identity are permitted.** A shard-affine service
+  unit serves exactly one authority ([`deployment-architecture.md`](deployment-architecture.md)
+  §3), so both are bounded by the topology an operator deploys. This is what makes per-authority
+  totals readable from per-service scrapes rather than needing a request-derived label.
+- **Organisation is not permitted.** Organisation count grows with tenants, so it is unbounded
+  in exactly the way §2 forbids — even though placement makes it look like a topology fact.
+
+An organisation-scoped question is answered by the authority that owns it, not by labelling the
+series with the organisation.
+
 ---
 
 ## 3. `RequestObservation`

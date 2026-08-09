@@ -322,8 +322,9 @@ make topo-deployment > test/results/deployment.json
 every unit must share — measurement-contract §11's identity of the deployed artifact. It is a separate step
 rather than something `alloca-load` does, for two reasons: a process cannot see which image
 wraps it, so a service asked this question could only repeat back an environment variable;
-and reading it needs the Docker socket, which is root on the host and precisely what §6.3
-keeps the generator away from so it can later move to separate compute.
+and reading it needs the Docker socket, which is root on the host and precisely what
+`measurement-contract.md` §13.1 keeps the generator away from so it can later move to separate
+compute.
 
 It refuses a topology whose units are on different images. That is the failure the commit
 SHA cannot see — the same code served from a stale `:dev` tag, or rebuilt on a newer base

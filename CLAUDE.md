@@ -6,8 +6,10 @@ This file records stable repository conventions that are easy to violate silentl
 duplicate the code, Makefile, or detailed documentation. When this file conflicts with an owning
 document, the owning document wins; update this file rather than working around the discrepancy.
 
-Start with `docs/design/high-level-design.md` for the system shape and document ownership map.
-The engineering process is defined in `docs/development/engineering-process.md`.
+Start with `docs/README.md` for the repository documentation map, then
+`docs/design/high-level-design.md` for the system shape and the design ownership table. The
+engineering process — the goal-governed iteration loop and the document ownership model — is
+defined in `docs/development/engineering-process.md`.
 
 ## Roles and design escalation
 
@@ -103,6 +105,15 @@ Keep one normative home per fact. Other documents should link to or summarize th
 without maintaining a competing version.
 
 Follow the document ownership model defined in `docs/development/engineering-process.md`.
+
+**Schedule is downstream of durable meaning.** Code, tests, requirements, and durable design must
+not cite a milestone plan for normative meaning — a plan is expected to change and cannot be the
+stable definition of runtime behaviour or evidence validity. Cite `REQ-*`, `INV-*`, `VAL-*`, a
+design document, an ADR, or the measurement contract instead. A plan may be cited for a genuinely
+scheduling or historical fact, and the citation should say that is what it is.
+
+Name the document as well as the section in a cross-document reference; a bare `§` is safe only
+where its owner is unambiguous in context. Line numbers are not durable references.
 
 Prefer executable truth over duplicated implementation prose. Code and tests own implementation
 mechanics; implementation documentation should record what code cannot, such as discoveries,

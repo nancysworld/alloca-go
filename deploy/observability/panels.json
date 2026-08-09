@@ -14,7 +14,7 @@
     "The exporter records the value it used because a rate over 5s and a rate over 60s are",
     "different measurements, and a CSV that does not say which is not reproducible.",
     "",
-    "Scope is ag-sept-plan \u00a77's required outputs and nothing else."
+    "Scope is measurement-contract \u00a76's required indicators and nothing else."
   ],
   "panels": [
     {
@@ -41,7 +41,7 @@
       "key": "latency_p50",
       "title": "Request latency p50",
       "unit": "s",
-      "_note": "Required by ag-sept-plan \u00a77 and by measurement-contract \u00a76, and it is an SLO gate (\u00a77: p50 <= 50ms). SLO-safe capacity is the highest goodput satisfying *all* latency gates, so a panel set without p50 cannot evaluate one of the three and cannot discharge PR2's own deliverable.",
+      "_note": "Required by measurement-contract \u00a76, and it is an SLO gate (measurement-contract \u00a77: p50 <= 50ms). SLO-safe capacity is the highest goodput satisfying *all* latency gates, so a panel set without p50 cannot evaluate one of the three.",
       "expr": "histogram_quantile(0.50, sum by (le) (rate(alloca_request_duration_seconds_bucket[$RANGE])))"
     },
     {

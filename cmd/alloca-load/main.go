@@ -1,7 +1,7 @@
 // Command alloca-load is the external load generator for AG-Sept experiments.
 //
 // It runs on compute separate from the service and speaks only HTTP, so a run it produces
-// can back a publishable capacity claim (ag-sept-plan §6.3). It holds no database
+// can back a publishable capacity claim (measurement-contract §13.1). It holds no database
 // credentials; reconciling client totals against persisted state is alloca-verify's job.
 //
 // Every run writes a report combining the measurement-contract §11 manifest with the run
@@ -358,7 +358,7 @@ func preflightDeployment(path string, targets []string) (*loadgen.Deployment, er
 // -placement and an explicit -target are refused together rather than resolved by
 // precedence. They answer the same question differently, and a run that silently ignored one
 // of them would route by a map the operator did not think was in force — which is the one
-// mistake the ag-sept-plan §12.5 misrouting control exists to make visible, arriving instead
+// mistake the VAL-COR-5 misrouting control exists to make visible, arriving instead
 // as a wall of refusals that look like a service defect.
 func buildRouter(placementPath, target string, endpoints endpointMap, explicitTarget bool) (loadgen.Router, error) {
 	if placementPath == "" {

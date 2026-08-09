@@ -3,7 +3,7 @@
 // It reads the report alloca-load wrote and queries PostgreSQL directly, running the four
 // checks of measurement-contract §12. It is a separate binary from the generator so the
 // generator can run on compute separate from the service without database credentials
-// (ag-sept-plan §6.3); this one runs wherever the database is reachable.
+// (measurement-contract §13.1); this one runs wherever the database is reachable.
 //
 // It exits non-zero when the run is not quotable, so a pipeline cannot collect numbers from
 // a run whose totals do not reconcile.

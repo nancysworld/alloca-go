@@ -263,8 +263,9 @@ runtime topology properties are owned by
 ## 4. Reading order
 
 1. **This document** — problem, principles, architecture shape.
-2. [`../requirements/system-requirements.md`](../requirements/system-requirements.md) — the
-   cross-cutting system requirements the designs must satisfy.
+2. [`../requirements/`](../requirements/) — the cross-cutting system requirements the designs
+   must satisfy, and the governing engineering goal and open problem that motivate the current
+   work.
 3. [`../planning/alloca-go-roadmap.md`](../planning/alloca-go-roadmap.md) — the
    project theses, milestones, and measurement vocabulary.
 4. [`system-context.md`](system-context.md) — system boundary, actors, and module layout.
@@ -302,16 +303,17 @@ for it.
 | Concern | Owning document |
 |---|---|
 | Cross-cutting durable problems and system requirements | [`../requirements/system-requirements.md`](../requirements/system-requirements.md) |
+| The governing AG-Sept engineering goal, its iteration problems, and which requirements each brings into scope | [`../requirements/ag-sept.md`](../requirements/ag-sept.md) |
 | Project intent, theses, milestone roadmap, measurement vocabulary, SLO lifecycle | [`../planning/alloca-go-roadmap.md`](../planning/alloca-go-roadmap.md) |
 | System boundary, actors, module diagram | [`system-context.md`](system-context.md) |
 | Package layout, dependency rules, extraction seams | [`project-structure.md`](project-structure.md) |
-| Evidence labelling, **outcome taxonomy**, SLIs, provisional SLOs, **timeout budget**, run manifest, reconciliation contract | [`measurement-contract.md`](measurement-contract.md) |
+| Evidence labelling, **outcome taxonomy**, SLIs, provisional SLOs, **timeout budget**, run manifest, reconciliation contract, **quotability levels and generator provenance** | [`measurement-contract.md`](measurement-contract.md) |
 | **Local domain model, state machines, three logical authorities, lock protocol, expiry, outcome mapping, idempotency** | [`transaction-semantics.md`](transaction-semantics.md) |
 | **Complete horizontal scaling model: service replicas, shard groups, database-authority axis, routing order, connection budgets, replica-vs-authority failure boundaries** | [`horizontal-scaling.md`](horizontal-scaling.md) |
 | **Logical authority / ownership axis / database authority terminology; organisation placement; same-/cross-database-authority booking; Phase 1/Phase 2 horizontal database architecture** | [`horizontal-database-authority.md`](horizontal-database-authority.md) |
 | **Deployment units and lifecycle: shard-affine serving, migration boundary, liveness/readiness, shutdown, configuration, artifact/topology provenance, orchestration properties** | [`deployment-architecture.md`](deployment-architecture.md) |
 | HTTP contract — routes, request/response shapes, status mapping, operational endpoints | [`api-surface.md`](api-surface.md) |
-| What the service emits about itself — observation types, cardinality rule, log shape | [`observability.md`](observability.md) |
+| What the service emits about itself — observation types, cardinality rule, which topology dimensions may label a series, log shape | [`observability.md`](observability.md) |
 | Latency bands, deadline-budget rationale, retry policy | [`latency-timeouts-and-retries.md`](latency-timeouts-and-retries.md) |
 | Validation intent for AG-Sept workloads, faults, negative controls, and scaling scenarios | [`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md) |
 | Engineering iteration loop, review/ownership rules, branch and PR process | [`../development/engineering-process.md`](../development/engineering-process.md) |

@@ -39,7 +39,18 @@ that directory's caveats before quoting them.
 
 **What this cannot be.** The generator shared a host with the service throughout, so every run
 here is `quotability.level: local` by construction, and every `run.json` refuses the `capacity`
-level by name. Publishable capacity needs the separate compute of §10, which arrives with PR4.
+level by name. Publishable capacity needs the separate generator compute of
+[`measurement-contract.md`](../../design/measurement-contract.md) §13.1. **It never arrives in
+AG-Sept:** the deployment path that would have supplied it was withdrawn after this report was
+written (`ag-sept-plan.md` §6.3), so the rule is honoured by labelling and the milestone closes
+with a bounded local frontier rather than a published capacity number.
+
+**Reading "PR3" below.** This report was written under the v0.4 plan, whose PR3 was the container
+and local scale-out work. The milestone was reordered afterwards: that work is **PR4** in
+[`ag-sept-plan.md`](../../planning/ag-sept-plan.md), and PR3 now covers horizontal database
+authority. Every forward-looking "PR3" below — the exporters, the scale-out prediction of §5.4,
+the snapshot redesign, the re-run of these cells — means the work now scheduled as PR4. The
+obligations were carried forward in full; only their PR number changed.
 
 So §5's ceiling is a **measured property of this workstation**, and it is stated plainly
 because that is the question PR2 exists to answer. It is *not* a capacity claim in the
@@ -50,8 +61,8 @@ without it.
 
 ## 1. The generator is not the bottleneck `[MEASURED]`
 
-Artifacts: [`../pr2-generator-control/`](../pr2-generator-control/). ag-sept-plan-old §12.2,
-mandatory. Dispersed, concurrency 16, 20s windows.
+Artifacts: [`../pr2-generator-control/`](../pr2-generator-control/). VAL-NEG-2, mandatory.
+Dispersed, concurrency 16, 20s windows.
 
 | Generator `GOMAXPROCS` | throughput req/s | generator CPU/core | % of unconstrained |
 |---:|---:|---:|---:|
@@ -457,8 +468,9 @@ closed-loop, so its queue is capped by the worker count, and the first enforced 
 `[DERIVED]` to engage around 8× the highest concurrency tested. What now bounds the exploration is throughput saturation rather than
 missing cells: past c=128 at pool 80 the queue grows and the rate does not.
 
-**Recommended operating capacity: deferred to PR3**, per the scope note §5.6 and the plan's §14
-PR3 line — but only the *term* is deferred, not the work. `measurement-contract.md` §3 defines
+**Recommended operating capacity: deferred**, per `ag-sept-pr2.md` §5.6 — to the v0.4 plan's PR3
+at the time, and carried forward to PR4 when the milestone was reordered (`ag-sept-plan.md` §3).
+Only the *term* is deferred, not the work. `measurement-contract.md` §3 defines
 it as a cap reserving headroom for **variance, rolling deployment, and loss of one unit**. At
 one replica the last two cannot be reserved against at all, so the defined quantity is not
 computable here. The one component that *is* meaningful is measured and reported above:
@@ -470,7 +482,7 @@ a variance estimate without repeating it.
 
 ## 6. What this deployment cannot see, and what PR3 should fix
 
-`ag-sept-plan-old.md` §7 requires "application and database utilisation". Application utilisation
+`measurement-contract.md` §6 requires application and database utilisation. Application utilisation
 is measured (`process_cpu_seconds_total`). **Database utilisation is still not part of the
 measured deliverable** — the service exposes its own pool state but nothing about the
 PostgreSQL process, and §14 PR2's wording says "database-pool pressure", which is a narrower
@@ -519,8 +531,8 @@ is the *dashboard* that misleads, and only between 0.1 s and 0.25 s.
 Buckets are deliberately **not** changed here. Adding boundaries costs cardinality on a
 labelled histogram, and PR2's latency conclusions do not depend on the panel. If PR3 needs the
 dashboard to be quantitatively trustworthy in that band, insert `0.15` and `0.2` and re-measure
-the telemetry overhead, since bucket count is part of what §6.2 was trying to price. Registered
-in [`ag-sept-plan-old.md`](../../planning/ag-sept-plan-old.md) under *Deferred from PR2*, group C.
+the telemetry overhead, since bucket count is part of what VAL-NEG-3 was trying to price.
+Registered in [`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §6.4, group C.
 
 ### 6.2 TSDB snapshots are cumulative, and the redesign is deferred to PR3
 
@@ -540,8 +552,8 @@ Deferred rather than fixed because the redesign changes how every cell is produc
 re-runs everything on the container path anyway; doing it here means re-exporting 33 cells for
 no new evidence. The shape PR3 should take: one snapshot per *sweep* with cell-specific CSVs and
 windows, or a fresh Prometheus data directory per sweep. It matters more there than here,
-because PR3 multiplies cells by replica count. Registered in
-[`ag-sept-plan-old.md`](../../planning/ag-sept-plan-old.md) under *Deferred from PR2*, group C.
+because the replica matrix multiplies cells by replica count. Registered in
+[`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §6.4, group C.
 
 ### 6.3 The prototype's overload failure is still unreproduced, and this harness cannot produce it
 
@@ -657,7 +669,7 @@ arrivals drive latency linearly upward (§2's cells show that plainly), and once
 a **binding client deadline**, timeouts begin and **controlled retry-on-timeout** supplies the
 amplification. That is a burst-plus-deadline-plus-retry route rather than a sustained-overload
 route, and this project already scopes the ingredient it lacks least: a *synchronized release
-wave* is in `ag-sept-plan-old.md` §3.1 and PR5's scope, and retrying under the same idempotency key
+wave* is in `ag-sept-validation-plan.md` §3.7, and retrying under the same idempotency key
 is the design's own replay path rather than an invented behaviour.
 
 So the honest statement is: **open-loop mode remains a valuable planned experiment, not a proven
@@ -688,8 +700,8 @@ the budget would first be visible.
 **Where this goes next.** Nancy's call, 2026-08-04: this is **plan work, not a debt register
 entry** — it is the prototype finding the project was built to resolve, and `tech-debts.md` is
 where it would quietly stop being anyone's deliverable. It is recorded in
-[`ag-sept-plan-old.md`](../../planning/ag-sept-plan-old.md) under *Deferred from PR2*, group A —
-**unassigned**, because where it lands is a re-planning decision rather than a PR3 line item.
+[`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §6.4, group A —
+**unassigned**, because where it lands is a re-planning decision rather than a line item here.
 It sits there with everything else PR2 deferred: the open-loop generator mode that makes the
 failure reachable at all, retry-on-timeout, the `slots_for()` fix that unblocks c ≥ 256, the
 timeout-budget negative control, and the `admission_cap` decision. That section carries the sizing, and the reason
@@ -705,7 +717,7 @@ make db-up && make obs-up
 make dev-measured                         # terminal 1; builds the service so /meta reports a revision
 go build -o bin/alloca-load ./cmd/alloca-load
 
-./test/scripts/control-generator.sh       # §12.2, first (§1)
+./test/scripts/control-generator.sh       # VAL-NEG-2, first (§1)
 
 # §1.1 — the same control at the plateau operating point
 WORKLOAD=dispersed CONCURRENCY=128 WINDOW=20s PROCS="1 2 4 0" SLOTS=8000 \

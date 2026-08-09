@@ -638,17 +638,16 @@ intent, the "What PR-n delivers" tables list what was *planned*, and budgets app
 estimates. Only §6d of [`ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md) was
 written as a record of what was built.
 
-Residual wording elsewhere still calls them scope notes:
-[`ag-sept-plan-new.md`](ag-sept-plan-new.md) §0 and §4,
-[`horizontal-database-authority.md`](../design/horizontal-database-authority.md) §9, and the
-PR2 frontier report.
+Residual wording elsewhere still calls them scope notes: the PR2 frontier report. The plan's own
+references were corrected when it was slimmed to a schedule on 2026-08-09, and
+[`horizontal-database-authority.md`](../design/horizontal-database-authority.md) §9 with it.
 
 ### Why it is this way
 
 The directory convention arrived after the work it classifies. Moving the files cost one commit
-and fixed the taxonomy immediately; rewriting three documents covering two merged PRs and one in
-flight is a different job, and doing it inside an open review would have churned the branch the
-review was reading.
+and fixed the taxonomy immediately; rewriting three documents covering several merged PRs and one
+not yet started is a different job, and doing it inside an open review would have churned the
+branch the review was reading.
 
 ### Why it is acceptable today
 
@@ -669,11 +668,11 @@ No document currently cites a "delivers" row as evidence that something shipped.
 
 ### What a fix must preserve
 
-- **Section numbers.** [`ag-sept-plan-old.md`](ag-sept-plan-old.md) §5.6 and §5.6.1,
-  [`ag-sept-plan-new.md`](ag-sept-plan-new.md) §5.5 and §5.6,
-  [`container-topology.md`](../operations/container-topology.md) §6a and §6b,
-  [ADR-0003](../decisions/0003-deployed-artifact-identity.md) §6d, and
-  `test/scripts/sweep.sh` §5.4 all cite into these documents. Renumbering silently invalidates
+- **Section numbers**, because other documents cite *into* these records by section. The
+  incoming citations are: `ag-sept-pr2.md` §5.6 and §5.6.1 (from the plan and the PR2 frontier
+  report), `ag-sept-pr2.md` §5.4 (from `test/scripts/sweep.sh`), and `ag-sept-pr3.md` §6a, §6b
+  and §6d (from [`container-topology.md`](../operations/container-topology.md) and
+  [ADR-0003](../decisions/0003-deployed-artifact-identity.md)). Renumbering silently invalidates
   a shell comment that nothing tests.
 - **The historical statements about what these documents were.** `ag-sept-pr1.md` §1 records
   that an earlier revision misquoted its own exit gate, and `ag-sept-pr2.md` §5.8 cites "PR1's

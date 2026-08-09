@@ -25,7 +25,7 @@ import (
 //
 // So the observation is taken where it can actually be made, by inspecting the live
 // containers from the host (`test/scripts/record-deployment.sh`), and travels to the run as
-// a file. That also keeps ag-sept-plan §6.3 intact: `alloca-load` holds no credentials and
+// a file. That also keeps measurement-contract §13.1 intact: `alloca-load` holds no credentials and
 // speaks only HTTP, and a Docker socket is root on the host — the last thing a generator that
 // must later move to separate compute should hold. The file crosses that boundary; the socket
 // does not.

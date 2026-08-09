@@ -5,21 +5,23 @@ produced may be quoted.
 
 **This document owns the procedure, not the rules.** What a run must contain and when a
 number may be quoted are owned by
-[`../design/measurement-contract.md`](../design/measurement-contract.md) and
-[`ag-sept-plan-new.md`](../planning/ag-sept-plan-new.md) §6; what PR1 built against them is recorded
-in [`ag-sept-pr1.md`](../development/implementation/ag-sept-pr1.md). Where those disagree with
+[`../design/measurement-contract.md`](../design/measurement-contract.md); which controlled
+workloads exist and what each proves is owned by
+[`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md);
+what PR1 built against them is recorded in
+[`ag-sept-pr1.md`](../development/implementation/ag-sept-pr1.md). Where those disagree with
 this page, they win.
 
 ## 1. The four binaries
 
 The harness is deliberately split, because the split is what makes a run publishable
-(§6.3): the generator speaks only HTTP and holds **no database credentials**, so it can
-later move to separate compute without changing anything.
+(`measurement-contract.md` §13.1): the generator speaks only HTTP and holds **no database
+credentials**, so it can later move to separate compute without changing anything.
 
 | Binary | Role | Database access |
 |---|---|---|
 | `cmd/alloca-go` | the service under test; also serves `/metrics` on its own port | yes |
-| `cmd/alloca-seed` | builds the fixture and asserts the §5.3 clean start | yes |
+| `cmd/alloca-seed` | builds the fixture and asserts the validation plan §3.3 clean start | yes |
 | `cmd/alloca-load` | the external generator; writes the run report | **no** |
 | `cmd/alloca-verify` | reconciles the report against the metrics scrape and persisted state (measurement-contract §12) | yes |
 
@@ -116,7 +118,7 @@ fields depend on that stamp, and they are not the same field:
 | `generator_commit_sha` | the generator's own build | which harness produced the numbers |
 
 `service_commit_sha` is the one measurement-contract §11 means by "commit SHA". The generator reads it from
-`/meta` over the same HTTP-only boundary it already uses, so the §6.3 separation is untouched
+`/meta` over the same HTTP-only boundary it already uses, so the §13.1 separation is untouched
 — it asks the service to describe itself rather than sharing state with it.
 
 **Why they are separate.** A service left running from one commit while the harness is rebuilt
@@ -243,7 +245,7 @@ reached it.
 
 There is no `quotable: true` field, and deliberately so. Whether a number may be used depends
 on what it is used *for*: measurement-contract §11 gates a capacity claim on topology
-provenance, and ag-sept-plan §6.3 gates
+provenance, and `measurement-contract.md` §13.1 gates
 a published one on the generator running off the service host. An unqualified boolean cannot
 express that, and the one this replaced invited a co-resident smoke run to be read as
 publishable.
@@ -255,7 +257,7 @@ Both binaries record a level instead:
 | `none` | The run measured nothing usable | validation off or failed, run interrupted, warm-up rows unreconciled, reconciliation failed, or the identity of the service or generator missing |
 | `local` | A sound observation about this machine | both revisions recorded from clean trees, plus everything `/meta` reports about the service |
 | `capacity` | May back a capacity claim about that topology | + PostgreSQL version, pool sizes, replica count, deployment topology, environment — the fields no endpoint reports |
-| `publishable` | Satisfies §6.3's provenance requirement | + `-generator-location` names a host separate from the service |
+| `publishable` | Satisfies `measurement-contract.md` §13.1's provenance requirement | + `-generator-location` names a host separate from the service |
 
 ```sh
 jq -r '.quotability | "\(.level)\t\(.blocked_because)"' test/results/run.json
@@ -267,7 +269,7 @@ supplied by an operator in the PR that first has something to say about them —
 in PR2 (which took the operator-supplied count to zero by reading `/meta`), placement,
 authority identity, topology and image identity in PR3b, replica count and aggregate pool
 capacity in PR4 (`measurement-contract.md` §11). The environment stage the earlier plan assigned
-to an AWS PR does not arrive; that path is withdrawn (`ag-sept-plan-new.md` §10). The
+to an AWS PR does not arrive; that path is withdrawn (scheduling: `ag-sept-plan.md` §6.3). The
 report says so itself in `blocked_because`, naming each missing field and the PR that owns
 it, so an incomplete manifest reads as scheduled rather than broken.
 
@@ -282,8 +284,9 @@ The bar is declared at the call site because only the caller knows what the numb
 run below its `-require` level exits non-zero with the reason, and still writes its report.
 
 One thing `publishable` does *not* mean: that the run is ready to publish. It checks the
-provenance ag-sept-plan §6.3 requires, which is a declaration in the manifest. The ag-sept-plan §12.2
-generator-headroom control is evidence rather than provenance, and it arrives with PR4.
+provenance `measurement-contract.md` §13.1 requires, which is a declaration in the manifest. The
+VAL-NEG-2 generator-headroom control is evidence rather than provenance, and it is scheduled with
+PR4.
 
 `alloca-verify` prints five checks — one per measurement-contract §12 database rule (INV-1, INV-5, INV-4,
 INV-7) and the client/server comparison, which carries no invariant because it is a
@@ -369,7 +372,7 @@ totals carried through to the verifier, and belongs with the sweeps in PR2 that 
 
 ## 6. The negative control
 
-Mandatory and not descopable (`measurement-contract.md` §5.5): the harness must **fail**
+Mandatory and not descopable (`measurement-contract.md` §5 item 5; VAL-NEG-1): the harness must **fail**
 when response validation is off, so a reported success cannot be an unchecked `200`.
 
 ```sh
@@ -439,7 +442,7 @@ jq '.summary.totals' test/results/run.json     # "replay": true on everything me
 Idempotency keys are `workload-seq-step` with no per-run nonce (`internal/loadgen/workload.go:39`),
 so re-running the same `-workload` re-sends the keys the previous run already used and the
 server correctly replays each recorded outcome instead of committing. The run then passes
-reconciliation — no invariant is broken — while measuring nothing, which is the §5.3 trap
+reconciliation — no invariant is broken — while measuring nothing, which is the validation plan §3.3 trap
 in a different costume. Re-seed with `-reset` between runs (it truncates
 `idempotency_records`), or change `-workload`.
 
@@ -506,9 +509,10 @@ It establishes **no capacity**, and no number from it may be quoted as one. PR2 
 one-instance frontier, but with the generator still on this machine, so its result is a
 *bounded local* one: the generator-headroom control limits how far the co-resident generator
 can be distorting it. A publishable capacity claim needs the generator on separate compute
-([`ag-sept-plan-new.md`](../planning/ag-sept-plan-new.md) §6.3). That compute is no longer
-funded in AG-Sept — the deployment path that would have provided it is withdrawn (§10) — so
-every AG-Sept run stays `local` by construction and the rule is honoured by labelling.
+([`../design/measurement-contract.md`](../design/measurement-contract.md) §13.1). That compute is
+no longer funded in AG-Sept — the deployment path that would have provided it is withdrawn
+(scheduling: [`../planning/ag-sept-plan.md`](../planning/ag-sept-plan.md) §6.3) — so every
+AG-Sept run stays `local` by construction and the rule is honoured by labelling.
 
 Two consequences for anything you keep:
 
@@ -519,7 +523,7 @@ Two consequences for anything you keep:
   service's shape. That gap has to close before a run backs a published number (measurement-contract §11).
 - Committed artifacts live in [`../measurements/`](../measurements/); the PR1 smoke run is
   [`pr1-smoke-run/`](../measurements/pr1-smoke-run/). Quote figures from an artifact, never
-  from a terminal (`measurement-contract` §5.3).
+  from a terminal (`measurement-contract.md` §5 item 3).
 
 `test/results/` is git-ignored scratch, and that is the whole distinction: a run only
 becomes evidence by being copied into `../measurements/` on purpose. Nothing is lost by

@@ -114,7 +114,7 @@ func New(reg prometheus.Registerer) *Recorder {
 			Help: "Requests refused because they reached a unit that does not own the " +
 				"requested organisation. A deployment fault, counted separately from " +
 				"invalid_request so it is not buried among malformed client requests. " +
-				"Not labelled by organisation: that is unbounded (ag-sept-plan-new.md §6.1).",
+				"Not labelled by organisation: that is unbounded (observability.md §2.1).",
 		}, []string{"operation"}),
 	}
 

@@ -5,17 +5,20 @@ import (
 	"strings"
 )
 
-// Level is what a run's numbers may back. It replaces an earlier boolean `quotable`, which
-// could not be answered honestly: measurement-contract §11 gates a *capacity claim* on
-// topology provenance, and ag-sept-plan §6.3 gates a *publishable* claim on the generator
-// running on separate compute — so "is this quotable?" has no answer until the claim is
-// named. An unqualified true invited a later reader to publish a co-resident run.
+// Level is what a run's numbers may back. The ladder and its rules are
+// measurement-contract §13.2; this type enforces them.
+//
+// It replaces an earlier boolean `quotable`, which could not be answered honestly:
+// measurement-contract §11 gates a *capacity claim* on topology provenance, and §13.1 gates a
+// *publishable* claim on the generator running on separate compute — so "is this quotable?" has
+// no answer until the claim is named. An unqualified true invited a later reader to publish a
+// co-resident run.
 //
 // The levels are ordered, and a run sits at the highest one whose requirements its manifest
 // and summary satisfy. They are deliberately named for the claim rather than for the PR that
 // first reaches them: a report outlives the schedule, and "PR1" would oblige whoever reads
 // docs/measurements/ in a year to reconstruct that PR's scope before knowing what the number
-// is good for. Which PR reaches which level is recorded in the plan, where it belongs.
+// is good for. Which milestone reaches which level is scheduling, recorded in the plan.
 type Level string
 
 const (
@@ -26,24 +29,22 @@ const (
 
 	// LevelLocal is a sound measurement with every generator-determinable field of
 	// measurement-contract §11 populated. The service's shape is unrecorded and the generator may
-	// be co-resident, so it is an observation about this machine, not a capacity claim. PR1 and
-	// PR2 live here.
+	// be co-resident, so it is an observation about this machine, not a capacity claim.
 	LevelLocal Level = "local"
 
 	// LevelCapacity adds the service-side and topology provenance of measurement-contract §11:
 	// PostgreSQL version, pool sizes, server GOMAXPROCS, timeout budget, reservation TTL, replica
 	// count, deployment topology and environment. It may back a capacity claim about that
-	// topology, but not a published one — ag-sept-plan §6.3 is not yet satisfied. PR2 supplies
-	// the service shape, PR3 the topology.
+	// topology, but not a published one — measurement-contract §13.1 is not yet satisfied.
 	LevelCapacity Level = "capacity"
 
-	// LevelPublishable adds ag-sept-plan §6.3: the generator ran on compute separate from the
-	// service.
+	// LevelPublishable adds measurement-contract §13.1: the generator ran on compute separate
+	// from the service.
 	//
 	// This checks the *declaration* in the manifest, which is all a manifest can do. It does
-	// not stand in for ag-sept-plan §12.2's generator-headroom control, which is evidence rather
-	// than provenance and arrives with PR4 — a run reaching this level has satisfied the
-	// provenance gate, not the whole publication gate.
+	// not stand in for the VAL-NEG-2 generator-headroom control, which is evidence rather
+	// than provenance — a run reaching this level has satisfied the provenance gate, not the
+	// whole publication gate (measurement-contract §5, §13.1).
 	LevelPublishable Level = "publishable"
 )
 
@@ -82,10 +83,10 @@ func ParseLevel(s string) (Level, error) {
 // Quotability is the verdict recorded with every report: what this run may back, and what
 // stands between it and the next level up.
 //
-// BlockedBecause names the missing thing rather than only reporting a failure, because the
-// staged manifest of ag-sept-plan §14 makes "incomplete" the *expected* state for most of
-// AG-Sept. An operator reading a PR1 report needs to see that the gap is scheduled, not
-// broken.
+// BlockedBecause names the missing thing rather than only reporting a failure, because
+// provenance is staged across a milestone's PRs, which makes "incomplete" the expected state
+// for much of it (measurement-contract §13.2). An operator reading an early report needs to
+// see that the gap is scheduled, not broken; which PR closes which gap is the plan's.
 type Quotability struct {
 	Level Level `json:"level"`
 

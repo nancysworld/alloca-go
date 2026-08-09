@@ -118,7 +118,7 @@ func parseCount(s string) (int, error) {
 
 // Scrapes are the server-side counters bracketing the measured phase.
 //
-// Baseline is optional and is what makes warm-up possible. §5.4 of the PR2 scope note runs
+// Baseline is optional and is what makes warm-up possible. `ag-sept-pr2.md` §5.4 runs
 // warm-up traffic, resets the fixture, and leaves the service *running* — because restarting
 // it would discard exactly what warm-up establishes. Prometheus counters are cumulative and
 // only a process restart zeroes them, so After alone carries the warm-up requests too, while

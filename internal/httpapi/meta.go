@@ -36,7 +36,7 @@ type metaResponse struct {
 
 	// Telemetry names which recorder is wired, because two runs under different observation
 	// settings are not comparable and nothing in the totals would say so. It is the field
-	// that lets ag-sept-plan §6.2's comparison identify its own arms.
+	// that lets the VAL-NEG-3 telemetry comparison identify its own arms.
 	Telemetry string `json:"telemetry_mode"`
 
 	// Placement is which authority this unit is and which routing it is serving under.
@@ -68,8 +68,9 @@ type PlacementMeta struct {
 
 // DatabaseMeta is what the service can say about its own authority without asking the
 // operator. Both fields can change a measurement — the server version decides planner
-// behaviour, and the pool ceiling is one of the admission boundaries ag-sept-plan §11.2 lists
-// as a candidate frontier — which is the bar §11 sets for inclusion.
+// behaviour, and the pool ceiling is one of the candidate limiting mechanisms
+// ag-sept-validation-plan.md §7 lists — which is the bar measurement-contract.md §11 sets for
+// inclusion.
 type DatabaseMeta struct {
 	// Version is PostgreSQL's own `server_version`, empty when it could not be read.
 	Version string `json:"version,omitempty"`

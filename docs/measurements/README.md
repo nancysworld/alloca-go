@@ -30,9 +30,9 @@ artifact directories are large and are kept anyway: without them a report is an 
 | Directory | Produced by | Contents |
 |---|---|---|
 | [`pr2-frontier/`](pr2-frontier/) | `test/scripts/sweep.sh` | The frontier sweeps: `dispersed/` (concurrency ladder), `pool/` + `pool-repeat/` (pool ladder), `plateau/` + `plateau-repeat/` (the two combined), `contended-1/` + `contended-2/` (hot-slot and hot-identity), and `postgres-waits/` (database-side sampling, diagnostic only) |
-| [`pr2-generator-control/`](pr2-generator-control/) | `test/scripts/control-generator.sh` | The mandatory ag-sept-plan §12.2 generator-headroom control, at ~2,150 req/s |
+| [`pr2-generator-control/`](pr2-generator-control/) | `test/scripts/control-generator.sh` | The mandatory VAL-NEG-2 generator-headroom control, at ~2,150 req/s |
 | [`pr2-generator-control-plateau/`](pr2-generator-control-plateau/) | `test/scripts/control-generator.sh` | The same control re-run at the ~4,300 req/s operating point the PR2 conclusion rests on |
-| [`pr2-telemetry/`](pr2-telemetry/) | `test/scripts/sweep.sh` | The §6.2 telemetry comparison: `full` and `metrics_only`, two passes each. §6.2 is **not discharged** — within-mode spread exceeded the between-mode delta, so no overhead figure is claimed |
+| [`pr2-telemetry/`](pr2-telemetry/) | `test/scripts/sweep.sh` | The VAL-NEG-3 telemetry comparison: `full` and `metrics_only`, two passes each. VAL-NEG-3 is **not discharged** — within-mode spread exceeded the between-mode delta, so no overhead figure is claimed |
 | [`pr1-smoke-run/`](pr1-smoke-run/) | `cmd/alloca-load` | PR1's substrate smoke run. Proves the harness works; establishes **no** capacity number |
 | [`pr1-telemetry-overhead/`](pr1-telemetry-overhead/) | `go test -bench` | Per-call cost of the telemetry `Tee` against a real file sink: `raw.txt` holds the five samples, and [`environment.txt`](pr1-telemetry-overhead/environment.txt) the machine and exact command. It predates the run manifest, which is why it carries its own environment file |
 
@@ -48,7 +48,7 @@ anything:
 | `verdict.json` | the reconciliation checks — including server totals against client totals — that make the run admissible at all |
 | `metrics-baseline.txt`, `metrics.txt` | the two scrapes bracketing the measured window; counters are cumulative, so the delta is the measurement |
 | `panels/*.csv` + `panels/index.json` | the exported time series, with the **resolved** PromQL and window recorded beside the data — a rate over 5s and a rate over 60s are different measurements. `index.json` records two windows: `window` is the cell's measured phase and the authority for what was measured; `query_window` is what the range queries actually cover, one rate range later, so no exported point can reach back into warm-up |
-| `tsdb-snapshot/` | the Prometheus snapshot, so a series nobody thought to export is still recoverable. **Cumulative, not cell-local** — Prometheus blocks are shared history, so a snapshot carries other cells' windows too. Always bound a query by `panels/index.json`'s `window`. Redesign deferred to PR3; see the frontier report §6.2 |
+| `tsdb-snapshot/` | the Prometheus snapshot, so a series nobody thought to export is still recoverable. **Cumulative, not cell-local** — Prometheus blocks are shared history, so a snapshot carries other cells' windows too. Always bound a query by `panels/index.json`'s `window`. Redesign deferred to PR4; see the frontier report §6.2 |
 | `warmup.json` | the discarded warm-up phase, kept because a warm-up that behaved oddly explains a strange cell — and in PR2 it turned out to be the key diagnostic |
 | `*.log` | seed, service, load, export and verify output. **Git-ignored** — `service.log` alone is ~34 MB per cell at full telemetry |
 

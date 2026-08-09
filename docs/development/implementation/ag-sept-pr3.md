@@ -5,13 +5,17 @@
 started. The
 design was accepted before implementation began (formal design §8), and §6 holds no blocker —
 its one remaining item is a starting fixture, not a contract.
-**Budget:** 7.5 development days across three PRs ([AG-Sept plan](../../planning/ag-sept-plan-new.md) §4) —
+**Budget:** 7.5 development days across three PRs ([AG-Sept plan](../../planning/ag-sept-plan.md) §2) —
 3.0 for PR3a, 2.5 for PR3b, 2.0 for PR3c. **PR3a came in at 1.0**; the 2.0 difference went
 to the plan's contingency, not to PR3b or PR3c.
-**Owner docs:** [ag-sept-plan-new.md](../../planning/ag-sept-plan-new.md) §8.2 and
-[measurement-contract.md](../../design/measurement-contract.md) §12 are normative for what
-this PR builds; this record covers only how PR3 discharges them and the choices made along the
-way.
+**Owner docs:**
+[`horizontal-database-authority.md`](../../design/horizontal-database-authority.md) and
+[`deployment-architecture.md`](../../design/deployment-architecture.md) own the Phase 1 model;
+REQ-ROUTE-1 and REQ-FAIL-1 own what must be true;
+[measurement-contract.md](../../design/measurement-contract.md) §11–§12 owns run provenance and
+reconciliation; and
+[`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) owns the
+validations. This record covers only how PR3 discharges them and the choices made along the way.
 **Design input:**
 [`../../design/horizontal-database-authority.md`](../../design/horizontal-database-authority.md)
 owns the design. It was frozen for this work as the design note at `a6e4c21` (indexed by
@@ -22,11 +26,12 @@ not restate the design, and where the two disagree the formal design wins.
 ## 1. Exit gates
 
 PR3 is three PRs because it has three separable exit gates, each of which can fail on its own.
-From the plan, verbatim:
+From the plan ([`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §3), verbatim:
 
 > **PR3a:** a service unit cannot be started against an inconsistent placement map or an
 > incompatible schema; a misrouted request is refused rather than written; the booking policy is
-> one named outcome across every closed set that must know about it; and no accepted AG-M1
+> one named outcome across every closed set that must know about it; a wrong `UserRef` gets the
+> same answer whether or not the organisations are colocated; and no accepted AG-M1
 > invariant has been weakened to make any of it fit.
 
 > **PR3b:** a multi-authority run is reproducible from a version-controlled topology, produces
@@ -53,21 +58,21 @@ excursion. PR3 is correctness-first by design, not by descope.
 
 | # | Deliverable | PR | Reference |
 |---|---|---|---|
-| 1 | Versioned placement map: loading, validation, immutability for a run, startup gate | 3a | §8.2 |
-| 2 | Shard-affine service units — one authority, one pool, readiness bound to it | 3a | §8.2 |
-| 3 | Server-side placement enforcement, with the §12.5 misrouting control | 3a | ag-sept-plan §8.2, §12.5 |
-| 4 | Booking policy on resolved authorities, and `cross_authority_unsupported` through every closed set it touches | 3a | §8.2 |
-| 5 | Explicit `UserRef` ownership check on confirm and cancel | 3a | §8.2 |
+| 1 | Versioned placement map: loading, validation, immutability for a run, startup gate | 3a | `deployment-architecture.md` §4 |
+| 2 | Shard-affine service units — one authority, one pool, readiness bound to it | 3a | `deployment-architecture.md` §3, §6 |
+| 3 | Server-side placement enforcement, with the misrouting control | 3a | REQ-ROUTE-1; VAL-COR-5; `api-surface.md` §2.6 |
+| 4 | Booking policy on resolved authorities, and `cross_authority_unsupported` through every closed set it touches | 3a | `horizontal-database-authority.md` §4 |
+| 5 | Explicit `UserRef` ownership check on confirm and cancel | 3a | `api-surface.md` §2.6; VAL-COR-3 |
 | 6 | `/meta` extended with authority identifier, routing version, schema version | 3a | measurement-contract §11 |
-| 7 | Placement invariants in the register, each with a discriminating test | 3a | §3.2 |
-| 8 | Containerised two-authority topology, per-authority migration | 3b | §9.1 |
-| 9 | Generator routes mutations by user organisation and reads by slot organisation; multi-organisation, one-hot-organisation, and cross-authority-refusal workloads | 3b | §5.6, §6.3 |
+| 7 | Placement invariants in the register, each with a discriminating test | 3a | `transaction-semantics.md` (`INV-*`); REQ-COR-1 |
+| 8 | Containerised two-authority topology, per-authority migration | 3b | `deployment-architecture.md` §5, §9–§11 |
+| 9 | Generator routes mutations by user organisation and reads by slot organisation; multi-organisation, one-hot-organisation, and cross-authority-refusal workloads | 3b | `horizontal-scaling.md` §3; validation plan §3.4–§3.6 |
 | 10 | Placement, authority count, and assignment in the manifest; multi-service certification | 3b | measurement-contract §11 |
 | 11 | Authority-aware verifier with one aggregated verdict | 3b | measurement-contract §12 |
-| 12 | Phase 1 correctness experiments and per-authority verdicts | 3c | ag-sept-plan §11 |
-| 13 | Failure-isolation experiment — one authority down, ambiguous mutations replayed, then restored | 3c | ag-sept-plan §11 |
+| 12 | Phase 1 correctness experiments and per-authority verdicts | 3c | VAL-COR-1..5; validation plan §4.5 |
+| 13 | Failure-isolation experiment — one authority down, ambiguous mutations replayed, then restored | 3c | REQ-FAIL-1; VAL-FAIL-1, VAL-COR-6 |
 | 14 | Ambiguous-request register and `ResolveAmbiguous` (§5.7) | 3b | measurement-contract §12 |
-| 15 | `classifyCommit` ambiguity fix and the INV-21 terminated-session fault test | 3b, early | §3.2 |
+| 15 | `classifyCommit` ambiguity fix and the INV-21 terminated-session fault test | 3b, early | `transaction-semantics.md` INV-21 |
 
 ## 3. What the existing code makes cheap, and what it does not
 
@@ -101,7 +106,7 @@ Client-side totals carry no organisation or authority dimension: `loadgen.Total`
 `{Operation, Outcome, Reason, Replay, Count}` (`internal/loadgen/run.go:311`). Adding one would
 touch the report schema, the manifest, and every artifact that reads them.
 
-It is not needed. §8.2 makes every service unit shard-affine, so a unit's own Prometheus scrape
+It is not needed. `deployment-architecture.md` §3 makes every service unit shard-affine, so a unit's own Prometheus scrape
 *is* its authority's traffic. Per-authority work is read from per-service scrapes, and
 `serverTotalsCheck` sums across them. This is why the plan lists per-authority client-side
 attribution under "not in PR3b" rather than as a cut — it would be a second, weaker source for
@@ -206,7 +211,7 @@ if the generator is the *only* router, then "no supported request reached the wr
 is a property of the generator's routing table, not of Alloca, and the placement invariant is
 untested by construction.
 
-Both, therefore: the generator routes, and each unit refuses what it does not own. The ag-sept-plan §12.5
+Both, therefore: the generator routes, and each unit refuses what it does not own. The VAL-COR-5
 misrouting control is what makes the second half real, and it is why that control is mandatory
 rather than desirable.
 
@@ -241,7 +246,7 @@ the shape of the work rather than merely confirming it.
    so a confirm carrying a wrong identity succeeds. Without the check, sharding would make that
    outcome depend on whether two organisations happen to be colocated. This is a deliberate
    domain-contract correction, and it is the 0.5 days PR3a rose by — drawn from the plan's
-   contingency rather than from another PR (`ag-sept-plan-new.md` §4). It is not authentication:
+   contingency rather than from another PR (`ag-sept-plan.md` §2.1). It is not authentication:
    a caller who knows both the reservation identifier and its exact owner can still act as that
    owner.
 3. **An unavailable authority uses the existing infrastructure classifications** — `timeout_db`
@@ -268,7 +273,7 @@ reasons:
 
 The deployment fault must still be visible to an operator, so the refusal increments a dedicated
 bounded counter and logs the unit's authority and the requested organisation. A 400 that is
-really a misconfiguration should not hide among client errors. The ag-sept-plan §12.5 misrouting control
+really a misconfiguration should not hide among client errors. The VAL-COR-5 misrouting control
 asserts both the outcome and the counter.
 
 ### 5.7 Resolving `unknown_replayable` is a post-run pass, not a load control
@@ -284,7 +289,7 @@ is that `Response` and `Total` retain no key, so PR3b adds a small register of a
 requests and PR3c adds the resolution pass.
 
 **This is deliberately not group A's retry-on-timeout control.** That control shapes load during
-a run — timeout, retry, amplification — and remains unassigned (`ag-sept-plan-new.md` §14). This
+a run — timeout, retry, amplification — and remains unassigned (`ag-sept-plan.md` §6.4). This
 is a bounded post-restoration pass whose only purpose is to collapse ambiguity before the
 correctness verdict. Conflating them is how group A creeps into a PR that cannot fund it.
 
@@ -308,22 +313,23 @@ fails without the comparison.
 
 The formal design's map is now four organisations across two authorities (§5.1 of the formal design).
 `[HYPOTHESIS]`: 2:2 by count and deliberately unequal by load, so the one-hot-organisation
-workload and the distribution reporting of the plan's §5.6 have something to show. It stays a
+workload and the distribution reporting of validation plan §3.4 and §3.6 have something to show. It stays a
 run parameter that implementation may change on evidence, not an architectural commitment —
 recorded only so the fixture is chosen rather than defaulted into.
 
 ### 6a. What PR3b carries early, and what stays PR3c
 
 Nancy's call, 2026-08-05, after PR3a merged: rather than hold finished work on a branch of
-its own, PR3b takes everything that already exists and PR3c keeps only what still has to be
+its own, PR3b took everything that already existed and PR3c keeps only what still has to be
 built. Fewer branches, one review, and nothing parked where it cannot be seen.
 
-**Already built and riding in PR3b** (branch `agent/ag-sept-pr3b`):
+**Carried by PR3b and merged with it** (`57f501d`):
 
 - the generator's **ambiguous-request register** and `ResolveAmbiguous`. The register was
-  always PR3b's — the plan's §14 asks PR3b to "retain the idempotency keys of any
-  `unknown_replayable` response so PR3c can replay them" — and the replay mechanism is
-  built alongside it rather than split across two PRs for the sake of the boundary;
+  always PR3b's — the plan asks PR3b to retain the idempotency keys of any
+  `unknown_replayable` response so PR3c can replay them (`ag-sept-plan.md` §3) — and the
+  replay mechanism was built alongside it rather than split across two PRs for the sake of
+  the boundary;
 - the **`classifyCommit` ambiguity fix**: class 57 (operator intervention) and class 08
   (connection exception) SQLSTATEs are the session ending, not the server answering the
   `COMMIT`, so they are now `unknown_replayable` rather than definite failures;
@@ -334,12 +340,12 @@ built. Fewer branches, one review, and nothing parked where it cannot be seen.
   Nothing interposes between the client sending `COMMIT` and the server acting on it, and
   the *acknowledgement-lost* half stays PR3c's, unproven.
 
-The last two were nominally PR3c's and explicitly unfunded (§4). They are here because
-they are *done*, and because the fix is a correctness change to merged code that should not
-wait on a measurement PR. **Consequence, accepted rather than overlooked:** the fix reaches
-`main` when PR3b merges, so until then `main` misclassifies a terminated session under
-`COMMIT` as a definite failure. Low risk — no production deployment exists, and the experiment that
-would deliberately trigger it is PR3c, which lands after.
+The last two were nominally PR3c's and explicitly unfunded (§4). They travelled with PR3b
+because they were *done*, and because the fix is a correctness change to merged code that
+should not wait on a measurement PR. **Consequence, accepted rather than overlooked at the
+time:** `main` misclassified a terminated session under `COMMIT` as a definite failure until
+PR3b merged. Low risk — no production deployment exists, and the experiment that would
+deliberately trigger it is PR3c's, which lands after. The window is now closed.
 
 **Still PR3c's, and still to be built:**
 
@@ -387,7 +393,7 @@ Two consequences for PR3c:
    500 ms acquisition cap might have been expected to fire first; the diagnosis is *not*
    established, and it may be that the cap does not cover establishing a new connection. This
    is adjacent to the PR2 deferral register's standing item that the timeout budget has never
-   been observed doing its job under load (`ag-sept-plan-old.md` §14, group A). Investigate
+   been observed doing its job under load (`ag-sept-plan.md` §6.4, group A). Investigate
    before asserting, and do not fix it on the strength of one observation.
 
 ### 6c. Resolution accounting is PR3c's, and PR3b stops short of it deliberately
@@ -478,7 +484,7 @@ built when something needs it.
 established full coverage and one common artifact, the per-unit observations are validation
 evidence, and copying them into the report would be a second representation of what the single
 `image_id` already states. No general `source | container` deployment-mode abstraction either;
-making the one known containerised evidence path non-bypassable is what PR3b needs, and an
+making the one known containerised evidence path non-bypassable is what PR3b needed, and an
 abstraction invented before a second caller exists is one the second caller redesigns.
 
 The record schema, the flag, the matching rules, and the tests live in

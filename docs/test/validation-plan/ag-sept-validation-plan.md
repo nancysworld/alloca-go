@@ -143,6 +143,34 @@ booking/claim/slot-side mutation, and absence of a remote slot-authority partici
 Traffic is concentrated on organisations owned by one authority while another authority carries
 an unaffected control population.
 
+### 3.7 Simplified synchronized release wave
+
+**Purpose:** combine the isolated mechanisms once each is separately understood, approximating a
+release event in which many users converge on a small set of newly available slots.
+
+Defining properties:
+
+- a modest number of slots released together with fixed capacity;
+- attempts beginning within a short release window;
+- a deliberately skewed distribution so some slots are hotter than average.
+
+The first version deliberately omits browsing, alternative-choice loops, repeated retries, and
+fallback activities: a composite workload moves several variables at once and is harder to
+interpret than the controls it builds on. Under §2.1 it may extend the controlled workloads and
+must not replace them.
+
+### 3.8 Workload exclusions
+
+These are outside AG-Sept's validation intent and are not gaps in it:
+
+- a full fitness-club, game-inventory, or other complete product simulation;
+- domain-specific names or confidential scenario detail;
+- user-behaviour modelling beyond the authority distribution a validation requires;
+- a retry-storm model, until baseline timeout behaviour is understood.
+
+The last is a dependency rather than a preference: a retry model layered on unmeasured timeout
+behaviour produces amplification that cannot be attributed.
+
 ## 4. Topology families
 
 ### 4.1 Single authority, one service replica
@@ -165,6 +193,30 @@ composition. Replica counts are experiment parameters rather than requirements.
 Multiple authorities with multiple service replicas may be used after both axes are understood
 separately. Its purpose is compositional confidence, not an independent production capacity
 multiplier from a co-resident workstation.
+
+### 4.5 Minimum experiment matrix
+
+The smallest set of runs that discharges the validations below. Replica and authority counts are
+`[HYPOTHESIS]` experiment parameters; the workload/topology pairing is the validation intent.
+
+| Experiment | Topology | Workloads | Discharges |
+|---|---|---|---|
+| Phase 1 supported correctness | 2 authorities × 1 replica | multi-organisation dispersed; colocated cross-organisation booking; one-hot-organisation; wrong-`UserRef` confirm and cancel | VAL-COR-1..3 |
+| Cross-authority refusal control | 2 authorities × 1 replica | bounded cross-authority reserves, as their own evidence class | VAL-COR-4 |
+| Placement enforcement | 2 authorities × 1 replica | deliberate misroute | VAL-COR-5, VAL-NEG-6 |
+| Phase 1 failure isolation | 2 authorities × 1 replica | multi-organisation dispersed, one authority taken down, ambiguous mutations replayed, authority restored | VAL-COR-6, VAL-FAIL-1 |
+| Replica matrix | 1 authority × several replica counts | dispersed across all counts; hot-slot and hot-identity at the extremes | VAL-SCALE-1 |
+| Connection-budget control | 1 authority × ≥2 replica counts | dispersed, under both budget configurations | VAL-SCALE-2, VAL-NEG-4 |
+| Composed run | 2 authorities × chosen replica count | multi-organisation dispersed | VAL-SCALE-3, VAL-SCALE-4 |
+
+The replica matrix runs **within one shard group**. Whether replicas scale application compute is
+a single-authority question, and partitioning does not change the answer; running the full matrix
+across both topologies would multiply measurement time without producing a new conclusion. One
+composed run shows the two axes together.
+
+Which of these are scheduled, in what order, and with what budget is owned by
+`docs/planning/ag-sept-plan.md`. A row here is a validation's meaning, not a commitment to run it
+in a particular milestone.
 
 ## 5. Correctness and policy validations
 
@@ -200,8 +252,17 @@ Run the refusal control in §3.5 and prove that Phase 1 creates no partial booki
 **Requirements:** REQ-ROUTE-1.
 
 Deliberately send a request to a service unit that does not own the routing organisation. The
-unit rejects it at the routing/deployment boundary and does not write state. This remains
-distinct from a valid domain-level cross-authority refusal.
+unit rejects it at the routing/deployment boundary and does not write state.
+
+The control asserts a **specific** answer, owned by
+[`../../design/api-surface.md`](../../design/api-surface.md) §2.6: `invalid_request` refused at
+the transport edge, plus the misroute counter — never a `business_refusal`. A misroute is a
+routing or deployment fault, not a domain answer, and it must not be recorded as a user's durable
+domain outcome on an authority that does not own them. This also keeps it distinct from a valid
+domain-level cross-authority refusal (VAL-COR-4).
+
+Without this control, "no supported request reached the wrong authority" is a property of the
+generator's routing table rather than of the system, and REQ-ROUTE-1 is untested.
 
 ### VAL-COR-6 — Ambiguous mutation resolution
 
@@ -232,6 +293,26 @@ Demonstrate that:
 - the failure experiment is reported separately from healthy capacity/SLO runs.
 
 ## 7. Scaling validations
+
+**Every scaling result names its believed limiting mechanism and the evidence for it.** Naming a
+frontier without naming what set it is an observation, not a conclusion, and it is the step at
+which incomparable mechanisms get collapsed into one number (REQ-EVID-2).
+
+The candidate boundaries are:
+
+- application CPU;
+- database connection-pool acquisition;
+- PostgreSQL connection/admission capacity;
+- transaction or lock wait;
+- one slot-capacity authority;
+- one user-identity authority;
+- one writable database authority;
+- telemetry overhead;
+- generator saturation;
+- shared-workstation contention.
+
+The list is the differential diagnosis a result argues against, not a menu to pick from: a claim
+that one of these is limiting carries the evidence that distinguishes it from the others.
 
 ### VAL-SCALE-1 — Replica comparison within one shard group
 

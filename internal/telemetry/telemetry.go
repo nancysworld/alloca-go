@@ -77,7 +77,7 @@ const OperationListSlots = "list_slots"
 // Operation is a plain string on RequestObservation, so a caller can pass a URL path.
 // That is a documented rule rather than a compiler-enforced one, and a rule protecting
 // an aggregate needs something that can *check* it — an aggregating Recorder normalises
-// through this rather than trusting what it is handed (ag-sept-plan §6.1).
+// through this rather than trusting what it is handed (observability.md §2).
 func IsKnownOperation(op string) bool {
 	return op == OperationListSlots || domain.Operation(op).IsKnown()
 }

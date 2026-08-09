@@ -147,7 +147,8 @@ type Resolution struct {
 // **This is not a retry control.** It does not run during load, it does not shape
 // arrival, and it never amplifies: each entry is replayed exactly once, after the run,
 // under the key the original used. The retry-on-timeout control that shapes load during
-// a run is separate work and remains unassigned (ag-sept-plan-new.md §14, group A).
+// a run is separate work and remains unassigned — a scheduling fact, recorded as group A of the
+// PR2 deferral register in the AG-Sept plan.
 // Conflating the two is how that group creeps into a PR that cannot fund it.
 //
 // It iterates a snapshot, and the replays reissue through the ordinary request path — so a

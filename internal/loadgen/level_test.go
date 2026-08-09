@@ -89,7 +89,7 @@ func containerManifest() loadgen.Manifest {
 }
 
 // publishableManifest additionally moves the generator off the service host, which is the
-// one ag-sept-plan §6.3 requirement a manifest can record.
+// one measurement-contract §13.1 requirement a manifest can record.
 func publishableManifest() loadgen.Manifest {
 	m := capacityManifest()
 	m.GeneratorLocation = "separate-host"
@@ -167,7 +167,7 @@ func TestIncompleteManifestCannotBeCertified(t *testing.T) {
 			mention: "postgres_version",
 		},
 		{
-			// The ag-sept-plan §6.2 control refuses itself: with no aggregate series there is no
+			// The VAL-NEG-3 telemetry control refuses itself: with no aggregate series there is no
 			// server-side count, so measurement-contract §12's three-way agreement cannot be reached.
 			name:    "telemetry off cannot reach local",
 			corrupt: func(m *loadgen.Manifest) { m.TelemetryMode = "off" },
@@ -244,13 +244,13 @@ func TestIncompleteManifestCannotBeCertified(t *testing.T) {
 			mention: "aggregate_pool_size",
 		},
 		{
-			// ag-sept-plan §6.3: a co-resident generator cannot back a published number, however
+			// measurement-contract §13.1: a co-resident generator cannot back a published number, however
 			// complete the rest of the manifest is.
 			name:    "co-resident generator stops at capacity",
 			corrupt: func(m *loadgen.Manifest) { m.GeneratorLocation = "local" },
 			from:    publishableManifest(),
 			want:    loadgen.LevelCapacity,
-			mention: "§6.3",
+			mention: "§13.1",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -7,7 +7,7 @@
 // state is not quotable."
 //
 // It runs in a separate binary from the generator on purpose. The generator must be able to
-// run on compute separate from the service for publishable claims (ag-sept-plan §6.3), and
+// run on compute separate from the service for publishable claims (measurement-contract §13.1), and
 // giving it database credentials would defeat that. So the generator emits client totals over
 // HTTP only, and this package joins them to the database from wherever the database is
 // reachable.
@@ -227,7 +227,7 @@ func idempotencyCheck(ctx context.Context, q Querier, org domain.OrganisationID,
 	// performed the mutation §4.2 says it must not.
 	//
 	// Equality is only assertable because alloca-seed refuses to start against a fixture
-	// holding records (ag-sept-plan §5.3). Before that assertion existed, a leftover record was
+	// holding records (ag-sept-validation-plan.md §3.3). Before that assertion existed, a leftover record was
 	// the commoner explanation and this comparison would have failed correct services.
 	if records > fresh {
 		c.Detail = fmt.Sprintf("%d idempotency records for %d fresh mutations: %d record(s) "+

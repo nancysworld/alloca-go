@@ -27,6 +27,8 @@ governs measurement practice.
 - §11 and §12 are what an individual run must record and must self-check before its
   numbers may be quoted at all. §9 states the obligations; these two say what
   discharging them means.
+- §13 names what a run's numbers may back — the quotability levels — and the generator
+  provenance a published capacity claim requires.
 
 ---
 
@@ -212,6 +214,17 @@ Telemetry must expose (roadmap §6.1):
 - database CPU, connections, I/O, lock activity, transaction saturation;
 - admission queue depth and age where applicable.
 
+**The diagnostic view stays scoped to these.** Any dashboard the project retains for measured
+runs is an instrument for diagnosing a run in progress, not an operations console: it renders the
+indicators above and the saturation signals a frontier argument rests on, and it does not carry
+alerting, templating, annotation, or shared-library machinery. The bound matters because rich
+dashboards arrive by accretion — one individually reasonable panel at a time — and a view that
+must be scrolled is no longer the thing an operator watches while a sweep runs. Reports quote the
+retained artifacts, never a screenshot of this view.
+
+Adding to it is a scope decision. Which milestone builds or extends it is scheduling, and belongs
+in the plan.
+
 ---
 
 ## 7. Provisional SLOs `[HYPOTHESIS]`
@@ -249,8 +262,8 @@ A nested deadline chain. **The nesting/ordering, classification, and idempotency
 are the contract; the specific millisecond values are hypotheses** that AG-M2 sweeps
 locally and AG-M3 validates end-to-end through the real AWS/client path. The decision
 basis, prior observations, external references, and revision rules live in the design
-note [`latency-timeouts-and-retries.md`](latency-timeouts-and-retries.md); §8 restates
-its normative outcome for this contract.
+note [`latency-timeouts-and-retries.md`](latency-timeouts-and-retries.md); §8 **of this
+document** restates its normative outcome for this contract.
 
 **Ordering invariant (normative):**
 
@@ -458,10 +471,11 @@ Secrets and private endpoints must not be committed.
 
 **No run may be quoted as a capacity claim while a field its topology requires is
 unpopulated.** A generator is an HTTP client and cannot discover the service's shape for
-itself, so which fields a given milestone's runs can populate is a scheduling question,
+itself, so which fields a given milestone's runs can populate is a **scheduling** question,
 answered by the plan
-([`../planning/ag-sept-plan-new.md`](../planning/ag-sept-plan-new.md) §6.4). The rule above
-is not staged: it holds against whatever the topology of the moment requires.
+([`../planning/ag-sept-plan.md`](../planning/ag-sept-plan.md), *Manifest and reconciliation
+staging*). The rule above is not staged: it holds against whatever the topology of the moment
+requires. What a run may claim once its fields are populated is §13.
 
 **Multi-service runs need one further rule.** When several service units serve one run, the
 manifest records every unit's `/meta`, and the run is uncertifiable if the units disagree on
@@ -504,3 +518,59 @@ discharge of this contract — it would compare one organisation's rows with eve
 organisation's totals. The verifier's data structures, query factoring, and scrape aggregation
 are otherwise the implementation's to choose
 ([`horizontal-database-authority.md`](horizontal-database-authority.md) §6.3).
+
+---
+
+## 13. Generator provenance and quotability levels (normative)
+
+§5's bottleneck gate asks for *evidence* that the generator had headroom at the reported
+operating point. This section asks the prior question — what a run's numbers may back at all —
+which is a matter of **provenance** and is settled before any evidence is weighed.
+
+### 13.1 A published claim needs the generator on separate compute
+
+A load generator co-resident with the service under test contends with it for CPU, memory,
+network stack, and scheduler attention. The result is then partly a measurement of the
+generator, and the two contributions cannot be separated after the run.
+
+**A capacity claim may be published only when the generator ran on compute separate from the
+service.** A co-resident run remains a sound, useful, reproducible observation about that
+machine. It is not a published capacity number, and neither a complete manifest nor a
+demonstration of generator headroom converts one into the other.
+
+The manifest records the generator's location (§11). That is a **declaration** — all a manifest
+can carry — and it is provenance rather than evidence. It does not stand in for §5's
+under-provisioned-generator control, and a published claim needs both.
+
+Where a milestone cannot supply separate compute, the rule is honoured **by labelling**: the run
+is reported at the level its provenance actually reaches and is never presented as a published
+capacity claim. Withdrawing the compute withdraws the claim, not the rule.
+
+### 13.2 Quotability levels
+
+"Is this run quotable?" has no answer until the claim is named, because §11 gates a *capacity*
+claim on topology provenance while §13.1 gates a *published* claim on generator separation. A
+run therefore carries an ordered **level**, and sits at the highest one whose requirements its
+manifest and summary satisfy:
+
+| Level | What the run may back | Adds |
+|---|---|---|
+| `none` | nothing — it describes no experiment | — |
+| `local` | an observation about this machine | soundness, and every generator-determinable §11 field |
+| `capacity` | a capacity claim about that topology | the service-side and topology provenance of §11 |
+| `publishable` | a published capacity claim | §13.1's separate generator compute |
+
+A run drops to `none` when its measurement is unsound rather than merely under-documented:
+response validation off or failed, the run interrupted, reconciliation failed, or participating
+units that do not describe one deployment. Soundness is checked first and is **not tradable
+against provenance** — a run whose responses went unvalidated is not rescued by a complete
+manifest.
+
+Levels are named for **the claim**, never for the milestone or PR that first reaches them. A
+report outlives the schedule, and a level named after a PR would oblige a later reader to
+reconstruct that PR's scope before learning what the number is good for. Which milestone reaches
+which level is a scheduling fact and belongs in the plan.
+
+A run resting below the top of the ladder is the expected state while a milestone's provenance is
+still being staged. A report therefore records the level reached **and what blocks the next one**,
+so an incomplete level reads as scheduled rather than broken.

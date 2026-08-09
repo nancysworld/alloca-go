@@ -18,8 +18,8 @@ import (
 //
 // Without this guard, "no supported request reached the wrong authority" would be a
 // property of whatever routed the traffic rather than of Alloca, and the placement
-// invariant would be untested by construction. The ag-sept-plan §12.5 misrouting control is
-// what proves the guard is live.
+// invariant would be untested by construction. The VAL-COR-5 misrouting control is
+// what proves the guard is live (REQ-ROUTE-1).
 type placementGuard struct {
 	placement domain.Placement
 	authority domain.AuthorityID

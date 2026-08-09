@@ -251,12 +251,12 @@ func NewTopologyManifest(targets []string, workload string, opts Options, locati
 // Validate reports the §11 fields a claim at the given level requires and this manifest
 // does not carry. An empty result means the provenance bar for that level is met.
 //
-// The split between levels is ag-sept-plan §6.4's staging, not a judgement made here. The
-// generator is an HTTP client and cannot discover the service's shape, so the
-// service-side fields are supplied by the operator in the PR that first has something to say
-// — service shape in PR2, topology and image identity in PR3, environment in PR4. What the
-// staging does not excuse is a field the generator *can* determine: PR1's own exit criterion
-// is that the manifest carries every one of those, and an empty commit SHA fails it.
+// Which level a field belongs to follows measurement-contract §11 and §13.2, not a judgement
+// made here. The generator is an HTTP client and cannot discover the service's shape, so the
+// service-side fields are supplied by the operator; *when* each becomes populatable is the
+// plan's staging, not this file's. What the staging does not excuse is a field the generator
+// *can* determine: the manifest must carry every one of those, and an empty commit SHA fails
+// it.
 //
 // Each rule names the field as it appears in the JSON, so the reason travels with the report
 // to someone holding only the artifact.
@@ -392,12 +392,12 @@ func (m Manifest) Validate(level Level) []string {
 	}
 
 	if level.AtLeast(LevelPublishable) {
-		// ag-sept-plan §6.3: the generator must run on compute separate from the service. This is a
-		// declaration check — the manifest records where the operator says the generator
-		// ran, and no HTTP client can verify that from the outside.
+		// measurement-contract §13.1: the generator must run on compute separate from the service.
+		// This is a declaration check — the manifest records where the operator says the
+		// generator ran, and no HTTP client can verify that from the outside.
 		add(isCoResident(m.GeneratorLocation), fmt.Sprintf(
-			"generator_location is %q: ag-sept-plan §6.3 requires the generator on compute separate "+
-				"from the service for a publishable claim", m.GeneratorLocation))
+			"generator_location is %q: measurement-contract §13.1 requires the generator on compute "+
+				"separate from the service for a publishable claim", m.GeneratorLocation))
 	}
 
 	return missing

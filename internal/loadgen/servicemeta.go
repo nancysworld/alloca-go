@@ -17,7 +17,7 @@ import (
 // and the two are not interchangeable: a service started from one commit and a generator built
 // from another is the ordinary state of a working session, not an exotic case.
 //
-// Reading it over HTTP keeps the ag-sept-plan §6.3 boundary intact. The generator gains no
+// Reading it over HTTP keeps the measurement-contract §13.1 boundary intact. The generator gains no
 // credentials and no shared state; it asks the service to describe itself, on the same
 // contract it already uses to drive load. `internal/buildinfo` says this is what `/meta` is
 // for.
@@ -56,7 +56,7 @@ type ServiceMeta struct {
 
 	// TelemetryMode names which recorder the service is running. Two runs under different
 	// observation settings are not comparable, and nothing in the totals would say so — this
-	// is what lets ag-sept-plan §6.2's comparison identify its own arms, and what makes an
+	// is what lets the VAL-NEG-3 telemetry comparison identify its own arms, and what makes an
 	// unobservable run refuse itself rather than reconcile against a server count that does not
 	// exist.
 	TelemetryMode string `json:"telemetry_mode"`

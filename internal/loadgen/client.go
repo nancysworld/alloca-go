@@ -2,7 +2,7 @@
 //
 // It is a client of the service's HTTP contract and shares no state with it: it holds no
 // database credentials, and it reaches the service only over HTTP. That is what lets it run
-// on separate compute for publishable capacity claims (ag-sept-plan §6.3). Reconciliation
+// on separate compute for publishable capacity claims (measurement-contract §13.1). Reconciliation
 // against persisted state is a separate step with its own credentials — see
 // cmd/alloca-verify.
 //

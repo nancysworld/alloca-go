@@ -75,7 +75,7 @@ func mutationRequest(t *testing.T, method, path, org string) *http.Request {
 	return req
 }
 
-// This is the ag-sept-plan §12.5 misrouting control. Without it, "no supported request reached
+// This is the VAL-COR-5 misrouting control. Without it, "no supported request reached
 // the wrong authority" would be a property of whatever routed the traffic rather than of
 // Alloca: the generator holds the same map, so a passing run would prove only that the
 // generator's routing table is correct.

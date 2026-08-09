@@ -561,7 +561,7 @@ The Phase 1 implementation is split across:
 - PR3b: multi-database-authority container topology, placement-aware generator, topology certification, deployed-artifact provenance, and aggregate verifier;
 - PR3c: final correctness, refusal, replay-resolution, and failure-isolation evidence.
 
-The formal architecture in this document survives those PR boundaries. The PR scope notes own implementation staging; this document owns the model they must preserve.
+The formal architecture in this document survives those PR boundaries. The milestone plan owns scheduling and the implementation records own what was built; this document owns the model they must preserve.
 
 ## 10. Explicit non-goals
 

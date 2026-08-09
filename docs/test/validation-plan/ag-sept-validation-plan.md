@@ -308,7 +308,8 @@ The discriminating control is VAL-COR-5 and is mandatory for a multi-authority t
 | Validation area | Status | Authoritative evidence / next analysis |
 |---|---|---|
 | single-authority frontier | established | PR2 measurement report; produced Iteration B problem |
-| response validation, generator headroom, telemetry overhead | established for the baseline scope | retained PR1/PR2 evidence |
+| response validation and generator headroom | established for the baseline scope | retained PR1/PR2 evidence |
+| telemetry-overhead control | **not discharged** | PR2 found within-mode spread larger than the between-mode delta; no overhead figure is claimed |
 | Phase 1 placement and supported policy implementation | implemented | PR3a/PR3b implementation records; correctness evidence still to complete |
 | multi-authority reconciliation harness | implemented | PR3b; exercise against correctness/failure scenarios next |
 | Phase 1 correctness and failure isolation | pending evidence | current Iteration B validation target |

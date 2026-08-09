@@ -4,16 +4,23 @@ Start with [`design/high-level-design.md`](design/high-level-design.md) for the 
 architecture, and detailed design ownership map.
 
 For **how engineering work proceeds**, start with
-[`development/engineering-process.md`](development/engineering-process.md). It owns the iterative
-engineering loop:
+[`development/engineering-process.md`](development/engineering-process.md). It owns the model: a
+durable **Goal** sits above repeated engineering iterations.
 
 ```text
+                               GOAL
+             What worthwhile outcome are we trying to achieve,
+                    and what would make us stop?
+                                |
+                                v
 Problem -> Requirements -> Design -> Validation plan -> Schedule -> Implement
    ^                                                                |
    |                                                                v
-   +------ more problem to solve <- Analyse & Review <- Evidence ---+
-                                   |
-                                   +-> problem sufficiently resolved -> END
+   +------ next problem <- Analyse & Review <- Evidence ------------+
+                            |             |
+                            |             +-- goal not yet sufficiently achieved
+                            |
+                            +-- goal sufficiently achieved -> END
 ```
 
 This directory separates documents by the kind of truth they own so that evidence can change
@@ -22,7 +29,7 @@ plan.
 
 | Area | Primary question |
 |---|---|
-| [`requirements/`](requirements/) | What durable problem are we solving, and what must be true when it is sufficiently resolved? |
+| [`requirements/`](requirements/) | What worthwhile outcome are we trying to achieve, what durable problem currently blocks it, and what must be true? |
 | [`design/`](design/) | What durable system shape and contracts satisfy those requirements? |
 | [`test/validation-plan/`](test/validation-plan/) | How will we prove or falsify the requirements and design claims? |
 | [`planning/`](planning/) | What are we doing now, when, with what priority, budget, and descope order? |

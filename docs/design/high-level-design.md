@@ -1,12 +1,13 @@
 # Alloca-Go — High-Level Design
 
-**Status:** Living — the design entry point (current through AG-Sept horizontal database authority)
+**Status:** Living — the design entry point (current through AG-Sept horizontal scaling and deployment architecture)
 **Scope:** the problem Alloca-Go exists to answer, the design principles that shape
 every part of it, the architecture at a glance, and a map of which document owns each
 detailed decision.
 
-This is the **entry point** to the design record. Read it first. It owns the
-*high-level* framing — the problem, the unifying principles, and the shape of the
+This is the **entry point** to the design record. Read it first for system shape; the
+repository-wide documentation entry point is [`../README.md`](../README.md). This document owns
+the *high-level* framing — the problem, the unifying principles, and the shape of the
 system — and then hands off to the documents that own each concern in normative
 detail. It deliberately does **not** restate the outcome taxonomy, the timeout budget,
 the domain rules, or the package rules: those live once, in their owning documents
@@ -152,20 +153,22 @@ which is where its normative form lives.
 10. **Scale service compute and writable database authority as separate axes.** More
     stateless replicas can increase application compute or availability while all of
     them still share one PostgreSQL serialization/resource frontier. Horizontal database
-    scaling therefore composes independent writable transaction domains as well as
-    service replicas, and every experiment names both dimensions rather than treating
-    "scale-out" as one number.
-    → *concrete in* [`horizontal-database-authority.md`](horizontal-database-authority.md)
-    §2–§4 and [`measurement-contract.md`](measurement-contract.md).
+    scaling composes independent writable transaction domains; service scaling multiplies
+    compatible replicas inside one database-authority shard group. Every experiment names
+    both dimensions rather than treating "scale-out" as one number.
+    → *concrete in* [`horizontal-scaling.md`](horizontal-scaling.md), with the database-authority
+    half detailed in [`horizontal-database-authority.md`](horizontal-database-authority.md),
+    and evidence interpretation in [`measurement-contract.md`](measurement-contract.md).
 
 ## 3. Architecture at a glance
 
 Alloca-Go is a stateless Go service whose authoritative transactional state can be
 placed across one or more independently writable PostgreSQL **database authorities**.
 A versioned organisation-placement map binds organisations to those database
-authorities. Each shard-affine service unit opens one pool to one database authority;
-additional stateless service replicas may share that same authority without creating a
-new write authority.
+authorities. Each database authority is served by a **shard group** of one or more
+compatible stateless service replicas; each replica opens one pool to that authority.
+Adding replicas increases service compute inside the shard group without creating a new
+write authority.
 
 Three terms are deliberately distinct:
 
@@ -175,7 +178,9 @@ Three terms are deliberately distinct:
 | **ownership axis** | the entity dimension that naturally partitions those decisions: slot or user |
 | **database authority** | one independently writable PostgreSQL transaction domain hosting the logical authorities placed there |
 
-The detailed definitions and Phase 1/Phase 2 rules are normative in
+The complete service/database scaling model is normative in
+[`horizontal-scaling.md`](horizontal-scaling.md); the detailed database-authority definitions and
+Phase 1/Phase 2 booking rules are normative in
 [`horizontal-database-authority.md`](horizontal-database-authority.md). The diagram below
 is orientation only; module and external-system boundaries remain owned by
 [`system-context.md`](system-context.md).
@@ -228,6 +233,9 @@ The load-bearing structural facts:
 - **A database authority is a transaction domain, not a service instance.** Several
   stateless replicas can point to one PostgreSQL writer and still share one database
   authority. Adding another writer creates another database authority.
+- **Authority selection precedes replica selection.** An operation first resolves the owning
+  database authority from the versioned placement model, then load-balances among compatible
+  replicas inside that authority's shard group. Replica redundancy never becomes write fallback.
 - **Same-database-authority booking keeps the whole correctness protocol local.** When
   `authority(user_organisation_id) == authority(slot_organisation_id)`, the slot and
   user ownership axes are hosted by one PostgreSQL database authority, so reserve can
@@ -245,50 +253,68 @@ The load-bearing structural facts:
 
 The local state machines, lock protocol, expiry settlement, outcome mapping and
 idempotency semantics are normative in
-[`transaction-semantics.md`](transaction-semantics.md). How those logical authorities
-are placed and composed across PostgreSQL writers is normative in
-[`horizontal-database-authority.md`](horizontal-database-authority.md).
+[`transaction-semantics.md`](transaction-semantics.md). The whole horizontal scaling model is
+owned by [`horizontal-scaling.md`](horizontal-scaling.md); how logical authorities are placed and
+composed across PostgreSQL writers is detailed in
+[`horizontal-database-authority.md`](horizontal-database-authority.md). Deployment lifecycle and
+runtime topology properties are owned by
+[`deployment-architecture.md`](deployment-architecture.md).
 
 ## 4. Reading order
 
 1. **This document** — problem, principles, architecture shape.
-2. [`../planning/alloca-go-roadmap.md`](../planning/alloca-go-roadmap.md) — the
-   project questions, milestones, and measurement vocabulary.
-3. [`system-context.md`](system-context.md) — system boundary, actors, and module layout.
-4. [`project-structure.md`](project-structure.md) — how modules map to Go packages and
+2. [`../requirements/system-requirements.md`](../requirements/system-requirements.md) — the
+   cross-cutting system requirements the designs must satisfy.
+3. [`../planning/alloca-go-roadmap.md`](../planning/alloca-go-roadmap.md) — the
+   project theses, milestones, and measurement vocabulary.
+4. [`system-context.md`](system-context.md) — system boundary, actors, and module layout.
+5. [`project-structure.md`](project-structure.md) — how modules map to Go packages and
    the dependency rules that keep the boundary enforceable.
-5. [`measurement-contract.md`](measurement-contract.md) — evidence labelling, the
+6. [`measurement-contract.md`](measurement-contract.md) — evidence labelling, the
    outcome taxonomy, SLIs, provisional SLOs, and timeout budget.
-6. [`transaction-semantics.md`](transaction-semantics.md) — the normative local domain
+7. [`transaction-semantics.md`](transaction-semantics.md) — the normative local domain
    model, state machines, three logical authorities, lock strategy, expiry, outcome
    mapping, and idempotency.
-7. [`horizontal-database-authority.md`](horizontal-database-authority.md) — logical
+8. [`horizontal-scaling.md`](horizontal-scaling.md) — the complete service-replica and
+   writable-database-authority scaling model, routing order, shard groups, connection budgets,
+   and failure boundaries.
+9. [`horizontal-database-authority.md`](horizontal-database-authority.md) — logical
    authority versus ownership axis versus database authority, organisation placement,
-   the same-/cross-database-authority boundary, and Phase 1/Phase 2 scaling rules.
-8. [`latency-timeouts-and-retries.md`](latency-timeouts-and-retries.md) — latency
-   bands, the deadline-budget rationale, and retry policy.
-9. [`../decisions/`](../decisions/) — architecture decision records.
+   the same-/cross-database-authority boundary, and Phase 1/Phase 2 database rules.
+10. [`deployment-architecture.md`](deployment-architecture.md) — deployment units, shard affinity,
+    migration/serving lifecycle, readiness, graceful termination, configuration, and provenance.
+11. [`latency-timeouts-and-retries.md`](latency-timeouts-and-retries.md) — latency
+    bands, the deadline-budget rationale, and retry policy.
+12. [`../test/validation-plan/`](../test/validation-plan/) — how current requirements and design
+    claims are intended to be proved or falsified.
+13. [`../decisions/`](../decisions/) — architecture decision records.
 
-Milestone-level *plans of work* — how design and evidence are split into reviewable PRs —
-live under [`../planning/`](../planning/). They stage implementation; they do not own
-the stable architecture described here.
+Milestone schedules — how accepted work is prioritised, budgeted, and split into reviewable PRs —
+live under [`../planning/`](../planning/). They stage implementation; they do not own the stable
+requirements, architecture, or validation meaning described above.
 
 ## 5. Where each decision lives
 
-The map from concern to owning document. This table is the one place that should list
-them all; the entries below **own** their subject and are the authority for it.
+The map from concern to owning document. This table is the one place in the design entry point
+that should list the durable owners; the entries below **own** their subject and are the authority
+for it.
 
 | Concern | Owning document |
 |---|---|
-| Project intent, theses, milestone plan, measurement vocabulary, SLO lifecycle | [`../planning/alloca-go-roadmap.md`](../planning/alloca-go-roadmap.md) |
+| Cross-cutting durable problems and system requirements | [`../requirements/system-requirements.md`](../requirements/system-requirements.md) |
+| Project intent, theses, milestone roadmap, measurement vocabulary, SLO lifecycle | [`../planning/alloca-go-roadmap.md`](../planning/alloca-go-roadmap.md) |
 | System boundary, actors, module diagram | [`system-context.md`](system-context.md) |
 | Package layout, dependency rules, extraction seams | [`project-structure.md`](project-structure.md) |
-| Evidence labelling, **outcome taxonomy**, SLIs, provisional SLOs, **timeout budget** | [`measurement-contract.md`](measurement-contract.md) |
+| Evidence labelling, **outcome taxonomy**, SLIs, provisional SLOs, **timeout budget**, run manifest, reconciliation contract | [`measurement-contract.md`](measurement-contract.md) |
 | **Local domain model, state machines, three logical authorities, lock protocol, expiry, outcome mapping, idempotency** | [`transaction-semantics.md`](transaction-semantics.md) |
+| **Complete horizontal scaling model: service replicas, shard groups, database-authority axis, routing order, connection budgets, replica-vs-authority failure boundaries** | [`horizontal-scaling.md`](horizontal-scaling.md) |
 | **Logical authority / ownership axis / database authority terminology; organisation placement; same-/cross-database-authority booking; Phase 1/Phase 2 horizontal database architecture** | [`horizontal-database-authority.md`](horizontal-database-authority.md) |
+| **Deployment units and lifecycle: shard-affine serving, migration boundary, liveness/readiness, shutdown, configuration, artifact/topology provenance, orchestration properties** | [`deployment-architecture.md`](deployment-architecture.md) |
 | HTTP contract — routes, request/response shapes, status mapping, operational endpoints | [`api-surface.md`](api-surface.md) |
 | What the service emits about itself — observation types, cardinality rule, log shape | [`observability.md`](observability.md) |
 | Latency bands, deadline-budget rationale, retry policy | [`latency-timeouts-and-retries.md`](latency-timeouts-and-retries.md) |
+| Validation intent for AG-Sept workloads, faults, negative controls, and scaling scenarios | [`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md) |
+| Engineering iteration loop, review/ownership rules, branch and PR process | [`../development/engineering-process.md`](../development/engineering-process.md) |
 | Modular monolith first | [`../decisions/0001-modular-monolith-first.md`](../decisions/0001-modular-monolith-first.md) |
 | PostgreSQL as transactional authority for local booking state | [`../decisions/0002-postgresql-transactional-authority.md`](../decisions/0002-postgresql-transactional-authority.md) |
 | How a run identifies the deployed artifact it measured, and why that is observed rather than self-reported | [`../decisions/0003-deployed-artifact-identity.md`](../decisions/0003-deployed-artifact-identity.md) |
@@ -298,22 +324,23 @@ them all; the entries below **own** their subject and are the authority for it.
 | How to build the image and raise the multi-authority container topology — the procedure, not the design | [`../operations/container-topology.md`](../operations/container-topology.md) |
 | Accepted technical debt — what each gap costs and the trigger that ends the acceptance | [`../planning/tech-debts.md`](../planning/tech-debts.md) |
 
-If a design fact you need is not owned by one of these, it is either high-level enough
+If a durable fact you need is not owned by one of these, it is either high-level enough
 to belong in §1–§3 above, or it has no home yet — which is a signal to give it one,
 not to record it twice.
 
 ## 6. Where the work is
 
-Alloca-Go is built milestone by milestone (roadmap §7). AG-M0 established the
-foundation and measurement contract. AG-M1 established the correct transactional core,
-including the slot-capacity, user-schedule serialization and claim-validity logical
-authorities. AG-Sept measures the resulting frontiers and extends the deployment from
-one PostgreSQL database authority to independently writable organisation-home
-authorities while preserving those invariants.
+Alloca-Go is built through engineering iterations and scheduled milestone work. AG-M0 established
+the foundation and measurement contract. AG-M1 established the correct transactional core,
+including the slot-capacity, user-schedule serialization and claim-validity logical authorities.
+AG-Sept first measured the single-authority frontier; that evidence then created the current
+problem of composing independently writable organisation-home authorities while preserving those
+invariants.
 
-Implementation status and experiment staging live in the relevant planning and
-operations documents rather than here, so this design entry point does not become a
-second milestone tracker.
+Implementation status and work sequencing live in planning and implementation records rather
+than here, so this design entry point does not become a second milestone tracker. The current
+validation intent lives in `docs/test/validation-plan/`, and executed evidence lives in
+`docs/measurements/`.
 
 **The load-bearing measured result so far** is the single-instance frontier:
 **PostgreSQL, not the Go service, is what limits booking throughput** at the measured
@@ -324,9 +351,10 @@ and limits of the measurement remain in
 [`../measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../measurements/reports/ag-sept-pr2-single-instance-frontier.md) §5.
 
 [ADR-0002](../decisions/0002-postgresql-transactional-authority.md) owns the decision to
-use PostgreSQL as the local transactional authority. This document's horizontal
-consequence — how several such writable transaction domains compose without weakening
-the local correctness model — is owned by
+use PostgreSQL as the local transactional authority. The complete horizontal consequence — how
+service replicas and writable transaction domains compose without weakening the correctness
+model — is owned by [`horizontal-scaling.md`](horizontal-scaling.md), with database placement and
+Phase 1/Phase 2 booking details owned by
 [`horizontal-database-authority.md`](horizontal-database-authority.md).
 
 ## 7. Evidence and disclosure

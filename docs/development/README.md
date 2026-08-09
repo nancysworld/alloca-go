@@ -1,18 +1,19 @@
 # Development documentation
 
 This directory records **how Alloca-Go is developed**: the engineering process that governs
-changes and the implementation records that explain how scoped work was actually built.
+iterations and the implementation records that explain how scoped work was actually built.
 
-It is deliberately separate from architecture and planning.
+It is deliberately separate from requirements, architecture, validation planning, milestone
+scheduling, and measurement evidence.
 
 ## What lives here
 
-- [`engineering-process.md`](engineering-process.md) — development and review roles,
-  architecture/implementation boundaries, problem-first review, escalation rules, branch and
-  PR conventions, and the current AI-assisted collaboration model.
+- [`engineering-process.md`](engineering-process.md) — the engineering iteration loop, roles and
+  decision ownership, architecture/implementation boundaries, readiness and review rules, branch
+  and PR conventions, documentation ownership, and the AI-assisted collaboration model.
 - [`implementation/`](implementation/) — durable implementation records: scope as realised,
-  concrete mechanisms, discoveries, review findings, deferrals, validation, and what finally
-  shipped.
+  concrete mechanisms, discoveries, review findings, deferrals, validation performed, and what
+  finally shipped.
 
 ## Boundary with the rest of `docs/`
 
@@ -20,8 +21,10 @@ Use the document whose purpose matches the question:
 
 | Question | Home |
 |---|---|
-| What do we intend to do? | [`../planning/`](../planning/) |
-| What must the system preserve? | [`../design/`](../design/) |
+| What durable problem are we solving, and what must be true? | [`../requirements/`](../requirements/) |
+| What system shape or contract satisfies it? | [`../design/`](../design/) |
+| How will we prove or falsify the requirement/design claims? | [`../test/validation-plan/`](../test/validation-plan/) |
+| What do we intend to do now, and in what order/budget? | [`../planning/`](../planning/) |
 | Why was a consequential architectural choice made? | [`../decisions/`](../decisions/) |
 | How was a scoped change actually implemented, reviewed, and refined? | [`implementation/`](implementation/) |
 | How should the system be run or operated? | [`../operations/`](../operations/) |
@@ -31,10 +34,11 @@ A document may begin life as planning and later become an implementation record 
 progresses. When that happens, move it here rather than allowing `planning/` to become the
 permanent home for implementation history.
 
-The key boundary is:
+The key boundaries are:
 
-> Architecture defines durable contracts. Implementation records explain how the current code
-> realises them.
+> Requirements define what must be true. Architecture defines durable contracts.
+> Implementation records explain how the current code realises them and what was learned while
+> doing so.
 
-Implementation details should not leak into ADRs or formal design unless changing that detail
-would change the architectural contract itself.
+Implementation details should not leak into requirements, ADRs, or formal design unless changing
+that detail would change the durable contract itself.

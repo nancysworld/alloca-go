@@ -2,10 +2,10 @@
 
 **Status:** Living
 
-This document owns the engineering process: how work moves from a problem to requirements,
-design, validation, implementation, evidence, and a reviewed decision about whether another
-iteration is needed. It exists to keep decision ownership clear and reviews at the right
-abstraction level without turning those boundaries into rigid permission gates.
+This document owns the engineering process: how a durable goal governs repeated iterations from
+problem framing through requirements, design, validation, implementation, evidence, and reviewed
+learning. It exists to keep decision ownership clear and reviews at the right abstraction level
+without turning those boundaries into rigid permission gates.
 
 The process is tool-assisted, but responsibility remains human: the repository maintainer owns
 goals, scope, accepted trade-offs, merge decisions, and what the project ultimately claims,
@@ -47,25 +47,39 @@ These are review emphases, not exclusive permissions. A participant may contribu
 layers. The important rule is that a change crossing a durable boundary is made explicit rather
 than hidden inside a local implementation choice.
 
-### 1.4 Work in an engineering iteration loop
+### 1.4 Put a goal above the engineering iteration loop
 
-Non-trivial work follows an explicit loop:
+Non-trivial exploratory work is governed by a **Goal** and proceeds through repeated engineering
+iterations beneath it.
 
 ```text
+                               GOAL
+             What worthwhile outcome are we trying to achieve,
+                    and what would make us stop?
+                                |
+                                v
 Problem -> Requirements -> Design -> Validation plan -> Schedule -> Implement
    ^                                                                |
    |                                                                v
-   +------ more problem to solve <- Analyse & Review <- Evidence ---+
-                                   |
-                                   +-> problem sufficiently resolved -> END
+   +------ next problem <- Analyse & Review <- Evidence ------------+
+                            |             |
+                            |             +-- current problem resolved,
+                            |                 goal not yet achieved
+                            |
+                            +-- goal sufficiently achieved -> END
 ```
 
-The stages own different questions:
+The **Goal is outside the loop** because it normally survives several iterations. It states the
+worthwhile outcome being pursued, why it matters, and the condition under which the work is
+sufficiently complete for the agreed scope. A surprising result may completely change the next
+problem without changing the goal.
 
-1. **Problem** — what is unknown, broken, risky, constrained, or worth proving, and why does it
-   matter?
-2. **Requirements** — what must be true for the problem to be considered sufficiently resolved,
-   independent of replaceable mechanism?
+The loop stages own different questions:
+
+1. **Problem** — what current gap, uncertainty, failure, constraint, or risk prevents sufficient
+   progress toward the goal, and why does it matter now?
+2. **Requirements** — what must be true for an acceptable resolution of that problem,
+   independently of replaceable mechanism?
 3. **Design** — what durable system shape, contract, or decision will satisfy those requirements?
 4. **Validation plan** — what tests, experiments, negative controls, faults, or observations can
    prove or falsify the requirements and design claims?
@@ -75,15 +89,20 @@ The stages own different questions:
    the planned validation possible.
 7. **Evidence** — execute the validation and retain results under the repository's evidence
    rules.
-8. **Analyse & Review** — interpret the evidence against the problem, requirements, design, and
-   validation intent. Decide what was established, what remains uncertain, and whether a new or
-   refined problem justifies another iteration.
+8. **Analyse & Review** — interpret the evidence against the current problem, requirements,
+   design, validation intent, **and the governing goal**. Decide what was established, what
+   remains uncertain, how much progress was made toward the goal, and whether another problem is
+   worth solving.
 
-If the current problem is sufficiently resolved for the agreed scope, the loop ends. Remaining
-problems are either outside scope or explicitly deferred. If more work is justified, the next
-iteration starts again at **Problem**. Scheduling is therefore not patched directly from raw
-evidence: the problem and its durable implications are reconsidered first, then the new schedule
-follows from them.
+A resolved problem does not automatically end the work. If the goal is not yet sufficiently
+achieved, Analyse & Review identifies the next most important problem and a new iteration starts
+at **Problem**. If the goal is sufficiently achieved for the agreed scope, the loop ends;
+remaining problems are outside scope or explicitly deferred.
+
+Replanning is therefore a consequence of a new iteration, not a separate process stage.
+Scheduling is not patched directly from raw evidence: evidence is analysed against the goal and
+current problem first, durable implications are reconsidered, and only then is new work
+scheduled.
 
 This is an iterative dependency order, not a waterfall and not a documentation quota. A small
 change may discharge several stages through existing contracts. A later iteration may reconsider
@@ -91,13 +110,19 @@ one layer and leave the others unchanged. For example, evidence may refine the p
 leaving requirements and design intact but extending the validation plan; stronger evidence may
 show that the design itself must change.
 
+A goal can itself be revised when evidence or strategy shows that it is no longer worthwhile,
+feasible, or correctly scoped, but that is an explicit goal/scope decision rather than an
+ordinary consequence of solving one problem.
+
 The process becomes explicit when work affects an invariant, system requirement, authority or
 ownership boundary, failure semantic, deployment boundary, evidence interpretation, or another
 durable property.
 
-A durable problem normally lives with the requirements it motivates under `docs/requirements/`.
-Temporary implementation defects or investigation notes stay with the implementation work unless
-they reveal a missing durable requirement.
+A durable engineering goal and the durable problems it generates normally live with the
+requirements they govern under `docs/requirements/`. Project-wide intent may already have a
+higher-level owner such as the roadmap or high-level design; link to that owner rather than
+copying it. Temporary implementation defects or investigation notes stay with the implementation
+work unless they reveal a missing durable requirement.
 
 The key dependency rule is:
 
@@ -138,7 +163,7 @@ additional review.
 | Role | Primary responsibility | Boundary |
 |---|---|---|
 | **Project owner** | goals, scope, priorities, accepted trade-offs, final decisions, merge and publication; active participation in architecture and implementation reasoning | does not automatically accept reviewer or agent output; seeks additional review when uncertain or when a decision has material architectural or implementation consequences |
-| **Architecture / design reviewer** | problem framing, requirements, invariants, authority and trust boundaries, formal design, ADR review, cross-cutting architectural consistency | avoids prescribing replaceable implementation mechanics unless they affect the architectural contract |
+| **Architecture / design reviewer** | goal/problem framing, requirements, invariants, authority and trust boundaries, formal design, ADR review, cross-cutting architectural consistency | avoids prescribing replaceable implementation mechanics unless they affect the architectural contract |
 | **Implementation agent / reviewer** | concrete implementation, tests, implementation records, operational mechanics, feasibility feedback, local validation | does not silently change accepted requirements or architecture to simplify implementation; raises the conflict instead |
 | **Independent reviewer** | adversarial checks of code, tests, contracts, and evidence; finding assumptions the primary path missed | does not own project scope or make unilateral architectural changes |
 
@@ -178,7 +203,7 @@ Examples include:
 For a genuinely unresolved architectural question, the preferred flow inside the larger
 iteration loop is:
 
-1. frame the problem and constraints;
+1. frame the problem and constraints in the context of the governing goal;
 2. identify or refine the requirements;
 3. draft or revise the formal design or ADR when the decision needs a durable architectural
    home;
@@ -230,24 +255,27 @@ rather than patching around it.
 
 ### 3.4 Ready for implementation
 
-Before a non-trivial architectural work unit begins implementation, four questions should have
+Before a non-trivial architectural work unit begins implementation, five questions should have
 answers:
 
-1. **Which requirement is being satisfied or investigated?** If the work is exploratory, state
-   the problem and the condition under which the result would create or revise a requirement.
-2. **Which design document owns the system shape or contract?** If design is intentionally open,
+1. **Which goal and current problem does this work advance?** The goal should be stable across
+   the iteration; the problem states the current gap the work is trying to close.
+2. **Which requirement is being satisfied or investigated?** If the work is exploratory, state
+   the condition under which the result would create or revise a requirement.
+3. **Which design document owns the system shape or contract?** If design is intentionally open,
    state what decision implementation may explore rather than silently settling it in code.
-3. **How will the claim be validated?** Name the applicable validation plan, test, experiment,
+4. **How will the claim be validated?** Name the applicable validation plan, test, experiment,
    negative control, or acceptance/falsification condition.
-4. **Where is the work scheduled?** The plan owns priority, budget, work-unit/PR placement, and
+5. **Where is the work scheduled?** The plan owns priority, budget, work-unit/PR placement, and
    descope order.
 
 This is a lightweight readiness gate, not a template requirement. Existing stable documents may
 answer most of it by reference.
 
 If implementation discovers that an answer is wrong, the scheduled scope is not authority. The
-finding returns to **Problem** for analysis in the next iteration, reopening requirements, design,
-or validation intent as needed before work is rescheduled.
+finding feeds Evidence and Analyse & Review; if more work is justified, the next iteration starts
+at **Problem**, reopening requirements, design, or validation intent as needed before work is
+rescheduled.
 
 ## 4. Review behaviour
 
@@ -255,7 +283,8 @@ or validation intent as needed before work is rescheduled.
 
 Before raising a finding, identify which document owns the rule being challenged.
 
-- Requirement contradiction or missing durable obligation -> requirements document.
+- Goal/problem contradiction or missing durable obligation -> requirements document or the
+  higher-level owner the requirements document links to.
 - Architectural contradiction -> formal design or ADR.
 - Validation-strategy defect -> validation plan when scenario-specific; measurement contract
   when the repository-wide evidence rule itself is wrong.
@@ -317,7 +346,7 @@ The repository separates documents by what they own:
 
 | Area | Owns |
 |---|---|
-| [`../requirements/`](../requirements/) | durable problem statements when they motivate system requirements, and the requirements that state what must be true independently of replaceable mechanism |
+| [`../requirements/`](../requirements/) | durable engineering goals, the durable problems that block them, and requirements stating what must be true independently of replaceable mechanism |
 | [`../design/`](../design/) | current normative system design and contracts |
 | [`../test/validation-plan/`](../test/validation-plan/) | validation intent: scenarios, workloads, negative controls, fault cases, acceptance/falsification conditions, and requirement/design coverage |
 | [`../planning/`](../planning/) | forward-looking milestone schedules, budgets, sequencing, priorities, descope order, and intended work-unit scope |
@@ -328,14 +357,15 @@ The repository separates documents by what they own:
 
 The distinctions are deliberate:
 
-> **Problem** says why something durable needs to be solved or proved. **Requirements** say what
-> must be true. **Design** says how the system is shaped to make that true. **Validation plans**
-> say how we intend to prove or falsify the claims. **Plans** say what we choose to do, when, and
-> with what priority or budget.
+> **Goal** says what worthwhile outcome we are trying to achieve and what would make us stop.
+> **Problem** says what current gap prevents sufficient progress toward that goal.
+> **Requirements** say what must be true of an acceptable resolution. **Design** says how the
+> system is shaped to make that true. **Validation plans** say how we intend to prove or falsify
+> the claims. **Plans** say what we choose to do, when, and with what priority or budget.
 
-A durable problem normally sits with its requirements. A temporary implementation problem stays
-with the current implementation work unless analysis shows that it exposes a missing system
-requirement.
+A durable engineering goal and problem normally sit with the requirements they govern. A
+temporary implementation problem stays with the current implementation work unless analysis
+shows that it exposes a missing system requirement.
 
 An implementation record may begin life as a scope note while work is still being planned. Once
 implementation is underway, it becomes the durable record of the work actually performed and
@@ -358,7 +388,8 @@ Durable artifacts depend on durable owners for normative meaning.
 - Operations and implementation records may cite those contracts plus code/configuration they
   explain.
 - Validation plans cite requirements/design and the measurement contract.
-- Milestone plans cite requirements, design, and validation plans when scheduling their work.
+- Milestone plans cite goals, requirements, design, and validation plans when scheduling their
+  work.
 - **Code, tests, requirements, and durable design must not depend on a milestone plan for
   normative meaning.** A plan is expected to change and therefore cannot be the stable
   definition of runtime behaviour or evidence validity.

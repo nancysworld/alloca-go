@@ -18,8 +18,8 @@ import (
 //
 // Without this guard, "no supported request reached the wrong authority" would be a
 // property of whatever routed the traffic rather than of Alloca, and the placement
-// invariant would be untested by construction. The §12.5 misrouting control is what
-// proves the guard is live.
+// invariant would be untested by construction. The ag-sept-plan §12.5 misrouting control is
+// what proves the guard is live.
 type placementGuard struct {
 	placement domain.Placement
 	authority domain.AuthorityID
@@ -41,12 +41,12 @@ func (g placementGuard) serves(org domain.OrganisationID) bool {
 // wrong with the request (api-surface §2.3).
 //
 // invalid_request rather than internal_failure, deliberately, for two reasons. The
-// horizontal-database design forbids recording a misroute as the user's durable domain outcome on the
-// wrong authority, and invalid_request is precisely the outcome INV-7 exempts from the
-// recording rule — it is rejected at the transport edge and never reaches the domain
-// path. And routing identity is caller-asserted until authentication exists (design
-// note §7.6), so classifying it as internal_failure would let any client drive this
-// service's internal-failure rate, which is an SLO-relevant signal.
+// horizontal-database design forbids recording a misroute as the user's durable domain outcome
+// on the wrong authority, and invalid_request is precisely the outcome INV-7 exempts from the
+// recording rule — it is rejected at the transport edge and never reaches the domain path. And
+// routing identity is caller-asserted until authentication exists (design note §7.6), so
+// classifying it as internal_failure would let any client drive this service's
+// internal-failure rate, which is an SLO-relevant signal.
 func (g placementGuard) refuse(ctx context.Context, op domain.Operation, org domain.OrganisationID) string {
 	if g.onMisroute != nil {
 		g.onMisroute(ctx, op)

@@ -42,7 +42,7 @@ type metaResponse struct {
 	// Placement is which authority this unit is and which routing it is serving under.
 	// A multi-authority run is only certifiable if every participating unit agrees on
 	// the routing version and reports a compatible schema, and the harness cannot ask
-	// an operator to transcribe either (ag-sept-plan-new.md §6.4).
+	// an operator to transcribe either (measurement-contract §11).
 	Placement PlacementMeta `json:"placement"`
 }
 
@@ -68,8 +68,8 @@ type PlacementMeta struct {
 
 // DatabaseMeta is what the service can say about its own authority without asking the
 // operator. Both fields can change a measurement — the server version decides planner
-// behaviour, and the pool ceiling is one of the admission boundaries §11.2 lists as a
-// candidate frontier — which is the bar §6.4 sets for inclusion.
+// behaviour, and the pool ceiling is one of the admission boundaries ag-sept-plan §11.2 lists
+// as a candidate frontier — which is the bar §11 sets for inclusion.
 type DatabaseMeta struct {
 	// Version is PostgreSQL's own `server_version`, empty when it could not be read.
 	Version string `json:"version,omitempty"`

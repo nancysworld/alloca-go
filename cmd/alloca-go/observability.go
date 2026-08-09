@@ -22,15 +22,15 @@ import (
 
 // Telemetry modes, selected by ALLOCA_TELEMETRY.
 //
-// Three rather than two, because the two questions an experiment asks are different. §6.2
-// asks what *emission* costs on the request path, and PR1 measured that almost all of it is
-// the synchronous log write (1793ns for the Tee against a real file; 136ns for the Prometheus
-// recorder alone) — so TelemetryMetricsOnly is the arm that isolates the cost that matters
-// while leaving the run reconcilable. TelemetryOff answers the blunter question of what the
-// service does with no observation at all, and pays for it: with no aggregate series there is
-// no server-side count, so §6.5's three-way agreement cannot be reached and the run is not
-// quotable. That refusal is deliberate and is enforced in the manifest, not left to be
-// noticed.
+// Three rather than two, because the two questions an experiment asks are different.
+// ag-sept-plan §6.2 asks what *emission* costs on the request path, and PR1 measured that
+// almost all of it is the synchronous log write (1793ns for the Tee against a real file; 136ns
+// for the Prometheus recorder alone) — so TelemetryMetricsOnly is the arm that isolates the
+// cost that matters while leaving the run reconcilable. TelemetryOff answers the blunter
+// question of what the service does with no observation at all, and pays for it: with no
+// aggregate series there is no server-side count, so measurement-contract §12's three-way
+// agreement cannot be reached and the run is not quotable. That refusal is deliberate and is
+// enforced in the manifest, not left to be noticed.
 const (
 	TelemetryFull        = "full"
 	TelemetryMetricsOnly = "metrics_only"
@@ -69,7 +69,7 @@ func telemetryMode() (string, error) {
 // The hook is not part of telemetry.Recorder because a misroute is a deployment fault
 // rather than a completed request's outcome (internal/metrics). It is nil when metrics
 // are off, for the same reason every other signal is: "off" has to mean off, or the
-// §6.2 telemetry comparison is measuring two different services.
+// ag-sept-plan §6.2 telemetry comparison is measuring two different services.
 func buildRecorder(
 	reg *prometheus.Registry, pool *pgxpool.Pool, logger *slog.Logger, mode string,
 ) (telemetry.Recorder, func(context.Context, domain.Operation)) {

@@ -4,8 +4,9 @@
 **Purpose:** define *how every future claim in this repository will be measured*, so
 that a hypothesis can never silently graduate into a result. This document is
 normative: later milestones and reports must conform to the evidence-labelling
-convention (§2), the experiment template (§5), and the provisional targets (§7–§8)
-until evidence revises them.
+convention (§2), the experiment template (§5), the run manifest (§11), the
+reconciliation contract (§12), and the provisional targets (§7–§8) until evidence
+revises them.
 
 It formalises the vocabulary in the roadmap
 ([`../planning/alloca-go-roadmap.md`](../planning/alloca-go-roadmap.md) §5–§6) into
@@ -23,6 +24,9 @@ governs measurement practice.
   experiments and will be retained, revised, or rejected with evidence in AG-M2/M4.
 - §9 defines the project-level final validation bar and the evidence artifact that
   assembles the milestone results into one auditable conclusion.
+- §11 and §12 are what an individual run must record and must self-check before its
+  numbers may be quoted at all. §9 states the obligations; these two say what
+  discharging them means.
 
 ---
 
@@ -376,7 +380,8 @@ remains unproven:
    paths.
 3. **Independent reconciliation.** After correctness and stress runs, database queries
    independently verify capacity, state-machine, booking/reservation, and idempotency
-   invariants rather than trusting HTTP responses or application telemetry alone.
+   invariants rather than trusting HTTP responses or application telemetry alone. §12 is
+   the contract each run discharges this against.
 4. **Fault and recovery behaviour.** Client cancellation, server deadline, pool and DB
    timeout, worker delay, process interruption, dependency unavailability, lost
    response, and unknown commit cases are exercised; each test records persisted state,
@@ -392,10 +397,9 @@ remains unproven:
 7. **Production-shaped validation.** The relevant conclusions are repeated through the
    deployed network path with multiple API instances, PostgreSQL, load balancer,
    external load generation, migrations, and production-oriented telemetry.
-8. **Reproducibility and provenance.** Every material claim identifies the commit SHA,
-   commands, raw artifact paths, environment and `/meta` capture, configuration,
-   database settings, load profile, run duration, and random seeds required to reproduce
-   it. Reports retain the evidence labels of §2.
+8. **Reproducibility and provenance.** Every material claim identifies the commands and
+   raw artifact paths required to reproduce it, and carries the run manifest §11
+   requires. Reports retain the evidence labels of §2.
 9. **Adversarial review and limitations.** The conclusion records independent attempts
    to falsify the design, implementation, generator validity, reconciliation, and
    interpretation. Known limits, negative results, unresolved risks, and deferred work
@@ -419,3 +423,84 @@ repository-local evidence that can survive independent attempts at falsification
   satisfy.
 - **Does not establish:** any `[MEASURED]` capacity, latency, throughput, or cost
   result. Every number in §7 and §8 is `[HYPOTHESIS]`; no measurement has been taken.
+
+---
+
+## 11. Run manifest (normative)
+
+Every quotable run must record:
+
+- commit SHA, and — for a run served by containers — the **image ID or digest** of the
+  artifact that served it. The two are different facts and neither implies the other:
+  the SHA is stamped into the binary and identifies the *code*, so the same code served from
+  a stale tag, or rebuilt on a different base layer, carries an identical SHA. The identity
+  is an **image ID or registry digest, never a tag** — a tag is a mutable alias that two
+  builds can wear, and the second silently replaces the first. It is **observed from the
+  host** by inspecting the running containers, never self-reported by the service: a process
+  cannot see which image wraps it, so anything it reported would be an environment variable
+  repeated back. A run built and served from source has no image to name and is not asked
+  for one. The decision and the alternatives it rejects are
+  [ADR-0003](../decisions/0003-deployed-artifact-identity.md);
+- Go version and observed `GOMAXPROCS`;
+- replica count and application resources;
+- PostgreSQL version and configuration identity;
+- pool size per replica and aggregate expected pool capacity;
+- workload and dataset parameters;
+- offered rate and/or concurrency;
+- duration and warm-up;
+- timeout budget and reservation TTL;
+- generator location, resources, and utilisation;
+- deployment topology and timestamp;
+- **authority count, the routing/placement version, and the organisation-to-authority
+  assignment the run used**.
+
+Secrets and private endpoints must not be committed.
+
+**No run may be quoted as a capacity claim while a field its topology requires is
+unpopulated.** A generator is an HTTP client and cannot discover the service's shape for
+itself, so which fields a given milestone's runs can populate is a scheduling question,
+answered by the plan
+([`../planning/ag-sept-plan-new.md`](../planning/ag-sept-plan-new.md) §6.4). The rule above
+is not staged: it holds against whatever the topology of the moment requires.
+
+**Multi-service runs need one further rule.** When several service units serve one run, the
+manifest records every unit's `/meta`, and the run is uncertifiable if the units disagree on
+commit revision or report incompatible schema versions. One topology, one binary, one schema.
+
+---
+
+## 12. Correctness reconciliation (normative)
+
+Every measured run carries a self-check. At minimum it must reconcile:
+
+- consumed slot capacity against admitted reservation mutations;
+- distinct logical idempotency keys against committed mutations and replays;
+- live claims against admitted reservations per identity and interval;
+- every completed request against the closed terminal-outcome set of §4.1, with `replay`
+  folded in as the orthogonal flag §4.2 defines rather than double-counted.
+
+A run with unreconciled client totals, server totals, or persisted state is not quotable.
+
+**Multiple authorities extend the contract, not the mechanism:**
+
+1. the run is quiesced, and any `unknown_replayable` mutation is resolved by replaying its own
+   idempotency key before verification begins;
+2. **local safety invariants are checked independently on each authority** — capacity, schedule
+   non-overlap, idempotency, and lifecycle are all local properties of the rows one authority
+   owns;
+3. **persisted and server totals are aggregated across authorities and compared once** with the
+   run's global client totals — once, not per authority, because the client's totals are a
+   property of the run rather than of any one authority;
+4. **each service unit's scrape pair is differenced independently before the sum is taken.**
+   Differencing the sums instead would let one unit restarting mid-run vanish into another
+   unit's counters, which is the one arithmetic error this contract exists to prevent;
+5. the verdict aggregates without treating sequential cross-database reads as one atomic
+   snapshot.
+
+The architectural requirement is that a multi-organisation run must never compare one
+organisation's persisted rows against the run's unpartitioned global summary. In particular,
+looping an organisation-scoped entry point against an unchanged global report is **not** a
+discharge of this contract — it would compare one organisation's rows with every
+organisation's totals. The verifier's data structures, query factoring, and scrape aggregation
+are otherwise the implementation's to choose
+([`horizontal-database-authority.md`](horizontal-database-authority.md) §6.3).

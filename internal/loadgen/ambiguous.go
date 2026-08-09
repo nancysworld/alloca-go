@@ -140,7 +140,7 @@ type Resolution struct {
 // reports what each turned out to be.
 //
 // Call it after the affected authority is available again and before the correctness
-// verdict (ag-sept-plan-new.md §6.5). Until it has run, an authority-failure run has
+// verdict (measurement-contract §12). Until it has run, an authority-failure run has
 // mutations whose persisted state and whose client record genuinely disagree, and no
 // reconciliation over them means anything.
 //

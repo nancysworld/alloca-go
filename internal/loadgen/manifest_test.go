@@ -11,8 +11,8 @@ import (
 )
 
 // TestManifestRedactsCredentials is the discriminating test for the last line of
-// ag-sept-plan §6.4: "secrets and private endpoints must not be committed". A manifest is
-// precisely the artifact that gets pasted into a report and committed, so a credential
+// measurement-contract §11: "secrets and private endpoints must not be committed". A manifest
+// is precisely the artifact that gets pasted into a report and committed, so a credential
 // reaching it is a disclosure, not a cosmetic problem.
 //
 // Remove the redaction and this fails with the password in the manifest.
@@ -41,7 +41,7 @@ func TestManifestRedactsCredentials(t *testing.T) {
 	}
 }
 
-// TestManifestCarriesRequiredProvenance checks the fields §6.4 makes mandatory are present
+// TestManifestCarriesRequiredProvenance checks the fields §11 makes mandatory are present
 // and *populated*, since an absent field is indistinguishable from an unrecorded one once
 // the report is written.
 //

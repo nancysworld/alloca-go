@@ -1,15 +1,16 @@
-// Package reconcile implements the correctness self-check of ag-sept-plan §6.5.
+// Package reconcile implements the correctness self-check of measurement-contract §12.
 //
 // It is the step that decides whether a run may be quoted at all. A capacity number is a
 // claim about a service that was doing the work correctly; if the client's totals, the
 // server's totals and the persisted state disagree, the number describes something else.
-// §6.5 is explicit: "a run with unreconciled client totals, server totals, or persisted
+// §12 is explicit: "a run with unreconciled client totals, server totals, or persisted
 // state is not quotable."
 //
 // It runs in a separate binary from the generator on purpose. The generator must be able to
-// run on compute separate from the service for publishable claims (§6.3), and giving it
-// database credentials would defeat that. So the generator emits client totals over HTTP
-// only, and this package joins them to the database from wherever the database is reachable.
+// run on compute separate from the service for publishable claims (ag-sept-plan §6.3), and
+// giving it database credentials would defeat that. So the generator emits client totals over
+// HTTP only, and this package joins them to the database from wherever the database is
+// reachable.
 package reconcile
 
 import (
@@ -54,13 +55,13 @@ type Result struct {
 	Quotability loadgen.Quotability `json:"quotability"`
 }
 
-// RunClientChecks executes only the rules that need no database — currently §6.5's fourth,
+// RunClientChecks executes only the rules that need no database — currently §12's fourth,
 // which is a statement about the client's own totals.
 //
 // It exists so the outcome-closure rule can be exercised without a schema, and so a run can
 // be triaged from its report alone before anyone opens a connection. It is never a
 // substitute for Run: a verdict from this function alone says nothing about persisted
-// state, so it does not certify a run as quotable against §6.5.
+// state, so it does not certify a run as quotable against §12.
 func RunClientChecks(ctx context.Context, r loadgen.Report) (Result, error) {
 	var res Result
 	c, err := outcomeClosureCheck(ctx, nil, "", r.Summary)
@@ -72,13 +73,14 @@ func RunClientChecks(ctx context.Context, r loadgen.Report) (Result, error) {
 	return res, nil
 }
 
-// Run executes every check of §6.5 against the summary, the metrics scrape and the
+// Run executes every check of §12 against the summary, the metrics scrape and the
 // database — the three independent counts the rule requires to agree.
 //
 // scrapes carries the server-side counters. A zero Scrapes is permitted and produces a
-// failing check rather than a skipped one: §6.5 is a three-way agreement, and a verdict that
+// failing check rather than a skipped one: §12 is a three-way agreement, and a verdict that
 // quietly certified a run on two of the three would be the weaker gate wearing the stronger
-// gate's name. Its optional Baseline is what lets a warmed cell keep its process — see Scrapes.
+// gate's name. Its optional Baseline is what lets a warmed cell keep its process — see
+// Scrapes.
 //
 // Every check runs even after one fails: an operator debugging a bad run wants the whole
 // picture, and stopping at the first failure hides whether the cause is narrow or broad.
@@ -125,7 +127,7 @@ func verdict(r loadgen.Report, checks []Check) loadgen.Quotability {
 	return q
 }
 
-// capacityCheck is §6.5's first rule: consumed slot capacity against admitted reservation
+// capacityCheck is §12's first rule: consumed slot capacity against admitted reservation
 // mutations. It is the arithmetic behind INV-1.
 //
 // Consumed capacity is derived from rows rather than a counter, since no counter exists to
@@ -187,7 +189,7 @@ func capacityCheck(ctx context.Context, q Querier, org domain.OrganisationID, s 
 	return c, nil
 }
 
-// idempotencyCheck is §6.5's second rule: distinct logical idempotency keys against
+// idempotencyCheck is §12's second rule: distinct logical idempotency keys against
 // committed mutations and replays. It exercises INV-5 — one key records exactly one
 // terminal outcome.
 func idempotencyCheck(ctx context.Context, q Querier, org domain.OrganisationID, s loadgen.Summary) (Check, error) {
@@ -225,8 +227,8 @@ func idempotencyCheck(ctx context.Context, q Querier, org domain.OrganisationID,
 	// performed the mutation §4.2 says it must not.
 	//
 	// Equality is only assertable because alloca-seed refuses to start against a fixture
-	// holding records (§5.3). Before that assertion existed, a leftover record was the
-	// commoner explanation and this comparison would have failed correct services.
+	// holding records (ag-sept-plan §5.3). Before that assertion existed, a leftover record was
+	// the commoner explanation and this comparison would have failed correct services.
 	if records > fresh {
 		c.Detail = fmt.Sprintf("%d idempotency records for %d fresh mutations: %d record(s) "+
 			"the client never committed. Either the fixture was not re-seeded, or a replay "+
@@ -241,7 +243,7 @@ func idempotencyCheck(ctx context.Context, q Querier, org domain.OrganisationID,
 	return c, nil
 }
 
-// claimsCheck is §6.5's third rule: live claims against admitted reservations per identity
+// claimsCheck is §12's third rule: live claims against admitted reservations per identity
 // and interval. It exercises INV-4, the non-overlap invariant, and is the check that would
 // catch the hot-identity workload silently producing a meaningless result.
 func claimsCheck(ctx context.Context, q Querier, org domain.OrganisationID, s loadgen.Summary) (Check, error) {
@@ -282,7 +284,7 @@ func claimsCheck(ctx context.Context, q Querier, org domain.OrganisationID, s lo
 	return c, nil
 }
 
-// outcomeClosureCheck is §6.5's fourth rule: every completed request against the closed
+// outcomeClosureCheck is §12's fourth rule: every completed request against the closed
 // terminal-outcome set, with replay folded in as an orthogonal flag rather than
 // double-counted.
 //

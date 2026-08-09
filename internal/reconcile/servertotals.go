@@ -11,15 +11,16 @@ import (
 	"github.com/nancysworld/alloca-go/internal/loadgen"
 )
 
-// requestsTotal is the counter the server-side half of §6.5 is read from. It must stay equal
-// to metrics.Namespace + "_requests_total"; TestParsesWhatTheRecorderEmits pins that by
-// parsing the recorder's own exposition rather than a fixture, so a rename in the metrics
-// package fails here instead of silently producing an empty scrape that reconciles with
-// nothing.
+// requestsTotal is the counter the server-side half of measurement-contract §12 is read from.
+// It must stay equal to metrics.Namespace + "_requests_total"; TestParsesWhatTheRecorderEmits
+// pins that by parsing the recorder's own exposition rather than a fixture, so a rename in the
+// metrics package fails here instead of silently producing an empty scrape that reconciles
+// with nothing.
 const requestsTotal = "alloca_requests_total"
 
 // ServerTotals is the service's own count of completed requests, read from a metrics
-// scrape. It is the third of the three independent counts §6.5 requires to agree.
+// scrape. It is the third of the three independent counts measurement-contract §12 requires
+// to agree.
 //
 // A nil value means no scrape was supplied. That is not the same as a scrape reporting
 // zero, and the two must not collapse into one another: a missing scrape leaves the gate
@@ -174,11 +175,12 @@ func (t ServerTotals) Sum() int {
 	return n
 }
 
-// serverTotalsCheck is the server-side third of §6.5: the service's own count against the
-// client's. It is the comparison the operator guide previously left to the eye, and the one
-// that catches dropped, duplicated or misclassified observations — a client and a database
-// can agree perfectly while the service's own telemetry says something else, and a capacity
-// number read off that telemetry would then be wrong in a way nothing else detects.
+// serverTotalsCheck is the server-side third of measurement-contract §12: the service's own
+// count against the client's. It is the comparison the operator guide previously left to the
+// eye, and the one that catches dropped, duplicated or misclassified observations — a client
+// and a database can agree perfectly while the service's own telemetry says something else,
+// and a capacity number read off that telemetry would then be wrong in a way nothing else
+// detects.
 //
 // Counters are cumulative and nothing resets them short of a process restart. With no
 // baseline the scrape is assumed to start from zero, which a restart before the run gives, and
@@ -201,7 +203,7 @@ func serverTotalsCheck(s loadgen.Summary, scrapes Scrapes) Check {
 // client's totals.
 //
 // It is separate from serverTotalsCheck because a multi-authority run must difference each
-// unit's own before/after pair *before* summing them (ag-sept-plan-new.md §6.5). Differencing
+// unit's own before/after pair *before* summing them (measurement-contract §12). Differencing
 // the sums would let one unit restarting mid-run — its counters resetting to zero — be masked
 // by another unit's increase, and the restart is exactly what the differencing exists to
 // catch.
@@ -210,7 +212,8 @@ func serverTotalsCheckFromMeasured(s loadgen.Summary, server ServerTotals) Check
 
 	if server == nil {
 		c.Detail = "no metrics scrape was supplied, so the server's own count did not " +
-			"participate in this verdict; §6.5 requires client, server and persisted " +
+			"participate in this verdict; measurement-contract §12 requires client, " +
+			"server and persisted " +
 			"state to reconcile, and two of three is not the gate"
 		return c
 	}

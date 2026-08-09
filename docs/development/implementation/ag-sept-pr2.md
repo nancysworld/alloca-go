@@ -21,21 +21,21 @@ deferred with evidence" means a frontier PR2 cannot resolve is a valid outcome, 
 bound is stated and shown. An unresolved frontier reported as a number would be the failure.
 
 **What PR2 may not claim, whatever it measures.** The generator shares a host with the service
-until PR4 (§14), so every figure here is a *bounded local* result. §12.2's headroom control is
+until PR4 (§14), so every figure here is a *bounded local* result. ag-sept-plan §12.2's headroom control is
 what limits how much the co-resident generator can be distorting it, and that limitation
 travels with each number rather than sitting in a footnote. `quotability.level` stays `local`
 for PR2's runs by construction — `publishable` requires the separate compute of §10.
 
 ## 2. What PR2 delivers
 
-| # | Deliverable | Plan reference |
+| # | Deliverable | Reference |
 |---|---|---|
 | 1 | Minimal reproducible Prometheus retention path, version-controlled | §14 PR2 |
 | 2 | Compact diagnostic panel set over the §6.1 signals, reproducible and version-controlled | §14 PR2 |
-| 3 | The two remaining §6.4 service-shape fields — see §3.1, which are fewer than the plan assumes | §6.4 |
+| 3 | The two remaining measurement-contract §11 service-shape fields — see §3.1, which are fewer than the plan assumes | measurement-contract §11 |
 | 4 | Bounded one-instance sweeps for dispersed, hot-slot and hot-identity | §7 |
 | 5 | §6.2 discharged end to end: throughput and p99 with telemetry on versus off, same dataset, concurrency and environment | §6.2 |
-| 6 | Generator-bottleneck control, and demonstrated generator headroom | §12.2 |
+| 6 | Generator-bottleneck control, and demonstrated generator headroom | ag-sept-plan §12.2 |
 | 7 | Peak observed throughput, SLO-safe capacity, recommended operating capacity — or a documented reason each remains unresolved | §7, `measurement-contract.md` §3 |
 | 8 | Retained run reports, verdicts, environment details, and time-series exports | §14 PR2 |
 
@@ -47,8 +47,10 @@ read against what actually exists.
 
 ### 3.1 Three of the five service-shape fields already populate themselves
 
-The plan asks PR2 to "populate the §6.4 service-shape fields … PostgreSQL version, pool size
-per replica, server `GOMAXPROCS`, timeout budget, and reservation TTL."
+The plan asks PR2 to populate the service-shape fields of measurement-contract §11 —
+PostgreSQL version, pool size per replica, server `GOMAXPROCS`, timeout budget, and
+reservation TTL. (The plan carried that field list itself, as ag-sept-plan §6.4, when this record was
+written.)
 
 PR1 made the generator read the service's `/meta`, which already supplies **server
 `GOMAXPROCS`, the timeout budget, and the reservation TTL** — and `local` already refuses a run
@@ -136,7 +138,7 @@ log write is essentially all of it, so this arm isolates the cost that matters w
 the run reconcilable.
 
 **`off` refuses itself, deliberately.** With no aggregate series there is no server-side count,
-so §6.5's three-way agreement has only two — and a verdict reached on two of three is the
+so measurement-contract §12's three-way agreement has only two — and a verdict reached on two of three is the
 weaker gate wearing the stronger one's name. The manifest gate rejects `telemetry_mode: off`
 with that reason rather than letting it surface as a confusing "server counted 0". It is a
 control, not a measurement, which is exactly how `-validate=false` is treated.
@@ -332,7 +334,7 @@ right thing.** `dispersed` reached ~2,200 req/s with goodput equal to throughput
 the same concurrency reached ~630 req/s with goodput of 5/s — the single contended row
 admitting its capacity and refusing the rest, which is §5.2's expected serialization rather
 than a fault. Generator CPU stayed at 0.008–0.019 per core throughout, so nothing here is
-generator-limited; the §12.2 control still has to establish that properly.
+generator-limited; the ag-sept-plan §12.2 control still has to establish that properly.
 
 ### 5.8 Every figure is labelled against its artifact
 
@@ -369,7 +371,7 @@ application resources **only as needed** to identify or tightly bound the fronti
 | Pool size | default, plus one smaller and one larger | separates application compute from database admission |
 | Telemetry | on, off — dispersed only | §6.2 needs one comparison, not one per workload |
 
-Application-CPU variation (§12.4) is *desirable*, not mandatory, and is the first thing to drop
+Application-CPU variation (ag-sept-plan §12.4) is *desirable*, not mandatory, and is the first thing to drop
 if the budget bites.
 
 ## 8. Exit gate — how it stands
@@ -377,7 +379,7 @@ if the budget bites.
 | Clause | Status |
 |---|---|
 | each controlled workload has a repeatable one-instance result | **met** — dispersed, hot_slot and hot_identity each run twice, spreads reported |
-| the generator is ruled out | **met** — §12.2 control, throughput flat across a 10x change in generator compute |
+| the generator is ruled out | **met** — ag-sept-plan §12.2 control, throughput flat across a 10x change in generator compute |
 | the time series expose or tightly bound the limiting mechanism | **met** — pool saturation identified and confirmed by a pool-size ladder |
 | the recommended operating point is reported **or explicitly deferred with evidence** | **deferred with evidence** — §5.6 and the frontier report §5 |
 

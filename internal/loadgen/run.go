@@ -427,7 +427,7 @@ func summarise(
 		// both belong to PR2 with the sweeps that need them (ag-sept-plan §14).
 		s.NotSoundBecause = fmt.Sprintf("-warm-up discarded %d responses from the "+
 			"client totals while their rows remain in the database, which persisted-state "+
-			"reconciliation cannot reconcile in PR1 (ag-sept-plan §6.5)", s.WarmUpDiscarded)
+			"reconciliation cannot reconcile in PR1 (measurement-contract §12)", s.WarmUpDiscarded)
 	default:
 		s.Sound = true
 	}

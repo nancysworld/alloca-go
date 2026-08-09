@@ -593,7 +593,7 @@ Any one of:
 2. **A fourth meaning appears.** Three is a coincidence to be worked down; four is a
    convention forming, and conventions are harder to reverse than habits.
 3. **When a package is already being substantially rewritten.** `reconcile` is due
-   authority-aware changes in PR3b (`ag-sept-plan-new.md` §6.5). Renaming inside a package
+   authority-aware changes in PR3b (`measurement-contract.md` §12). Renaming inside a package
    that is being reworked anyway costs almost nothing and conflicts with nothing.
 
 That third clause is the intended route: **this is three renames, not one**, and each should

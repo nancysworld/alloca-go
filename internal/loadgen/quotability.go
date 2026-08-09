@@ -6,9 +6,9 @@ import (
 )
 
 // Level is what a run's numbers may back. It replaces an earlier boolean `quotable`, which
-// could not be answered honestly: ag-sept-plan §14 gates a *capacity claim* on topology
-// provenance (§14 line 481) and a *publishable* claim on the generator running on separate
-// compute (§6.3, §14 line 505), so "is this quotable?" has no answer until the claim is
+// could not be answered honestly: measurement-contract §11 gates a *capacity claim* on
+// topology provenance, and ag-sept-plan §6.3 gates a *publishable* claim on the generator
+// running on separate compute — so "is this quotable?" has no answer until the claim is
 // named. An unqualified true invited a later reader to publish a co-resident run.
 //
 // The levels are ordered, and a run sits at the highest one whose requirements its manifest
@@ -24,23 +24,25 @@ const (
 	// experiment and backs nothing.
 	LevelNone Level = "none"
 
-	// LevelLocal is a sound measurement with every generator-determinable field of §6.4
-	// populated. The service's shape is unrecorded and the generator may be co-resident, so
-	// it is an observation about this machine, not a capacity claim. PR1 and PR2 live here.
+	// LevelLocal is a sound measurement with every generator-determinable field of
+	// measurement-contract §11 populated. The service's shape is unrecorded and the generator may
+	// be co-resident, so it is an observation about this machine, not a capacity claim. PR1 and
+	// PR2 live here.
 	LevelLocal Level = "local"
 
-	// LevelCapacity adds the service-side and topology provenance of §6.4: PostgreSQL
-	// version, pool sizes, server GOMAXPROCS, timeout budget, reservation TTL, replica
+	// LevelCapacity adds the service-side and topology provenance of measurement-contract §11:
+	// PostgreSQL version, pool sizes, server GOMAXPROCS, timeout budget, reservation TTL, replica
 	// count, deployment topology and environment. It may back a capacity claim about that
-	// topology, but not a published one — §6.3 is not yet satisfied. PR2 supplies the
-	// service shape, PR3 the topology.
+	// topology, but not a published one — ag-sept-plan §6.3 is not yet satisfied. PR2 supplies
+	// the service shape, PR3 the topology.
 	LevelCapacity Level = "capacity"
 
-	// LevelPublishable adds §6.3: the generator ran on compute separate from the service.
+	// LevelPublishable adds ag-sept-plan §6.3: the generator ran on compute separate from the
+	// service.
 	//
 	// This checks the *declaration* in the manifest, which is all a manifest can do. It does
-	// not stand in for §12.2's generator-headroom control, which is evidence rather than
-	// provenance and arrives with PR4 — a run reaching this level has satisfied the
+	// not stand in for ag-sept-plan §12.2's generator-headroom control, which is evidence rather
+	// than provenance and arrives with PR4 — a run reaching this level has satisfied the
 	// provenance gate, not the whole publication gate.
 	LevelPublishable Level = "publishable"
 )
@@ -81,8 +83,9 @@ func ParseLevel(s string) (Level, error) {
 // stands between it and the next level up.
 //
 // BlockedBecause names the missing thing rather than only reporting a failure, because the
-// staged manifest of §14 makes "incomplete" the *expected* state for most of AG-Sept. An
-// operator reading a PR1 report needs to see that the gap is scheduled, not broken.
+// staged manifest of ag-sept-plan §14 makes "incomplete" the *expected* state for most of
+// AG-Sept. An operator reading a PR1 report needs to see that the gap is scheduled, not
+// broken.
 type Quotability struct {
 	Level Level `json:"level"`
 

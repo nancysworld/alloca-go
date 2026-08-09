@@ -30,7 +30,7 @@ artifact directories are large and are kept anyway: without them a report is an 
 | Directory | Produced by | Contents |
 |---|---|---|
 | [`pr2-frontier/`](pr2-frontier/) | `test/scripts/sweep.sh` | The frontier sweeps: `dispersed/` (concurrency ladder), `pool/` + `pool-repeat/` (pool ladder), `plateau/` + `plateau-repeat/` (the two combined), `contended-1/` + `contended-2/` (hot-slot and hot-identity), and `postgres-waits/` (database-side sampling, diagnostic only) |
-| [`pr2-generator-control/`](pr2-generator-control/) | `test/scripts/control-generator.sh` | The mandatory §12.2 generator-headroom control, at ~2,150 req/s |
+| [`pr2-generator-control/`](pr2-generator-control/) | `test/scripts/control-generator.sh` | The mandatory ag-sept-plan §12.2 generator-headroom control, at ~2,150 req/s |
 | [`pr2-generator-control-plateau/`](pr2-generator-control-plateau/) | `test/scripts/control-generator.sh` | The same control re-run at the ~4,300 req/s operating point the PR2 conclusion rests on |
 | [`pr2-telemetry/`](pr2-telemetry/) | `test/scripts/sweep.sh` | The §6.2 telemetry comparison: `full` and `metrics_only`, two passes each. §6.2 is **not discharged** — within-mode spread exceeded the between-mode delta, so no overhead figure is claimed |
 | [`pr1-smoke-run/`](pr1-smoke-run/) | `cmd/alloca-load` | PR1's substrate smoke run. Proves the harness works; establishes **no** capacity number |

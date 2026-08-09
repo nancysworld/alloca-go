@@ -78,8 +78,8 @@ func multiAuthorityManifest() loadgen.Manifest {
 	return m
 }
 
-// containerManifest is a run served by containers, which is what makes §6.4's image identity
-// required. A run built and served from source has no image to name.
+// containerManifest is a run served by containers, which is what makes measurement-contract
+// §11's image identity required. A run built and served from source has no image to name.
 func containerManifest() loadgen.Manifest {
 	m := multiAuthorityManifest()
 	m.ContainerDeployment = true
@@ -89,7 +89,7 @@ func containerManifest() loadgen.Manifest {
 }
 
 // publishableManifest additionally moves the generator off the service host, which is the
-// one §6.3 requirement a manifest can record.
+// one ag-sept-plan §6.3 requirement a manifest can record.
 func publishableManifest() loadgen.Manifest {
 	m := capacityManifest()
 	m.GeneratorLocation = "separate-host"
@@ -167,8 +167,8 @@ func TestIncompleteManifestCannotBeCertified(t *testing.T) {
 			mention: "postgres_version",
 		},
 		{
-			// The §6.2 control refuses itself: with no aggregate series there is no
-			// server-side count, so §6.5's three-way agreement cannot be reached.
+			// The ag-sept-plan §6.2 control refuses itself: with no aggregate series there is no
+			// server-side count, so measurement-contract §12's three-way agreement cannot be reached.
 			name:    "telemetry off cannot reach local",
 			corrupt: func(m *loadgen.Manifest) { m.TelemetryMode = "off" },
 			from:    capacityManifest(),
@@ -218,10 +218,9 @@ func TestIncompleteManifestCannotBeCertified(t *testing.T) {
 			mention: "placement_assignment",
 		},
 		{
-			// §6.4's image identity. The commit SHA binds the binary to a revision, but the
-			// same code served from a stale tag carries the same revision — so a
-			// containerised run that cannot name its image measured an artifact it cannot
-			// identify.
+			// measurement-contract §11's image identity. The commit SHA binds the binary to a revision,
+			// but the same code served from a stale tag carries the same revision — so a containerised
+			// run that cannot name its image measured an artifact it cannot identify.
 			name:    "containerised run naming no image stops at local",
 			corrupt: func(m *loadgen.Manifest) { m.ImageID = "" },
 			from:    containerManifest(),
@@ -245,7 +244,7 @@ func TestIncompleteManifestCannotBeCertified(t *testing.T) {
 			mention: "aggregate_pool_size",
 		},
 		{
-			// §6.3: a co-resident generator cannot back a published number, however
+			// ag-sept-plan §6.3: a co-resident generator cannot back a published number, however
 			// complete the rest of the manifest is.
 			name:    "co-resident generator stops at capacity",
 			corrupt: func(m *loadgen.Manifest) { m.GeneratorLocation = "local" },

@@ -8,7 +8,8 @@ its one remaining item is a starting fixture, not a contract.
 **Budget:** 7.5 development days across three PRs ([AG-Sept plan](../../planning/ag-sept-plan-new.md) §4) —
 3.0 for PR3a, 2.5 for PR3b, 2.0 for PR3c. **PR3a came in at 1.0**; the 2.0 difference went
 to the plan's contingency, not to PR3b or PR3c.
-**Owner doc:** [ag-sept-plan-new.md](../../planning/ag-sept-plan-new.md) §8.2 and §6.5 are normative for what
+**Owner docs:** [ag-sept-plan-new.md](../../planning/ag-sept-plan-new.md) §8.2 and
+[measurement-contract.md](../../design/measurement-contract.md) §12 are normative for what
 this PR builds; this record covers only how PR3 discharges them and the choices made along the
 way.
 **Design input:**
@@ -50,22 +51,22 @@ excursion. PR3 is correctness-first by design, not by descope.
 
 ## 2. What PR3 delivers
 
-| # | Deliverable | PR | Plan reference |
+| # | Deliverable | PR | Reference |
 |---|---|---|---|
 | 1 | Versioned placement map: loading, validation, immutability for a run, startup gate | 3a | §8.2 |
 | 2 | Shard-affine service units — one authority, one pool, readiness bound to it | 3a | §8.2 |
-| 3 | Server-side placement enforcement, with the §12.5 misrouting control | 3a | §8.2, §12.5 |
+| 3 | Server-side placement enforcement, with the §12.5 misrouting control | 3a | ag-sept-plan §8.2, §12.5 |
 | 4 | Booking policy on resolved authorities, and `cross_authority_unsupported` through every closed set it touches | 3a | §8.2 |
 | 5 | Explicit `UserRef` ownership check on confirm and cancel | 3a | §8.2 |
-| 6 | `/meta` extended with authority identifier, routing version, schema version | 3a | §6.4 |
+| 6 | `/meta` extended with authority identifier, routing version, schema version | 3a | measurement-contract §11 |
 | 7 | Placement invariants in the register, each with a discriminating test | 3a | §3.2 |
 | 8 | Containerised two-authority topology, per-authority migration | 3b | §9.1 |
 | 9 | Generator routes mutations by user organisation and reads by slot organisation; multi-organisation, one-hot-organisation, and cross-authority-refusal workloads | 3b | §5.6, §6.3 |
-| 10 | Placement, authority count, and assignment in the manifest; multi-service certification | 3b | §6.4 |
-| 11 | Authority-aware verifier with one aggregated verdict | 3b | §6.5 |
-| 12 | Phase 1 correctness experiments and per-authority verdicts | 3c | §11 |
-| 13 | Failure-isolation experiment — one authority down, ambiguous mutations replayed, then restored | 3c | §11 |
-| 14 | Ambiguous-request register and `ResolveAmbiguous` (§5.7) | 3b | §6.5 |
+| 10 | Placement, authority count, and assignment in the manifest; multi-service certification | 3b | measurement-contract §11 |
+| 11 | Authority-aware verifier with one aggregated verdict | 3b | measurement-contract §12 |
+| 12 | Phase 1 correctness experiments and per-authority verdicts | 3c | ag-sept-plan §11 |
+| 13 | Failure-isolation experiment — one authority down, ambiguous mutations replayed, then restored | 3c | ag-sept-plan §11 |
+| 14 | Ambiguous-request register and `ResolveAmbiguous` (§5.7) | 3b | measurement-contract §12 |
 | 15 | `classifyCommit` ambiguity fix and the INV-21 terminated-session fault test | 3b, early | §3.2 |
 
 ## 3. What the existing code makes cheap, and what it does not
@@ -80,7 +81,8 @@ takes an organisation, and `capacityCheck`, `idempotencyCheck`, and `claimsCheck
 in turn (`internal/reconcile/reconcile.go`). The checks are already local to one organisation's
 rows, which is exactly the granularity Phase 1 places on one authority.
 
-So the plan's §6.5 contract — local safety invariants per authority, then aggregate persisted
+So the measurement-contract §12 contract — local safety invariants per authority, then
+aggregate persisted
 and server totals compared once against global client totals — lands close to the existing
 shape, and authority-aware verification is an extension rather than a rewrite.
 `cmd/alloca-verify` needs the placement map in place of its single `--database-url` and `--org`
@@ -88,7 +90,8 @@ flags.
 
 **This is an observation about cost, not a design.** Whether PR3b loops the existing entry point
 per organisation, refactors the checks behind an authority-scoped querier, or restructures them
-another way is PR3b's to choose. The normative requirement is the plan's §6.5 contract, and in
+another way is PR3b's to choose. The normative requirement is the measurement-contract §12
+contract, and in
 particular that one organisation's persisted rows are never compared against the run's
 unpartitioned global summary.
 
@@ -203,7 +206,7 @@ if the generator is the *only* router, then "no supported request reached the wr
 is a property of the generator's routing table, not of Alloca, and the placement invariant is
 untested by construction.
 
-Both, therefore: the generator routes, and each unit refuses what it does not own. The §12.5
+Both, therefore: the generator routes, and each unit refuses what it does not own. The ag-sept-plan §12.5
 misrouting control is what makes the second half real, and it is why that control is mandatory
 rather than desirable.
 
@@ -265,12 +268,12 @@ reasons:
 
 The deployment fault must still be visible to an operator, so the refusal increments a dedicated
 bounded counter and logs the unit's authority and the requested organisation. A 400 that is
-really a misconfiguration should not hide among client errors. The §12.5 misrouting control
+really a misconfiguration should not hide among client errors. The ag-sept-plan §12.5 misrouting control
 asserts both the outcome and the counter.
 
 ### 5.7 Resolving `unknown_replayable` is a post-run pass, not a load control
 
-The plan's §6.5 requires ambiguous mutations to be resolved by replaying their own idempotency
+Measurement-contract §12 requires ambiguous mutations to be resolved by replaying their own
 keys after an authority is restored. That needs the generator to retain the keys of
 `unknown_replayable` responses during the run and reissue them afterwards.
 
@@ -347,7 +350,7 @@ would deliberately trigger it is PR3c, which lands after.
 1. the **post-restoration resolution pass** as a step of the failure-isolation experiment —
    calling `ResolveAmbiguous` after the authority is back and before the correctness
    verdict, and refusing to reconcile a run with anything left unresolved
-   (`ag-sept-plan-new.md` §6.5). **This includes the logical-summary contract that pass
+   (`measurement-contract.md` §12). **This includes the logical-summary contract that pass
    needs, which PR3b deliberately does not define** — see §6c;
 2. the **failure-isolation experiment** itself, with affected and unaffected populations
    reported separately as their own evidence class. **It must state which failure mode it
@@ -365,7 +368,7 @@ it changes what PR3c's expected-outcome set may assert.
 Stopping an authority's container and issuing a request to its unit produced
 **`timeout_server` (504)**, not one of the three outcomes the formal design enumerates for an
 unavailable authority — `internal_failure`, `timeout_db`, `unknown_replayable` (formal design
-§6.4). The unit's `/readyz` correctly reported 503 throughout, and the healthy authority
+measurement-contract §11). The unit's `/readyz` correctly reported 503 throughout, and the healthy authority
 continued serving its own organisations, so failure *isolation* held exactly as designed.
 
 The reason matters: a **stopped** container drops packets rather than refusing them, so the
@@ -439,7 +442,7 @@ second stack on other ports, or a unit nothing routes to would all satisfy it. S
 observation now also carries the address its container publishes, read from the port binding
 rather than assumed from the compose file, and the run requires an exact one-to-one
 correspondence with the targets it is about to drive. Both directions fail for their own
-reason: a routed unit nobody observed is an artifact the run cannot name — the whole gap §6.4
+reason: a routed unit nobody observed is an artifact the run cannot name — the whole gap measurement-contract §11
 exists to close — while an observed unit nothing routes to means the record describes a
 different topology, and a record wrong about the unit set is not evidence that its image
 identity is right either.

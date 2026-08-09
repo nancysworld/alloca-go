@@ -21,7 +21,7 @@ later move to separate compute without changing anything.
 | `cmd/alloca-go` | the service under test; also serves `/metrics` on its own port | yes |
 | `cmd/alloca-seed` | builds the fixture and asserts the §5.3 clean start | yes |
 | `cmd/alloca-load` | the external generator; writes the run report | **no** |
-| `cmd/alloca-verify` | reconciles the report against the metrics scrape and persisted state (§6.5) | yes |
+| `cmd/alloca-verify` | reconciles the report against the metrics scrape and persisted state (measurement-contract §12) | yes |
 
 ## 2. Prerequisites
 
@@ -73,7 +73,7 @@ a broken run stops the pipeline instead of handing you numbers from it.
 
 `-metrics` is what makes the verdict a three-way agreement rather than a two-way one. Without
 it the verifier still runs, but the client/server check fails and the run is **not quotable**
-— deliberately, because §6.5 requires client totals, server totals and persisted state to
+— deliberately, because measurement-contract §12 requires client totals, server totals and persisted state to
 reconcile, and a gate that silently certified two of the three would be the weaker gate
 wearing the stronger gate's name. The scrape is a file rather than a URL the verifier fetches
 so that the numbers being reconciled are the ones taken at the end of the run, not whatever
@@ -115,7 +115,7 @@ fields depend on that stamp, and they are not the same field:
 | `service_commit_sha` | the service's `/meta` | **which code was measured** |
 | `generator_commit_sha` | the generator's own build | which harness produced the numbers |
 
-`service_commit_sha` is the one §6.4 means by "commit SHA". The generator reads it from
+`service_commit_sha` is the one measurement-contract §11 means by "commit SHA". The generator reads it from
 `/meta` over the same HTTP-only boundary it already uses, so the §6.3 separation is untouched
 — it asks the service to describe itself rather than sharing state with it.
 
@@ -242,7 +242,8 @@ reached it.
 ### What the run may back: `quotability.level`
 
 There is no `quotable: true` field, and deliberately so. Whether a number may be used depends
-on what it is used *for*: §6.4 gates a capacity claim on topology provenance, and §6.3 gates
+on what it is used *for*: measurement-contract §11 gates a capacity claim on topology
+provenance, and ag-sept-plan §6.3 gates
 a published one on the generator running off the service host. An unqualified boolean cannot
 express that, and the one this replaced invited a co-resident smoke run to be read as
 publishable.
@@ -265,7 +266,7 @@ an HTTP client and cannot discover the service's shape, so the fields above `loc
 supplied by an operator in the PR that first has something to say about them — service shape
 in PR2 (which took the operator-supplied count to zero by reading `/meta`), placement,
 authority identity, topology and image identity in PR3b, replica count and aggregate pool
-capacity in PR4 (`ag-sept-plan-new.md` §6.4). The environment stage the earlier plan assigned
+capacity in PR4 (`measurement-contract.md` §11). The environment stage the earlier plan assigned
 to an AWS PR does not arrive; that path is withdrawn (`ag-sept-plan-new.md` §10). The
 report says so itself in `blocked_because`, naming each missing field and the PR that owns
 it, so an incomplete manifest reads as scheduled rather than broken.
@@ -281,10 +282,10 @@ The bar is declared at the call site because only the caller knows what the numb
 run below its `-require` level exits non-zero with the reason, and still writes its report.
 
 One thing `publishable` does *not* mean: that the run is ready to publish. It checks the
-provenance §6.3 requires, which is a declaration in the manifest. The §12.2
+provenance ag-sept-plan §6.3 requires, which is a declaration in the manifest. The ag-sept-plan §12.2
 generator-headroom control is evidence rather than provenance, and it arrives with PR4.
 
-`alloca-verify` prints five checks — one per §6.5 database rule (INV-1, INV-5, INV-4,
+`alloca-verify` prints five checks — one per measurement-contract §12 database rule (INV-1, INV-5, INV-4,
 INV-7) and the client/server comparison, which carries no invariant because it is a
 statement about instrumentation rather than about the domain. Both binaries write their
 JSON even when they fail — you need to see *why*, not just that.
@@ -515,7 +516,7 @@ Two consequences for anything you keep:
   `environment`, `postgres_version`, pool sizes, timeout budget — are declared in the
   report but **not populated by any flag** in PR1, so they come out zero or empty. A local
   run is therefore self-describing about the generator and the workload, but not about the
-  service's shape. That gap has to close before a run backs a published number (§6.4).
+  service's shape. That gap has to close before a run backs a published number (measurement-contract §11).
 - Committed artifacts live in [`../measurements/`](../measurements/); the PR1 smoke run is
   [`pr1-smoke-run/`](../measurements/pr1-smoke-run/). Quote figures from an artifact, never
   from a terminal (`measurement-contract` §5.3).

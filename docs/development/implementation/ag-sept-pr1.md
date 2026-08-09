@@ -25,14 +25,14 @@ and a scope note that misquotes its own exit gate cannot be used to check the ga
 
 ## 2. What PR1 delivers
 
-| # | Deliverable | Plan reference |
+| # | Deliverable | Reference |
 |---|---|---|
 | 1 | Aggregated metrics recorder on the existing observation boundary, bounded label sets only | §6.1 |
 | 2 | Per-call cost of synchronous telemetry against a real sink, deciding whether the asynchronous sink is built now. The end-to-end §6.2 comparison under load is PR2's | §6.2 |
 | 3 | External load generator: workload shapes, closed-loop concurrency, synchronized start, valid idempotent requests, client-side outcome capture, machine-readable summary, own utilisation | §6.3 |
-| 4 | Run manifest emitted with every run and **enforced**: every field the generator determines for itself, plus everything the service reports at `/meta`. The fields no endpoint reports stay operator-supplied and staged to PR2–PR4 | §6.4 |
-| 5 | Correctness reconciliation used by every later run | §6.5 |
-| 6 | Response-validation-active negative control | §12.1, `measurement-contract.md` §5.5 |
+| 4 | Run manifest emitted with every run and **enforced**: every field the generator determines for itself, plus everything the service reports at `/meta`. The fields no endpoint reports stay operator-supplied and staged to PR2–PR4 | measurement-contract §11 |
+| 5 | Correctness reconciliation used by every later run | measurement-contract §12 |
+| 6 | Response-validation-active negative control | ag-sept-plan §12.1, `measurement-contract.md` §5.5 |
 | 7 | One controlled local smoke run exercising all of the above | §14 PR1 |
 
 Deliverable 6 is mandatory and not descopable: `measurement-contract.md` §5.5 requires a
@@ -61,8 +61,8 @@ error text.
 
 `cmd/alloca-verify` reads the generator's machine-readable client summary and a saved
 `/metrics` scrape, queries the database directly, and emits the reconciliation report of
-§6.5. Chosen so the load generator holds **no database credentials** and stays genuinely
-external, which §6.3 requires for publishable runs.
+measurement-contract §12. Chosen so the load generator holds **no database credentials** and
+stays genuinely external, which ag-sept-plan §6.3 requires for publishable runs.
 
 The scrape is passed as a file (`-metrics`) rather than fetched by the verifier from the
 service. Two reasons, and the second is the load-bearing one: the verifier would otherwise
@@ -159,7 +159,8 @@ The end-to-end comparison belongs with the sweeps that can run it, and is scoped
 ### 3.4 Quotability is a level, not a boolean (settled 2026-08-03)
 
 The harness first recorded `quotable: true|false`. That field could not be answered honestly,
-because §6.4 gates a *capacity* claim on topology provenance and §6.3 gates a *publishable*
+because measurement-contract §11 gates a *capacity* claim on topology provenance and
+ag-sept-plan §6.3 gates a *publishable*
 one on the generator running off the service host — so "is this quotable?" has no answer
 until the claim is named. A PR1 smoke run with an empty commit SHA and no service-shape
 fields nonetheless reported `quotable: true`, which is what surfaced the problem.
@@ -244,7 +245,7 @@ An earlier revision of the verifier consumed only the client report and the data
 server column was compared by eye and the run could have been certified with the scrape
 disagreeing or absent. `alloca-verify` now takes the scrape as an input (`-metrics`), sums
 the `alloca_requests_total` cells, and compares them cell by cell; a run supplied with no
-scrape is **not quotable**, because two counts agreeing out of three is not the rule §6.5
+scrape is **not quotable**, because two counts agreeing out of three is not the rule measurement-contract §12
 states.
 
 **2. The response-validation control passes.** End-to-end, not only in unit tests:

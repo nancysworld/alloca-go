@@ -319,7 +319,7 @@ make topo-deployment > test/results/deployment.json
 ```
 
 `make topo-deployment` inspects the running containers and records the immutable image ID
-every unit must share — §6.4's identity of the deployed artifact. It is a separate step
+every unit must share — measurement-contract §11's identity of the deployed artifact. It is a separate step
 rather than something `alloca-load` does, for two reasons: a process cannot see which image
 wraps it, so a service asked this question could only repeat back an environment variable;
 and reading it needs the Docker socket, which is root on the host and precisely what §6.3

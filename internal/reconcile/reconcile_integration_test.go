@@ -1,7 +1,7 @@
 //go:build integration
 
-// The three database-backed rules of ag-sept-plan §6.5 can only be proven against a real
-// PostgreSQL: they compare what a client was told against what the schema actually holds,
+// The three database-backed rules of measurement-contract §12 can only be proven against a
+// real PostgreSQL: they compare what a client was told against what the schema actually holds,
 // and a mocked database would be asserting that the fake agrees with itself.
 //
 // Each test drives real booking operations through the service, then hands the
@@ -186,7 +186,7 @@ func TestCleanRunReconciles(t *testing.T) {
 		t.Fatalf("clean run is not quotable: %s\n%+v", res.Quotability.BlockedBecause, res.Checks)
 	}
 	if len(res.Checks) != 5 {
-		t.Errorf("ran %d checks, want the 4 database rules of §6.5 plus the "+
+		t.Errorf("ran %d checks, want the 4 database rules of measurement-contract §12 plus the "+
 			"client/server comparison", len(res.Checks))
 	}
 	for _, c := range res.Checks {
@@ -250,7 +250,8 @@ func TestOverreportedAdmissionsAreCaughtByClaims(t *testing.T) {
 // perfectly legal. What it can do is refuse the run whose *client totals* disagree with
 // persisted claims — which is what a contaminated rerun produces the moment the generator
 // still expects an admission. This test pins that, and documents the residual gap: the
-// clean-start assertion in §5.3 is a separate guard, not something reconciliation subsumes.
+// clean-start assertion in ag-sept-plan §5.3 is a separate guard, not something
+// reconciliation subsumes.
 func TestHotIdentityContaminationIsVisible(t *testing.T) {
 	f := newFixture(t)
 	// Two slots whose windows overlap, so one identity can hold at most one of them.
@@ -278,8 +279,8 @@ func TestHotIdentityContaminationIsVisible(t *testing.T) {
 
 	// A contaminated rerun reports zero admitted and two conflicts, while the claim from
 	// the earlier run is still present. The totals are internally consistent, so this run
-	// is *not* caught here — which is precisely why §5.3 requires a clean-start assertion
-	// before load begins rather than relying on reconciliation to notice afterwards.
+	// is *not* caught here — which is precisely why ag-sept-plan §5.3 requires a clean-start
+	// assertion before load begins rather than relying on reconciliation to notice afterwards.
 	contaminated, err := runReconcile(f, summaryFor(0, 2, domain.ReasonScheduleConflict))
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -288,7 +289,7 @@ func TestHotIdentityContaminationIsVisible(t *testing.T) {
 		t.Log("contaminated rerun happened to be caught:", contaminated.Quotability.BlockedBecause)
 	} else {
 		t.Log("contaminated rerun reconciles cleanly, as expected: reconciliation cannot " +
-			"detect it, and the clean-start assertion of §5.3 is the guard that must")
+			"detect it, and the clean-start assertion of ag-sept-plan §5.3 is the guard that must")
 	}
 }
 

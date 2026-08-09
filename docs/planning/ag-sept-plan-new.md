@@ -415,7 +415,10 @@ one saturated or unavailable authority bounds its own organisations and no other
 
 ## 6. Measurement substrate
 
-§6.1, §6.2, and §6.5 are carried forward from v0.4 unchanged. §6.3 and §6.4 are amended.
+§6.1 and §6.2 are carried forward from v0.4 unchanged; §6.3 is amended. §6.4 and §6.5 no
+longer state the manifest and reconciliation contracts — those are
+[`../design/measurement-contract.md`](../design/measurement-contract.md) §11 and §12 — and
+retain only the staging that says when each obligation becomes dischargeable.
 
 ### 6.1 Aggregated service metrics
 
@@ -477,83 +480,30 @@ separate compute to arrive with the AWS deployment. §10 withdraws that. The rul
 honoured by labelling: every AG-Sept run is a bounded local result, `quotability.level` stays
 `local` by construction, and no run is presented as a published capacity claim.
 
-### 6.4 Run manifest
+### 6.4 Run manifest — staging
 
-Every quotable run must record:
+What every quotable run must record is the measurement contract's, not this plan's:
+[`../design/measurement-contract.md`](../design/measurement-contract.md) §11. What is
+scheduled — and so belongs here — is *when each field becomes populatable*.
 
-- commit SHA, and — for a run served by containers — the **image ID or digest** of the
-  artifact that served it (v0.6). The two are different facts and neither implies the other:
-  the SHA is stamped into the binary and identifies the *code*, so the same code served from
-  a stale tag, or rebuilt on a different base layer, carries an identical SHA. The identity
-  is an **image ID or registry digest, never a tag** — a tag is a mutable alias that two
-  builds can wear, and the second silently replaces the first. It is **observed from the
-  host** by inspecting the running containers, never self-reported by the service: a process
-  cannot see which image wraps it, so anything it reported would be an environment variable
-  repeated back. A run built and served from source has no image to name and is not asked
-  for one. The decision and the alternatives it rejects are
-  [ADR-0003](../decisions/0003-deployed-artifact-identity.md);
-- Go version and observed `GOMAXPROCS`;
-- replica count and application resources;
-- PostgreSQL version and configuration identity;
-- pool size per replica and aggregate expected pool capacity;
-- workload and dataset parameters;
-- offered rate and/or concurrency;
-- duration and warm-up;
-- timeout budget and reservation TTL;
-- generator location, resources, and utilisation;
-- deployment topology and timestamp;
-- **authority count, the routing/placement version, and the organisation-to-authority
-  assignment the run used** (new in v0.5).
-
-Secrets and private endpoints must not be committed.
-
-**Manifest completion is staged, and the stages are renamed for v0.5.** The generator is an HTTP
-client and cannot discover the service's shape, so the remaining fields are supplied in the PR
-that first has something to say: service shape in PR2 (discharged — PR2 took the
+The generator is an HTTP client and cannot discover the service's shape, so fields arrive in
+the PR that first has something to say: service shape in PR2 (discharged — PR2 took the
 operator-supplied count to zero by reading `/meta`), placement and authority identity in PR3b,
 topology and image identity in PR3b, replica count and aggregate pool capacity in PR4. The
-environment stage v0.4 assigned to the AWS PR does not arrive; §10 records why. The rule that
-survives the staging is this section's own — **no run may be quoted as a capacity claim while a
-field its topology requires is unpopulated.**
+environment stage v0.4 assigned to the AWS PR does not arrive; §10 records why.
 
-**Multi-service runs need one further rule.** When several service units serve one run, the
-manifest records every unit's `/meta`, and the run is uncertifiable if the units disagree on
-commit revision or report incompatible schema versions. One topology, one binary, one schema.
+The staging schedules the *work*, never the rule. Contract §11 holds against whatever the
+topology of the moment requires, in every PR above.
 
-### 6.5 Correctness reconciliation
+### 6.5 Correctness reconciliation — staging
 
-PR1 established a self-check used by every later measured run. At minimum it must reconcile:
+The reconciliation contract is
+[`../design/measurement-contract.md`](../design/measurement-contract.md) §12: the four
+minimum checks, the unquotability of an unreconciled run, and the five multi-authority rules.
 
-- consumed slot capacity against admitted reservation mutations;
-- distinct logical idempotency keys against committed mutations and replays;
-- live claims against admitted reservations per identity and interval;
-- every completed request against the closed terminal-outcome set, with `replay` folded in as
-  an orthogonal flag rather than double-counted.
-
-A run with unreconciled client totals, server totals, or persisted state is not quotable.
-
-**Extended for multiple authorities in PR3b.** The contract, not the mechanism:
-
-1. the run is quiesced, and any `unknown_replayable` mutation is resolved by replaying its own
-   idempotency key before verification begins;
-2. **local safety invariants are checked independently on each authority** — capacity, schedule
-   non-overlap, idempotency, and lifecycle are all local properties of the rows one authority
-   owns;
-3. **persisted and server totals are aggregated across authorities and compared once** with the
-   run's global client totals — once, not per authority, because the client's totals are a
-   property of the run rather than of any one authority;
-4. **each service unit's scrape pair is differenced independently before the sum is taken.**
-   Differencing the sums instead would let one unit restarting mid-run vanish into another
-   unit's counters, which is the one arithmetic error this contract exists to prevent;
-5. the verdict aggregates without treating sequential cross-database reads as one atomic
-   snapshot.
-
-The architectural requirement is that a multi-organisation run must never compare one
-organisation's persisted rows against the run's unpartitioned global summary. In particular,
-looping the existing organisation-scoped entry point against the unchanged global report is
-**not** a discharge of this contract — it would compare one organisation's rows with every
-organisation's totals. The verifier's data structures, query factoring, and scrape aggregation
-are otherwise PR3b's to choose (formal design §6.3).
+Scheduled here: PR1 established the single-authority self-check; PR3b extended it to multiple
+authorities. PR3c is where the multi-authority contract is exercised against deliberate
+failure rather than only a healthy topology.
 
 ## 7. Single-instance baseline — discharged
 
@@ -619,7 +569,7 @@ The required properties for AG-Sept:
   impossible, so Phase 2 remains reachable. Note which case this is: colocated
   cross-*organisation* booking is supported and must keep working (INV-13); only a booking whose
   two organisations resolve to *different authorities* is refused;
-- **authority-aware verification** (§6.5).
+- **authority-aware verification** (measurement-contract §12).
 
 ### 8.3 Local multi-instance scale-out
 
@@ -874,16 +824,17 @@ been weakened to make any of it fit.
   one-hot-organisation workloads of §5.6, plus the bounded cross-authority refusal control as a
   separate workload rather than a share of the dispersed one;
 - retain the idempotency keys of any `unknown_replayable` response so PR3c can replay them after
-  an authority is restored (§6.5). Keys are already derived deterministically per workload, so
+  an authority is restored (measurement-contract §12). Keys are already derived
+  deterministically per workload, so
   this is a small register and a resolution pass, **not** the retry-on-timeout load control of
   the PR2 deferral register's group A, which stays out of scope;
 - record placement, authority count, and assignment in the manifest, and require every
   participating unit's `/meta` to agree on revision and schema before a run is certifiable
-  (§6.4);
+  (measurement-contract §11);
 - extend the verifier to accept the placement map, run each existing check against the authority
   that owns the organisation, sum server totals across per-service scrapes, and emit one
   aggregated verdict that records which authorities it read;
-- populate the §6.4 topology and image-identity fields.
+- populate the topology and image-identity fields of measurement-contract §11.
 
 **Evidence:** one reconciled two-authority run with an aggregated verdict, an agreeing
 multi-service manifest, and the placement recorded in the artifact.
@@ -931,7 +882,7 @@ attribution — per-authority work is read from per-service scrapes instead (§6
   flight — which needs something interposed between client and server rather than a
   terminated backend. A generic authority shutdown does not claim that proof; only the
   targeted fault does, and the mechanism is implementation's to choose;
-- verify under the quiesced consistency rule (§3.2, §6.5);
+- verify under the quiesced consistency rule (§3.2, measurement-contract §12);
 - report, with the organisation-to-authority distribution each run measured.
 
 **Evidence:** a multi-authority correctness report with per-authority verdicts, the

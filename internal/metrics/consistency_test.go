@@ -162,7 +162,7 @@ func TestInvalidVocabularyDivergesDeliberately(t *testing.T) {
 			metrics.LabelUnknown, fromMetrics)
 	}
 	// Still counted, not dropped: a dropped observation stops the totals reconciling, and
-	// §6.5 makes an unreconciled run unquotable.
+	// §12 makes an unreconciled run unquotable.
 	if total := totalOf(fromMetrics); total != 1 {
 		t.Errorf("invalid observation was dropped rather than collapsed: %d cells counted", total)
 	}

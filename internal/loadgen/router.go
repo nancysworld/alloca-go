@@ -13,7 +13,8 @@ import (
 // (ag-sept-plan-new.md §6.3). That is deliberate and it is also the reason the service
 // enforces placement itself: if the generator were the only router, "no supported request
 // reached the wrong authority" would be a property of this file rather than of Alloca, and
-// the §12.5 misrouting control exists precisely to prove the service does not trust it.
+// the ag-sept-plan §12.5 misrouting control exists precisely to prove the service does not
+// trust it.
 //
 // **Mutations route by user organisation, reads by slot organisation.** User-home owns the
 // schedule claim and the client idempotency scope, so it is the stable home for a mutation

@@ -85,7 +85,8 @@ func TestOutOfVocabularyLabelsCollapseToUnknown(t *testing.T) {
 		}
 	}
 
-	// Collapsed, not dropped: an unreconciled total makes a run unquotable (§6.5).
+	// Collapsed, not dropped: an unreconciled total makes a run unquotable
+	// (measurement-contract §12).
 	if got := counterValue(t, reg, "alloca_requests_total"); got != bogus {
 		t.Fatalf("counter = %v, want %d: observations were dropped rather than collapsed",
 			got, bogus)

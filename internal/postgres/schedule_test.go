@@ -266,8 +266,8 @@ func TestElapsedHoldStopsBlockingWithoutTheWorker(t *testing.T) {
 // Every error is a failure — a refusal is the only acceptable non-success. Before the
 // identity lock existed, this gate deadlocked systematically: the mutually overlapping
 // GiST exclusion inserts each placed their index tuple, found the others', and waited in
-// a cycle PostgreSQL broke by aborting victims with 40P01 (§11 control 7). The rounds
-// keep the gate a reliable detector of that failure mode rather than one lucky pass.
+// a cycle PostgreSQL broke by aborting victims with 40P01 (ag-sept-plan §11 control 7). The
+// rounds keep the gate a reliable detector of that failure mode rather than one lucky pass.
 func TestConcurrentOverlappingReservesForOneIdentityYieldOneSuccess(t *testing.T) {
 	const contenders = 24
 	const rounds = 4

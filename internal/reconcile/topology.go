@@ -24,13 +24,14 @@ type AuthorityScope struct {
 	// Scrapes is this unit's own before/after pair. Each unit's pair is differenced
 	// independently and only then summed: differencing the sums instead would let one unit
 	// restarting mid-run vanish into another unit's counters, which is the one arithmetic
-	// error this contract exists to prevent (ag-sept-plan-new.md §6.5).
+	// error this contract exists to prevent (measurement-contract §12).
 	Scrapes Scrapes
 }
 
 // authorityCounts are the raw persisted facts one authority holds. They carry no comparison
 // against the client's totals: those totals are a property of the *run*, not of any one
-// authority, and comparing them per authority is the error the plan's §6.5 singles out.
+// authority, and comparing them per authority is the error measurement-contract §12 singles
+// out.
 type authorityCounts struct {
 	LiveReservations   int
 	OverCapacitySlots  int
@@ -97,7 +98,7 @@ func (r TopologyResult) Certified() bool {
 
 // RunTopology reconciles a run that spanned several writable authorities.
 //
-// The shape is the plan's §6.5 contract, and each step is there because the obvious
+// The shape is measurement-contract §12 contract, and each step is there because the obvious
 // alternative is wrong:
 //
 //  1. **Local safety invariants are checked independently on each authority.** Capacity,
@@ -383,7 +384,7 @@ func aggregateChecks(total authorityCounts, server ServerTotals, s loadgen.Summa
 			total.IdempotencyRecords, fresh)
 	}
 
-	// §6.5's fourth rule, taken once globally. It is a statement about the client's own
+	// §12's fourth rule, taken once globally. It is a statement about the client's own
 	// totals — every completed request inside the closed terminal-outcome set, with replay
 	// folded in as an orthogonal flag rather than counted as a peer outcome — so it needs no
 	// database and belongs at the aggregate, exactly once. Running it per authority would ask

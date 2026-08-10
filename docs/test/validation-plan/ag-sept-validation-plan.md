@@ -270,18 +270,33 @@ generator's routing table rather than of the system, and REQ-ROUTE-1 is untested
 
 Where a fault produces `unknown_replayable`, retain the idempotency key, restore the dependency,
 replay that same key, and resolve the ambiguity before the final correctness verdict. Resolution
-must satisfy the logical-mutation accounting contract in `measurement-contract.md` §12.
+must satisfy the measurement/reconciliation population contract in `measurement-contract.md` §12.
 
-The accounting mechanism is validated discriminatingly in all three states:
+The accounting mechanism is validated discriminatingly in deterministic end-to-end tests, not by
+requiring three corresponding live fault injections. In every case the original
+`unknown_replayable` remains part of the measured population exactly as observed: one measured
+request, zero measured Goodput, and no retroactive rewrite of measured latency, outcome totals,
+replay counts, or duration-based rates. Resolution attempts are retained separately for
+reconciliation/recovery accounting.
 
-1. **original committed** — same-key resolution returns `replay=true`; both HTTP attempts are
-   present in request/server accounting, while the key contributes exactly one fresh logical
-   mutation attributed to the original attempt;
-2. **original did not commit** — same-key resolution returns `replay=false`; both HTTP attempts
-   are accounted, while the resolution attempt contributes the key's exactly one fresh logical
-   mutation;
-3. **still ambiguous** — the run is rejected from reconciliation/certification rather than
-   producing a verdict from incomplete state.
+The three states are:
+
+1. **original committed** — same-key resolution returns `replay=true`; measured performance remains
+   unchanged, while reconciliation establishes exactly one final logical mutation for the key and
+   records the resolution HTTP attempt as a replay. With one resolution attempt, recovery may be
+   described as one eventual logical mutation across two HTTP attempts, but not as measured
+   `1/2` Goodput;
+2. **original did not commit** — same-key resolution returns `replay=false`; measured performance
+   again remains unchanged, while the resolution request performs exactly one final logical
+   mutation after the measured interval and is retained in the reconciliation population;
+3. **still ambiguous** — no final logical-mutation credit is established and the run is rejected
+   from reconciliation/certification rather than producing a verdict from incomplete state.
+
+The test must make the population boundary discriminating: an implementation that folds resolution
+requests into measured `Completed`, `Goodput`, measured outcome/replay totals, latency, or the
+measurement interval fails even if its final persisted-row count is correct. Conversely, an
+implementation that omits resolution traffic from reconciliation/server-scrape accounting also
+fails.
 
 These accounting cases do not depend on the failure-isolation experiment naturally producing an
 ambiguous commit. A deliberately timed loss while `COMMIT` or its acknowledgement is in flight is

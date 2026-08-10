@@ -160,10 +160,16 @@ make topo-up SERVICE_1_PORT=18081 SERVICE_2_PORT=18082
 ```
 
 Command-line and environment variables are exported to the recipe, so Compose and the
-readiness poll both see the override and agree. The one thing to keep in step by hand is
-the *default*, which is written in two places — `SERVICE_1_PORT ?= 8081` in the `Makefile`
-and `${SERVICE_1_PORT:-8081}` in the Compose file. Change one without the other and the
-poll waits on a port nothing is published to.
+readiness poll both see the override and agree.
+
+**It does not come back to your shell.** A variable passed to `make` reaches the recipe's
+child processes, not the interactive shell you typed it in — so afterwards `$SERVICE_1_PORT`
+is still unset for you, and anything deriving an address from it silently gets the default.
+That is why the next section says to copy what `topo-up` printed rather than to recompute it.
+
+The one thing to keep in step by hand is the *default*, which is written in two places —
+`SERVICE_1_PORT ?= 8081` in the `Makefile` and `${SERVICE_1_PORT:-8081}` in the Compose file.
+Change one without the other and the poll waits on a port nothing is published to.
 
 `AUTHORITY_1_PGPORT` and `AUTHORITY_2_PGPORT` (15433/15434) and the metrics ports
 (`SERVICE_1_METRICS_PORT`, `SERVICE_2_METRICS_PORT`) are Compose-only and have no Makefile

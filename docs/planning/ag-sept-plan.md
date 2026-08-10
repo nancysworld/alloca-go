@@ -246,8 +246,9 @@ the units disagree.
 
 **Delivers:** the Phase 1 correctness experiments and per-authority verdicts; the cross-authority
 refusal control as its own bounded evidence class; the failure-isolation experiment — one
-authority down, ambiguous mutations replayed under their own idempotency keys, then restored; and
-the report, including the organisation-to-authority distribution each run measured.
+authority down, then restored, with any ambiguous mutations the fault actually produced resolved
+under their original idempotency keys before final verification; and the report, including the
+organisation-to-authority distribution each run measured.
 
 **Owners:** REQ-COR-1, REQ-COR-2, REQ-FAIL-1, REQ-ROUTE-1; VAL-COR-1..6, VAL-FAIL-1, VAL-SCALE-3;
 validation plan §4.5; `measurement-contract.md` §12–§13.
@@ -268,7 +269,9 @@ discharges the rest of INV-21 — the register's longest-standing "not directly 
 closed the narrower half. What remains is the fault the entry was named for, which needs something
 interposed between client and server rather than a terminated backend. A generic authority
 shutdown does not claim that proof; only the targeted fault does, and the mechanism is
-implementation's to choose (VAL-COR-6).
+implementation's to choose (VAL-COR-6). **This is not a prerequisite for VAL-FAIL-1:** the
+mandatory failure-isolation experiment resolves any ambiguity it actually produces but need not
+manufacture an ambiguous commit.
 
 **Gate:** Phase 1 correctness and failure isolation are demonstrated on independent writable
 authorities; every accepted transaction semantic on the supported path is unchanged; and no result

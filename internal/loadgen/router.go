@@ -10,10 +10,11 @@ import (
 // Router decides which service unit a request goes to.
 //
 // The generator holds the *same* versioned placement map the services hold
-// (ag-sept-plan-new.md §6.3). That is deliberate and it is also the reason the service
+// (deployment-architecture.md §4). That is deliberate and it is also the reason the service
 // enforces placement itself: if the generator were the only router, "no supported request
 // reached the wrong authority" would be a property of this file rather than of Alloca, and
-// the §12.5 misrouting control exists precisely to prove the service does not trust it.
+// the VAL-COR-5 misrouting control exists precisely to prove the service does not
+// trust it (REQ-ROUTE-1).
 //
 // **Mutations route by user organisation, reads by slot organisation.** User-home owns the
 // schedule claim and the client idempotency scope, so it is the stable home for a mutation

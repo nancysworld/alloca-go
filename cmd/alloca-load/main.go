@@ -1,11 +1,11 @@
 // Command alloca-load is the external load generator for AG-Sept experiments.
 //
 // It runs on compute separate from the service and speaks only HTTP, so a run it produces
-// can back a publishable capacity claim (ag-sept-plan §6.3). It holds no database
+// can back a publishable capacity claim (measurement-contract §13.1). It holds no database
 // credentials; reconciling client totals against persisted state is alloca-verify's job.
 //
-// Every run writes a report combining the §6.4 manifest with the run summary, so a number
-// cannot be separated from the conditions that produced it.
+// Every run writes a report combining the measurement-contract §11 manifest with the run
+// summary, so a number cannot be separated from the conditions that produced it.
 //
 // Usage, single authority:
 //
@@ -121,7 +121,7 @@ func run(args []string) error {
 		location   = fs.String("generator-location", "local", "where the generator runs")
 		deployment = fs.String("deployment", "",
 			"path to a deployment record written by test/scripts/record-deployment.sh; supplies "+
-				"the image identity a containerised run must name (§6.4)")
+				"the image identity a containerised run must name (measurement-contract §11)")
 		out     = fs.String("out", "", "write the JSON report here (default stdout)")
 		confirm = fs.Bool("confirm", false, "dispersed: drive reserve→confirm")
 		require = fs.String("require", string(loadgen.LevelLocal),
@@ -202,7 +202,7 @@ func run(args []string) error {
 		opts.Iterations = 0
 	}
 	// Read the service's own provenance before driving load. It identifies the binary that
-	// is about to answer the requests, which is what §6.4 means by "commit SHA" — the
+	// is about to answer the requests, which is what §11 means by "commit SHA" — the
 	// generator's own revision answers a different question and is recorded separately.
 	//
 	// A failure here does not stop the run. The manifest keeps an empty service identity, the
@@ -316,7 +316,7 @@ func run(args []string) error {
 //
 // **Why a multi-unit run must carry one.** A run that routes to several units reaches them
 // through the containerised topology — that is the only way this project raises more than one
-// authority — and it is the shape whose artifact identity §6.4 asks for. Left optional, the
+// authority — and it is the shape whose artifact identity §11 asks for. Left optional, the
 // gate that refuses a containerised run with no image id never fires, because omitting the
 // record also clears the flag that arms it: the run reports a clean lower-provenance result
 // and the missing provenance looks like a choice rather than an omission.
@@ -333,7 +333,8 @@ func preflightDeployment(path string, targets []string) (*loadgen.Deployment, er
 	if path == "" {
 		if len(targets) > 1 {
 			return nil, fmt.Errorf("a run across %d units needs -deployment: this is the "+
-				"containerised topology, and §6.4 asks it to identify the artifact it measured. "+
+				"containerised topology, and measurement-contract §11 asks it to identify the "+
+				"artifact it measured. "+
 				"service_commit_sha does not cover that — the same code from a stale tag, or "+
 				"rebuilt on a different base layer, carries the same revision on every unit. "+
 				"Record it with `make topo-deployment > test/results/deployment.json`", len(targets))
@@ -357,8 +358,8 @@ func preflightDeployment(path string, targets []string) (*loadgen.Deployment, er
 // -placement and an explicit -target are refused together rather than resolved by
 // precedence. They answer the same question differently, and a run that silently ignored one
 // of them would route by a map the operator did not think was in force — which is the one
-// mistake the §12.5 misrouting control exists to make visible, arriving instead as a wall of
-// refusals that look like a service defect.
+// mistake the VAL-COR-5 misrouting control exists to make visible, arriving instead
+// as a wall of refusals that look like a service defect.
 func buildRouter(placementPath, target string, endpoints endpointMap, explicitTarget bool) (loadgen.Router, error) {
 	if placementPath == "" {
 		if len(endpoints) > 0 {

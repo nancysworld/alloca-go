@@ -12,14 +12,15 @@ import (
 
 // ServiceMeta is the provenance of the service under test, read from its own `/meta`.
 //
-// This is the identity §6.4 asks for when it says "commit SHA". The generator's own revision
-// answers a different question — which harness produced the numbers — and the two are not
-// interchangeable: a service started from one commit and a generator built from another is
-// the ordinary state of a working session, not an exotic case.
+// This is the identity measurement-contract §11 asks for when it says "commit SHA". The
+// generator's own revision answers a different question — which harness produced the numbers —
+// and the two are not interchangeable: a service started from one commit and a generator built
+// from another is the ordinary state of a working session, not an exotic case.
 //
-// Reading it over HTTP keeps the §6.3 boundary intact. The generator gains no credentials and
-// no shared state; it asks the service to describe itself, on the same contract it already
-// uses to drive load. `internal/buildinfo` says this is what `/meta` is for.
+// Reading it over HTTP keeps the measurement-contract §13.1 boundary intact. The generator gains no
+// credentials and no shared state; it asks the service to describe itself, on the same
+// contract it already uses to drive load. `internal/buildinfo` says this is what `/meta` is
+// for.
 type ServiceMeta struct {
 	GoVersion      string            `json:"go_version"`
 	GOMAXPROCS     int               `json:"gomaxprocs"`
@@ -55,8 +56,9 @@ type ServiceMeta struct {
 
 	// TelemetryMode names which recorder the service is running. Two runs under different
 	// observation settings are not comparable, and nothing in the totals would say so — this
-	// is what lets §6.2's comparison identify its own arms, and what makes an unobservable
-	// run refuse itself rather than reconcile against a server count that does not exist.
+	// is what lets the VAL-NEG-3 telemetry comparison identify its own arms, and what makes an
+	// unobservable run refuse itself rather than reconcile against a server count that does not
+	// exist.
 	TelemetryMode string `json:"telemetry_mode"`
 
 	// StartedAt is when the process began, and it is the field that makes this struct a

@@ -11,8 +11,8 @@ import (
 	"github.com/nancysworld/alloca-go/internal/reconcile"
 )
 
-// The outcome-closure check is the one rule of §6.5 that needs no database — it is a
-// statement about the client's own totals — so it is unit-testable here. The three
+// The outcome-closure check is the one rule of measurement-contract §12 that needs no database
+// — it is a statement about the client's own totals — so it is unit-testable here. The three
 // database-backed rules are exercised by the integration suite, which has a schema.
 
 func summary(totals []loadgen.Total, completed int) loadgen.Summary {
@@ -70,7 +70,8 @@ func TestOutcomeOutsideClosedSetIsNotQuotable(t *testing.T) {
 	}
 }
 
-// TestReplayCountedAsPeerOutcomeIsCaught is the discriminating case for §6.5's fourth rule.
+// TestReplayCountedAsPeerOutcomeIsCaught is the discriminating case for the fourth rule of
+// measurement-contract §12.
 //
 // The totals are cells of (operation, outcome, reason, replay), so they must sum to the
 // completed count exactly. If a replay were counted once under its recorded outcome and

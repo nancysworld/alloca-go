@@ -9,9 +9,9 @@ import (
 
 // metaResponse is the /meta payload. It inlines buildinfo.Info (runtime and build
 // provenance) and adds the resolved, validated timing configuration. Every capacity
-// result the project publishes must be traceable both to the environment it ran in
-// (roadmap §4.4) and to the timings it ran under (measurement-contract §8.1); this
-// endpoint is the machine-readable source of both.
+// result the project publishes must be traceable both to the environment it ran in and to the
+// timings it ran under (measurement-contract §11 and §8.1); this endpoint is the
+// machine-readable source of both.
 //
 // The bar for inclusion is **whether the value can change a measurement**, not whether
 // it is configurable. The deadline chain can, and so can the hold TTL: it decides how
@@ -36,13 +36,13 @@ type metaResponse struct {
 
 	// Telemetry names which recorder is wired, because two runs under different observation
 	// settings are not comparable and nothing in the totals would say so. It is the field
-	// that lets ag-sept-plan §6.2's comparison identify its own arms.
+	// that lets the VAL-NEG-3 telemetry comparison identify its own arms.
 	Telemetry string `json:"telemetry_mode"`
 
 	// Placement is which authority this unit is and which routing it is serving under.
 	// A multi-authority run is only certifiable if every participating unit agrees on
 	// the routing version and reports a compatible schema, and the harness cannot ask
-	// an operator to transcribe either (ag-sept-plan-new.md §6.4).
+	// an operator to transcribe either (measurement-contract §11).
 	Placement PlacementMeta `json:"placement"`
 }
 
@@ -68,13 +68,15 @@ type PlacementMeta struct {
 
 // DatabaseMeta is what the service can say about its own authority without asking the
 // operator. Both fields can change a measurement — the server version decides planner
-// behaviour, and the pool ceiling is one of the admission boundaries §11.2 lists as a
-// candidate frontier — which is the bar §6.4 sets for inclusion.
+// behaviour, and the pool ceiling is one of the candidate limiting mechanisms
+// ag-sept-validation-plan.md §7 lists — which is the bar measurement-contract.md §11 sets for
+// inclusion.
 type DatabaseMeta struct {
 	// Version is PostgreSQL's own `server_version`, empty when it could not be read.
 	Version string `json:"version,omitempty"`
 	// PoolMaxConns is this process's configured ceiling, not the deployment's aggregate:
-	// the aggregate needs a replica count, which one process cannot know (PR3).
+	// the aggregate needs a replica count, which one process cannot know, so it stays
+	// operator-supplied (measurement-contract §13.2).
 	PoolMaxConns int32 `json:"pool_max_conns,omitempty"`
 	// SchemaVersion is the migration version this authority is at, empty when it could
 	// not be read. A multi-authority run is only admissible if every participating

@@ -18,10 +18,10 @@ import (
 // writeDeploymentFor records an observation of exactly the units a run addresses, so a
 // multi-unit run can satisfy the artifact-identity preflight.
 //
-// A run across several units is the containerised topology, and §6.4 asks it to name the
-// artifact it measured; the harness will not drive one that cannot. Tests whose subject is
-// something else therefore need a record that matches their targets, and writing it here
-// rather than inline keeps that fixture from being mistaken for part of what they assert.
+// A run across several units is the containerised topology, and measurement-contract §11 asks
+// it to name the artifact it measured; the harness will not drive one that cannot. Tests whose
+// subject is something else therefore need a record that matches their targets, and writing it
+// here rather than inline keeps that fixture from being mistaken for part of what they assert.
 func writeDeploymentFor(t *testing.T, targets ...string) string {
 	t.Helper()
 	units := make([]string, 0, len(targets))

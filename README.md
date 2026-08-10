@@ -130,9 +130,16 @@ The HTTP contract — routes, request and response shapes, status mapping, and t
 [`docs/design/api-surface.md`](docs/design/api-surface.md). What the service emits about
 itself is in [`docs/design/observability.md`](docs/design/observability.md).
 
-## Roadmap
+## Where the project is going
 
-The initial 40-day roadmap is documented in [`docs/planning/alloca-go-roadmap.md`](docs/planning/alloca-go-roadmap.md).
+What is being built now — priority, budget, sequence — is in
+[`docs/planning/`](docs/planning/). Candidate directions the project *may* explore later, with no
+commitment to any of them, are collected in the exploration roadmap
+[`docs/planning/alloca-go-roadmap.md`](docs/planning/alloca-go-roadmap.md).
+
+How work proceeds — a durable Goal above repeated Problem → Requirements → Design → Validation →
+Schedule → Implement → Evidence → Analyse & Review iterations — is defined in
+[`docs/development/engineering-process.md`](docs/development/engineering-process.md).
 
 ## Public-disclosure policy
 
@@ -147,6 +154,7 @@ and [`docs/pre-public-checklist.md`](docs/pre-public-checklist.md).
 
 ## Status
 
-AG-M0 (foundation and measurement contract) is complete; AG-M1 (the correct
-transactional core) is in progress. See the [roadmap](docs/planning/alloca-go-roadmap.md)
-for the milestone plan and current status.
+AG-M0 (foundation and measurement contract) and AG-M1 (the correct transactional core) are
+complete. AG-Sept — evidence-backed horizontal scaling — is in progress; its goal and open problem
+are in [`docs/requirements/ag-sept.md`](docs/requirements/ag-sept.md) and its schedule in
+[`docs/planning/ag-sept-plan.md`](docs/planning/ag-sept-plan.md).

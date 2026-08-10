@@ -195,8 +195,8 @@ func (q fakeQuerier) Query(context.Context, string, ...any) (pgx.Rows, error) {
 // in the open rather than inside the helper.
 //
 // served is this unit's own server-side count, supplied as an After scrape with no baseline:
-// §6.5 is a three-way agreement, and a topology test that omitted the server's third would
-// be exercising the weaker gate under the stronger gate's name.
+// measurement-contract §12 is a three-way agreement, and a topology test that omitted the
+// server's third would be exercising the weaker gate under the stronger gate's name.
 func scope(t *testing.T, authority domain.AuthorityID, orgs []domain.OrganisationID, perOrg counts, served int) reconcile.AuthorityScope {
 	t.Helper()
 	return reconcile.AuthorityScope{
@@ -324,9 +324,9 @@ func TestScopesMatchingTheCertifiedTopologyStillVerify(t *testing.T) {
 	}
 }
 
-// §6.5's fourth rule was absent from the topology path: RunTopology checked local safety,
-// reservations, claims, idempotency records and server totals, and never asked whether the
-// client's own outcomes were inside the closed set.
+// measurement-contract §12's fourth rule was absent from the topology path: RunTopology
+// checked local safety, reservations, claims, idempotency records and server totals, and never
+// asked whether the client's own outcomes were inside the closed set.
 //
 // Both halves are exercised because they fail differently: an outcome the contract does not
 // define, and totals that do not sum to the completed count — the shape a replay counted as
@@ -366,7 +366,7 @@ func TestTheAggregateVerdictChecksOutcomeClosure(t *testing.T) {
 				t.Fatalf("RunTopology: %v", err)
 			}
 			if res.ChecksOK() {
-				t.Fatal("a run whose client outcomes break §6.5's closure rule reconciled cleanly")
+				t.Fatal("a run whose client outcomes break measurement-contract §12's closure rule reconciled cleanly")
 			}
 
 			var named bool
@@ -425,7 +425,7 @@ func reportWith(admitted int) loadgen.Report {
 	return loadgen.Report{Manifest: localManifest(), Summary: s}
 }
 
-// The arithmetic §6.5 singles out, made concrete.
+// The arithmetic measurement-contract §12 singles out, made concrete.
 //
 // Unit 1 restarts mid-run: its counter resets, so its After (20) is below its Baseline (100).
 // Unit 2 runs cleanly and counts 100 more. Difference each unit's own pair and unit 1's

@@ -45,7 +45,7 @@ The mechanism used to observe, transport, bind, validate, and record that identi
 implementation concern. The current AG-Sept implementation is recorded in
 [`../development/implementation/ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md)
 §6d, with operating procedure in
-[`../operations/container-topology.md`](../operations/container-topology.md) §7.
+[`../operations/container-topology.md`](../operations/container-topology.md) §6.
 
 ## Consequences
 

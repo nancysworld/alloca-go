@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# ag-sept-plan §12.2, mandatory: deliberately constrain the generator and show how the
-# apparent frontier changes.
+# VAL-NEG-2 (ag-sept-validation-plan.md §8), mandatory: deliberately constrain the generator
+# and show how the apparent frontier changes.
 #
 # The control exists because a closed-loop harness cannot tell you, from its own numbers,
 # whether a plateau is the service's limit or its own. Both look identical: throughput stops

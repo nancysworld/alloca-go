@@ -16,6 +16,74 @@ what it is. Where any of those disagree with this page, they win.
 For the single-service measurement procedure — seeding, driving a run, reconciling it —
 see [`load-harness.md`](load-harness.md). This page is about the containers underneath it.
 
+## 0. The minimum path
+
+Everything you need to raise the topology, prove it is serving what it claims, drive one run, and
+tear it down. Nothing else on this page is required to get here — the rest is either reference or
+an optional check, and each such section says which it is.
+
+```sh
+# 1. build the image                                                        (§3)
+make image
+
+# 2. raise the topology                                                     (§4)
+make topo-up
+
+# 3. read the addresses off the running containers — do not type them       (§4)
+port() { docker inspect --format \
+  '{{with index .NetworkSettings.Ports "8080/tcp"}}{{(index . 0).HostPort}}{{end}}' "$1"; }
+S1=localhost:$(port alloca-service-1)
+S2=localhost:$(port alloca-service-2)
+echo "$S1 $S2"
+
+# 4. each unit is bound to the authority it claims                          (§5)
+curl -sS $S1/meta | jq '{a: .placement.authority_id, orgs: .placement.organisations}'
+curl -sS $S2/meta | jq '{a: .placement.authority_id, orgs: .placement.organisations}'
+
+# 5. seed the fixture — -reset on the FIRST organisation of each authority  (§6)
+seed() {
+  go run ./cmd/alloca-seed ${3:+-reset} \
+    -database-url "postgres://alloca:alloca@localhost:$1/alloca?sslmode=disable" \
+    -org "$2" -slots 100
+}
+seed 15433 org-a reset
+seed 15433 org-c
+seed 15434 org-b reset
+seed 15434 org-d
+
+# 6. record what is running, then drive one bounded run                     (§6)
+go build -o bin/alloca-load ./cmd/alloca-load
+mkdir -p test/results
+make topo-deployment > test/results/deployment.json
+./bin/alloca-load \
+  -placement deploy/topology/placement.json \
+  -endpoint authority-1=http://$S1 -endpoint authority-2=http://$S2 \
+  -workload multi-org-dispersed \
+  -deployment test/results/deployment.json \
+  -concurrency 32 -n 400 -slots 100 \
+  -out test/results/topo-run.json
+
+# 7. tear it down                                                           (§7)
+make topo-down
+```
+
+Expect **400 `admitted_success`** and `measurement_sound: true`. If you get anything else, §8 is
+the place to start.
+
+Each step is explained in the section named beside it, and the explanations carry the traps —
+particularly step 5, where `-reset` on the wrong call silently empties the previous
+organisation's slots.
+
+### What is optional
+
+| Optional | When you want it | Where |
+|---|---|---|
+| the `docker` shim for WSL | `docker` is not found at all | §2 |
+| `make image-provenance` | proving an image's revision and clean-tree stamp end to end | §3 |
+| changing ports | 8081/8082 are already taken on your machine | §4 |
+| the four routing behaviours | seeing placement, colocated booking, cross-authority refusal and misrouting behave differently — this is what the topology exists to demonstrate, so it is the first thing worth adding | §5 |
+| failure isolation | seeing one authority fail without touching the other | §5 |
+
 ## 1. What is in the topology
 
 Two independent PostgreSQL authorities, each with its own shard-affine service unit, and
@@ -24,7 +92,11 @@ which authority composition means anything: an organisation's rows live on exact
 writer, a unit serves only the organisations its authority owns, and one authority failing
 does not reach the other.
 
-| Container | Role | Published on |
+**Every port below is a default.** All of them are overridable (§4, *Changing ports*), so if you
+changed one, read these as the shape rather than as your addresses — `make topo-up` prints the two
+service addresses it actually published.
+
+| Container | Role | Published on (default) |
 |---|---|---|
 | `alloca-authority-1-db` | PostgreSQL, authority 1 | `localhost:15433` |
 | `alloca-authority-2-db` | PostgreSQL, authority 2 | `localhost:15434` |
@@ -36,10 +108,10 @@ does not reach the other.
 The placement document ([`../../deploy/topology/placement.json`](../../deploy/topology/placement.json))
 is routing version `pr3b-v1`:
 
-| Organisation | Authority | Reached at |
+| Organisation | Authority | Reached at (default) |
 |---|---|---|
-| `org-a`, `org-c` | `authority-1` | `localhost:8081` |
-| `org-b`, `org-d` | `authority-2` | `localhost:8082` |
+| `org-a`, `org-c` | `authority-1` | `localhost:8081` — `$S1` below |
+| `org-b`, `org-d` | `authority-2` | `localhost:8082` — `$S2` below |
 
 **Two organisations per authority is deliberate**, not padding. A pair on the *same*
 authority is a supported cross-organisation booking (INV-13); a pair on *different*
@@ -53,6 +125,8 @@ not merely to have started.
 ## 2. Prerequisites
 
 Docker and Go. Nothing else — no Prometheus, no Grafana.
+
+**Optional from here to the end of §2** — only if `docker` is not found at all.
 
 On WSL2, `docker` is often missing at the start of a session:
 
@@ -109,7 +183,7 @@ stash before building an image you intend to run an experiment against.
 against that image at `local`, the floor of the quotability ladder. The failure looks like
 a harness bug, which is why it is gated at build time.
 
-To check an image's provenance end to end:
+**Optional.** To check an image's provenance end to end:
 
 ```sh
 make image-provenance
@@ -132,11 +206,13 @@ probe-only mode to the production binary to work around that would put a second,
 definition of "ready" inside the thing being measured. The ports are published anyway, so
 the honest check is the one a client would make.
 
-On success:
+On success — with the default ports; it prints whichever it actually published:
 
 ```
 topology up. authority-1 -> localhost:8081, authority-2 -> localhost:8082
 ```
+
+**That last line is the authority on where the units are.** Take `$S1` and `$S2` from it below.
 
 To see what everything is doing, including the migration containers that have already
 exited:
@@ -145,19 +221,28 @@ exited:
 make topo-ps
 ```
 
-### Changing ports
+### Changing ports — optional
 
-Every port has an environment default. Override on the command line:
+Only needed if a default port is already taken on your machine. Every port has an environment
+default; override on the command line:
 
 ```sh
 make topo-up SERVICE_1_PORT=18081 SERVICE_2_PORT=18082
 ```
 
 Command-line and environment variables are exported to the recipe, so Compose and the
-readiness poll both see the override and agree. The one thing to keep in step by hand is
-the *default*, which is written in two places — `SERVICE_1_PORT ?= 8081` in the `Makefile`
-and `${SERVICE_1_PORT:-8081}` in the Compose file. Change one without the other and the
-poll waits on a port nothing is published to.
+readiness poll both see the override and agree.
+
+**It does not come back to your shell.** A variable passed to `make` reaches the recipe and the
+processes it starts — Compose and the readiness poll both see it, which is why they agree — but
+not the interactive shell you typed it in. Afterwards `$SERVICE_1_PORT` is still unset for you,
+so anything that recomputes an address from it silently gets the default. That is why the next
+section reads the addresses off the containers instead of recomputing or transcribing them, and
+why doing so makes this whole section harmless.
+
+The one thing to keep in step by hand is the *default*, which is written in two places —
+`SERVICE_1_PORT ?= 8081` in the `Makefile` and `${SERVICE_1_PORT:-8081}` in the Compose file.
+Change one without the other and the poll waits on a port nothing is published to.
 
 `AUTHORITY_1_PGPORT` and `AUTHORITY_2_PGPORT` (15433/15434) and the metrics ports
 (`SERVICE_1_METRICS_PORT`, `SERVICE_2_METRICS_PORT`) are Compose-only and have no Makefile
@@ -166,15 +251,46 @@ counterpart.
 Ports are all below 49152 on purpose. Hyper-V and WSL2 reserve blocks inside the Windows
 dynamic port range at boot, so a higher port works or not by luck of the reboot.
 
+### Set the addresses once
+
+**Every command from here on uses `$S1` and `$S2` rather than a literal port**, because the
+sections below are the ones that break when you take the override above.
+
+**Read them off the running containers. Do not transcribe them from anything, including this
+page:**
+
+```sh
+port() { docker inspect --format \
+  '{{with index .NetworkSettings.Ports "8080/tcp"}}{{(index . 0).HostPort}}{{end}}' "$1"; }
+S1=localhost:$(port alloca-service-1)
+S2=localhost:$(port alloca-service-2)
+echo "$S1 $S2"
+```
+
+A container's published port binding is the one authority on where it can be reached, and it is
+the same fact `record-deployment.sh` records for the run manifest — so this cannot disagree with
+what the run is later certified against.
+
+**An earlier version of this section told you to copy the addresses `make topo-up` printed, into a
+block containing the defaults. That was wrong**, and wrong in the way this page keeps being wrong:
+it worked if you had not overridden the ports and silently pointed you at nothing if you had, so
+the walkthrough passed or failed depending on which of the two paths above you took. A value you
+are asked to substitute by hand is a value that will eventually not be substituted.
+
+Every `curl` below uses `-sS` rather than `-s` for the same reason: with `-s`, a connection to the
+wrong port prints nothing at all, and `jq` then prints nothing, so a refused connection is
+indistinguishable from a successful call that returned an empty result. `-sS` keeps the progress
+meter suppressed and lets the error through.
+
 ## 5. Checking it is actually serving what it claims
 
 Each unit reports its own identity at `/meta`:
 
 ```sh
-curl -s localhost:8081/meta | jq '{authority: .placement.authority_id,
+curl -sS $S1/meta | jq '{authority: .placement.authority_id,
   routing: .placement.routing_version, orgs: .placement.organisations,
   revision, modified, schema: .database.schema_version}'
-curl -s localhost:8082/meta | jq '{authority: .placement.authority_id,
+curl -sS $S2/meta | jq '{authority: .placement.authority_id,
   routing: .placement.routing_version, orgs: .placement.organisations,
   revision, modified, schema: .database.schema_version}'
 ```
@@ -187,33 +303,46 @@ nothing in a request total would reveal two units on different commits.
 The operational endpoints are `/healthz` (process alive), `/readyz` (database reachable),
 `/meta` (identity), and `/metrics` on the separate metrics port.
 
-Four behaviours worth confirming by hand, because each is a property the topology exists to
-have:
+**Optional, and the first thing worth adding.** Four behaviours confirmed by hand, because each
+is a property the topology exists to have — the `/meta` check above proves the units are bound
+correctly, and these prove the binding actually decides anything:
 
 ```sh
 # 1. a same-organisation booking on its own authority succeeds
-curl -s -X POST localhost:8081/v1/slots/org-a/slot-0/reservations \
+curl -sS -X POST $S1/v1/slots/org-a/slot-0/reservations \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: k1' \
   -d '{"user_organisation_id":"org-a","user_id":"u-1"}'
 
 # 2. a colocated cross-organisation booking also succeeds — org-a and org-c
-#    share authority-1, so this is supported, and it is what INV-13 protects
-curl -s -X POST localhost:8081/v1/slots/org-c/slot-0/reservations \
+#    share authority-1, so this is supported, and it is what INV-13 protects.
+#    NOTE the different user: u-2, not u-1. See below.
+curl -sS -X POST $S1/v1/slots/org-c/slot-0/reservations \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: k2' \
-  -d '{"user_organisation_id":"org-a","user_id":"u-1"}'
+  -d '{"user_organisation_id":"org-a","user_id":"u-2"}'
 
 # 3. a cross-AUTHORITY booking is refused on policy — 409, not an edge error.
 #    Routed to the user's own unit, which understands the request and declines it.
-curl -s -X POST localhost:8081/v1/slots/org-b/slot-0/reservations \
+curl -sS -X POST $S1/v1/slots/org-b/slot-0/reservations \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: k3' \
   -d '{"user_organisation_id":"org-a","user_id":"u-1"}'
 
 # 4. a MISROUTED request is refused at the edge — 400, a different failure
 #    from 3: org-b is not served by this unit at all
-curl -s -X POST localhost:8082/v1/slots/org-a/slot-0/reservations \
+curl -sS -X POST $S2/v1/slots/org-a/slot-0/reservations \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: k4' \
   -d '{"user_organisation_id":"org-a","user_id":"u-1"}'
 ```
+
+Expected in order: **`200` admitted, `200` admitted, `409 cross_authority_unsupported`,
+`400 invalid_request`.**
+
+**Case 2 books as `u-2`, and that is not cosmetic.** The seeded `slot-0` of each organisation
+covers very nearly the same hour, so a user who took case 1's slot already holds an overlapping
+claim. Running case 2 as `u-1` returns `409 business_refusal / schedule_conflict` — INV-13
+working exactly as designed, since a claim is keyed by the *caller's* organisation and therefore
+protects that user across every organisation they book into. It is a correct refusal that looks
+like a broken topology, so the check that demonstrates colocated booking must not collide with the
+check before it.
 
 Cases 3 and 4 look similar and are not. A cross-authority refusal (`409`,
 `cross_authority_unsupported`) is the service applying Phase 1 policy to a request it
@@ -221,17 +350,17 @@ understood; a misroute (`400`, `invalid_request`) is the edge rejecting a reques
 reached the wrong unit. Confusing them is how a routing bug gets recorded as a policy
 result.
 
-Slots must be seeded first — see §7.
+Slots must be seeded first — see §6.
 
-### Failure isolation
+### Failure isolation — optional
 
 Stopping one authority's database should leave its unit unready while the other keeps
 serving:
 
 ```sh
 docker stop alloca-authority-1-db
-curl -s -o /dev/null -w '%{http_code}\n' localhost:8081/readyz   # 503
-curl -s -o /dev/null -w '%{http_code}\n' localhost:8082/readyz   # 200
+curl -sS -o /dev/null -w '%{http_code}\n' $S1/readyz   # 503
+curl -sS -o /dev/null -w '%{http_code}\n' $S2/readyz   # 200
 docker start alloca-authority-1-db
 ```
 
@@ -242,17 +371,7 @@ refuses connections, classifies differently. This is recorded as
 [`ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md) §6b, and any experiment must name
 which fault it injected.
 
-## 6. Down
-
-```sh
-make topo-down
-```
-
-`down -v`: the volumes go too. Each run starts from a known fixture, and a topology that
-kept its data between runs would make the first run of a session differ from the rest —
-the kind of difference that gets discovered halfway through interpreting a result.
-
-## 7. Driving a multi-authority load run
+## 6. Driving a multi-authority load run
 
 Seeding is per authority and per organisation, because `alloca-seed` takes one DSN and one
 organisation:
@@ -306,24 +425,44 @@ routed by the same placement document the services enforce:
 ```sh
 go build -o bin/alloca-load ./cmd/alloca-load
 
+mkdir -p test/results   # git-ignored, and absent on a fresh clone
 make topo-deployment > test/results/deployment.json
 
 ./bin/alloca-load \
   -placement deploy/topology/placement.json \
-  -endpoint authority-1=http://localhost:8081 \
-  -endpoint authority-2=http://localhost:8082 \
+  -endpoint authority-1=http://$S1 \
+  -endpoint authority-2=http://$S2 \
   -workload multi-org-dispersed \
   -deployment test/results/deployment.json \
-  -concurrency 32 -duration 60s -slots 100 \
+  -concurrency 32 -n 400 -slots 100 \
   -out test/results/topo-run.json
 ```
 
+**`-n 400`, not a duration, and the reason matters.** This is a smoke check of the topology, and
+the seeded fixture holds a finite amount of capacity: 100 slots for each of four organisations at
+capacity 20 is **8,000 units in total**. A bounded 400-request run consumes a twentieth of that
+and every request can succeed, so `400 admitted_success` is a clean signal that routing, placement
+and booking all work.
+
+Swap in `-duration 60s` and the run does roughly 300,000 requests at this concurrency: the first
+8,000 succeed, and **every one after that is a correct `no_capacity` refusal**. The gates still
+pass — refusals are legitimate completed outcomes and `measurement_sound` stays true — but 97% of
+the run is a sold-out fixture, and its throughput and latency describe capacity exhaustion rather
+than booking. That is precisely the failure
+[`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md)
+§3.1 requires the dispersed workload to avoid, and it is the same shape as the seeding bug in §10:
+a plausible result that measures something other than what the reader thinks.
+
+If you do want a duration-bounded run here, seed enough capacity to outlast it and say so in the
+report — do not read goodput from a run whose fixture sold out.
+
 `make topo-deployment` inspects the running containers and records the immutable image ID
-every unit must share — §6.4's identity of the deployed artifact. It is a separate step
+every unit must share — measurement-contract §11's identity of the deployed artifact. It is a separate step
 rather than something `alloca-load` does, for two reasons: a process cannot see which image
 wraps it, so a service asked this question could only repeat back an environment variable;
-and reading it needs the Docker socket, which is root on the host and precisely what §6.3
-keeps the generator away from so it can later move to separate compute.
+and reading it needs the Docker socket, which is root on the host and precisely what
+`measurement-contract.md` §13.1 keeps the generator away from so it can later move to separate
+compute.
 
 It refuses a topology whose units are on different images. That is the failure the commit
 SHA cannot see — the same code served from a stale `:dev` tag, or rebuilt on a newer base
@@ -366,6 +505,22 @@ The three multi-organisation workloads:
 The report records what the run actually reached: `authority_count`, `routing_version`,
 `placement_assignment`, `placement_digest`, and `topology_disagreement` — empty when the
 units described one deployment.
+
+## 7. Down
+
+The last step, once you have the report you came for:
+
+```sh
+make topo-down
+```
+
+`down -v`: the volumes go too. Each run starts from a known fixture, and a topology that
+kept its data between runs would make the first run of a session differ from the rest —
+the kind of difference that gets discovered halfway through interpreting a result.
+
+**Leaving it up between runs is fine, but reseed with `-reset` before the next one.** The
+clean-start assertion refuses a fixture holding live claims or idempotency records, which is
+what stops a rerun replaying the previous run's keys and measuring nothing (§6).
 
 ## 8. When it goes wrong
 
@@ -439,11 +594,30 @@ observation was bound to the routed units and moved ahead of the workload:
 | the report | `container_deployment: true`, the observed `image_id`, `unit_count: 2`, certified `local` |
 | the same run with no `-deployment` and `-require none` | refused, exit 1, **no report written** |
 
-The last row is the control for §7's rule that no level excuses the record. It stops before
-any measured request, which is why there is no report to inspect — a refusal that produced
+The whole page was walked again from `topo-down` on 2026-08-10 at `164e72e`, which is where the
+§0 minimum path and the port and `-n 400` corrections come from:
+
+| Step | Result |
+|---|---|
+| `make topo-up` from clean | image `164e72e`, both units ready on the default ports |
+| both units' `/meta` | `authority-1`/`["org-a","org-c"]`, `authority-2`/`["org-b","org-d"]`, one `pr3b-v1`, schema 1, `modified: false` |
+| seeding, four organisations | `org-a\|100`, `org-c\|100` on authority-1; `org-b\|100`, `org-d\|100` on authority-2 |
+| `make topo-deployment` | one image ID across both containers, matching both targets |
+| `multi-org-dispersed`, `-n 400` | **400 `admitted_success`**, `measurement_sound: true`, 0 invalid, certified `local` |
+| §5 routing checks 1–4 | `200`, `200` (as `u-2`), `409 cross_authority_unsupported`, `400 invalid_request` |
+| failure isolation | unit 1 `503`, unit 2 `200` and still booking; `200` again after restart |
+
+**Case 2 was wrong on this page until it was run.** It reused `u-1` from case 1, and the two
+`slot-0`s overlap, so it returned `409 schedule_conflict` — INV-13 refusing correctly, in a way
+that reads as a broken topology. It now books as `u-2`, and §5 says why. That is the third recipe
+on this page to have shipped broken and been caught only by execution, after the `-reset` scope and
+the port override.
+
+The last row of the previous table is the control for §6's rule that no level excuses the record.
+It stops before any measured request, which is why there is no report to inspect — a refusal that produced
 one would mean the check had moved back after the workload.
 
-Two things are worth recording because they were found by running rather than reading.
+Four things are worth recording because they were found by running rather than reading.
 
 **The build-context defect is now confirmed in a real build, not inferred.** A clean
 checkout — zero uncommitted changes — with the pre-fix `.dockerignore` produces a binary
@@ -454,7 +628,24 @@ quotable at all.
 **The seeding recipe on this page was wrong until it was run.** `-reset` truncates the whole
 authority, so passing it per organisation deleted the previous one's slots; the run then
 returned exactly 200 of 400 as `unknown_target`, which reads as contention rather than as a
-broken fixture. §7 now carries the corrected form and the check that catches it.
+broken fixture. §6 now carries the corrected form and the check that catches it.
+
+**The page offered a port override and then ignored it** (found 2026-08-10). *Changing ports*
+showed `make topo-up SERVICE_1_PORT=18081 SERVICE_2_PORT=18082`, and every section after it
+hardcoded the 8081/8082 defaults — so taking the override the page recommends broke §5 and the
+load run of §6. It failed **silently**: `curl -s` prints nothing on a refused connection, so
+`jq` printed nothing, and a wrong port was indistinguishable from an empty result. §4 now sets
+`$S1`/`$S2` once, every command uses them, and every `curl` is `-sS`.
+
+**The load command and the results table below described different experiments** (found
+2026-08-10). The command was duration-bounded (`-duration 60s`) while the table records
+iteration-bounded runs of 400 and 100 requests. They are not interchangeable here: the fixture
+holds `[DERIVED]` 8,000 units of capacity (100 slots × 4 organisations × capacity 20), so a
+60-second run at concurrency 32 exhausts it early and spends the overwhelming majority of its
+requests on correct `no_capacity` refusals — a sound run whose throughput describes a sold-out
+fixture rather than booking. §6 now carries `-n 400` and says why. The run that exposed this was
+not retained (`test/results/` is git-ignored), so no figure from it is quotable; the arithmetic
+above is derived from the fixture this page defines.
 
 Still not covered here: `make test-integration` is a separate suite with its own database,
 and CI runs it.

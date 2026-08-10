@@ -1,9 +1,14 @@
 # AG-Sept — Measured scale-out and distributed authority
 
-**Status: SUPERSEDED on 5 August 2026 by [`ag-sept-plan-new.md`](ag-sept-plan-new.md).**
-Retained unchanged for the record, because PR1 and PR2 were planned, executed, and reported
-under it, and their scope notes and measurement reports cite its section numbers. It is not
-normative for any remaining work. What changed and why is in `ag-sept-plan-new.md` §0.
+**Status: ARCHIVED SNAPSHOT — superseded on 5 August 2026 by
+[`ag-sept-plan.md`](ag-sept-plan.md).**
+
+Retained unchanged as a frozen v0.4 snapshot, because PR1 and PR2 were planned, executed, and
+reported under it, and their implementation records and measurement reports cite its section
+numbers. **It is not normative for any remaining work**, and nothing new should cite it except as
+a historical scheduling fact. What changed and why is in `ag-sept-plan.md` §6.2; the AWS topology
+and matrix it carries (§10, §11) are withdrawn from AG-Sept but readable here for whichever
+milestone picks them up.
 
 **Status:** Draft v0.4  
 **Created:** 31 July 2026  

@@ -114,7 +114,7 @@ func New(reg prometheus.Registerer) *Recorder {
 			Help: "Requests refused because they reached a unit that does not own the " +
 				"requested organisation. A deployment fault, counted separately from " +
 				"invalid_request so it is not buried among malformed client requests. " +
-				"Not labelled by organisation: that is unbounded (ag-sept-plan-new.md §6.1).",
+				"Not labelled by organisation: that is unbounded (observability.md §2.1).",
 		}, []string{"operation"}),
 	}
 
@@ -141,9 +141,9 @@ var expiryBuckets = []float64{0.01, 0.05, 0.1, 0.5, 1, 5, 15, 60}
 // LabelUnknown is the single series every out-of-vocabulary label value collapses to.
 //
 // Collapsing rather than dropping is deliberate: a dropped observation would make the
-// totals stop reconciling, and §6.5 makes an unreconciled run unquotable. An observation
-// with a label this recorder does not recognise is still a completed request, so it is
-// counted — under a value that says the vocabulary was violated and where to look.
+// totals stop reconciling, and measurement-contract §12 makes an unreconciled run unquotable.
+// An observation with a label this recorder does not recognise is still a completed request,
+// so it is counted — under a value that says the vocabulary was violated and where to look.
 const LabelUnknown = "unknown"
 
 // RecordRequest aggregates one completed request.

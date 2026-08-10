@@ -1,8 +1,20 @@
 # AG-M1 implementation plan — Correct transactional core
 
-**Status:** Agreed 22 July 2026
+**Status:** Historical — AG-M1 completed 30 July 2026. Retained as the record of how the milestone
+was planned and split; not normative for any current work.
 **Milestone dates:** 23–28 July 2026 · **Priority:** P0
-**Roadmap:** [`alloca-go-roadmap.md`](alloca-go-roadmap.md) §AG-M1
+
+**Reading the roadmap references below.** This plan was written against the pre-2026-08-10
+roadmap, which was a milestone master plan carrying theses, scope, gates and an AG-M0–M7 schedule.
+That document has since been rewritten as an **exploration roadmap**
+([`alloca-go-roadmap.md`](alloca-go-roadmap.md)) and no longer contains the sections cited here.
+The durable content moved to its owners: correctness gates and the authority model to
+[`../design/transaction-semantics.md`](../design/transaction-semantics.md), measurement vocabulary
+and outcome taxonomy to [`../design/measurement-contract.md`](../design/measurement-contract.md),
+and the monolith-first decision to
+[`../decisions/0001-modular-monolith-first.md`](../decisions/0001-modular-monolith-first.md). The
+references are left as written because this is a dated record of what the work was planned
+against.
 **Governing contracts:** [`../design/measurement-contract.md`](../design/measurement-contract.md)
 (outcome taxonomy §4, timeout budget §8/§8.1),
 [`../design/project-structure.md`](../design/project-structure.md) (dependency rules),

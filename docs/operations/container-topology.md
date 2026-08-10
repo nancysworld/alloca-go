@@ -166,15 +166,39 @@ counterpart.
 Ports are all below 49152 on purpose. Hyper-V and WSL2 reserve blocks inside the Windows
 dynamic port range at boot, so a higher port works or not by luck of the reboot.
 
+### Set the addresses once
+
+**Every command from here on uses `$S1` and `$S2` rather than a literal port**, because the
+sections below are the ones that break when you take the override above. Set them from the last
+line `make topo-up` printed:
+
+```sh
+S1=localhost:${SERVICE_1_PORT:-8081}
+S2=localhost:${SERVICE_2_PORT:-8082}
+```
+
+If you passed the ports to `make` on the command line rather than exporting them, your interactive
+shell does not have them — set `S1` and `S2` to the printed addresses directly:
+
+```sh
+S1=localhost:18081
+S2=localhost:18082
+```
+
+Every `curl` below uses `-sS` rather than `-s` for the same reason: with `-s`, a connection to the
+wrong port prints nothing at all, and `jq` then prints nothing, so a refused connection is
+indistinguishable from a successful call that returned an empty result. `-sS` keeps the progress
+meter suppressed and lets the error through.
+
 ## 5. Checking it is actually serving what it claims
 
 Each unit reports its own identity at `/meta`:
 
 ```sh
-curl -s localhost:8081/meta | jq '{authority: .placement.authority_id,
+curl -sS $S1/meta | jq '{authority: .placement.authority_id,
   routing: .placement.routing_version, orgs: .placement.organisations,
   revision, modified, schema: .database.schema_version}'
-curl -s localhost:8082/meta | jq '{authority: .placement.authority_id,
+curl -sS $S2/meta | jq '{authority: .placement.authority_id,
   routing: .placement.routing_version, orgs: .placement.organisations,
   revision, modified, schema: .database.schema_version}'
 ```
@@ -192,25 +216,25 @@ have:
 
 ```sh
 # 1. a same-organisation booking on its own authority succeeds
-curl -s -X POST localhost:8081/v1/slots/org-a/slot-0/reservations \
+curl -sS -X POST $S1/v1/slots/org-a/slot-0/reservations \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: k1' \
   -d '{"user_organisation_id":"org-a","user_id":"u-1"}'
 
 # 2. a colocated cross-organisation booking also succeeds — org-a and org-c
 #    share authority-1, so this is supported, and it is what INV-13 protects
-curl -s -X POST localhost:8081/v1/slots/org-c/slot-0/reservations \
+curl -sS -X POST $S1/v1/slots/org-c/slot-0/reservations \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: k2' \
   -d '{"user_organisation_id":"org-a","user_id":"u-1"}'
 
 # 3. a cross-AUTHORITY booking is refused on policy — 409, not an edge error.
 #    Routed to the user's own unit, which understands the request and declines it.
-curl -s -X POST localhost:8081/v1/slots/org-b/slot-0/reservations \
+curl -sS -X POST $S1/v1/slots/org-b/slot-0/reservations \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: k3' \
   -d '{"user_organisation_id":"org-a","user_id":"u-1"}'
 
 # 4. a MISROUTED request is refused at the edge — 400, a different failure
 #    from 3: org-b is not served by this unit at all
-curl -s -X POST localhost:8082/v1/slots/org-a/slot-0/reservations \
+curl -sS -X POST $S2/v1/slots/org-a/slot-0/reservations \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: k4' \
   -d '{"user_organisation_id":"org-a","user_id":"u-1"}'
 ```
@@ -230,8 +254,8 @@ serving:
 
 ```sh
 docker stop alloca-authority-1-db
-curl -s -o /dev/null -w '%{http_code}\n' localhost:8081/readyz   # 503
-curl -s -o /dev/null -w '%{http_code}\n' localhost:8082/readyz   # 200
+curl -sS -o /dev/null -w '%{http_code}\n' $S1/readyz   # 503
+curl -sS -o /dev/null -w '%{http_code}\n' $S2/readyz   # 200
 docker start alloca-authority-1-db
 ```
 
@@ -310,13 +334,31 @@ make topo-deployment > test/results/deployment.json
 
 ./bin/alloca-load \
   -placement deploy/topology/placement.json \
-  -endpoint authority-1=http://localhost:8081 \
-  -endpoint authority-2=http://localhost:8082 \
+  -endpoint authority-1=http://$S1 \
+  -endpoint authority-2=http://$S2 \
   -workload multi-org-dispersed \
   -deployment test/results/deployment.json \
-  -concurrency 32 -duration 60s -slots 100 \
+  -concurrency 32 -n 400 -slots 100 \
   -out test/results/topo-run.json
 ```
+
+**`-n 400`, not a duration, and the reason matters.** This is a smoke check of the topology, and
+the seeded fixture holds a finite amount of capacity: 100 slots for each of four organisations at
+capacity 20 is **8,000 units in total**. A bounded 400-request run consumes a twentieth of that
+and every request can succeed, so `400 admitted_success` is a clean signal that routing, placement
+and booking all work.
+
+Swap in `-duration 60s` and the run does roughly 300,000 requests at this concurrency: the first
+8,000 succeed, and **every one after that is a correct `no_capacity` refusal**. The gates still
+pass — refusals are legitimate completed outcomes and `measurement_sound` stays true — but 97% of
+the run is a sold-out fixture, and its throughput and latency describe capacity exhaustion rather
+than booking. That is precisely the failure
+[`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md)
+§3.1 requires the dispersed workload to avoid, and it is the same shape as the seeding bug in §10:
+a plausible result that measures something other than what the reader thinks.
+
+If you do want a duration-bounded run here, seed enough capacity to outlast it and say so in the
+report — do not read goodput from a run whose fixture sold out.
 
 `make topo-deployment` inspects the running containers and records the immutable image ID
 every unit must share — measurement-contract §11's identity of the deployed artifact. It is a separate step
@@ -444,7 +486,7 @@ The last row is the control for §7's rule that no level excuses the record. It 
 any measured request, which is why there is no report to inspect — a refusal that produced
 one would mean the check had moved back after the workload.
 
-Two things are worth recording because they were found by running rather than reading.
+Four things are worth recording because they were found by running rather than reading.
 
 **The build-context defect is now confirmed in a real build, not inferred.** A clean
 checkout — zero uncommitted changes — with the pre-fix `.dockerignore` produces a binary
@@ -456,6 +498,23 @@ quotable at all.
 authority, so passing it per organisation deleted the previous one's slots; the run then
 returned exactly 200 of 400 as `unknown_target`, which reads as contention rather than as a
 broken fixture. §7 now carries the corrected form and the check that catches it.
+
+**The page offered a port override and then ignored it** (found 2026-08-10). *Changing ports*
+showed `make topo-up SERVICE_1_PORT=18081 SERVICE_2_PORT=18082`, and every section after it
+hardcoded the 8081/8082 defaults — so taking the override the page recommends broke §5, §6, §7 and
+the load invocation. It failed **silently**: `curl -s` prints nothing on a refused connection, so
+`jq` printed nothing, and a wrong port was indistinguishable from an empty result. §4 now sets
+`$S1`/`$S2` once, every command uses them, and every `curl` is `-sS`.
+
+**The load command and the results table below described different experiments** (found
+2026-08-10). The command was duration-bounded (`-duration 60s`) while the table records
+iteration-bounded runs of 400 and 100 requests. They are not interchangeable here: the fixture
+holds `[DERIVED]` 8,000 units of capacity (100 slots × 4 organisations × capacity 20), so a
+60-second run at concurrency 32 exhausts it early and spends the overwhelming majority of its
+requests on correct `no_capacity` refusals — a sound run whose throughput describes a sold-out
+fixture rather than booking. §7 now carries `-n 400` and says why. The run that exposed this was
+not retained (`test/results/` is git-ignored), so no figure from it is quotable; the arithmetic
+above is derived from the fixture this page defines.
 
 Still not covered here: `make test-integration` is a separate suite with its own database,
 and CI runs it.

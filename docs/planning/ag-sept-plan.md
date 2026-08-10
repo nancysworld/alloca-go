@@ -76,8 +76,8 @@ granularity is false precision that invites its own overrun (Nancy's call, 2026-
 | Post-Iteration-B scaling envelope | not yet selected | 4.5 | **reserved budget, uncommitted scope** |
 | Architecture conclusions and one justified boundary | PR5 | 1.5 | remaining |
 | **Allocated development budget** | | **16.0** | 8.0 spent, 8.0 remaining |
-| Unallocated contingency | | 3.5 | remaining |
-| **Total milestone budget** | | **19.5** | |
+| Contingency | | 3.5 | **1.0 drawn (§2.1.1), 2.5 remaining** |
+| **Total milestone budget** | | **19.5** | **9.0 spent, 10.5 remaining** |
 
 **Allocated is not committed.** The 16.0 row is the development budget this milestone has
 apportioned, not a statement that all of it is committed technical scope. The 4.5-day envelope is
@@ -111,8 +111,8 @@ in §3 depends on the reserve to be reachable. That is the difference the increa
 and it is worth naming: v0.4 planned AWS experiments outside its own table, which is how a plan
 overruns on day one.
 
-**The 3.5 unallocated days are contingency, not scope.** They are drawn on before §5's descope
-order, and two things could plausibly claim them, in this order:
+**Contingency is not scope.** It is drawn on before §5's descope order. Of the original 3.5, **1.0
+is drawn** (§2.1.1) and **2.5 remains**. Two things could plausibly claim the rest, in this order:
 
 1. **PR2's unexplained ~2× excursions turning out to be reproducible and diagnosable** once a
    node exporter can see them. That would be a real finding, and chasing it is worth more than
@@ -136,9 +136,10 @@ charged to **AG-Sept contingency**.
 correctness and failure-isolation evidence and nothing else; methodology work that happened to
 land before it must not arrive as a silent shortfall in the evidence PR.
 
-The final drawn amount is **not yet fixed**. It is recomputed at merge from actual effort and
-rounded under the half-day rule of §2. Until then the contingency row above stands at 3.5, and
-this entry records the ownership decision rather than a number nobody has measured.
+**Drawn: 1.0 day** (Nancy's figure at merge, rounded under the half-day rule of §2). Contingency
+goes from 3.5 to **2.5**; the milestone total is unchanged at 19.5, with 9.0 spent and 10.5
+remaining. The allocated-workstream row is untouched at 16.0 — the methodology work is not one of
+those workstreams, which is the whole point of charging it here.
 
 ### 2.2 Review depth is the throughput control
 
@@ -379,14 +380,27 @@ The staging schedules the *work*, never the rule.
 
 ### 5.1 P0 — required
 
-Reproducible external load harness; aggregated metrics; minimal reproducible time-series retention
+**Unconditional.** These do not depend on what the post-Iteration-B envelope funds:
+
+reproducible external load harness; aggregated metrics; minimal reproducible time-series retention
 and diagnostic dashboard; response-validation control (VAL-NEG-1); correctness reconciliation
 extended to every participating authority (VAL-COR-1); the one-instance baseline; dispersed,
 hot-slot, and hot-identity controls; Phase 1 placement, server-side enforcement, and the misrouting
-control (VAL-COR-5); multi-authority correctness and failure-isolation evidence (VAL-FAIL-1);
+control (VAL-COR-5); multi-authority correctness and failure-isolation evidence (VAL-FAIL-1); the
+separate-generator rule honoured by labelling (`measurement-contract.md` §13.1); and the
+evidence-led architecture conclusion.
+
+**Conditional on the envelope selecting scale-out.** These are P0 *for that work* and cannot be
+skipped inside it, but they are not obligations the milestone owes regardless of what Iteration B's
+Analyse & Review chooses (§3):
+
 the multi-instance shared-PostgreSQL comparison (VAL-SCALE-1); the connection-budget control
-(VAL-SCALE-2); PostgreSQL and node exporters; the separate-generator rule honoured by labelling
-(`measurement-contract.md` §13.1); and the evidence-led architecture conclusion.
+(VAL-SCALE-2); and the PostgreSQL and node exporters.
+
+If a different problem is selected, these are not silently discharged: Analyse & Review records
+them as unproven or outside the agreed scope, which is the rule the validation plan's status table
+already applies. **A mandatory property does not disappear because a work unit moved** — it is
+either validated or explicitly recorded as not.
 
 ### 5.2 P1 — strongly desirable
 
@@ -424,9 +438,9 @@ If time slips, remove work in this order:
 6. optional histogram-bucket work deferred from PR2;
 7. PR5's chart production beyond what a decisive finding requires.
 
-**Do not descope:** the response-validation control, the misrouting control, the connection-budget
-control, Phase 1 placement enforcement, multi-authority correctness reconciliation, the
-failure-isolation experiment, the PostgreSQL and node exporters, the one-instance control, minimal
+**Do not descope:** the response-validation control, the misrouting control, Phase 1 placement
+enforcement, multi-authority correctness reconciliation, the
+failure-isolation experiment, the one-instance control, minimal
 diagnostic time-series visibility, measurement validity, or the architecture report.
 
 **The correctness work is not a source of budget.** If PR3c overruns, the difference comes first
@@ -509,20 +523,25 @@ The public-ready milestone should leave:
 
 1. a runnable containerized service;
 2. a reproducible external load generator with placement-aware routing;
-3. aggregated service, runtime, database, and host metrics;
+3. aggregated service and runtime metrics;
 4. a minimal reproducible time-series retention path and diagnostic dashboard;
 5. a single-instance report;
 6. a multi-authority correctness and failure-isolation report;
-7. a local scale-out report;
-8. current and intended architecture diagrams;
-9. authority and bottleneck analysis across all three scaling axes;
-10. a service-boundary decision record, and a recorded decision on Phase 2;
-11. a concise public repository summary;
-12. explicit limitations, evidence labels, and negative-control results.
+7. current and intended architecture diagrams;
+8. authority and bottleneck analysis across the scaling axes AG-Sept actually measured, with the
+   axes it did not measure named as such;
+9. a service-boundary decision record, and a recorded decision on Phase 2;
+10. a concise public repository summary;
+11. explicit limitations, evidence labels, and negative-control results.
 
-Together these should answer what is correct, what is fast under which workload, where replicas
-help, where authority composition helps, where shared authority remains the frontier, which
-dependency becomes limiting, and what should be separated next.
+**Conditional on the post-Iteration-B envelope selecting scale-out** (§3): a local scale-out
+report, and database and host metrics from the PostgreSQL and node exporters. If a different
+problem is selected, those are not deliverables — and item 8 says so rather than leaving a reader
+to assume all three axes were measured.
+
+Together these should answer what is correct, what is fast under which workload, where authority
+composition helps, where shared authority remains the frontier, which dependency becomes limiting,
+and what should be separated next — and, where replica scaling was not measured, that it was not.
 
 ## 8. Completion gate
 
@@ -538,11 +557,13 @@ later goal. A finished schedule is an input to that decision, not a substitute f
 Concretely, before that review can be held:
 
 - required workloads run reproducibly from clean fixtures;
-- single-instance, multi-authority, and local scale-out results are available;
-- the response-validation, misrouting, generator-headroom, and connection-budget controls have
-  been demonstrated;
+- single-instance and multi-authority results are available, plus the results of whatever the
+  post-Iteration-B envelope selected, or a record that it selected nothing;
+- the response-validation, misrouting and generator-headroom controls have been demonstrated, and
+  the connection-budget control too **if** scale-out was selected;
 - outcomes and persisted state reconcile on every participating authority;
-- database connection and authority boundaries are visible in retained measurements;
+- authority boundaries are visible in retained measurements, and database-connection boundaries
+  too where the exporters were funded;
 - one authority's failure is shown to bound its own organisations and no others;
 - measured facts, calculations, and interpretation are separated;
 - the architecture reflects evidence rather than desired presentation;

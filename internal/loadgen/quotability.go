@@ -25,9 +25,15 @@ import (
 type Level string
 
 const (
-	// LevelNone is a run whose measurement is unsound — validation off or failed, the run
-	// interrupted, warm-up rows unreconcilable, or reconciliation failed. It describes no
-	// experiment and backs nothing.
+	// LevelNone is a run that backs nothing, for either of two independent reasons: the
+	// measurement is **unsound** — validation off or failed, the run interrupted, warm-up rows
+	// unreconcilable, reconciliation failed, or the units not describing one deployment — or it
+	// is sound but does not reach LevelLocal, so it cannot say what it measured.
+	//
+	// LevelLocal is the floor of the ladder, not a rung above this one: Certify starts at
+	// LevelNone, so failing the first rung's provenance leaves a run here. `blocked_because`
+	// distinguishes the two cases, carrying the soundness reason or the missing fields
+	// (measurement-contract §13.2).
 	LevelNone Level = "none"
 
 	// LevelLocal is a sound measurement that identifies itself: the service (revision, Go
@@ -117,6 +123,10 @@ type Quotability struct {
 // went unvalidated is not rescued by a complete manifest, and one that was interrupted
 // describes a smaller experiment than its manifest claims. Both are LevelNone regardless of
 // how much provenance they carry.
+//
+// The converse does not hold — soundness does not buy a level. `reached` starts at LevelNone
+// and the first rung is LevelLocal, so a sound run whose manifest fails that rung stays at
+// LevelNone rather than being promoted for having run cleanly.
 //
 // Above that floor the run climbs the ladder until a level's provenance is incomplete, and
 // stops there carrying the reason.

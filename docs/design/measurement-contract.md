@@ -570,7 +570,7 @@ satisfy:
 
 | Level | What it may support | Additional bar |
 |---|---|---|
-| `none` | no experimental claim | the measurement is unsound or uncertifiable |
+| `none` | no experimental claim | the run is unsound, or sound but below the `local` bar |
 | `local` | a reproducible observation of this measured machine and run | soundness; service identity and the service-discovered shape available through `/meta`; generator identity and resources; workload and run shape; target and timestamp |
 | `capacity` | a capacity result about the explicitly recorded topology and environment | `local`, plus aggregate/topology/environment provenance; routing and placement where applicable; immutable image identity for containerised runs |
 | `publishable` | provenance eligible to support an externally presented, project-level capacity claim — **provided the experiment also satisfies §5's evidence gates** | `capacity`, plus the generator declared to run on compute separate from the service (§13.1) |
@@ -588,10 +588,20 @@ Four consequences follow, and each is a mistake this ladder exists to prevent:
 - **Reaching `publishable` does not discharge §5.** Generator headroom, the under-provisioned
   control, and response-validation proof are evidence; this ladder is provenance. A run can hold
   top-of-ladder provenance and still be inadmissible because its experiment was not controlled.
-- **A run drops to `none` when it is unsound, not merely under-documented** — response validation
-  off or failed, the run interrupted, reconciliation failed, or participating units that do not
-  describe one deployment. Soundness is checked first and is **not tradable against provenance**:
-  a run whose responses went unvalidated is not rescued by a complete manifest.
+- **`none` has two independent causes**, and `local` is the floor of the ladder rather than a rung
+  above `none`:
+  1. **the run is unsound** — response validation off or failed, the run interrupted,
+     reconciliation failed, or participating units that do not describe one deployment; or
+  2. **the run is sound but does not reach the `local` bar** — it cannot say what it measured, so
+     it still backs no claim.
+
+  Soundness is checked **first**, and is **not tradable against provenance**: a run whose
+  responses went unvalidated is not rescued by a complete manifest. But the converse does not
+  hold — being sound does not buy a level. A run missing `service_commit_sha` is `none` too,
+  because a measurement that cannot name the code it measured describes an unknown.
+
+  The two are distinguishable in the report rather than merged: `blocked_because` carries the
+  soundness reason in the first case and the missing fields in the second.
 
 Which field gates which level is enforced by `Manifest.Validate`, and §11's list is not a flat
 requirement of every run — see §11's own note. The division of labour is that everything `/meta`

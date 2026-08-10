@@ -16,6 +16,71 @@ what it is. Where any of those disagree with this page, they win.
 For the single-service measurement procedure — seeding, driving a run, reconciling it —
 see [`load-harness.md`](load-harness.md). This page is about the containers underneath it.
 
+## 0. The minimum path
+
+Everything you need to raise the topology, prove it is serving what it claims, drive one run, and
+tear it down. Nothing else on this page is required to get here — the rest is either reference or
+an optional check, and each such section says which it is.
+
+```sh
+# 1. build the image                                                        (§3)
+make image
+
+# 2. raise the topology                                                     (§4)
+make topo-up
+
+# 3. copy the two addresses the line above printed                          (§4)
+S1=localhost:8081
+S2=localhost:8082
+
+# 4. each unit is bound to the authority it claims                          (§5)
+curl -sS $S1/meta | jq '{a: .placement.authority_id, orgs: .placement.organisations}'
+curl -sS $S2/meta | jq '{a: .placement.authority_id, orgs: .placement.organisations}'
+
+# 5. seed the fixture — -reset on the FIRST organisation of each authority  (§7)
+seed() {
+  go run ./cmd/alloca-seed ${3:+-reset} \
+    -database-url "postgres://alloca:alloca@localhost:$1/alloca?sslmode=disable" \
+    -org "$2" -slots 100
+}
+seed 15433 org-a reset
+seed 15433 org-c
+seed 15434 org-b reset
+seed 15434 org-d
+
+# 6. record what is running, then drive one bounded run                     (§7)
+go build -o bin/alloca-load ./cmd/alloca-load
+mkdir -p test/results
+make topo-deployment > test/results/deployment.json
+./bin/alloca-load \
+  -placement deploy/topology/placement.json \
+  -endpoint authority-1=http://$S1 -endpoint authority-2=http://$S2 \
+  -workload multi-org-dispersed \
+  -deployment test/results/deployment.json \
+  -concurrency 32 -n 400 -slots 100 \
+  -out test/results/topo-run.json
+
+# 7. tear it down                                                           (§6)
+make topo-down
+```
+
+Expect **400 `admitted_success`** and `measurement_sound: true`. If you get anything else, §8 is
+the place to start.
+
+Each step is explained in the section named beside it, and the explanations carry the traps —
+particularly step 5, where `-reset` on the wrong call silently empties the previous
+organisation's slots.
+
+### What is optional
+
+| Optional | When you want it | Where |
+|---|---|---|
+| the `docker` shim for WSL | `docker` is not found at all | §2 |
+| `make image-provenance` | proving an image's revision and clean-tree stamp end to end | §3 |
+| changing ports | 8081/8082 are already taken on your machine | §4 |
+| the four routing behaviours | seeing placement, colocated booking, cross-authority refusal and misrouting behave differently — this is what the topology exists to demonstrate, so it is the first thing worth adding | §5 |
+| failure isolation | seeing one authority fail without touching the other | §5 |
+
 ## 1. What is in the topology
 
 Two independent PostgreSQL authorities, each with its own shard-affine service unit, and
@@ -57,6 +122,8 @@ not merely to have started.
 ## 2. Prerequisites
 
 Docker and Go. Nothing else — no Prometheus, no Grafana.
+
+**Optional from here to the end of §2** — only if `docker` is not found at all.
 
 On WSL2, `docker` is often missing at the start of a session:
 
@@ -113,7 +180,7 @@ stash before building an image you intend to run an experiment against.
 against that image at `local`, the floor of the quotability ladder. The failure looks like
 a harness bug, which is why it is gated at build time.
 
-To check an image's provenance end to end:
+**Optional.** To check an image's provenance end to end:
 
 ```sh
 make image-provenance
@@ -151,9 +218,10 @@ exited:
 make topo-ps
 ```
 
-### Changing ports
+### Changing ports — optional
 
-Every port has an environment default. Override on the command line:
+Only needed if a default port is already taken on your machine. Every port has an environment
+default; override on the command line:
 
 ```sh
 make topo-up SERVICE_1_PORT=18081 SERVICE_2_PORT=18082
@@ -215,8 +283,9 @@ nothing in a request total would reveal two units on different commits.
 The operational endpoints are `/healthz` (process alive), `/readyz` (database reachable),
 `/meta` (identity), and `/metrics` on the separate metrics port.
 
-Four behaviours worth confirming by hand, because each is a property the topology exists to
-have:
+**Optional, and the first thing worth adding.** Four behaviours confirmed by hand, because each
+is a property the topology exists to have — the `/meta` check above proves the units are bound
+correctly, and these prove the binding actually decides anything:
 
 ```sh
 # 1. a same-organisation booking on its own authority succeeds
@@ -251,7 +320,7 @@ result.
 
 Slots must be seeded first — see §7.
 
-### Failure isolation
+### Failure isolation — optional
 
 Stopping one authority's database should leave its unit unready while the other keeps
 serving:

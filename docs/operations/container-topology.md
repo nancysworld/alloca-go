@@ -24,7 +24,11 @@ which authority composition means anything: an organisation's rows live on exact
 writer, a unit serves only the organisations its authority owns, and one authority failing
 does not reach the other.
 
-| Container | Role | Published on |
+**Every port below is a default.** All of them are overridable (§4, *Changing ports*), so if you
+changed one, read these as the shape rather than as your addresses — `make topo-up` prints the two
+service addresses it actually published.
+
+| Container | Role | Published on (default) |
 |---|---|---|
 | `alloca-authority-1-db` | PostgreSQL, authority 1 | `localhost:15433` |
 | `alloca-authority-2-db` | PostgreSQL, authority 2 | `localhost:15434` |
@@ -36,10 +40,10 @@ does not reach the other.
 The placement document ([`../../deploy/topology/placement.json`](../../deploy/topology/placement.json))
 is routing version `pr3b-v1`:
 
-| Organisation | Authority | Reached at |
+| Organisation | Authority | Reached at (default) |
 |---|---|---|
-| `org-a`, `org-c` | `authority-1` | `localhost:8081` |
-| `org-b`, `org-d` | `authority-2` | `localhost:8082` |
+| `org-a`, `org-c` | `authority-1` | `localhost:8081` — `$S1` below |
+| `org-b`, `org-d` | `authority-2` | `localhost:8082` — `$S2` below |
 
 **Two organisations per authority is deliberate**, not padding. A pair on the *same*
 authority is a supported cross-organisation booking (INV-13); a pair on *different*
@@ -132,11 +136,13 @@ probe-only mode to the production binary to work around that would put a second,
 definition of "ready" inside the thing being measured. The ports are published anyway, so
 the honest check is the one a client would make.
 
-On success:
+On success — with the default ports; it prints whichever it actually published:
 
 ```
 topology up. authority-1 -> localhost:8081, authority-2 -> localhost:8082
 ```
+
+**That last line is the authority on where the units are.** Take `$S1` and `$S2` from it below.
 
 To see what everything is doing, including the migration containers that have already
 exited:

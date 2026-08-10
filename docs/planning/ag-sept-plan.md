@@ -43,17 +43,18 @@ AG-Sept's governing goal, its iteration history, and the currently open problem 
 - **Iteration B — compose independent writable database authorities.** Current. PR3a and PR3b
   have shipped the placement model, booking policy, multi-authority topology, and authority-aware
   verification. PR3c owes the correctness and failure-isolation evidence.
-- **Candidate next iteration — stateless service replicas.** Scheduled below as PR4 and funded,
-  but its scope is deliberately re-decided after Iteration B is analysed (§4).
+- **No iteration after B has been selected yet.** Stateless service replicas are the current
+  *candidate* next Problem, not committed scope. Budget is reserved for whatever Iteration B's
+  Analyse & Review chooses (§3, *post-Iteration-B scaling envelope*).
 
-| Workstream | PR | Status |
+| Workstream | Work unit | Status |
 |---|---|---|
 | Measurement substrate and load harness | PR1 | merged `71914a4` |
 | Single-instance frontier | PR2 | merged `0d40de4` |
 | Placement, booking policy, confirm/cancel ownership | PR3a | merged `aa1e3a5` |
 | Multi-authority harness — topology, routing, certification, verifier | PR3b | merged `57f501d` |
 | Multi-authority correctness and failure-isolation evidence | PR3c | not started |
-| Container and local scale-out | PR4 | not started, provisional envelope |
+| Post-Iteration-B scaling envelope | not yet selected | budget reserved; scope chosen by Analyse & Review |
 | Architecture conclusions and one justified boundary | PR5 | not started |
 
 Validation status — what is established, what is pending, and what is explicitly *not*
@@ -65,18 +66,23 @@ The development allocation is a planning constraint. **Half a day is the unit**,
 implementation records: nothing is estimated well enough to distinguish 0.3 from 0.4, and finer
 granularity is false precision that invites its own overrun (Nancy's call, 2026-08-05).
 
-| Workstream | PR | Allocated | Status |
+| Workstream | Work unit | Allocated | Status |
 |---|---|---:|---|
 | Measurement harness and load generator | PR1 | 2.0 | spent 2.0 |
 | Single-instance frontier, with the diagnostic time-series minimum | PR2 | 2.5 | spent 2.5 |
 | Placement, booking policy, and confirm/cancel ownership | PR3a | 3.0 | **done in 1.0; 2.0 returned to contingency** |
 | Multi-authority harness | PR3b | 2.5 | spent 2.5 |
 | Multi-authority correctness and failure-isolation evidence | PR3c | 2.0 | remaining |
-| Container and local scale-out | PR4 | 4.5 | remaining, provisional envelope |
+| Post-Iteration-B scaling envelope | not yet selected | 4.5 | **reserved budget, uncommitted scope** |
 | Architecture conclusions and one justified boundary | PR5 | 1.5 | remaining |
-| **Committed** | | **16.0** | 8.0 spent, 8.0 remaining |
+| **Allocated development budget** | | **16.0** | 8.0 spent, 8.0 remaining |
 | Unallocated contingency | | 3.5 | remaining |
 | **Total milestone budget** | | **19.5** | |
+
+**Allocated is not committed.** The 16.0 row is the development budget this milestone has
+apportioned, not a statement that all of it is committed technical scope. The 4.5-day envelope is
+reserved so the milestone arithmetic holds; **what it buys is selected by Iteration B's Analyse &
+Review**, not decided here (§3).
 
 A further **2–3 days** are reserved beyond the development budget for rerunning decisive
 experiments, validating negative controls, reviewing measurements and interpretations, correcting
@@ -93,7 +99,8 @@ figure recorded is the conservative one: implementation alone was about half a d
 what it cost including the design decisions and the re-planning around it. Being generous to
 ourselves on our own favourable numbers is how estimates stop meaning anything.
 
-The gain is **not** an invitation to widen PR4. It is held for where this milestone is most
+The gain is **not** an invitation to widen the post-Iteration-B envelope. It is held for where
+this milestone is most
 likely to need it — reruns, an investigation that does not resolve on the first attempt, a hard
 problem that deserves more argument than a day allows. PR2's unexplained ~2× excursion is the
 standing example of work that consumed far more than its share, and nothing about PR3a going well
@@ -107,7 +114,7 @@ overruns on day one.
 **The 3.5 unallocated days are contingency, not scope.** They are drawn on before §5's descope
 order, and two things could plausibly claim them, in this order:
 
-1. **PR2's unexplained ~2× excursions turning out to be reproducible and diagnosable** once PR4's
+1. **PR2's unexplained ~2× excursions turning out to be reproducible and diagnosable** once a
    node exporter can see them. That would be a real finding, and chasing it is worth more than
    another matrix cell.
 2. **The overload question deferred from PR2** — roughly 1.5 days. It is the founding
@@ -117,6 +124,21 @@ order, and two things could plausibly claim them, in this order:
    which is a reason to decide it deliberately rather than to let it drift in.
 
 Unspent contingency is not a licence to expand a PR. It returns to the reserve.
+
+### 2.1.1 The documentation and methodology expansion draws on contingency
+
+**Nancy's decision, 2026-08-10:** the document-ownership and engineering-process expansion carried
+by PR #15 — the goal/problem/requirements split, the validation-plan and exploration-roadmap
+ownership model, the iteration-loop definition, and the citation migration that followed — is
+charged to **AG-Sept contingency**.
+
+**It does not consume PR3c's 2.0-day allocation.** PR3c is funded for the multi-authority
+correctness and failure-isolation evidence and nothing else; methodology work that happened to
+land before it must not arrive as a silent shortfall in the evidence PR.
+
+The final drawn amount is **not yet fixed**. It is recomputed at merge from actual effort and
+rounded under the half-day rule of §2. Until then the contingency row above stands at 3.5, and
+this entry records the ownership decision rather than a number nobody has measured.
 
 ### 2.2 Review depth is the throughput control
 
@@ -160,8 +182,9 @@ milestone (§6).
 Two obligations survive into later PRs:
 
 - the **recommended operating capacity** term, deferred because two of its three components need
-  more than one replica to be meaningful. It is PR4's;
-- the **±2× caveat** on every figure from this machine. PR4's node exporter is required rather
+  more than one replica to be meaningful, so it is owed by whatever scaling work the next
+  iteration selects;
+- the **±2× caveat** on every figure from this machine. A node exporter is required rather
   than desirable, but installing it does not discharge the caveat: the caveat stands until
   instrumented reruns *explain* the excursions, *exclude* them, or *bound* them conservatively. An
   instrument that can see a thing is not yet an answer about it.
@@ -233,20 +256,32 @@ claims a throughput multiplier from this workstation.
 **Not in PR3c:** cross-authority booking, rebalancing, replica scaling, any capacity-composition
 claim.
 
-### PR4 — Container and local scale-out
+### Post-Iteration-B scaling envelope — 4.5 days reserved
 
-**Budget:** 4.5 days — 0.5 replica orchestration, 1.0 exporters and dashboard extension, 1.0
-replica matrix, 0.5 connection-budget control, 0.5 prediction test and operating-capacity number,
-0.5 composed run, 0.5 report.
+**This is a budget reservation, not committed technical scope (Nancy's call, 2026-08-05).**
 
-**This is a provisional envelope, not a committed scope (Nancy's call, 2026-08-05).** The decision
-order is: freeze Phase 1 → implement and measure PR3 → review its findings → re-scope PR4 from
-that evidence. The budget is reserved now so the milestone can be planned; what it buys is decided
-after PR3 reports, because PR2 already demonstrated once that evidence can change which experiment
-is worth running.
+**The next Problem is selected by Iteration B's Analyse & Review**, on PR3c's evidence, against
+the governing goal in [`../requirements/ag-sept.md`](../requirements/ag-sept.md). Until that
+review happens there is no PR4, because the loop has not chosen what it would contain. The
+decision order is: implement and measure PR3c → analyse against the goal → *then* frame the next
+Problem and schedule it.
 
-Four obligations survive that re-scoping **as obligations**; their order, depth, and matrix do
-not:
+Three outcomes are possible, and the budget follows the choice:
+
+- **Analyse & Review selects stateless replica scaling** — the current candidate. This envelope
+  becomes PR4 with the shape sketched below.
+- **The evidence identifies a different, higher-value Problem.** Scheduling is reconsidered
+  through the new iteration; the envelope funds that instead.
+- **No further iteration is justified for AG-Sept scope.** The loop ends, and the unused budget
+  returns to reserve rather than being spent because it was allocated.
+
+PR2 already demonstrated once that evidence changes which experiment is worth running, which is
+why this is not pre-committed.
+
+**If replica scaling is selected**, the indicative shape is 0.5 replica orchestration, 1.0
+exporters and dashboard extension, 1.0 replica matrix, 0.5 connection-budget control, 0.5
+prediction test and operating-capacity number, 0.5 composed run, 0.5 report — and four obligations
+carried from PR2 survive **as obligations**, though their order, depth, and matrix do not:
 
 1. **PostgreSQL and node exporters, required rather than desirable.** PR2 could name its
    bottleneck only from hand-driven `pg_stat_activity` sampling, and scale efficiency cannot be
@@ -263,22 +298,27 @@ not:
 4. **The recommended operating capacity number** PR2 deferred, which needs a second replica before
    two of its three components mean anything.
 
-**Also in scope:** the replica matrix and composed run of validation plan §4.5; replica-count and
-aggregate-pool-capacity manifest fields; bounded replica and authority identity in the dashboard;
-like-for-like scale efficiency distinguishing application-compute gains from database-admission
-pressure; the cheap evidence hygiene deferred from PR2 — one TSDB snapshot per sweep rather than
-per cell, and re-running the PR2 cells under the fixed exporter; and VAL-NEG-5 if room remains.
+Also indicated, on that same conditional: the replica matrix and composed run of validation plan
+§4.5; replica-count and aggregate-pool-capacity manifest fields; bounded replica and authority
+identity in the dashboard; like-for-like scale efficiency distinguishing application-compute gains
+from database-admission pressure; the cheap evidence hygiene deferred from PR2 — one TSDB snapshot
+per sweep rather than per cell, and re-running the PR2 cells under the fixed exporter; and
+VAL-NEG-5 if room remains.
 
-**Owners:** REQ-SCALE-1..3, REQ-EVID-1..2; `horizontal-scaling.md` §7; VAL-SCALE-1..4, VAL-NEG-4,
-VAL-NEG-5.
+**Owners, if selected:** REQ-SCALE-1..3, REQ-EVID-1..2; `horizontal-scaling.md` §7; VAL-SCALE-1..4,
+VAL-NEG-4, VAL-NEG-5.
 
-**Gate:** dispersed and hot-authority traffic are compared across replica counts without changing
-the correctness model; pool multiplication is explained; PR2's prediction is confirmed or refuted
-with evidence; the operating-capacity number is reported; and all quoted runs remain reproducible
-and reconciled.
+**Gate, if selected:** dispersed and hot-authority traffic are compared across replica counts
+without changing the correctness model; pool multiplication is explained; PR2's prediction is
+confirmed or refuted with evidence; the operating-capacity number is reported; and all quoted runs
+remain reproducible and reconciled.
 
-**Not in PR4:** AWS, Kubernetes, autoscaling, a service mesh, or an attempt to eliminate the
-hot-authority serialization frontier.
+**Outside this envelope whatever it funds:** AWS, Kubernetes, autoscaling, a service mesh, or an
+attempt to eliminate the hot-authority serialization frontier.
+
+The four obligations above are **owed by the milestone, not by a particular PR**. If Analyse &
+Review selects a different Problem, they remain owed and are either scheduled elsewhere or
+recorded as unmet — a resolved-differently iteration does not silently discharge them.
 
 ### PR5 — Architecture conclusion and boundary decision
 
@@ -319,14 +359,21 @@ dischargeable*.
 The generator is an HTTP client and cannot discover the service's shape, so manifest fields arrive
 in the PR that first has something to say: service shape in PR2 (discharged — PR2 took the
 operator-supplied count to zero by reading `/meta`), placement and authority identity in PR3b,
-topology and image identity in PR3b, replica count and aggregate pool capacity in PR4.
+topology and image identity in PR3b; replica count, aggregate pool capacity and environment with
+whatever scaling work the next iteration selects.
 
 Reconciliation: PR1 established the single-authority self-check; PR3b extended it to multiple
 authorities; PR3c is where the multi-authority contract is exercised against deliberate failure
 rather than only a healthy topology.
 
-**Quotability:** every AG-Sept run stays at level `local` by construction, because §5's separate
-generator compute does not arrive (§6). The staging schedules the *work*, never the rule.
+**Quotability:** AG-Sept does not fund separate generator compute (§6.3), so **no AG-Sept run can
+reach `publishable`**. That is the only level co-residency blocks. A later run **may reach
+`capacity`** if it carries the topology and environment provenance that level requires
+(`measurement-contract.md` §13.2). Historical runs keep the level their own artifacts reached —
+PR1's and PR2's are `local` because the operator-supplied deployment fields were not yet
+populated, and no later harness capability retroactively promotes them.
+
+The staging schedules the *work*, never the rule.
 
 ## 5. Priority and descope
 
@@ -383,8 +430,8 @@ failure-isolation experiment, the PostgreSQL and node exporters, the one-instanc
 diagnostic time-series visibility, measurement validity, or the architecture report.
 
 **The correctness work is not a source of budget.** If PR3c overruns, the difference comes first
-from §2's unallocated contingency and then from PR4's measurement scope through this list — never
-from the gates that make a run admissible. That is the order in which the two reserves are spent:
+from §2's unallocated contingency and then from the post-Iteration-B envelope through this
+list — never from the gates that make a run admissible. That is the order in which the two reserves are spent:
 contingency, then descope, and the 2–3 day reserve last and only for what it is for.
 
 ## 6. Scheduling history
@@ -408,8 +455,9 @@ a conditional AWS deployment. PR2's measured result changed the order:
 1. **Horizontal database authority became the milestone's primary work**, ahead of stateless
    replica scaling. Only Phase 1 is in scope.
 2. **The AWS path was dropped** (§6.3).
-3. **The local scale-out experiment survived intact** but moved behind the database work as PR4,
-   carrying v0.4 PR3's obligations forward in full rather than dropping them. Nancy's call,
+3. **The local scale-out experiment survived intact** but moved behind the database work,
+   carrying v0.4 PR3's obligations forward in full rather than dropping them. It is now held as
+   the post-Iteration-B envelope rather than a committed PR (§3). Nancy's call,
    2026-08-05: the milestone should leave the system scalable on both axes, even if only on local
    containers.
 4. **The budget rose from 10 development days to 19.5.** Nancy's approval, 2026-08-05.
@@ -449,10 +497,11 @@ follows; the full reasoning stays in [`ag-sept-plan-v0.4.md`](ag-sept-plan-v0.4.
   should be fixed opportunistically:** a manifest field that is published, range-validated, and
   enforced nowhere is worse than an absent one, and either enforcing it or removing it is minutes
   of work in any PR that touches the manifest.
-- **Group B — instrumentation** (PostgreSQL exporter, node exporter). **Assigned to PR4 and
-  promoted to required** (§3).
+- **Group B — instrumentation** (PostgreSQL exporter, node exporter). **Promoted to required**,
+  and owed by the post-Iteration-B envelope whatever it funds (§3).
 - **Group C — evidence hygiene** (per-sweep TSDB snapshots, re-running PR2 cells under the fixed
-  exporter, optional histogram buckets). **Assigned to PR4**, which re-runs those cells anyway.
+  exporter, optional histogram buckets). **Assigned to the post-Iteration-B envelope**, which
+  re-runs those cells if it selects scale-out.
 
 ## 7. Final deliverables
 

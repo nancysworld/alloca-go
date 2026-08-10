@@ -2,7 +2,8 @@
 
 **Type:** Implementation record
 **Status:** Shipped and merged — every decision in §3 settled, exit gate discharged in §3.6
-**Budget:** 2 development days (scheduled under [`ag-sept-plan-v0.4.md`](../../planning/ag-sept-plan-v0.4.md) §14)
+**Budget:** 2 development days (scheduled under
+[`ag-sept-plan-v0.4.md`](../../planning/ag-sept-plan-v0.4.md) §14)
 **Owner docs:** [`measurement-contract.md`](../../design/measurement-contract.md) — run manifest,
 reconciliation, and quotability levels — and
 [`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) — controlled
@@ -287,8 +288,10 @@ one-instance frontier, still co-resident and therefore still bounded rather than
 
 When this was written, v0.4 expected separate generator compute to arrive with the AWS
 deployment. **It does not arrive in AG-Sept at all** — that path was withdrawn
-(`ag-sept-plan.md` §6.3), so every AG-Sept run stays at level `local` and the
-`measurement-contract.md` §13.1 rule is honoured by labelling rather than by satisfying it.
+(`ag-sept-plan.md` §6.3), so **no AG-Sept run can reach `publishable`** and the
+`measurement-contract.md` §13.1 rule is honoured by labelling rather than by satisfying it. That
+is the only level co-residency blocks; PR1's own runs sit at `local` because the deployment
+provenance above that level was not yet populated, which is a different reason.
 
 ## 4. Non-goals
 

@@ -9,9 +9,9 @@ import (
 
 // metaResponse is the /meta payload. It inlines buildinfo.Info (runtime and build
 // provenance) and adds the resolved, validated timing configuration. Every capacity
-// result the project publishes must be traceable both to the environment it ran in
-// (roadmap §4.4) and to the timings it ran under (measurement-contract §8.1); this
-// endpoint is the machine-readable source of both.
+// result the project publishes must be traceable both to the environment it ran in and to the
+// timings it ran under (measurement-contract §11 and §8.1); this endpoint is the
+// machine-readable source of both.
 //
 // The bar for inclusion is **whether the value can change a measurement**, not whether
 // it is configurable. The deadline chain can, and so can the hold TTL: it decides how
@@ -75,7 +75,8 @@ type DatabaseMeta struct {
 	// Version is PostgreSQL's own `server_version`, empty when it could not be read.
 	Version string `json:"version,omitempty"`
 	// PoolMaxConns is this process's configured ceiling, not the deployment's aggregate:
-	// the aggregate needs a replica count, which one process cannot know (PR3).
+	// the aggregate needs a replica count, which one process cannot know, so it stays
+	// operator-supplied (measurement-contract §13.2).
 	PoolMaxConns int32 `json:"pool_max_conns,omitempty"`
 	// SchemaVersion is the migration version this authority is at, empty when it could
 	// not be read. A multi-authority run is only admissible if every participating

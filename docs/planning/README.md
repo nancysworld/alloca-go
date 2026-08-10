@@ -9,8 +9,12 @@ and requirements live in [`../requirements/`](../requirements/); system shape an
 Code, tests, requirements, and durable design must not depend on a document here for normative
 meaning ([`../development/engineering-process.md`](../development/engineering-process.md) §6.1).
 
-- [`alloca-go-roadmap.md`](alloca-go-roadmap.md) — project milestones, priorities, and evidence plan.
-- [`ag-sept-plan.md`](ag-sept-plan.md) — **the current AG-Sept plan**: 19.5 development days, horizontal database authority before stateless replica scaling, no cloud path.
+- [`alloca-go-roadmap.md`](alloca-go-roadmap.md) — the **exploration roadmap**: areas and
+  questions that may be worth exploring. Directional, non-normative, unscheduled, and upstream of
+  Goal selection — it says where the project *might* go, never what it has committed to.
+- [`ag-sept-plan.md`](ag-sept-plan.md) — **the current AG-Sept plan**: 19.5 development days,
+  horizontal database authority first, no cloud path, and a reserved post-Iteration-B envelope
+  whose scope the loop has not yet selected.
 - [`ag-sept-plan-v0.4.md`](ag-sept-plan-v0.4.md) — archived v0.4 snapshot, superseded 5 August 2026. Retained because PR1 and PR2 were planned and reported under it and cite its section numbers.
 - [`ag-m1-implementation-plan.md`](ag-m1-implementation-plan.md) — AG-M1 PR split and correctness gates.
 - [`release-shaping-experiment.md`](release-shaping-experiment.md) — synthetic AG-M2/AG-M5 experiment plan comparing synchronized, rolling, clustered, and hot-slot release shapes.

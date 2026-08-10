@@ -23,7 +23,7 @@ artifact directories are large and are kept anyway: without them a report is an 
 
 | Report | Milestone | What it establishes |
 |---|---|---|
-| [AG-Sept PR2 — single-instance frontier](reports/ag-sept-pr2-single-instance-frontier.md) | AG-Sept | **The load-bearing result so far.** This machine reaches ~4,300 booking req/s and the limiting subsystem is PostgreSQL, not alloca-go — so service replicas raise throughput only up to the database's frontier and cannot lift the saturated ceiling beyond it. The sub-mechanism inside PostgreSQL (write-path contention, led by `LWLock:WALWrite`) is provisional pending PR3's instrumentation. |
+| [AG-Sept PR2 — single-instance frontier](reports/ag-sept-pr2-single-instance-frontier.md) | AG-Sept | **The load-bearing result so far.** This machine reaches ~4,300 booking req/s and the limiting subsystem is PostgreSQL, not alloca-go — so service replicas raise throughput only up to the database's frontier and cannot lift the saturated ceiling beyond it. The sub-mechanism inside PostgreSQL (write-path contention, led by `LWLock:WALWrite`) is provisional pending database-side instrumentation. |
 
 ### Artifacts
 
@@ -48,7 +48,7 @@ anything:
 | `verdict.json` | the reconciliation checks — including server totals against client totals — that make the run admissible at all |
 | `metrics-baseline.txt`, `metrics.txt` | the two scrapes bracketing the measured window; counters are cumulative, so the delta is the measurement |
 | `panels/*.csv` + `panels/index.json` | the exported time series, with the **resolved** PromQL and window recorded beside the data — a rate over 5s and a rate over 60s are different measurements. `index.json` records two windows: `window` is the cell's measured phase and the authority for what was measured; `query_window` is what the range queries actually cover, one rate range later, so no exported point can reach back into warm-up |
-| `tsdb-snapshot/` | the Prometheus snapshot, so a series nobody thought to export is still recoverable. **Cumulative, not cell-local** — Prometheus blocks are shared history, so a snapshot carries other cells' windows too. Always bound a query by `panels/index.json`'s `window`. Redesign deferred to PR4; see the frontier report §6.2 |
+| `tsdb-snapshot/` | the Prometheus snapshot, so a series nobody thought to export is still recoverable. **Cumulative, not cell-local** — Prometheus blocks are shared history, so a snapshot carries other cells' windows too. Always bound a query by `panels/index.json`'s `window`. Redesign deferred to the post-Iteration-B envelope; see the frontier report §6.2 |
 | `warmup.json` | the discarded warm-up phase, kept because a warm-up that behaved oddly explains a strange cell — and in PR2 it turned out to be the key diagnostic |
 | `*.log` | seed, service, load, export and verify output. **Git-ignored** — `service.log` alone is ~34 MB per cell at full telemetry |
 
@@ -61,9 +61,11 @@ anything:
 
 **Every run declares what it may be quoted for.** `run.json`'s `quotability.level` is one of
 `none | local | capacity | publishable`, with `blocked_from` and `blocked_because` naming each
-missing manifest field and the PR that owns it. **Every run in this directory is `local`**: the
-load generator shared a host with the service, so nothing here is a publishable capacity claim.
-A report may not promote a number past its artifact's level.
+missing manifest field. **Every run in this directory is `local`** — the operator-supplied
+deployment fields that `capacity` requires were not populated when they were taken. Separately,
+the generator shared a host with the service, which puts `publishable` out of reach
+([`measurement-contract.md`](../design/measurement-contract.md) §13.2). A report may not promote a
+number past its artifact's level.
 
 **Anomalies are retained, not dropped.** A cell that reads oddly stays in the record with its
 diagnostic panels, and the report explains it. PR2's unexplained ~2× excursions are the worked

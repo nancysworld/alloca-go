@@ -99,10 +99,16 @@ generator shares the host with the service, so every run is `quotability.level: 
 construction and refuses the `capacity` level by name. An untuned container on a laptop-class
 storage path says nothing about a tuned database on provisioned storage.
 
-Published capacity needs the separate generator compute of `measurement-contract.md` §13.1.
-AG-Sept does not fund it: the deployment path that would have supplied it is withdrawn
-(scheduling: `ag-sept-plan.md` §6.3), so every AG-Sept run stays `local` and the milestone closes
-with a bounded local frontier rather than a published capacity number.
+An externally presented capacity claim needs the separate generator compute of
+`measurement-contract.md` §13.1. AG-Sept does not fund it — the deployment path that would have
+supplied it is withdrawn (scheduling: `ag-sept-plan.md` §6.3) — so **no AG-Sept run reaches
+`publishable`**, and the milestone closes with a bounded local frontier rather than an externally
+presented capacity number.
+
+Co-residency blocks that level and no other. A run on this workstation **can** reach `capacity`
+once it records the topology and environment provenance §13.2 requires; the runs retained here are
+`local` because those operator-supplied fields were not populated when they were taken, not
+because the generator shared the host.
 
 ## Per-run records
 

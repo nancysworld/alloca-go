@@ -111,7 +111,7 @@ type Manifest struct {
 	PoolSizePerReplica int    `json:"pool_size_per_replica,omitempty"`
 
 	// AggregatePoolSize is the one pool fact no single process can know, because it needs a
-	// replica count. It stays operator-supplied and staged to PR3 with the topology.
+	// replica count. It stays operator-supplied, and gates `capacity` with the topology.
 	AggregatePoolSize int `json:"aggregate_pool_size,omitempty"`
 
 	// ServiceIdentityDrift is empty when /meta reported the same service before and after the
@@ -251,12 +251,16 @@ func NewTopologyManifest(targets []string, workload string, opts Options, locati
 // Validate reports the §11 fields a claim at the given level requires and this manifest
 // does not carry. An empty result means the provenance bar for that level is met.
 //
-// Which level a field belongs to follows measurement-contract §11 and §13.2, not a judgement
-// made here. The generator is an HTTP client and cannot discover the service's shape, so the
-// service-side fields are supplied by the operator; *when* each becomes populatable is the
-// plan's staging, not this file's. What the staging does not excuse is a field the generator
-// *can* determine: the manifest must carry every one of those, and an empty commit SHA fails
-// it.
+// Which level a field belongs to is owned by measurement-contract §13.2, not decided here. The
+// split it enforces: everything the service hands over at /meta is checked at `local`, because a
+// field that costs nothing to record should not gate a higher tier than one that costs an
+// operator's attention; the operator's account of the deployment — aggregate pool, replica count,
+// topology, environment — gates `capacity`; and placement and image identity apply only where the
+// topology makes them meaningful.
+//
+// *When* an operator-supplied field first becomes populatable is the plan's staging, not this
+// file's. What the staging does not excuse is a field the generator or /meta can determine: an
+// empty commit SHA fails `local`.
 //
 // Each rule names the field as it appears in the JSON, so the reason travels with the report
 // to someone holding only the artifact.
@@ -290,8 +294,9 @@ func (m Manifest) Validate(level Level) []string {
 		// counts — and a verdict reached on two of three is the weaker gate wearing the stronger
 		// one's name. Refused here rather than left to surface as a confusing "server counted 0".
 		add(m.TelemetryMode == "off", "telemetry_mode is off: the service emitted no "+
-			"aggregate series, so the server-side count \u00a76.5 requires does not exist and this "+
-			"run cannot be reconciled. It is a \u00a76.2 control, not a measurement")
+			"aggregate series, so the server-side count measurement-contract \u00a712 requires does "+
+			"not exist and this run cannot be reconciled. It is a VAL-NEG-3 telemetry control, "+
+			"not a measurement")
 		add(m.TelemetryMode == "", "telemetry_mode is empty: /meta was not read, so nothing "+
 			"records which recorder produced these numbers")
 		add(m.ServiceIdentityDrift != "", "the service did not stay the same across the run: "+
@@ -329,11 +334,11 @@ func (m Manifest) Validate(level Level) []string {
 		// cannot know. Everything else the service reports about itself is checked at
 		// `local`, because /meta hands it over for free and a field that costs nothing to
 		// record should not gate a higher tier than one that costs an operator's attention.
-		add(m.AggregatePoolSize < 1, "aggregate_pool_size is not positive (operator-supplied, PR3)")
+		add(m.AggregatePoolSize < 1, "aggregate_pool_size is not positive (operator-supplied)")
 
-		// Topology — PR3 supplies these.
-		add(m.ReplicaCount < 1, "replica_count is not positive (operator-supplied, PR3)")
-		add(m.DeploymentTopology == "", "deployment_topology is empty (operator-supplied, PR3)")
+		// Topology — operator-supplied; no endpoint reports it.
+		add(m.ReplicaCount < 1, "replica_count is not positive (operator-supplied)")
+		add(m.DeploymentTopology == "", "deployment_topology is empty (operator-supplied)")
 
 		// The writable authorities the run reached. routing_version is required of every run,
 		// because /meta always answers it — "unsharded" for a single-authority deployment — so
@@ -367,10 +372,10 @@ func (m Manifest) Validate(level Level) []string {
 				m.ReplicaCount*m.PoolSizePerReplica))
 		}
 
-		// Environment — PR4 supplies this. It sits at this level rather than the next
+		// Environment — operator-supplied. It sits at this level rather than the next
 		// because a capacity claim that does not say where it was measured is not
 		// interpretable, even unpublished.
-		add(m.Environment == "", "environment is empty (operator-supplied, PR4)")
+		add(m.Environment == "", "environment is empty (operator-supplied)")
 
 		// Image identity, required of a containerised run and meaningless without one.
 		//

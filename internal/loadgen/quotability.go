@@ -8,11 +8,14 @@ import (
 // Level is what a run's numbers may back. The ladder and its rules are
 // measurement-contract §13.2; this type enforces them.
 //
-// It replaces an earlier boolean `quotable`, which could not be answered honestly:
-// measurement-contract §11 gates a *capacity claim* on topology provenance, and §13.1 gates a
-// *publishable* claim on the generator running on separate compute — so "is this quotable?" has
-// no answer until the claim is named. An unqualified true invited a later reader to publish a
-// co-resident run.
+// It replaces an earlier boolean `quotable`, which could not be answered honestly: a capacity
+// result needs topology provenance and an externally presented claim additionally needs the
+// generator on separate compute (§13.1) — so "is this quotable?" has no answer until the claim
+// is named. An unqualified true invited a later reader to publish a co-resident run.
+//
+// **This is a soundness and provenance ladder, not a publication gate.** It says the run
+// describes itself well enough to support a class of claim; whether the experiment supports the
+// claim is measurement-contract §5's question and is answered separately.
 //
 // The levels are ordered, and a run sits at the highest one whose requirements its manifest
 // and summary satisfy. They are deliberately named for the claim rather than for the PR that
@@ -27,24 +30,36 @@ const (
 	// experiment and backs nothing.
 	LevelNone Level = "none"
 
-	// LevelLocal is a sound measurement with every generator-determinable field of
-	// measurement-contract §11 populated. The service's shape is unrecorded and the generator may
-	// be co-resident, so it is an observation about this machine, not a capacity claim.
+	// LevelLocal is a sound measurement that identifies itself: the service (revision, Go
+	// version, and the shape /meta hands over — PostgreSQL version, GOMAXPROCS, timeout budget,
+	// reservation TTL, pool size per replica), the generator (revision, location, resources), the
+	// workload and run shape, and the target and timestamp.
+	//
+	// Everything /meta reports sits here rather than higher up, because a field that costs
+	// nothing to record should not gate a higher tier than one that costs an operator's
+	// attention. What is missing is the operator's account of the deployment, so the run is a
+	// reproducible observation of this machine rather than a capacity result.
 	LevelLocal Level = "local"
 
-	// LevelCapacity adds the service-side and topology provenance of measurement-contract §11:
-	// PostgreSQL version, pool sizes, server GOMAXPROCS, timeout budget, reservation TTL, replica
-	// count, deployment topology and environment. It may back a capacity claim about that
-	// topology, but not a published one — measurement-contract §13.1 is not yet satisfied.
+	// LevelCapacity adds the provenance no endpoint can report: aggregate pool size, replica
+	// count, deployment topology, environment, and the routing version — plus, where the topology
+	// makes them meaningful, placement for a multi-unit run and an image ID for a containerised
+	// one. It may back a capacity result about that recorded topology.
+	//
+	// It may be reached with the generator co-resident: co-residency is a LevelPublishable bar,
+	// not this one (measurement-contract §13.2).
 	LevelCapacity Level = "capacity"
 
 	// LevelPublishable adds measurement-contract §13.1: the generator ran on compute separate
-	// from the service.
+	// from the service. It is the provenance an externally presented, project-level capacity
+	// claim needs — not a statement that this repository is public.
 	//
-	// This checks the *declaration* in the manifest, which is all a manifest can do. It does
-	// not stand in for the VAL-NEG-2 generator-headroom control, which is evidence rather
-	// than provenance — a run reaching this level has satisfied the provenance gate, not the
-	// whole publication gate (measurement-contract §5, §13.1).
+	// This checks the *declaration* in the manifest, which is all a manifest can do. **It does
+	// not discharge the experiment's evidence gates.** The VAL-NEG-2 generator-headroom control
+	// and the rest of measurement-contract §5 are evidence rather than provenance, so a run can
+	// hold top-of-ladder provenance and still be inadmissible because its experiment was not
+	// controlled. This ladder answers "does the run describe itself?", never "was the experiment
+	// sound enough to quote?".
 	LevelPublishable Level = "publishable"
 )
 

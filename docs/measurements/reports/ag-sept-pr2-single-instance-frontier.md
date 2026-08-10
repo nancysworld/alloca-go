@@ -37,20 +37,25 @@ percentages in §4.1 and §5.2 come from [`postgres-waits/`](../pr2-frontier/pos
 hand-driven sampling retained as **diagnostic evidence, not a measured deliverable** — read
 that directory's caveats before quoting them.
 
-**What this cannot be.** The generator shared a host with the service throughout, so every run
-here is `quotability.level: local` by construction, and every `run.json` refuses the `capacity`
-level by name. Publishable capacity needs the separate generator compute of
-[`measurement-contract.md`](../../design/measurement-contract.md) §13.1. **It never arrives in
-AG-Sept:** the deployment path that would have supplied it was withdrawn after this report was
-written (`ag-sept-plan.md` §6.3), so the rule is honoured by labelling and the milestone closes
-with a bounded local frontier rather than a published capacity number.
+**What this cannot be.** Every run here is `quotability.level: local`, and every `run.json`
+refuses the `capacity` level by name — because the operator-supplied deployment fields that level
+requires were not populated when these runs were taken
+([`measurement-contract.md`](../../design/measurement-contract.md) §13.2).
+
+Separately, the generator shared a host with the service throughout, which puts `publishable` out
+of reach (§13.1). **That compute never arrives in AG-Sept:** the deployment path that would have
+supplied it was withdrawn after this report was written (`ag-sept-plan.md` §6.3), so the rule is
+honoured by labelling and the milestone closes with a bounded local frontier rather than an
+externally presented capacity number.
 
 **Reading "PR3" below.** This report was written under the v0.4 plan, whose PR3 was the container
-and local scale-out work. The milestone was reordered afterwards: that work is **PR4** in
-[`ag-sept-plan.md`](../../planning/ag-sept-plan.md), and PR3 now covers horizontal database
-authority. Every forward-looking "PR3" below — the exporters, the scale-out prediction of §5.4,
-the snapshot redesign, the re-run of these cells — means the work now scheduled as PR4. The
-obligations were carried forward in full; only their PR number changed.
+and local scale-out work. The milestone was reordered afterwards: PR3 now covers horizontal
+database authority, and the scale-out work is held as the **post-Iteration-B scaling envelope** in
+[`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §3 — budget reserved, scope not yet selected
+by the loop. Every forward-looking "PR3" below — the exporters, the scale-out prediction of §5.4,
+the snapshot redesign, the re-run of these cells — means that envelope. The obligations were
+carried forward in full and remain owed by the milestone; only their owning work unit is now
+undecided.
 
 So §5's ceiling is a **measured property of this workstation**, and it is stated plainly
 because that is the question PR2 exists to answer. It is *not* a capacity claim in the
@@ -442,7 +447,7 @@ than one unit.
 
 **It is a workstation figure, not a capacity claim.** Every cell is `quotability.level: local`
 by construction — the generator shared a host with the service throughout — and each
-`run.json` refuses the `capacity` level by naming the manifest fields PR3 and PR4 still owe.
+`run.json` refuses the `capacity` level by naming the operator-supplied manifest fields it lacks.
 The separate compute of §10 is what makes a publishable number possible.
 
 It is also **not** a claim about PostgreSQL in general. It describes a stock
@@ -469,7 +474,8 @@ closed-loop, so its queue is capped by the worker count, and the first enforced 
 missing cells: past c=128 at pool 80 the queue grows and the rate does not.
 
 **Recommended operating capacity: deferred**, per `ag-sept-pr2.md` §5.6 — to the v0.4 plan's PR3
-at the time, and carried forward to PR4 when the milestone was reordered (`ag-sept-plan.md` §3).
+at the time, and carried forward to the post-Iteration-B envelope when the milestone was
+reordered (`ag-sept-plan.md` §3).
 Only the *term* is deferred, not the work. `measurement-contract.md` §3 defines
 it as a cap reserving headroom for **variance, rolling deployment, and loss of one unit**. At
 one replica the last two cannot be reserved against at all, so the defined quantity is not
@@ -626,7 +632,8 @@ exactly `N ÷ X`. Latency rises only when *the operator* adds workers. The proto
 the signature of **open-loop** arrival — requests arriving independently of completions — where
 an arrival rate above the service rate makes the queue grow without bound and latency grow *with
 time* rather than with N. This harness cannot generate that shape; `run.go` says as much, and
-open-loop arrival-rate mode is listed as unbuilt in the roadmap.
+open-loop arrival-rate mode remains unbuilt, and whether it exposes behaviour a closed-loop
+harness structurally cannot is an open question in the exploration roadmap.
 
 **2. The timeout budget converts waiting into an explicit refusal.** `measurement-contract.md`
 §8.1's nested deadlines (`lock < statement ≤ txn < server < client`) are validated at startup. A

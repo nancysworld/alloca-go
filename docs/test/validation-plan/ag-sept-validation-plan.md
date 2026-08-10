@@ -413,11 +413,22 @@ For each executed validation:
 5. **Analyse & Review** compares the evidence with the current problem, requirements, design,
    and validation intent.
 
-Analyse & Review then makes an explicit loop decision:
+Analyse & Review then records the closure outcome
+[`../../development/engineering-process.md`](../../development/engineering-process.md) §1.4.1
+requires, in [`../../requirements/ag-sept.md`](../../requirements/ag-sept.md): problem verdict,
+evidence, durable learning, **goal progress**, and the loop decision.
 
-- if the current problem is sufficiently resolved for scope, that iteration ends;
-- if evidence exposes a new or refined problem worth solving, the next iteration starts at
-  **Problem**, before requirements/design/validation and scheduling are reconsidered.
+**Two questions, not one.** "Is this problem resolved?" and "is the governing goal sufficiently
+achieved?" are separate, and answering only the first is how a milestone ends while its goal is
+still open:
+
+- problem resolved **and** goal sufficiently achieved for the agreed scope → the loop ends;
+- problem resolved, goal **not** yet achieved → Analyse & Review names the next problem, and a new
+  iteration starts at **Problem**;
+- problem unresolved or refined by the evidence → the refined problem starts the next iteration.
+
+In every case, accepted learning reaches requirements, design, and this plan before the next
+iteration is scheduled.
 
 A surprising result is therefore not a plan failure. It is evidence that may start the next
 engineering iteration.

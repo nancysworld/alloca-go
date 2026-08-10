@@ -3,8 +3,9 @@
 **Type:** Implementation record
 **Status:** Shipped and merged — every decision in §5 settled, nothing open in §6. Results and the
 frontier report are in [`docs/measurements/pr2-frontier/`](../../measurements/pr2-frontier/)
-**Budget:** 2.5 development days (scheduled under [`ag-sept-plan-v0.4.md`](../../planning/ag-sept-plan-v0.4.md) §14) — 1.0 for the retention
-path and diagnostic panels, 1.5 for the sweeps, controls, and report
+**Budget:** 2.5 development days (scheduled under
+[`ag-sept-plan-v0.4.md`](../../planning/ag-sept-plan-v0.4.md) §14) — 1.0 for the retention path
+and diagnostic panels, 1.5 for the sweeps, controls, and report
 **Owner docs:** [`measurement-contract.md`](../../design/measurement-contract.md) §3 and §6 — the
 capacity vocabulary and required indicators — and VAL-NEG-2 in
 [`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) are
@@ -33,10 +34,13 @@ bound is stated and shown. An unresolved frontier reported as a number would be 
 
 **What PR2 may not claim, whatever it measures.** The generator shares a host with the service —
 for the whole of AG-Sept, since the compute that would separate them is not funded
-(`ag-sept-plan.md` §6.3) — so every figure here is a *bounded local* result. The VAL-NEG-2 headroom control is
+(`ag-sept-plan.md` §6.3) — so every figure here is a *bounded local* result. The VAL-NEG-2
+headroom control is
 what limits how much the co-resident generator can be distorting it, and that limitation
-travels with each number rather than sitting in a footnote. `quotability.level` stays `local`
-for PR2's runs by construction — `publishable` requires the separate compute of §10.
+travels with each number rather than sitting in a footnote. `quotability.level` is `local` for
+PR2's runs because the operator-supplied deployment fields above that level were not populated
+when they were taken; separately, co-residency puts `publishable` out of reach for the whole
+milestone (`measurement-contract.md` §13.1–§13.2).
 
 ## 2. What PR2 delivers
 
@@ -413,5 +417,5 @@ permit.
 ## 8. Not in PR2
 
 Replica scaling, Kubernetes, AWS, rich dashboards, alerting, and the optional synchronized
-release wave (plan §5.4) — all per the plan. Also not in PR2: any published capacity number, which
-requires the separate generator compute of §10.
+release wave (validation plan §3.7) — all per the plan. Also not in PR2: any externally presented
+capacity number, which requires the separate generator compute of `measurement-contract.md` §13.1.

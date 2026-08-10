@@ -82,8 +82,8 @@ Numbers are assigned in order when an ADR is created; they are not reserved in a
 | [0002](0002-postgresql-transactional-authority.md) | PostgreSQL as transactional authority | Accepted | AG-M1 |
 | [0003](0003-deployed-artifact-identity.md) | A run identifies its deployed artifact by observation, not by self-report | Accepted | AG-Sept |
 
-Planned (not yet written): `0004` capacity-unit selection (AG-M4) — see the
-roadmap's planned evidence structure. It was pencilled in as `0003` before that
+Planned (not yet written): `0004` capacity-unit selection, if and when capacity economics is
+selected as a Goal (see the exploration roadmap). It was pencilled in as `0003` before that
 number was taken; numbers are assigned when an ADR is written, not reserved.
 
 ## Disclosure

@@ -66,16 +66,34 @@ could be framed; unresolved limitations had to remain explicit.
 
 ### Analyse & Review outcome
 
-PR2 established PostgreSQL as the limiting subsystem at the measured single-authority frontier
-while the Go service retained substantial compute headroom. The exact numbers, conditions,
-limitations, and the still-undischarged telemetry-overhead control remain owned by
-[`../measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../measurements/reports/ag-sept-pr2-single-instance-frontier.md)
-and its retained artifacts.
+The closure record `../development/engineering-process.md` §1.4.1 requires. Detail stays in the
+owning report; this is the durable outcome.
 
-That evidence resolved Iteration A's problem but did **not** yet achieve the AG-Sept goal. It
-changed the next problem: repeating service-replica measurements against the unchanged saturated
-writer could refine behaviour below the frontier, but could not answer how end-to-end writable
-capacity should scale.
+**1. Problem verdict — sufficiently resolved.** The first single-authority scaling frontier is
+identified: PostgreSQL, not application compute.
+
+**2. Evidence.**
+[`../measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../measurements/reports/ag-sept-pr2-single-instance-frontier.md)
+and its retained artifacts. PostgreSQL sets the measured frontier while the Go service retains
+substantial compute headroom. The report owns the numbers, conditions, and limitations — including
+the ±2× environmental caveat and the **still-undischarged telemetry-overhead control** (VAL-NEG-3,
+where within-mode spread exceeded the between-mode delta, so no overhead figure is claimed).
+
+**3. Durable learning.** Service-compute scaling and writable-database-authority composition are
+distinct axes whose evidence must not be merged — now REQ-SCALE-1 and REQ-EVID-2, with the
+system shape in [`../design/horizontal-scaling.md`](../design/horizontal-scaling.md). The
+undischarged telemetry control is carried in the validation plan's status table rather than being
+quietly dropped.
+
+**4. Goal progress.** One of the goal's three parts — identifying the meaningful scaling
+boundaries — is established for the single-authority case. What remains: demonstrating that
+independent work can use additional writable resources without weakening correctness, and making
+the resulting architecture and limitations explicit.
+
+**5. Loop decision — continue.** The goal is not sufficiently achieved, so a new iteration starts
+at **Problem**. Repeating service-replica measurements against the unchanged saturated writer
+could refine behaviour below the frontier, but could not answer how end-to-end writable capacity
+should scale. The next problem is therefore Iteration B, below.
 
 ## 2. Iteration B — compose independent writable database authority
 
@@ -143,8 +161,17 @@ Iteration B can end for AG-Sept scope when evidence demonstrates, at minimum:
 The concrete validation is owned by
 [`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md).
 
-Analyse & Review must then ask both whether this problem is resolved **and whether the AG-Sept
-goal is sufficiently achieved**. Those are different questions.
+### Analyse & Review outcome
+
+**Pending — Iteration B's evidence is not yet produced.** PR3c owes it.
+
+When it is, this section records the same five-part closure record §1.4.1 requires, written to the
+worked example under Iteration A: problem verdict, evidence, durable learning, **goal progress**,
+and the loop decision. The last two are the ones this iteration must not skip — whether the
+problem is resolved and whether the AG-Sept goal is sufficiently achieved are different questions,
+and the reserved post-Iteration-B budget
+([`../planning/ag-sept-plan.md`](../planning/ag-sept-plan.md) §3) buys nothing until this review
+selects what it is for.
 
 ## 3. Candidate next iteration — stateless service replicas
 

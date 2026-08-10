@@ -22,7 +22,8 @@ Three things must hold together:
    acceptable. Without one an entry is a worry, not a debt, and it will sit here forever
    accumulating nothing but agreement.
 
-Work not yet started belongs in [`alloca-go-roadmap.md`](alloca-go-roadmap.md); a plan for
+Work not yet started belongs in the milestone plan, or — if it is only a candidate direction —
+in [`alloca-go-roadmap.md`](alloca-go-roadmap.md); a plan for
 splitting a milestone belongs in that milestone's plan. Debt is the third thing: a design
 that is sound inside a boundary, with the boundary written down.
 
@@ -306,7 +307,7 @@ cannot describe the set of binaries that served the run.
    bytes and parsing to every measured response.
 4. Have the experiment orchestrator pin and record an immutable image digest for every target
    replica, then verify the target set did not change during the run. Strongest deployment-
-   level answer, but belongs with PR3/PR4 orchestration rather than the HTTP client alone.
+   level answer, but belongs with multi-unit orchestration rather than the HTTP client alone.
 
 Options 1 and 2 compose: pre/post checking detects single-instance replacement, while the
 replica metric describes a multi-instance target set.

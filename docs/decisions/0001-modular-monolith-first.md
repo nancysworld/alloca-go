@@ -15,7 +15,7 @@ inside a 40-day window. Two structural options were available at the outset:
 2. **Modular monolith** — one deployable with clear internal module boundaries and
    explicit authority ownership, decomposed later only where evidence demands it.
 
-The roadmap's theses constrain the choice: *correct authority before distribution*,
+Two founding principles constrain the choice: *correct authority before distribution*,
 and *decomposition follows evidence rather than presentation value*. The scarce
 resource in this project is trustworthy measurement, not deployable count. Premature
 decomposition would add network hops, partial-failure modes, deployment coordination,
@@ -53,7 +53,7 @@ demonstrates a specific need.
 - A single hot authority is not solved by adding instances; that serialization
   ceiling is measured explicitly (Layer C, AG-M4/AG-M6), never hidden.
 
-**Defers** (roadmap §P2): service decomposition for its own sake, Kubernetes/EKS,
+**Defers**: service decomposition for its own sake, Kubernetes/EKS,
 Redis/DynamoDB/Kafka, multi-region active-active writes, and dynamic shard movement.
 
 ## Revisit when

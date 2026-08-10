@@ -15,8 +15,12 @@ and govern several problem-solving iterations. It states what outcome is worth a
 matters, and what would make the work sufficiently complete for the agreed scope.
 
 Project-wide intent may already have a higher-level owner such as
-[`../design/high-level-design.md`](../design/high-level-design.md) or the roadmap. In that case,
-link to the existing owner rather than duplicating it here.
+[`../design/high-level-design.md`](../design/high-level-design.md). In that case, link to the
+existing owner rather than duplicating it here.
+
+The exploration roadmap is **not** such an owner: it is non-normative and unscheduled, and a
+direction listed there becomes a goal only when it is deliberately selected
+([`../development/engineering-process.md`](../development/engineering-process.md) §1.4).
 
 A **problem** belongs here when it is durable enough to motivate one or more system requirements
 or a new iteration toward the governing goal. For example, a measured scaling limit may create a

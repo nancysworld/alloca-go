@@ -812,7 +812,7 @@ domain answers and are `business_refusal`; only genuinely malformed input is
 
 ## 9. How the AG-M1 correctness gates are satisfied
 
-| Roadmap gate | Mechanism |
+| Correctness gate | Mechanism |
 |---|---|
 | Capacity is never exceeded | Invariant re-checked under the slot `FOR UPDATE` lock after settlement on every reserve/confirm (§1.7, §2, §7) |
 | Counts consistent with reservation/booking rows | Counts derived from settled rows, no denormalised counter to drift (§1.7, §2.1) |

@@ -50,7 +50,7 @@ that reached its topology by relaxing an invariant would have moved the problem,
 generator, and the telemetry stack share one 10-vCPU WSL2 allocation
 ([`docs/measurements/environment.md`](../../measurements/environment.md)). Authority composition
 cannot be quoted as a capacity multiplier from this machine, and PR2's unexplained ~2×
-excursions are still open, so any single reading carries a ±2× caveat — which PR4's node
+excursions are still open, so any single reading carries a ±2× caveat — which a node
 exporter does not discharge merely by existing, only by explaining, excluding, or bounding the
 excursion. PR3 is correctness-first by design, not by descope.
 
@@ -217,7 +217,7 @@ rather than desirable.
 
 ### 5.3 Correctness evidence is not a source of budget
 
-If PR3a–PR3c overrun, the difference comes out of PR4's measurement scope through the plan's
+If PR3a–PR3c overrun, the difference comes out of the post-Iteration-B envelope through the plan's
 §16 descope order, not out of the gates that make a run admissible. Nancy's call, 2026-08-05.
 
 ### 5.4 Per-authority attribution is read from per-service scrapes
@@ -371,11 +371,24 @@ deliberately trigger it is PR3c's, which lands after. The window is now closed.
 Observed on the containerised topology while validating it (PR3b), and recorded here because
 it changes what PR3c's expected-outcome set may assert.
 
-Stopping an authority's container and issuing a request to its unit produced
-**`timeout_server` (504)**, not one of the three outcomes the formal design enumerates for an
-unavailable authority — `internal_failure`, `timeout_db`, `unknown_replayable` (formal design
-measurement-contract §11). The unit's `/readyz` correctly reported 503 throughout, and the healthy authority
-continued serving its own organisations, so failure *isolation* held exactly as designed.
+**The assumption going in.** PR3's planning expected an unavailable authority to produce one of
+three outcomes — `internal_failure`, `timeout_db`, or `unknown_replayable` — and this record
+previously attributed that enumeration to the formal design. **It is not there.**
+[`horizontal-database-authority.md`](../../design/horizontal-database-authority.md) §7.7 owns
+authority failure and ambiguity, and what it fixes is *containment* and the standing of
+`unknown_replayable` as an unresolved commit fact; it does not fix a closed outcome set for an
+unavailable authority. The three-outcome expectation was implementation's, and stating it as the
+design's was an over-attribution.
+
+**What was observed.** Stopping an authority's container and issuing a request to its unit
+produced **`timeout_server` (504)** — a fourth classification. The unit's `/readyz` correctly
+reported 503 throughout, and the healthy authority continued serving its own organisations, so
+failure *isolation* held exactly as designed.
+
+**The refinement.** The outcome is a property of the **failure mode injected**, not of authority
+unavailability as such. The durable claim is containment plus the bounded outcome model
+(`measurement-contract.md` §4); the specific outcome is an experiment parameter. That is why the
+consequence below is "name the failure mode" rather than "correct the outcome set".
 
 The reason matters: a **stopped** container drops packets rather than refusing them, so the
 connection attempt hangs instead of failing fast, and the per-request server deadline is the
@@ -386,8 +399,8 @@ Two consequences for PR3c:
 
 1. **The experiment must name its failure mode** — stopped, killed, network-partitioned,
    or process-crashed — because they do not produce the same outcome mix. An expected-outcome
-   set that lists three outcomes and meets a fourth reads as a defect when it is a different
-   experiment.
+   set fixed in advance and then met by a different outcome reads as a defect when it is
+   really a different experiment (VAL-FAIL-1).
 2. **`db_acquire_cap` did not bound this wait**, and it is worth understanding before the
    experiment quotes anything. The observation is that a ~5 s server deadline elapsed where a
    500 ms acquisition cap might have been expected to fire first; the diagnosis is *not*
@@ -500,7 +513,8 @@ that is restated here.
 - online rebalancing, dual-write migration, or a placement change during a run;
 - a production routing gateway or dynamic shard catalogue;
 - a shared global workflow database;
-- replica scaling, exporters, dashboards, or the connection-budget control — all PR4;
+- replica scaling, exporters, dashboards, or the connection-budget control — all held in the
+  post-Iteration-B envelope;
 - any capacity or throughput-multiplier claim;
 - per-authority client-side attribution (§3.2, §5.4);
 - authentication, which §7.6 of the formal design correctly identifies as the real fix for

@@ -114,15 +114,45 @@ A goal can itself be revised when evidence or strategy shows that it is no longe
 feasible, or correctly scoped, but that is an explicit goal/scope decision rather than an
 ordinary consequence of solving one problem.
 
+**Upstream of the loop, a roadmap may collect candidate areas and questions worth future
+exploration. It is directional, non-normative, and unscheduled.** Selecting a roadmap item does
+not bypass the engineering iteration: worthwhile work is first framed as a Goal or Problem, then
+proceeds through Requirements, Design, Validation plan, and Schedule. The relationship also runs
+backwards — Analyse & Review may surface a question that is interesting but not worth pursuing
+now, and the roadmap is where it belongs, rather than being prematurely promoted into a
+requirement or a scheduled work unit. The roadmap is
+[`../planning/alloca-go-roadmap.md`](../planning/alloca-go-roadmap.md).
+
 The process becomes explicit when work affects an invariant, system requirement, authority or
 ownership boundary, failure semantic, deployment boundary, evidence interpretation, or another
 durable property.
 
 A durable engineering goal and the durable problems it generates normally live with the
 requirements they govern under `docs/requirements/`. Project-wide intent may already have a
-higher-level owner such as the roadmap or high-level design; link to that owner rather than
-copying it. Temporary implementation defects or investigation notes stay with the implementation
-work unless they reveal a missing durable requirement.
+higher-level owner such as the high-level design; link to that owner rather than copying it. The
+exploration roadmap is not such an owner — it holds candidate directions, not accepted goals.
+Temporary implementation defects or investigation notes stay with the implementation work unless
+they reveal a missing durable requirement.
+
+### 1.4.1 Analyse & Review closes an iteration with a durable outcome
+
+**Analyse & Review closes an explicit engineering iteration with a durable outcome.** Its minimum
+output is a short **Analyse & Review outcome** in the governing Goal/Problem record, stating:
+
+1. **Problem verdict** — sufficiently resolved, unresolved, or refined;
+2. **Evidence** — the retained evidence supporting that verdict;
+3. **Durable learning** — requirements/design/validation/ADR implications, including explicitly
+   "none" where nothing changes;
+4. **Goal progress** — what the result established toward the governing goal, and what remains;
+5. **Loop decision** — `END`, or the next/refined problem that starts the next iteration.
+
+Detailed evidence and analysis remain in their owning reports; this is a closure record, not a
+second copy of them. Accepted learning is propagated into its durable owners **before** the next
+iteration is scheduled — that ordering is the point, because scheduling from unpropagated
+evidence is how a durable contract silently falls behind what the project knows.
+
+This is a minimum closure record for work where the iteration loop is explicit. It is not a
+documentation quota for trivial changes.
 
 The key dependency rule is:
 

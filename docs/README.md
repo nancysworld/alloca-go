@@ -32,7 +32,7 @@ plan.
 | [`requirements/`](requirements/) | What worthwhile outcome are we trying to achieve, what durable problem currently blocks it, and what must be true? |
 | [`design/`](design/) | What durable system shape and contracts satisfy those requirements? |
 | [`test/validation-plan/`](test/validation-plan/) | How will we prove or falsify the requirements and design claims? |
-| [`planning/`](planning/) | What are we doing now, when, with what priority, budget, and descope order? |
+| [`planning/`](planning/) | What have we chosen to do now, when, with what priority, budget, and descope order? The **exploration roadmap** lives here too, answering the different question of where the project *might* go — directional, unscheduled, and upstream of Goal selection. |
 | [`decisions/`](decisions/) | Why was a consequential architectural choice made? |
 | [`development/`](development/) | How do we work, and what did implementation discover or actually ship? |
 | [`operations/`](operations/) | How do we build, run, deploy, and operate the system? |

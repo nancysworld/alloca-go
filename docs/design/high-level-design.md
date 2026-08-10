@@ -36,8 +36,8 @@ engineering models, never as descriptions of any organisation's real system
 ([`system-context.md`](system-context.md) §1;
 [`../public-disclosure-policy.md`](../public-disclosure-policy.md)).
 
-The project's questions, milestone plan, and measurement vocabulary are set out in the
-[roadmap](../planning/alloca-go-roadmap.md). Its **core principle** — the single
+Candidate directions the project may explore later are collected, non-normatively, in the
+[exploration roadmap](../planning/alloca-go-roadmap.md). Its **core principle** — the single
 optimisation objective the whole system serves — is:
 
 > Optimise for sustainable, SLO-compliant, resilient throughput per unit cost — not
@@ -64,8 +64,7 @@ What carries over:
 
 What does **not** carry over:
 
-- **Code.** Alloca-Go is a new implementation in Go, not a port
-  ([roadmap](../planning/alloca-go-roadmap.md) §1).
+- **Code.** Alloca-Go is a new implementation in Go, not a port.
 - **Results — as results.** Prototype figures *do* enter this repository, but only as
   `[PRIOR-UNREPRODUCED]` evidence ([`measurement-contract.md`](measurement-contract.md)
   §2). Such a figure sets a starting hypothesis and never settles a question; when an
@@ -106,8 +105,8 @@ which is where its normative form lives.
    explicit, bounded answer (sold out, retry-after, admission-rejected, queue-position,
    or "unknown — safe to replay") to unbounded latency growth ending in generic
    timeouts.
-   → *concrete in* [`measurement-contract.md`](measurement-contract.md) §4,
-   the roadmap §6.2, and the admission tier (AG-M2+).
+   → *concrete in* [`measurement-contract.md`](measurement-contract.md) §4, with the acceptance
+   bar in §4.3.
 
 4. **Time and policy are service-owned.** Booking decisions use authoritative
    service-observed time, never a client-supplied timestamp; the reservation hold TTL
@@ -266,8 +265,8 @@ runtime topology properties are owned by
 2. [`../requirements/`](../requirements/) — the cross-cutting system requirements the designs
    must satisfy, and the governing engineering goal and open problem that motivate the current
    work.
-3. [`../planning/alloca-go-roadmap.md`](../planning/alloca-go-roadmap.md) — the
-   project theses, milestones, and measurement vocabulary.
+3. [`../planning/alloca-go-roadmap.md`](../planning/alloca-go-roadmap.md) — optional: the
+   candidate directions and open questions the project may explore later.
 4. [`system-context.md`](system-context.md) — system boundary, actors, and module layout.
 5. [`project-structure.md`](project-structure.md) — how modules map to Go packages and
    the dependency rules that keep the boundary enforceable.
@@ -304,7 +303,7 @@ for it.
 |---|---|
 | Cross-cutting durable problems and system requirements | [`../requirements/system-requirements.md`](../requirements/system-requirements.md) |
 | The governing AG-Sept engineering goal, its iteration problems, and which requirements each brings into scope | [`../requirements/ag-sept.md`](../requirements/ag-sept.md) |
-| Project intent, theses, milestone roadmap, measurement vocabulary, SLO lifecycle | [`../planning/alloca-go-roadmap.md`](../planning/alloca-go-roadmap.md) |
+| Candidate future directions and open questions — non-normative, unscheduled | [`../planning/alloca-go-roadmap.md`](../planning/alloca-go-roadmap.md) |
 | System boundary, actors, module diagram | [`system-context.md`](system-context.md) |
 | Package layout, dependency rules, extraction seams | [`project-structure.md`](project-structure.md) |
 | Evidence labelling, **outcome taxonomy**, SLIs, provisional SLOs, **timeout budget**, run manifest, reconciliation contract, **quotability levels and generator provenance** | [`measurement-contract.md`](measurement-contract.md) |

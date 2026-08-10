@@ -13,13 +13,21 @@ import (
 	"github.com/nancysworld/alloca-go/internal/loadgen"
 )
 
-// These cover VAL-COR-6's three states against measurement-contract §12's accounting rule.
+// These cover VAL-COR-6's three states against measurement-contract §12's two populations.
 // Each drives the real client through a real resolution pass, so they exercise the same path
 // a failure-isolation run does rather than a hand-built Summary.
 //
-// The property under test is that the two accountings §12 distinguishes stay separate and
-// both stay correct: every HTTP attempt appears in Totals, while one idempotency key
-// contributes exactly one fresh logical mutation to the persisted-state comparison.
+// The property under test is the **population boundary**, and VAL-COR-6 requires it to be
+// discriminating in both directions:
+//
+//   - an implementation that folds resolution traffic into the *measured* population —
+//     Completed, Goodput, Totals, ReplayedMutations, latency, duration — must fail, even if its
+//     final persisted-row count is right;
+//   - an implementation that omits resolution traffic from the *reconciliation* population —
+//     the server-scrape comparison — must also fail.
+//
+// So every case below asserts measured fields are untouched *and* that the reconciliation view
+// sees the extra attempts.
 
 // ambiguousThenPerformed answers the first request for each key with unknown_replayable and
 // every later one with a *fresh* success — the shape a real authority produces when the
@@ -64,14 +72,20 @@ func summaryOf(r loadgen.Response) loadgen.Summary {
 	return s
 }
 
-func countIn(s loadgen.Summary, outcome domain.Outcome, replay bool) int {
+func totalIn(totals []loadgen.Total, outcome domain.Outcome, replay bool) int {
 	n := 0
-	for _, t := range s.Totals {
+	for _, t := range totals {
 		if t.Outcome == outcome && t.Replay == replay {
 			n += t.Count
 		}
 	}
 	return n
+}
+
+// countIn reads the *measured* cells specifically, so a test asserting measured fields cannot
+// accidentally be satisfied by the reconciliation view.
+func countIn(s loadgen.Summary, outcome domain.Outcome, replay bool) int {
+	return totalIn(s.Totals, outcome, replay)
 }
 
 // State 1: the original committed. The replay proves it, so the fresh logical mutation
@@ -92,32 +106,44 @@ func TestResolvedOriginalCommittedCreditsOneFreshMutationToTheOriginal(t *testin
 	if original.Outcome != domain.OutcomeUnknownReplayable {
 		t.Fatalf("setup: original outcome = %q, want unknown_replayable", original.Outcome)
 	}
-	summary := summaryOf(original).WithResolutions(c.ResolveAmbiguous(ctx))
+	measured := summaryOf(original)
+	summary := measured.WithResolutions(c.ResolveAmbiguous(ctx))
 
-	// Request accounting: both attempts present, as observed.
-	if summary.Completed != 2 {
-		t.Errorf("completed = %d, want 2 — the original and the resolution are both requests", summary.Completed)
+	// Measured population: untouched. The client saw one request and no definite success
+	// inside the interval, and a later discovery does not change what happened during it.
+	if summary.Completed != 1 {
+		t.Errorf("measured completed = %d, want 1 — the resolution happened after the interval", summary.Completed)
+	}
+	if summary.Goodput != 0 {
+		t.Errorf("measured goodput = %d, want 0. The mutation committed, but not observably "+
+			"inside the measured interval; crediting it here rewrites performance history", summary.Goodput)
+	}
+	if summary.ReplayedMutations != 0 {
+		t.Errorf("measured replayed mutations = %d, want 0 — the replay was post-run", summary.ReplayedMutations)
 	}
 	if got := countIn(summary, domain.OutcomeUnknownReplayable, false); got != 1 {
-		t.Errorf("unknown_replayable cells = %d, want 1: the original's own outcome is what the client saw and must not be rewritten", got)
+		t.Errorf("unknown_replayable cells = %d, want 1: the original's outcome is what the client saw", got)
 	}
-	if got := countIn(summary, domain.OutcomeAdmittedSuccess, true); got != 1 {
-		t.Errorf("admitted_success replay=true cells = %d, want 1", got)
+	if got := countIn(summary, domain.OutcomeAdmittedSuccess, true); got != 0 {
+		t.Errorf("measured Totals gained %d resolution cells, want 0", got)
 	}
 
-	// Logical-mutation accounting: exactly one fresh mutation for the key.
+	// Reconciliation population: the resolution attempt is visible and counted.
+	if got := summary.ReconciliationCompleted(); got != 2 {
+		t.Errorf("reconciliation completed = %d, want 2 — a scrape taken after resolution "+
+			"counts both attempts, and omitting it fails a correct service", got)
+	}
+	if got := totalIn(summary.ReconciliationTotals(), domain.OutcomeAdmittedSuccess, true); got != 1 {
+		t.Errorf("reconciliation admitted_success replay=true cells = %d, want 1", got)
+	}
+
+	// Final logical state: exactly one mutation for the key.
 	if got := summary.FreshAdmittedFor(domain.OpReserve); got != 1 {
-		t.Errorf("FreshAdmittedFor = %d, want 1. Without the §12 credit this reads 0 while the "+
-			"database holds one row, and reconciliation fails a correct service", got)
+		t.Errorf("FreshAdmittedFor = %d, want 1: the replay proves the original committed, "+
+			"so the database holds one row", got)
 	}
 	if got := summary.FreshMutations(); got != 1 {
 		t.Errorf("FreshMutations = %d, want 1: the original wrote an idempotency record", got)
-	}
-	if summary.Goodput != 1 {
-		t.Errorf("goodput = %d, want 1 — a booking that committed is a completed useful operation", summary.Goodput)
-	}
-	if summary.ReplayedMutations != 1 {
-		t.Errorf("replayed mutations = %d, want 1", summary.ReplayedMutations)
 	}
 	if !summary.Sound {
 		t.Errorf("run is unsound after a successful resolution: %s", summary.NotSoundBecause)
@@ -143,30 +169,46 @@ func TestResolvedOriginalNotCommittedCountsTheResolutionOnce(t *testing.T) {
 	}
 	summary := summaryOf(original).WithResolutions(c.ResolveAmbiguous(ctx))
 
-	if summary.Completed != 2 {
-		t.Errorf("completed = %d, want 2", summary.Completed)
+	// Measured population: untouched, exactly as in the committed branch. The mutation
+	// happened *after* the interval, so measured goodput is zero either way — this is the
+	// case where folding it in is most tempting and most wrong.
+	if summary.Completed != 1 {
+		t.Errorf("measured completed = %d, want 1", summary.Completed)
 	}
-	if got := countIn(summary, domain.OutcomeAdmittedSuccess, false); got != 1 {
-		t.Errorf("admitted_success replay=false cells = %d, want 1 — the resolution performed it", got)
+	if summary.Goodput != 0 {
+		t.Errorf("measured goodput = %d, want 0 — the resolution performed the mutation "+
+			"outside the measured interval", summary.Goodput)
+	}
+	if got := countIn(summary, domain.OutcomeAdmittedSuccess, false); got != 0 {
+		t.Errorf("measured Totals gained %d resolution cells, want 0", got)
 	}
 
-	// Exactly one, not two: the credit must not fire for a replay=false resolution, whose
-	// own cell is already fresh.
+	// Reconciliation population sees it.
+	if got := summary.ReconciliationCompleted(); got != 2 {
+		t.Errorf("reconciliation completed = %d, want 2", got)
+	}
+	if got := totalIn(summary.ReconciliationTotals(), domain.OutcomeAdmittedSuccess, false); got != 1 {
+		t.Errorf("reconciliation admitted_success replay=false cells = %d, want 1 — the resolution performed it", got)
+	}
+
+	// Final logical state: one mutation, and exactly one. This branch is why the credit
+	// cannot be conditioned on replay=true — the row exists here too, and the database
+	// cannot tell the two branches apart.
 	if got := summary.FreshAdmittedFor(domain.OpReserve); got != 1 {
-		t.Errorf("FreshAdmittedFor = %d, want 1. Two would mean the resolution was counted "+
-			"both as its own fresh cell and as a credit to the original", got)
+		t.Errorf("FreshAdmittedFor = %d, want 1: the resolution performed the mutation, so "+
+			"the database holds one row for this key", got)
 	}
 	if got := summary.FreshMutations(); got != 1 {
 		t.Errorf("FreshMutations = %d, want 1", got)
 	}
-	if summary.Goodput != 1 {
-		t.Errorf("goodput = %d, want 1", summary.Goodput)
-	}
 	if summary.ReplayedMutations != 0 {
-		t.Errorf("replayed mutations = %d, want 0 — nothing was replayed, the mutation was performed", summary.ReplayedMutations)
+		t.Errorf("measured replayed mutations = %d, want 0", summary.ReplayedMutations)
 	}
 	if !summary.Sound {
 		t.Errorf("run is unsound after a successful resolution: %s", summary.NotSoundBecause)
+	}
+	if len(summary.Resolved) != 1 || summary.Resolved[0].Replay {
+		t.Errorf("resolved record = %+v, want one entry with replay=false", summary.Resolved)
 	}
 }
 
@@ -200,6 +242,12 @@ func TestStillAmbiguousAfterResolutionMakesTheRunUnsound(t *testing.T) {
 	// A still-ambiguous entry establishes nothing, so it must not be credited either way.
 	if got := summary.FreshAdmittedFor(domain.OpReserve); got != 0 {
 		t.Errorf("FreshAdmittedFor = %d, want 0: an unresolved mutation proves nothing about persisted state", got)
+	}
+	// It is still an HTTP request the service completed, so the reconciliation population
+	// must carry it even though it settles nothing.
+	if got := summary.ReconciliationCompleted(); got != 2 {
+		t.Errorf("reconciliation completed = %d, want 2: the failed resolution attempt still "+
+			"reached the service and still appears in its counters", got)
 	}
 	if len(summary.Resolved) != 1 || !summary.Resolved[0].StillAmbiguous {
 		t.Errorf("resolved record = %+v, want one entry flagged still-ambiguous", summary.Resolved)

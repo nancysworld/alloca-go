@@ -286,42 +286,32 @@ type ResolvedMutation struct {
 	StillAmbiguous bool `json:"still_ambiguous,omitempty"`
 }
 
-// WithResolutions folds a resolution pass into the summary, per measurement-contract §12.
+// WithResolutions records a post-run resolution pass, per measurement-contract §12.
 //
-// Two things happen, and they are deliberately different accountings:
+// **It deliberately does not touch a single measured field.** Totals, Completed, Goodput,
+// ReplayedMutations, latency and the duration stay exactly as the measured interval observed
+// them, because post-run resolution may change what we know about final logical state but must
+// not rewrite performance history. An original that returned `unknown_replayable` contributes
+// one measured request and zero measured goodput, and goes on doing so even after a resolution
+// proves its mutation committed — the client did not receive a definite successful outcome
+// inside the interval, and no later discovery changes what happened during it.
 //
-//   - **request accounting** — every resolution attempt is a completed HTTP request and is
-//     merged into Totals as observed. This is what keeps the client totals over the same
-//     population as a server scrape taken after resolution;
-//   - **logical-mutation accounting** — recorded in Resolved and applied by FreshAdmittedFor
-//     and FreshMutations, so one idempotency key contributes at most one fresh mutation to
-//     persisted-state comparison.
+// What the pass produces instead is Resolved: the retained, auditable record of the
+// reconciliation population. Two derivations read it, and nothing else does —
+// ReconciliationTotals/ReconciliationCompleted for the server-scrape comparison, and
+// FreshAdmittedFor/FreshMutations for final logical state.
 //
-// Appending alone would be wrong, and this is the defect the contract exists to prevent: a
-// resolution returning Replay=true proves the original committed, so a row exists — but the
-// replay is not fresh, so a naive append leaves the fresh count at zero for a mutation the
-// database is holding. The credit therefore goes to the original attempt, whose own cell
-// stays `unknown_replayable` because that is genuinely what the client observed.
-//
-// A run carrying any still-ambiguous entry is marked unsound: its persisted state and its
-// client record disagree about a mutation, and no verdict over that means anything.
+// A run carrying any still-ambiguous entry is marked unsound: no final logical-mutation count
+// is established for that key, so no verdict over the run means anything.
 func (s Summary) WithResolutions(resolutions []Resolution) Summary {
 	if len(resolutions) == 0 {
 		return s
 	}
 
-	totals := append([]Total(nil), s.Totals...)
 	resolved := make([]ResolvedMutation, 0, len(resolutions))
 	var stillAmbiguous int
 
 	for _, r := range resolutions {
-		totals = addTotal(totals, Total{
-			Operation: string(r.Ambiguous.Operation),
-			Outcome:   r.Response.Outcome,
-			Reason:    r.Response.Reason,
-			Replay:    r.Response.Replay,
-			Count:     1,
-		})
 		if r.StillAmbiguous {
 			stillAmbiguous++
 		}
@@ -336,31 +326,7 @@ func (s Summary) WithResolutions(resolutions []Resolution) Summary {
 			StillAmbiguous: r.StillAmbiguous,
 		})
 	}
-
-	s.Totals = totals
 	s.Resolved = resolved
-	s.Completed += len(resolutions)
-
-	// Mirrors the counting rule in Run: a mutation operation answering admitted_success is
-	// goodput when fresh and a replay otherwise. Applied per resolution rather than recomputed
-	// from Totals so the two cannot drift apart.
-	for _, r := range resolutions {
-		if r.Response.Outcome != domain.OutcomeAdmittedSuccess || !r.Ambiguous.Operation.IsKnown() {
-			continue
-		}
-		if r.Response.Replay {
-			s.ReplayedMutations++
-			// The replay proved the original committed, so a booking exists that no cell in
-			// Totals reports as fresh — the original's cell is `unknown_replayable`, which is
-			// what the client actually saw. Crediting it here keeps goodput a count of real
-			// bookings; see WithResolutions on why the two views differ.
-			if !r.StillAmbiguous {
-				s.Goodput++
-			}
-		} else {
-			s.Goodput++
-		}
-	}
 
 	if stillAmbiguous > 0 && s.Sound {
 		s.Sound = false
@@ -386,21 +352,57 @@ func addTotal(totals []Total, add Total) []Total {
 	return append(totals, add)
 }
 
-// creditedToOriginals counts the logical mutations a resolution pass attributes back to the
-// original attempts: exactly those where the replay proved the original had committed and the
-// outcome is the one asked about.
+// resolvedLogicalMutations counts the final logical mutations a resolution pass established
+// for the given operation and outcome.
 //
-// A Replay=false resolution performed the mutation itself, so its own Totals cell is already
-// fresh and counting it here would double it. A still-ambiguous entry establishes nothing.
-func (s Summary) creditedToOriginals(operation domain.Operation, want domain.Outcome) int {
+// **Both definitive branches count, and each counts once.** `replay=true` proves the original
+// committed; `replay=false` means the resolution performed the mutation itself after the
+// measured interval. Either way the key holds exactly one final logical mutation. This is not
+// a distinction persisted state can see — the database holds one row in both cases — which is
+// precisely why it must not be inferred from measured Totals, where only one of the two ever
+// appears. A still-ambiguous entry establishes nothing and is excluded.
+func (s Summary) resolvedLogicalMutations(operation domain.Operation, want domain.Outcome) int {
 	n := 0
 	for _, r := range s.Resolved {
-		if r.Replay && !r.StillAmbiguous && r.Outcome == want &&
+		if !r.StillAmbiguous && r.Outcome == want &&
 			(operation == "" || r.Operation == string(operation)) {
 			n++
 		}
 	}
 	return n
+}
+
+// ResolutionAttempts counts the post-run HTTP requests the resolution pass issued, including
+// those that stayed ambiguous — the service completed them and counted them either way.
+func (s Summary) ResolutionAttempts() int { return len(s.Resolved) }
+
+// ReconciliationCompleted is the request count the reconciliation population covers: everything
+// the measured interval saw, plus the post-run resolution attempts.
+//
+// This is the number to compare against a server scrape taken *after* resolution, which is what
+// measurement-contract §12 requires. Measured `Completed` deliberately excludes the resolution
+// traffic and must not be used for that comparison.
+func (s Summary) ReconciliationCompleted() int { return s.Completed + s.ResolutionAttempts() }
+
+// ReconciliationTotals is the measured cells plus one cell per resolution attempt, as observed.
+//
+// The measured Totals are returned unchanged when nothing was resolved, and are never mutated:
+// the slice is copied before any resolution cell is merged in.
+func (s Summary) ReconciliationTotals() []Total {
+	if len(s.Resolved) == 0 {
+		return s.Totals
+	}
+	totals := append([]Total(nil), s.Totals...)
+	for _, r := range s.Resolved {
+		totals = addTotal(totals, Total{
+			Operation: r.Operation,
+			Outcome:   r.Outcome,
+			Reason:    r.Reason,
+			Replay:    r.Replay,
+			Count:     1,
+		})
+	}
+	return totals
 }
 
 // FreshAdmittedFor counts admitted successes for one operation, excluding replays.
@@ -410,10 +412,12 @@ func (s Summary) creditedToOriginals(operation domain.Operation, want domain.Out
 // Counting it would compare N+R client admissions against N persisted rows and fail a
 // service behaving exactly as the idempotency contract requires — which is what an earlier
 // version of this did, caught by the integration suite rather than by reading.
-// A resolved ambiguity adds to this count without adding a fresh cell to Totals: when the
-// replay proves the original committed, the row exists but the original's own cell reads
-// `unknown_replayable`. That credit is measurement-contract §12's logical-mutation view, and
-// it is why this is not simply a sum over Totals.
+// **This is a reconciliation view, not a measured one.** It answers "how many rows should the
+// database hold?", so it counts the final logical mutations a resolution pass established as
+// well as the ones the measured interval saw definitively. Neither resolution branch appears in
+// measured Totals — §12 keeps post-run traffic out of the measurement population — so both are
+// added here rather than inferred. Measured performance is Goodput; the two are different
+// questions and are deliberately allowed to differ.
 func (s Summary) FreshAdmittedFor(operation domain.Operation) int {
 	n := 0
 	for _, t := range s.Totals {
@@ -421,7 +425,7 @@ func (s Summary) FreshAdmittedFor(operation domain.Operation) int {
 			n += t.Count
 		}
 	}
-	return n + s.creditedToOriginals(operation, domain.OutcomeAdmittedSuccess)
+	return n + s.resolvedLogicalMutations(operation, domain.OutcomeAdmittedSuccess)
 }
 
 // FreshMutations counts non-replay mutation requests that reached a terminal domain
@@ -431,11 +435,12 @@ func (s Summary) FreshAdmittedFor(operation domain.Operation) int {
 // record; counting them would demand one record per replay and fail a correct service.
 // invalid_request is excluded too: it stops at the transport edge and may carry no key to
 // scope a record by (transaction-semantics §5.5, INV-7).
-// A resolved ambiguity is credited here on the same rule as FreshAdmittedFor: a replay
-// proving the original committed proves an idempotency record exists for that key, written by
-// the original in the mutation's own transaction. The original's `unknown_replayable` cell is
-// deliberately excluded from the sum below — INV-7 does not require a record for it — so
-// without the credit this would demand one fewer record than the database holds.
+//
+// Like FreshAdmittedFor this is a reconciliation view. A resolved key holds an idempotency
+// record whichever branch it took — written by the original when the replay proves it
+// committed, or by the resolution when it performs the mutation — while the original's
+// `unknown_replayable` cell is excluded from the sum below because INV-7 requires no record for
+// it. Without the credit this would demand fewer records than the database holds.
 func (s Summary) FreshMutations() int {
 	n := 0
 	for _, t := range s.Totals {
@@ -449,7 +454,7 @@ func (s Summary) FreshMutations() int {
 		n += t.Count
 	}
 	for _, r := range s.Resolved {
-		if r.Replay && !r.StillAmbiguous &&
+		if !r.StillAmbiguous &&
 			domain.Operation(r.Operation).IsKnown() && isDefiniteTerminal(r.Outcome) {
 			n++
 		}

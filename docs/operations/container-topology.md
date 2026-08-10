@@ -40,7 +40,7 @@ echo "$S1 $S2"
 curl -sS $S1/meta | jq '{a: .placement.authority_id, orgs: .placement.organisations}'
 curl -sS $S2/meta | jq '{a: .placement.authority_id, orgs: .placement.organisations}'
 
-# 5. seed the fixture — -reset on the FIRST organisation of each authority  (§7)
+# 5. seed the fixture — -reset on the FIRST organisation of each authority  (§6)
 seed() {
   go run ./cmd/alloca-seed ${3:+-reset} \
     -database-url "postgres://alloca:alloca@localhost:$1/alloca?sslmode=disable" \
@@ -51,7 +51,7 @@ seed 15433 org-c
 seed 15434 org-b reset
 seed 15434 org-d
 
-# 6. record what is running, then drive one bounded run                     (§7)
+# 6. record what is running, then drive one bounded run                     (§6)
 go build -o bin/alloca-load ./cmd/alloca-load
 mkdir -p test/results
 make topo-deployment > test/results/deployment.json
@@ -63,7 +63,7 @@ make topo-deployment > test/results/deployment.json
   -concurrency 32 -n 400 -slots 100 \
   -out test/results/topo-run.json
 
-# 7. tear it down                                                           (§6)
+# 7. tear it down                                                           (§7)
 make topo-down
 ```
 
@@ -350,7 +350,7 @@ understood; a misroute (`400`, `invalid_request`) is the edge rejecting a reques
 reached the wrong unit. Confusing them is how a routing bug gets recorded as a policy
 result.
 
-Slots must be seeded first — see §7.
+Slots must be seeded first — see §6.
 
 ### Failure isolation — optional
 
@@ -371,17 +371,7 @@ refuses connections, classifies differently. This is recorded as
 [`ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md) §6b, and any experiment must name
 which fault it injected.
 
-## 6. Down
-
-```sh
-make topo-down
-```
-
-`down -v`: the volumes go too. Each run starts from a known fixture, and a topology that
-kept its data between runs would make the first run of a session differ from the rest —
-the kind of difference that gets discovered halfway through interpreting a result.
-
-## 7. Driving a multi-authority load run
+## 6. Driving a multi-authority load run
 
 Seeding is per authority and per organisation, because `alloca-seed` takes one DSN and one
 organisation:
@@ -515,6 +505,22 @@ The report records what the run actually reached: `authority_count`, `routing_ve
 `placement_assignment`, `placement_digest`, and `topology_disagreement` — empty when the
 units described one deployment.
 
+## 7. Down
+
+The last step, once you have the report you came for:
+
+```sh
+make topo-down
+```
+
+`down -v`: the volumes go too. Each run starts from a known fixture, and a topology that
+kept its data between runs would make the first run of a session differ from the rest —
+the kind of difference that gets discovered halfway through interpreting a result.
+
+**Leaving it up between runs is fine, but reseed with `-reset` before the next one.** The
+clean-start assertion refuses a fixture holding live claims or idempotency records, which is
+what stops a rerun replaying the previous run's keys and measuring nothing (§6).
+
 ## 8. When it goes wrong
 
 **A service never becomes ready.** `make topo-ps` first. If the migration container did not
@@ -606,7 +612,7 @@ that reads as a broken topology. It now books as `u-2`, and §5 says why. That i
 on this page to have shipped broken and been caught only by execution, after the `-reset` scope and
 the port override.
 
-The last row of the previous table is the control for §7's rule that no level excuses the record.
+The last row of the previous table is the control for §6's rule that no level excuses the record.
 It stops before any measured request, which is why there is no report to inspect — a refusal that produced
 one would mean the check had moved back after the workload.
 
@@ -621,12 +627,12 @@ quotable at all.
 **The seeding recipe on this page was wrong until it was run.** `-reset` truncates the whole
 authority, so passing it per organisation deleted the previous one's slots; the run then
 returned exactly 200 of 400 as `unknown_target`, which reads as contention rather than as a
-broken fixture. §7 now carries the corrected form and the check that catches it.
+broken fixture. §6 now carries the corrected form and the check that catches it.
 
 **The page offered a port override and then ignored it** (found 2026-08-10). *Changing ports*
 showed `make topo-up SERVICE_1_PORT=18081 SERVICE_2_PORT=18082`, and every section after it
-hardcoded the 8081/8082 defaults — so taking the override the page recommends broke §5, §6, §7 and
-the load invocation. It failed **silently**: `curl -s` prints nothing on a refused connection, so
+hardcoded the 8081/8082 defaults — so taking the override the page recommends broke §5 and the
+load run of §6. It failed **silently**: `curl -s` prints nothing on a refused connection, so
 `jq` printed nothing, and a wrong port was indistinguishable from an empty result. §4 now sets
 `$S1`/`$S2` once, every command uses them, and every `curl` is `-sS`.
 
@@ -636,7 +642,7 @@ iteration-bounded runs of 400 and 100 requests. They are not interchangeable her
 holds `[DERIVED]` 8,000 units of capacity (100 slots × 4 organisations × capacity 20), so a
 60-second run at concurrency 32 exhausts it early and spends the overwhelming majority of its
 requests on correct `no_capacity` refusals — a sound run whose throughput describes a sold-out
-fixture rather than booking. §7 now carries `-n 400` and says why. The run that exposed this was
+fixture rather than booking. §6 now carries `-n 400` and says why. The run that exposed this was
 not retained (`test/results/` is git-ignored), so no figure from it is quotable; the arithmetic
 above is derived from the fixture this page defines.
 

@@ -503,7 +503,7 @@ abstraction invented before a second caller exists is one the second caller rede
 The record schema, the flag, the matching rules, and the tests live in
 `internal/loadgen/deployment.go`, `cmd/alloca-load/main.go` and
 `test/scripts/record-deployment.sh`; the operating procedure is
-[`../../operations/container-topology.md`](../../operations/container-topology.md) §7. None of
+[`../../operations/container-topology.md`](../../operations/container-topology.md) §6. None of
 that is restated here.
 
 ## 7. Not in PR3

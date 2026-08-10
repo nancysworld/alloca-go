@@ -7,9 +7,9 @@ horizontal scaling safe.
 
 This document is descriptive of the *target* shape, with each region's current status
 recorded against it. AG-M0 shipped the operational skeleton and AG-M1 the transactional
-core and the surfaces over it (see [`../../README.md`](../../README.md) and the roadmap
-[`../planning/alloca-go-roadmap.md`](../planning/alloca-go-roadmap.md)); each later
-milestone fills in one more region of the diagrams below.
+core and the surfaces over it (see [`../../README.md`](../../README.md) and
+[`high-level-design.md`](high-level-design.md)); each later milestone fills in one more region
+of the diagrams below.
 
 All diagrams are Mermaid so they render on GitHub and are reviewable as text —
 there is no binary asset to sweep before public release.
@@ -46,7 +46,8 @@ flowchart TB
 
 **Actors**
 - **External Go load generator** — drives synthetic workloads; runs on compute
-  separate from the service for any published capacity claim (roadmap AG-M2).
+  separate from the service for any externally presented capacity claim
+  ([`measurement-contract.md`](measurement-contract.md) §13.1).
 - **Operator / CI** — deploys, observes, and validates the service.
 
 **External systems**
@@ -121,14 +122,16 @@ election and no exactly-once machinery
 ([`transaction-semantics.md`](transaction-semantics.md) §2.1).
 
 The `/meta` endpoint already exposes the runtime provenance (Go version, observed
-`GOMAXPROCS`, revision) that every capacity result must carry (roadmap §4.4).
+`GOMAXPROCS`, revision) that every capacity result must carry
+([`measurement-contract.md`](measurement-contract.md) §11).
 
 ---
 
 ## 3. Authority boundaries
 
-The roadmap's first thesis is **correct authority before distribution**: every
-scarce or conserved resource must have exactly one write authority. Horizontal
+The project's founding principle is **correct authority before distribution**: every
+scarce or conserved resource must have exactly one write authority
+([`transaction-semantics.md`](transaction-semantics.md)). Horizontal
 scaling is safe only when independent authorities can be routed and processed
 independently; adding API nodes never removes the serialization limit of a single
 hot authority.

@@ -165,7 +165,8 @@ func TestBindingRequiresTheObservationToDescribeTheRoutedUnits(t *testing.T) {
 		want    string
 	}{
 		{
-			// A unit the run drove whose artifact is unknown — the gap §6.4 exists to close.
+			// A unit the run drove whose artifact is unknown — the gap
+			// measurement-contract §11 exists to close.
 			name:    "a routed unit nothing was observed for",
 			targets: append(routed, "http://localhost:8083"),
 			want:    "does not cover every unit",

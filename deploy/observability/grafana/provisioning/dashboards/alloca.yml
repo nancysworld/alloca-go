@@ -1,5 +1,5 @@
-# Loads every dashboard JSON from the mounted directory. There is exactly one, and PR2 keeps
-# it that way (ag-sept-plan §14 excludes rich dashboards).
+# Loads every dashboard JSON from the mounted directory. There is exactly one, and it stays
+# that way (measurement-contract §6 excludes rich dashboards).
 apiVersion: 1
 
 providers:

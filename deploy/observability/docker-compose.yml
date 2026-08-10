@@ -1,6 +1,6 @@
 # Prometheus + Grafana for AG-Sept PR2. Brought up by `make obs-up`.
 #
-# Scope, from ag-sept-plan §14: a *minimal reproducible retention path* and a *compact
+# Scope, from measurement-contract §6: a *minimal reproducible retention path* and a *compact
 # diagnostic dashboard*, not an observability platform. So: two containers, one scrape job,
 # one dashboard, no alerting, no exporters beyond what the service already serves.
 #

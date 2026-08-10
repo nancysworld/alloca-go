@@ -196,7 +196,7 @@ dev-measured:
 	$(GO) build -o $(TOOLBIN)/$(BINARY) $(CMD)
 	DATABASE_URL="$(DATABASE_URL)" $(TOOLBIN)/$(BINARY)
 
-## obs-up: start Prometheus + Grafana for a measured run (ag-sept-plan §14 PR2)
+## obs-up: start Prometheus + Grafana for a measured run (measurement-contract §6)
 #
 # Prometheus scrapes the service on the *host*, not in this compose project: PR2 measures a
 # locally built binary and containerising the service is PR3's variable, not PR2's.

@@ -1,7 +1,6 @@
-// Package buildinfo exposes runtime and build metadata that the roadmap requires
-// to be recorded on every capacity run (see docs/planning/alloca-go-roadmap.md
-// §4.4): Go version, observed GOMAXPROCS, whether GOMAXPROCS/GODEBUG were set
-// explicitly, and the source revision.
+// Package buildinfo exposes the runtime and build metadata measurement-contract §11
+// requires on every capacity run: Go version, observed GOMAXPROCS, whether
+// GOMAXPROCS/GODEBUG were set explicitly, and the source revision.
 //
 // It exists in AG-M0, before any measurement, so that the load system in AG-M2 and
 // the deployment in AG-M3 can scrape a single stable endpoint (/meta) for the

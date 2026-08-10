@@ -14,7 +14,7 @@ import (
 	"github.com/nancysworld/alloca-go/internal/domain"
 )
 
-// Manifest is the provenance block ag-sept-plan §6.4 requires of every quotable run:
+// Manifest is the provenance block measurement-contract §11 requires of every quotable run:
 // enough to reproduce or compare it.
 //
 // It is emitted with the summary rather than alongside it so a result cannot be separated
@@ -22,7 +22,7 @@ import (
 type Manifest struct {
 	// Identity of the code under test, read from the service's own /meta.
 	//
-	// This is the revision §6.4 means by "commit SHA". It is *not* the generator's: a
+	// This is the revision §11 means by "commit SHA". It is *not* the generator's: a
 	// service left running from one commit while the harness is rebuilt from another is the
 	// ordinary state of a working session, and recording the generator's revision here would
 	// name a commit that was never measured. That is worse than recording nothing, because
@@ -71,7 +71,7 @@ type Manifest struct {
 	Environment        string `json:"environment"`
 
 	// AuthorityCount, RoutingVersion and PlacementAssignment describe the writable
-	// authorities this run reached (§6.4). They are read back from the units' own /meta
+	// authorities this run reached (§11). They are read back from the units' own /meta
 	// rather than copied from the placement file the harness loaded: those are two
 	// different facts — what the operator intended and what is actually serving — and
 	// recording the intention as the observation is how a misconfigured run comes to look
@@ -111,7 +111,7 @@ type Manifest struct {
 	PoolSizePerReplica int    `json:"pool_size_per_replica,omitempty"`
 
 	// AggregatePoolSize is the one pool fact no single process can know, because it needs a
-	// replica count. It stays operator-supplied and staged to PR3 with the topology.
+	// replica count. It stays operator-supplied, and gates `capacity` with the topology.
 	AggregatePoolSize int `json:"aggregate_pool_size,omitempty"`
 
 	// ServiceIdentityDrift is empty when /meta reported the same service before and after the
@@ -248,15 +248,19 @@ func NewTopologyManifest(targets []string, workload string, opts Options, locati
 	return m
 }
 
-// Validate reports the §6.4 fields a claim at the given level requires and this manifest
+// Validate reports the §11 fields a claim at the given level requires and this manifest
 // does not carry. An empty result means the provenance bar for that level is met.
 //
-// The split between levels is ag-sept-plan §14's staging, not a judgement made here. The
-// generator is an HTTP client and cannot discover the service's shape (§14 line 481), so the
-// service-side fields are supplied by the operator in the PR that first has something to say
-// — service shape in PR2, topology and image identity in PR3, environment in PR4. What the
-// staging does not excuse is a field the generator *can* determine: PR1's own exit criterion
-// is that the manifest carries every one of those, and an empty commit SHA fails it.
+// Which level a field belongs to is owned by measurement-contract §13.2, not decided here. The
+// split it enforces: everything the service hands over at /meta is checked at `local`, because a
+// field that costs nothing to record should not gate a higher tier than one that costs an
+// operator's attention; the operator's account of the deployment — aggregate pool, replica count,
+// topology, environment — gates `capacity`; and placement and image identity apply only where the
+// topology makes them meaningful.
+//
+// *When* an operator-supplied field first becomes populatable is the plan's staging, not this
+// file's. What the staging does not excuse is a field the generator or /meta can determine: an
+// empty commit SHA fails `local`.
 //
 // Each rule names the field as it appears in the JSON, so the reason travels with the report
 // to someone holding only the artifact.
@@ -286,12 +290,13 @@ func (m Manifest) Validate(level Level) []string {
 		add(m.PoolSizePerReplica < 1, "pool_size_per_replica is not positive: /meta was not read")
 
 		// An unobservable run cannot reconcile. With telemetry off there is no
-		// alloca_requests_total, so §6.5's three-way agreement has only two counts — and a
-		// verdict reached on two of three is the weaker gate wearing the stronger one's name.
-		// Refused here rather than left to surface as a confusing "server counted 0".
+		// alloca_requests_total, so measurement-contract §12's three-way agreement has only two
+		// counts — and a verdict reached on two of three is the weaker gate wearing the stronger
+		// one's name. Refused here rather than left to surface as a confusing "server counted 0".
 		add(m.TelemetryMode == "off", "telemetry_mode is off: the service emitted no "+
-			"aggregate series, so the server-side count \u00a76.5 requires does not exist and this "+
-			"run cannot be reconciled. It is a \u00a76.2 control, not a measurement")
+			"aggregate series, so the server-side count measurement-contract \u00a712 requires does "+
+			"not exist and this run cannot be reconciled. It is a VAL-NEG-3 telemetry control, "+
+			"not a measurement")
 		add(m.TelemetryMode == "", "telemetry_mode is empty: /meta was not read, so nothing "+
 			"records which recorder produced these numbers")
 		add(m.ServiceIdentityDrift != "", "the service did not stay the same across the run: "+
@@ -329,11 +334,11 @@ func (m Manifest) Validate(level Level) []string {
 		// cannot know. Everything else the service reports about itself is checked at
 		// `local`, because /meta hands it over for free and a field that costs nothing to
 		// record should not gate a higher tier than one that costs an operator's attention.
-		add(m.AggregatePoolSize < 1, "aggregate_pool_size is not positive (operator-supplied, PR3)")
+		add(m.AggregatePoolSize < 1, "aggregate_pool_size is not positive (operator-supplied)")
 
-		// Topology — PR3 supplies these.
-		add(m.ReplicaCount < 1, "replica_count is not positive (operator-supplied, PR3)")
-		add(m.DeploymentTopology == "", "deployment_topology is empty (operator-supplied, PR3)")
+		// Topology — operator-supplied; no endpoint reports it.
+		add(m.ReplicaCount < 1, "replica_count is not positive (operator-supplied)")
+		add(m.DeploymentTopology == "", "deployment_topology is empty (operator-supplied)")
 
 		// The writable authorities the run reached. routing_version is required of every run,
 		// because /meta always answers it — "unsharded" for a single-authority deployment — so
@@ -367,20 +372,20 @@ func (m Manifest) Validate(level Level) []string {
 				m.ReplicaCount*m.PoolSizePerReplica))
 		}
 
-		// Environment — PR4 supplies this. It sits at this level rather than the next
+		// Environment — operator-supplied. It sits at this level rather than the next
 		// because a capacity claim that does not say where it was measured is not
 		// interpretable, even unpublished.
-		add(m.Environment == "", "environment is empty (operator-supplied, PR4)")
+		add(m.Environment == "", "environment is empty (operator-supplied)")
 
 		// Image identity, required of a containerised run and meaningless without one.
 		//
-		// §6.4 asks every quotable run to identify the artifact it measured. A run built and
-		// served from source has no image to name — demanding one would refuse every local
-		// run — so the requirement is conditional on the deployment mode, and
-		// container_deployment is what declares it. A containerised run that records no
-		// image id measured an artifact it cannot name: the commit SHA binds the binary to a
-		// revision, but a stale tag serving older code, or the same code on a different base
-		// layer, is invisible to it.
+		// measurement-contract §11 asks every quotable run to identify the artifact it measured. A
+		// run built and served from source has no image to name — demanding one would refuse every
+		// local run — so the requirement is conditional on the deployment mode, and
+		// container_deployment is what declares it. A containerised run that records no image id
+		// measured an artifact it cannot name: the commit SHA binds the binary to a revision, but a
+		// stale tag serving older code, or the same code on a different base layer, is invisible to
+		// it.
 		//
 		// image_tag is deliberately *not* required even then. A tag is a mutable alias, two
 		// builds can wear the same one, and the second replaces the first — so it is an
@@ -392,12 +397,12 @@ func (m Manifest) Validate(level Level) []string {
 	}
 
 	if level.AtLeast(LevelPublishable) {
-		// §6.3: the generator must run on compute separate from the service. This is a
-		// declaration check — the manifest records where the operator says the generator
-		// ran, and no HTTP client can verify that from the outside.
+		// measurement-contract §13.1: the generator must run on compute separate from the service.
+		// This is a declaration check — the manifest records where the operator says the
+		// generator ran, and no HTTP client can verify that from the outside.
 		add(isCoResident(m.GeneratorLocation), fmt.Sprintf(
-			"generator_location is %q: §6.3 requires the generator on compute separate "+
-				"from the service for a publishable claim", m.GeneratorLocation))
+			"generator_location is %q: measurement-contract §13.1 requires the generator on compute "+
+				"separate from the service for a publishable claim", m.GeneratorLocation))
 	}
 
 	return missing
@@ -436,10 +441,10 @@ func durationFor(opts Options) string {
 
 // redact removes anything credential-shaped from a URL before it is committed.
 //
-// §6.4 ends with "secrets and private endpoints must not be committed", and a manifest is
-// exactly the artifact that gets pasted into a report. Userinfo is the part of a URL that
-// carries a password, so it is dropped rather than masked — a masked secret still records
-// that there was one and how long it was.
+// measurement-contract §11 requires that "secrets and private endpoints must not be
+// committed", and a manifest is exactly the artifact that gets pasted into a report. Userinfo
+// is the part of a URL that carries a password, so it is dropped rather than masked — a masked
+// secret still records that there was one and how long it was.
 func redact(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {

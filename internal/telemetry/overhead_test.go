@@ -15,7 +15,7 @@ import (
 	"github.com/nancysworld/alloca-go/internal/telemetry"
 )
 
-// These benchmarks price one observation, which is what ag-sept-plan §6.2's *decision*
+// These benchmarks price one observation, which is what the VAL-NEG-3 control's *decision*
 // turns on: measure first, and build the bounded asynchronous sink only if the measurement
 // says it is needed. observability.md §5.1 deferred that sink on the argument that "one line
 // to a local stderr, at AG-M1 load, is not a plausible stall"; these turn the argument into

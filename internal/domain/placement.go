@@ -17,7 +17,7 @@ import (
 //
 // It is bounded by topology — a deployment has as many authorities as it has database
 // instances — so unlike an organisation it is safe as a metric label
-// (ag-sept-plan-new.md §6.1).
+// (observability.md §2.1).
 type AuthorityID string
 
 // Placement is the versioned organisation-to-authority map: the deployment's answer to

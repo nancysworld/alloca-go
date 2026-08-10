@@ -1,5 +1,5 @@
 // Command alloca-seed prepares a deterministic fixture for one AG-Sept run, and asserts
-// the clean start ag-sept-plan §5.3 requires.
+// the clean start ag-sept-validation-plan.md §3.3 requires.
 //
 // The assertion is the part that matters. A confirmed claim has expires_at IS NULL and is
 // never reaped by expiry, so a reserve→confirm workload leaves permanent rows. Rerunning
@@ -108,7 +108,8 @@ func run() error {
 	}
 	if claims != 0 {
 		return fmt.Errorf(
-			"clean-start assertion failed: %d live claims already exist (ag-sept-plan §5.3). "+
+			"clean-start assertion failed: %d live claims already exist "+
+				"(ag-sept-validation-plan.md §3.3). "+
 				"A confirmed claim is never expiry-reaped, so a rerun against these rows "+
 				"would report zero admitted and all schedule_conflict — a plausible result "+
 				"that measures nothing. Re-run with -reset", claims)
@@ -129,7 +130,7 @@ func run() error {
 	if records != 0 {
 		return fmt.Errorf(
 			"clean-start assertion failed: %d idempotency records already exist "+
-				"(ag-sept-plan §5.3). The workloads reuse deterministic keys, so the next "+
+				"(ag-sept-validation-plan.md §3.3). The workloads reuse deterministic keys, so the next "+
 				"run would replay these records rather than commit anything: it would "+
 				"report goodput, reconcile cleanly and move no rows. Re-run with -reset",
 			records)

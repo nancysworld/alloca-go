@@ -211,7 +211,7 @@ func (r *Repo) ClaimCount(ctx context.Context) (int, error) {
 
 // IdempotencyRecordCount returns the number of persisted idempotency records.
 //
-// It exists for the clean-start assertion of ag-sept-plan §5.3, which cannot be made from
+// It exists for the clean-start assertion of ag-sept-validation-plan.md §3.3, which cannot be made from
 // claims alone. Records outlive the reservations they describe — a hold expires, a claim is
 // settled, a booking is cancelled, and the record stays, because its whole purpose is to
 // answer a retry that arrives after the entity is gone. So a fixture can hold zero live

@@ -2,7 +2,7 @@
 #
 # Deliberately one job. PR2 measures one service process on one host, and a scrape config that
 # enumerated targets it does not have would be the start of the general observability platform
-# ag-sept-plan §14 excludes.
+# measurement-contract §6 excludes.
 global:
   # 1s, not the 15s default. A sweep cell runs for tens of seconds, so a 15s interval would
   # give a handful of points across the whole measurement and would alias the pool-pressure

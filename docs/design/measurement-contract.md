@@ -4,13 +4,14 @@
 **Purpose:** define *how every future claim in this repository will be measured*, so
 that a hypothesis can never silently graduate into a result. This document is
 normative: later milestones and reports must conform to the evidence-labelling
-convention (§2), the experiment template (§5), and the provisional targets (§7–§8)
-until evidence revises them.
+convention (§2), the experiment template (§5), the run manifest (§11), the
+reconciliation contract (§12), and the provisional targets (§7–§8) until evidence
+revises them.
 
-It formalises the vocabulary in the roadmap
-([`../planning/alloca-go-roadmap.md`](../planning/alloca-go-roadmap.md) §5–§6) into
-an enforceable contract. Where this document and the roadmap differ, this document
-governs measurement practice.
+This document **owns** the project's measurement vocabulary, outcome taxonomy, experiment
+template, service-level indicators, and evidence-admissibility rules directly. It does not
+inherit them from a plan or roadmap: those are scheduling and exploration documents, and a
+contract that depended on either could be changed by a replan.
 
 ---
 
@@ -23,6 +24,11 @@ governs measurement practice.
   experiments and will be retained, revised, or rejected with evidence in AG-M2/M4.
 - §9 defines the project-level final validation bar and the evidence artifact that
   assembles the milestone results into one auditable conclusion.
+- §11 and §12 are what an individual run must record and must self-check before its
+  numbers may be quoted at all. §9 states the obligations; these two say what
+  discharging them means.
+- §13 names what a run's numbers may back — the quotability levels — and the generator
+  provenance a published capacity claim requires.
 
 ---
 
@@ -42,7 +48,8 @@ Rules:
 1. An unlabelled number in a report is a defect, not a shortcut.
 2. `[DERIVED]` values must never be laundered into `[MEASURED]`; the derivation stays
    visible.
-3. Prior-prototype figures (roadmap §2.1) are `[PRIOR-UNREPRODUCED]` until an
+3. Predecessor-prototype figures ([`high-level-design.md`](high-level-design.md) §1.1)
+   are `[PRIOR-UNREPRODUCED]` until an
    experiment in this repository reproduces them, at which point the reproduction —
    not the prior figure — becomes the `[MEASURED]` result.
 4. This convention is also a public-disclosure safeguard: it prevents modelled
@@ -53,7 +60,7 @@ Rules:
 
 ## 3. Measurement vocabulary
 
-Formalises roadmap §5. All rates are per second over a stated measurement interval.
+All rates are per second over a stated measurement interval.
 
 - **Offered load** — requests generated per second, regardless of whether the
   service can admit or complete them.
@@ -154,9 +161,14 @@ from the idempotency record, and which original outcome each returned). A replay
 return exactly the recorded outcome; it must never re-run the mutation or resolve to a
 different terminal outcome.
 
-**Overload objective (acceptance bar, roadmap §6.2):** under overload, requests
-receive explicit bounded outcomes *before* they accumulate into infrastructure or
-client timeouts.
+### 4.3 Overload objective (acceptance bar, normative)
+
+Under overload, requests receive explicit bounded outcomes *before* they accumulate into
+infrastructure or client timeouts.
+
+This is an acceptance bar rather than a description of current behaviour: whether Alloca-Go meets
+it is an open question, and reproducing the mechanism by which it fails is exploration the project
+has not yet scheduled ([`high-level-design.md`](high-level-design.md) §1.1).
 
 ---
 
@@ -175,7 +187,7 @@ report reproduces this block.
    validation (§4). A run without response validation is not a capacity run.
 5. **Negative controls** — at minimum:
    - a **deliberately under-provisioned load generator**, proving the generator was
-     not the bottleneck at the reported operating point (roadmap AG-M2);
+     not the bottleneck at the reported operating point;
    - a **response-validation-active proof** — a control that fails when validation is
      silently disabled, so "success" cannot be an unchecked 200.
 6. **Environment capture** — Go version, observed `GOMAXPROCS` and whether it was set
@@ -183,7 +195,7 @@ report reproduces this block.
    service exposes this at `/meta`; generator-side facts are captured by the load
    system.
 7. **Separation** — the report separates `[MEASURED]` results, `[DERIVED]`
-   calculations, interpretation, and limitations into distinct sections (roadmap §10).
+   calculations, interpretation, and limitations into distinct sections.
 
 **Load-generator-as-bottleneck gate:** any published capacity claim must include
 generator CPU/memory/connection/network telemetry, a generator-capacity sweep, the
@@ -194,7 +206,7 @@ configuration has headroom at the reported server operating point.
 
 ## 6. Required service-level indicators
 
-Telemetry must expose (roadmap §6.1):
+Telemetry must expose:
 
 - end-to-end p50, p95, p99 latency;
 - successful domain goodput;
@@ -207,6 +219,17 @@ Telemetry must expose (roadmap §6.1):
 - API CPU, memory, goroutine count, GC pressure, observed `GOMAXPROCS`;
 - database CPU, connections, I/O, lock activity, transaction saturation;
 - admission queue depth and age where applicable.
+
+**The diagnostic view stays scoped to these.** Any dashboard the project retains for measured
+runs is an instrument for diagnosing a run in progress, not an operations console: it renders the
+indicators above and the saturation signals a frontier argument rests on, and it does not carry
+alerting, templating, annotation, or shared-library machinery. The bound matters because rich
+dashboards arrive by accretion — one individually reasonable panel at a time — and a view that
+must be scrolled is no longer the thing an operator watches while a sweep runs. Reports quote the
+retained artifacts, never a screenshot of this view.
+
+Adding to it is a scope decision. Which milestone builds or extends it is scheduling, and belongs
+in the plan.
 
 ---
 
@@ -245,8 +268,8 @@ A nested deadline chain. **The nesting/ordering, classification, and idempotency
 are the contract; the specific millisecond values are hypotheses** that AG-M2 sweeps
 locally and AG-M3 validates end-to-end through the real AWS/client path. The decision
 basis, prior observations, external references, and revision rules live in the design
-note [`latency-timeouts-and-retries.md`](latency-timeouts-and-retries.md); §8 restates
-its normative outcome for this contract.
+note [`latency-timeouts-and-retries.md`](latency-timeouts-and-retries.md).
+**This section — measurement-contract §8 — restates its normative outcome for this contract.**
 
 **Ordering invariant (normative):**
 
@@ -376,7 +399,8 @@ remains unproven:
    paths.
 3. **Independent reconciliation.** After correctness and stress runs, database queries
    independently verify capacity, state-machine, booking/reservation, and idempotency
-   invariants rather than trusting HTTP responses or application telemetry alone.
+   invariants rather than trusting HTTP responses or application telemetry alone. §12 is
+   the contract each run discharges this against.
 4. **Fault and recovery behaviour.** Client cancellation, server deadline, pool and DB
    timeout, worker delay, process interruption, dependency unavailability, lost
    response, and unknown commit cases are exercised; each test records persisted state,
@@ -392,10 +416,9 @@ remains unproven:
 7. **Production-shaped validation.** The relevant conclusions are repeated through the
    deployed network path with multiple API instances, PostgreSQL, load balancer,
    external load generation, migrations, and production-oriented telemetry.
-8. **Reproducibility and provenance.** Every material claim identifies the commit SHA,
-   commands, raw artifact paths, environment and `/meta` capture, configuration,
-   database settings, load profile, run duration, and random seeds required to reproduce
-   it. Reports retain the evidence labels of §2.
+8. **Reproducibility and provenance.** Every material claim identifies the commands and
+   raw artifact paths required to reproduce it, and carries the run manifest §11
+   requires. Reports retain the evidence labels of §2.
 9. **Adversarial review and limitations.** The conclusion records independent attempts
    to falsify the design, implementation, generator validity, reconciliation, and
    interpretation. Known limits, negative results, unresolved risks, and deferred work
@@ -419,3 +442,180 @@ repository-local evidence that can survive independent attempts at falsification
   satisfy.
 - **Does not establish:** any `[MEASURED]` capacity, latency, throughput, or cost
   result. Every number in §7 and §8 is `[HYPOTHESIS]`; no measurement has been taken.
+
+---
+
+## 11. Run manifest (normative)
+
+This is the **vocabulary** of run provenance: the facts a manifest can carry. It is not a flat
+checklist that every run must complete. **Which subset gates which claim level is owned by
+§13.2**, and some fields are conditional on the topology — placement applies only to a run that
+addressed several units, image identity only to a containerised one.
+
+The fields are:
+
+- commit SHA, and — for a run served by containers — the **image ID or digest** of the
+  artifact that served it. The two are different facts and neither implies the other:
+  the SHA is stamped into the binary and identifies the *code*, so the same code served from
+  a stale tag, or rebuilt on a different base layer, carries an identical SHA. The identity
+  is an **image ID or registry digest, never a tag** — a tag is a mutable alias that two
+  builds can wear, and the second silently replaces the first. It is **observed from the
+  host** by inspecting the running containers, never self-reported by the service: a process
+  cannot see which image wraps it, so anything it reported would be an environment variable
+  repeated back. A run built and served from source has no image to name and is not asked
+  for one. The decision and the alternatives it rejects are
+  [ADR-0003](../decisions/0003-deployed-artifact-identity.md);
+- Go version and observed `GOMAXPROCS`;
+- replica count and application resources;
+- PostgreSQL version and configuration identity;
+- pool size per replica and aggregate expected pool capacity;
+- workload and dataset parameters;
+- offered rate and/or concurrency;
+- duration and warm-up;
+- timeout budget and reservation TTL;
+- generator location, resources, and utilisation;
+- deployment topology and timestamp;
+- **authority count, the routing/placement version, and the organisation-to-authority
+  assignment the run used**.
+
+Secrets and private endpoints must not be committed.
+
+**No run may be quoted as a capacity claim while a field its topology requires is
+unpopulated.** A generator is an HTTP client and cannot discover the service's shape for
+itself, so which fields a given milestone's runs can populate is a **scheduling** question,
+answered by the plan
+([`../planning/ag-sept-plan.md`](../planning/ag-sept-plan.md), *Manifest and reconciliation
+staging*). The rule above is not staged: it holds against whatever the topology of the moment
+requires. What a run may claim once its fields are populated is §13.
+
+**Multi-service runs need one further rule.** When several service units serve one run, the
+manifest records every unit's `/meta`, and the run is uncertifiable if the units disagree on
+commit revision or report incompatible schema versions. One topology, one binary, one schema.
+
+---
+
+## 12. Correctness reconciliation (normative)
+
+Every measured run carries a self-check. At minimum it must reconcile:
+
+- consumed slot capacity against admitted reservation mutations;
+- distinct logical idempotency keys against committed mutations and replays;
+- live claims against admitted reservations per identity and interval;
+- every completed request against the closed terminal-outcome set of §4.1, with `replay`
+  folded in as the orthogonal flag §4.2 defines rather than double-counted.
+
+A run with unreconciled client totals, server totals, or persisted state is not quotable.
+
+**Multiple authorities extend the contract, not the mechanism:**
+
+1. the run is quiesced, and any `unknown_replayable` mutation is resolved by replaying its own
+   idempotency key before verification begins;
+2. **local safety invariants are checked independently on each authority** — capacity, schedule
+   non-overlap, idempotency, and lifecycle are all local properties of the rows one authority
+   owns;
+3. **persisted and server totals are aggregated across authorities and compared once** with the
+   run's global client totals — once, not per authority, because the client's totals are a
+   property of the run rather than of any one authority;
+4. **each service unit's scrape pair is differenced independently before the sum is taken.**
+   Differencing the sums instead would let one unit restarting mid-run vanish into another
+   unit's counters, which is the one arithmetic error this contract exists to prevent;
+5. the verdict aggregates without treating sequential cross-database reads as one atomic
+   snapshot.
+
+The architectural requirement is that a multi-organisation run must never compare one
+organisation's persisted rows against the run's unpartitioned global summary. In particular,
+looping an organisation-scoped entry point against an unchanged global report is **not** a
+discharge of this contract — it would compare one organisation's rows with every
+organisation's totals. The verifier's data structures, query factoring, and scrape aggregation
+are otherwise the implementation's to choose
+([`horizontal-database-authority.md`](horizontal-database-authority.md) §6.3).
+
+---
+
+## 13. Generator provenance and quotability levels (normative)
+
+§5's bottleneck gate asks for *evidence* that the generator had headroom at the reported
+operating point. This section asks the prior question — what a run's numbers may back at all —
+which is a matter of **provenance** and is settled before any evidence is weighed.
+
+> **The ladder is a soundness and provenance ladder. It is not, by itself, a complete
+> publication or measurement-validity gate.** A level says the run is sound and describes itself
+> well enough to support a class of claim. Whether the *experiment* supports the claim is §5's
+> question, and reaching the top of this ladder does not answer it.
+
+### 13.1 A published claim needs the generator on separate compute
+
+A load generator co-resident with the service under test contends with it for CPU, memory,
+network stack, and scheduler attention. The result is then partly a measurement of the
+generator, and the two contributions cannot be separated after the run.
+
+**A capacity claim may be published only when the generator ran on compute separate from the
+service.** A co-resident run remains a sound, useful, reproducible observation about that
+machine. It is not a published capacity number, and neither a complete manifest nor a
+demonstration of generator headroom converts one into the other.
+
+The manifest records the generator's location (§11). That is a **declaration** — all a manifest
+can carry — and it is provenance rather than evidence. It does not stand in for §5's
+under-provisioned-generator control, and a published claim needs both.
+
+Where a milestone cannot supply separate compute, the rule is honoured **by labelling**: the run
+is reported at the level its provenance actually reaches and is never presented as a published
+capacity claim. Withdrawing the compute withdraws the claim, not the rule.
+
+### 13.2 Quotability levels
+
+"Is this run quotable?" has no answer until the claim is named. A run therefore carries an
+ordered **level**, and sits at the highest one whose requirements its manifest and summary
+satisfy:
+
+| Level | What it may support | Additional bar |
+|---|---|---|
+| `none` | no experimental claim | the run is unsound, or sound but below the `local` bar |
+| `local` | a reproducible observation of this measured machine and run | soundness; service identity and the service-discovered shape available through `/meta`; generator identity and resources; workload and run shape; target and timestamp |
+| `capacity` | a capacity result about the explicitly recorded topology and environment | `local`, plus aggregate/topology/environment provenance; routing and placement where applicable; immutable image identity for containerised runs |
+| `publishable` | provenance eligible to support an externally presented, project-level capacity claim — **provided the experiment also satisfies §5's evidence gates** | `capacity`, plus the generator declared to run on compute separate from the service (§13.1) |
+
+`publishable` describes the **provenance** a claim leaving this project needs. It does not mean
+"appears in a public repository": this repository is public, and most runs in it are correctly
+`local` or `capacity`.
+
+Four consequences follow, and each is a mistake this ladder exists to prevent:
+
+- **A co-resident generator does not force a run down to `local`.** Co-residency is a
+  `publishable` bar only. A run that fully records its topology and environment reaches
+  `capacity` with the generator on the same host.
+- **Co-residency does block `publishable`**, however complete the rest of the manifest is.
+- **Reaching `publishable` does not discharge §5.** Generator headroom, the under-provisioned
+  control, and response-validation proof are evidence; this ladder is provenance. A run can hold
+  top-of-ladder provenance and still be inadmissible because its experiment was not controlled.
+- **`none` has two independent causes**, and `local` is the floor of the ladder rather than a rung
+  above `none`:
+  1. **the run is unsound** — response validation off or failed, the run interrupted,
+     reconciliation failed, or participating units that do not describe one deployment; or
+  2. **the run is sound but does not reach the `local` bar** — it cannot say what it measured, so
+     it still backs no claim.
+
+  Soundness is checked **first**, and is **not tradable against provenance**: a run whose
+  responses went unvalidated is not rescued by a complete manifest. But the converse does not
+  hold — being sound does not buy a level. A run missing `service_commit_sha` is `none` too,
+  because a measurement that cannot name the code it measured describes an unknown.
+
+  The two are distinguishable in the report rather than merged: `blocked_because` carries the
+  soundness reason in the first case and the missing fields in the second.
+
+Which field gates which level is enforced by `Manifest.Validate`, and §11's list is not a flat
+requirement of every run — see §11's own note. The division of labour is that everything `/meta`
+hands over for free is checked at `local`, because a field that costs nothing to record should
+not gate a higher tier than one that costs an operator's attention; the operator-supplied
+aggregate, topology, and environment facts gate `capacity`; and conditional fields
+(placement for multi-unit runs, image identity for containerised runs) apply only where the
+topology makes them meaningful.
+
+Levels are named for **the claim**, never for the milestone or PR that first reaches them. A
+report outlives the schedule, and a level named after a PR would oblige a later reader to
+reconstruct that PR's scope before learning what the number is good for. Which milestone reaches
+which level is a scheduling fact and belongs in the plan.
+
+A run resting below the top of the ladder is the expected state while a milestone's provenance is
+still being staged. A report therefore records the level reached **and what blocks the next one**,
+so an incomplete level reads as scheduled rather than broken.

@@ -195,7 +195,7 @@ transactional core be tested and reasoned about without a database.
   are leaves wired together only by `cmd`.
 - `loadgen` must not import `postgres` or hold database credentials. It is a client of the
   service's HTTP contract, and a published capacity claim requires it to be able to run on
-  separate compute (ag-sept-plan §6.3); reconciling client totals against persisted state is
+  separate compute (`measurement-contract.md` §13.1); reconciling client totals against persisted state is
   `reconcile`'s job, reached through the `Querier` it declares.
 - Transport concerns (HTTP status codes, request/response encoding) stay in
   `httpapi`; database concerns (SQL, transactions, driver types) stay in `postgres`.

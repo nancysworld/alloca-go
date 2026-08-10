@@ -26,9 +26,9 @@ type (
 	Slot = domain.SlotRef
 )
 
-// Workload is one controlled shape from ag-sept-plan §5. Each isolates a single mechanism,
-// which is why they are separate types rather than one parameterised workload: a composite
-// changes several variables at once and is harder to attribute (§3.1).
+// Workload is one controlled shape from ag-sept-validation-plan.md §3. Each isolates a single
+// mechanism, which is why they are separate types rather than one parameterised workload: a
+// composite changes several variables at once and is harder to attribute (validation plan §2.1).
 type Workload interface {
 	// Name is the workload's stable identifier in the run summary and manifest.
 	Name() string

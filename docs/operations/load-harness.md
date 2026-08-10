@@ -5,23 +5,25 @@ produced may be quoted.
 
 **This document owns the procedure, not the rules.** What a run must contain and when a
 number may be quoted are owned by
-[`../design/measurement-contract.md`](../design/measurement-contract.md) and
-[`ag-sept-plan-new.md`](../planning/ag-sept-plan-new.md) §6; what PR1 built against them is recorded
-in [`ag-sept-pr1.md`](../development/implementation/ag-sept-pr1.md). Where those disagree with
+[`../design/measurement-contract.md`](../design/measurement-contract.md); which controlled
+workloads exist and what each proves is owned by
+[`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md);
+what PR1 built against them is recorded in
+[`ag-sept-pr1.md`](../development/implementation/ag-sept-pr1.md). Where those disagree with
 this page, they win.
 
 ## 1. The four binaries
 
 The harness is deliberately split, because the split is what makes a run publishable
-(§6.3): the generator speaks only HTTP and holds **no database credentials**, so it can
-later move to separate compute without changing anything.
+(`measurement-contract.md` §13.1): the generator speaks only HTTP and holds **no database
+credentials**, so it can later move to separate compute without changing anything.
 
 | Binary | Role | Database access |
 |---|---|---|
 | `cmd/alloca-go` | the service under test; also serves `/metrics` on its own port | yes |
-| `cmd/alloca-seed` | builds the fixture and asserts the §5.3 clean start | yes |
+| `cmd/alloca-seed` | builds the fixture and asserts the validation plan §3.3 clean start | yes |
 | `cmd/alloca-load` | the external generator; writes the run report | **no** |
-| `cmd/alloca-verify` | reconciles the report against the metrics scrape and persisted state (§6.5) | yes |
+| `cmd/alloca-verify` | reconciles the report against the metrics scrape and persisted state (measurement-contract §12) | yes |
 
 ## 2. Prerequisites
 
@@ -73,7 +75,7 @@ a broken run stops the pipeline instead of handing you numbers from it.
 
 `-metrics` is what makes the verdict a three-way agreement rather than a two-way one. Without
 it the verifier still runs, but the client/server check fails and the run is **not quotable**
-— deliberately, because §6.5 requires client totals, server totals and persisted state to
+— deliberately, because measurement-contract §12 requires client totals, server totals and persisted state to
 reconcile, and a gate that silently certified two of the three would be the weaker gate
 wearing the stronger gate's name. The scrape is a file rather than a URL the verifier fetches
 so that the numbers being reconciled are the ones taken at the end of the run, not whatever
@@ -115,8 +117,8 @@ fields depend on that stamp, and they are not the same field:
 | `service_commit_sha` | the service's `/meta` | **which code was measured** |
 | `generator_commit_sha` | the generator's own build | which harness produced the numbers |
 
-`service_commit_sha` is the one §6.4 means by "commit SHA". The generator reads it from
-`/meta` over the same HTTP-only boundary it already uses, so the §6.3 separation is untouched
+`service_commit_sha` is the one measurement-contract §11 means by "commit SHA". The generator reads it from
+`/meta` over the same HTTP-only boundary it already uses, so the §13.1 separation is untouched
 — it asks the service to describe itself rather than sharing state with it.
 
 **Why they are separate.** A service left running from one commit while the harness is rebuilt
@@ -162,7 +164,8 @@ measurement:
 
 `postgres_version`, `pool_size_per_replica` and `aggregate_pool_size` are *not* on `/meta` —
 they are facts about the deployment that the service does not know — so those stay
-operator-supplied and staged to PR2, along with topology (PR3) and environment (PR4).
+operator-supplied: topology arrived with PR3b, and environment arrives with whatever scaling
+work the next iteration selects.
 
 If `/meta` cannot be read at all, the run still executes and still writes its report; it is
 refused at level `none` with the reason naming the missing service identity. A run that cannot
@@ -242,49 +245,54 @@ reached it.
 ### What the run may back: `quotability.level`
 
 There is no `quotable: true` field, and deliberately so. Whether a number may be used depends
-on what it is used *for*: §6.4 gates a capacity claim on topology provenance, and §6.3 gates
-a published one on the generator running off the service host. An unqualified boolean cannot
-express that, and the one this replaced invited a co-resident smoke run to be read as
-publishable.
+on what it is used *for*: a capacity result needs topology provenance, and an externally
+presented claim additionally needs the generator off the service host
+(`measurement-contract.md` §13.1). An unqualified boolean cannot express that, and the one this
+replaced invited a co-resident smoke run to be read as publishable.
 
-Both binaries record a level instead:
+Both binaries record a level instead. The rules are `measurement-contract.md` §13.2; this is the
+operator's view of them:
 
 | Level | Means | Reached when |
 |---|---|---|
-| `none` | The run measured nothing usable | validation off or failed, run interrupted, warm-up rows unreconciled, reconciliation failed, or the identity of the service or generator missing |
-| `local` | A sound observation about this machine | both revisions recorded from clean trees, plus everything `/meta` reports about the service |
-| `capacity` | May back a capacity claim about that topology | + PostgreSQL version, pool sizes, replica count, deployment topology, environment — the fields no endpoint reports |
-| `publishable` | Satisfies §6.3's provenance requirement | + `-generator-location` names a host separate from the service |
+| `none` | The run measured nothing usable | validation off or failed, run interrupted, warm-up rows unreconciled, reconciliation failed, or the units did not describe one deployment |
+| `local` | A reproducible observation of this machine and run | both revisions recorded from clean trees, everything `/meta` reports about the service — including PostgreSQL version and pool size per replica — plus generator resources, workload/run shape, target and timestamp |
+| `capacity` | May back a capacity result about the recorded topology | + the facts no endpoint reports: aggregate pool size, replica count, deployment topology, environment, routing version — plus placement for a multi-unit run and an image ID for a containerised one |
+| `publishable` | Carries the provenance an externally presented claim needs | + `-generator-location` names a host separate from the service |
+
+**A co-resident generator only blocks `publishable`.** It is not what holds a run at `local`; a
+run on this workstation reaches `capacity` as soon as it records the deployment facts above.
 
 ```sh
 jq -r '.quotability | "\(.level)\t\(.blocked_because)"' test/results/run.json
 ```
 
-**PR1 runs reach `local`, and that is the correct outcome, not a defect.** The generator is
-an HTTP client and cannot discover the service's shape, so the fields above `local` are
-supplied by an operator in the PR that first has something to say about them — service shape
-in PR2 (which took the operator-supplied count to zero by reading `/meta`), placement,
-authority identity, topology and image identity in PR3b, replica count and aggregate pool
-capacity in PR4 (`ag-sept-plan-new.md` §6.4). The environment stage the earlier plan assigned
-to an AWS PR does not arrive; that path is withdrawn (`ag-sept-plan-new.md` §10). The
-report says so itself in `blocked_because`, naming each missing field and the PR that owns
-it, so an incomplete manifest reads as scheduled rather than broken.
+**Early AG-Sept runs reach `local`, and that is the correct outcome, not a defect.** The fields
+above `local` are the operator's account of the deployment, supplied by whichever work unit first
+has something to say about them — placement, authority identity, topology and image identity
+arrived with PR3b; replica count, aggregate pool capacity and environment are still to come. That
+sequencing is scheduling (`ag-sept-plan.md` §4), not a property of this harness. The report says
+so itself in `blocked_because`, naming each missing field, so an incomplete manifest reads as
+scheduled rather than broken.
 
 Both binaries take `-require` to set the bar, defaulting to `local`:
 
 ```sh
-./bin/alloca-load -require local ...        # PR1: fails on missing generator provenance
-./bin/alloca-load -require publishable ...  # PR4: additionally fails a co-resident generator
+./bin/alloca-load -require local ...        # fails on missing service or generator provenance
+./bin/alloca-load -require capacity ...     # additionally fails missing topology/environment
+./bin/alloca-load -require publishable ...  # additionally fails a co-resident generator
 ```
 
 The bar is declared at the call site because only the caller knows what the number is for. A
 run below its `-require` level exits non-zero with the reason, and still writes its report.
 
 One thing `publishable` does *not* mean: that the run is ready to publish. It checks the
-provenance §6.3 requires, which is a declaration in the manifest. The §12.2
-generator-headroom control is evidence rather than provenance, and it arrives with PR4.
+provenance `measurement-contract.md` §13.1 requires, which is a declaration in the manifest.
+**The whole ladder is provenance, not evidence** — the VAL-NEG-2 generator-headroom control and
+the rest of measurement-contract §5 are what make the experiment admissible, and a run can sit at
+the top of this ladder and still be inadmissible because its experiment was not controlled.
 
-`alloca-verify` prints five checks — one per §6.5 database rule (INV-1, INV-5, INV-4,
+`alloca-verify` prints five checks — one per measurement-contract §12 database rule (INV-1, INV-5, INV-4,
 INV-7) and the client/server comparison, which carries no invariant because it is a
 statement about instrumentation rather than about the domain. Both binaries write their
 JSON even when they fail — you need to see *why*, not just that.
@@ -368,7 +376,7 @@ totals carried through to the verifier, and belongs with the sweeps in PR2 that 
 
 ## 6. The negative control
 
-Mandatory and not descopable (`measurement-contract.md` §5.5): the harness must **fail**
+Mandatory and not descopable (`measurement-contract.md` §5 item 5; VAL-NEG-1): the harness must **fail**
 when response validation is off, so a reported success cannot be an unchecked `200`.
 
 ```sh
@@ -438,7 +446,7 @@ jq '.summary.totals' test/results/run.json     # "replay": true on everything me
 Idempotency keys are `workload-seq-step` with no per-run nonce (`internal/loadgen/workload.go:39`),
 so re-running the same `-workload` re-sends the keys the previous run already used and the
 server correctly replays each recorded outcome instead of committing. The run then passes
-reconciliation — no invariant is broken — while measuring nothing, which is the §5.3 trap
+reconciliation — no invariant is broken — while measuring nothing, which is the validation plan §3.3 trap
 in a different costume. Re-seed with `-reset` between runs (it truncates
 `idempotency_records`), or change `-workload`.
 
@@ -505,9 +513,12 @@ It establishes **no capacity**, and no number from it may be quoted as one. PR2 
 one-instance frontier, but with the generator still on this machine, so its result is a
 *bounded local* one: the generator-headroom control limits how far the co-resident generator
 can be distorting it. A publishable capacity claim needs the generator on separate compute
-([`ag-sept-plan-new.md`](../planning/ag-sept-plan-new.md) §6.3). That compute is no longer
-funded in AG-Sept — the deployment path that would have provided it is withdrawn (§10) — so
-every AG-Sept run stays `local` by construction and the rule is honoured by labelling.
+([`../design/measurement-contract.md`](../design/measurement-contract.md) §13.1). That compute is
+no longer funded in AG-Sept — the deployment path that would have provided it is withdrawn
+(scheduling: [`../planning/ag-sept-plan.md`](../planning/ag-sept-plan.md) §6.3) — so **no AG-Sept
+run can reach `publishable`**, and the rule is honoured by labelling. Co-residency blocks that
+level only: a run here still reaches `capacity` once it records the deployment provenance §13.2
+asks for.
 
 Two consequences for anything you keep:
 
@@ -515,10 +526,10 @@ Two consequences for anything you keep:
   `environment`, `postgres_version`, pool sizes, timeout budget — are declared in the
   report but **not populated by any flag** in PR1, so they come out zero or empty. A local
   run is therefore self-describing about the generator and the workload, but not about the
-  service's shape. That gap has to close before a run backs a published number (§6.4).
+  service's shape. That gap has to close before a run backs a published number (measurement-contract §11).
 - Committed artifacts live in [`../measurements/`](../measurements/); the PR1 smoke run is
   [`pr1-smoke-run/`](../measurements/pr1-smoke-run/). Quote figures from an artifact, never
-  from a terminal (`measurement-contract` §5.3).
+  from a terminal (`measurement-contract.md` §5 item 3).
 
 `test/results/` is git-ignored scratch, and that is the whole distinction: a run only
 becomes evidence by being copied into `../measurements/` on purpose. Nothing is lost by

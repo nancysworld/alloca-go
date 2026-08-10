@@ -117,7 +117,7 @@ var knownOutcomes = map[Outcome]struct{}{
 // completed request into an aggregate — a metric label, a reconciliation tally — needs to
 // answer "is this one of the twelve" rather than trust its caller, and both callers should
 // answer it the same way. That is why this lives beside the constants rather than in each
-// of them (ag-sept-plan §6.5, measurement-contract §4).
+// of them (measurement-contract §12 and §4).
 func (o Outcome) IsKnown() bool {
 	_, ok := knownOutcomes[o]
 	return ok

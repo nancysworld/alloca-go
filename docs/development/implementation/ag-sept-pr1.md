@@ -2,9 +2,20 @@
 
 **Type:** Implementation record
 **Status:** Shipped and merged — every decision in §3 settled, exit gate discharged in §3.6
-**Budget:** 2 development days ([AG-Sept plan](../../planning/ag-sept-plan-old.md) §14)
-**Owner doc:** [ag-sept-plan-old.md](../../planning/ag-sept-plan-old.md) §6 is normative for what this PR built; this
-record covers only how PR1 discharged it and the choices settled along the way.
+**Budget:** 2 development days (scheduled under
+[`ag-sept-plan-v0.4.md`](../../planning/ag-sept-plan-v0.4.md) §14)
+**Owner docs:** [`measurement-contract.md`](../../design/measurement-contract.md) — run manifest,
+reconciliation, and quotability levels — and
+[`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) — controlled
+workloads and negative controls — are normative for what this PR built. (PR1 was planned under
+`ag-sept-plan-v0.4.md` §6, which carried those rules before they were migrated to their durable
+owners.) This record covers only how PR1 discharged them and the choices settled along the way.
+
+**Reading the section references below.** A bare `§n` in this record refers to
+`ag-sept-plan-v0.4.md`, the plan in force when PR1 was written, unless another document is named
+on the line. Those plan sections have since been migrated to the durable owners named above; the
+bare references are retained because this record is a dated account of what the work was measured
+against, not a current contract.
 
 ## 1. Exit gate
 
@@ -25,17 +36,17 @@ and a scope note that misquotes its own exit gate cannot be used to check the ga
 
 ## 2. What PR1 delivers
 
-| # | Deliverable | Plan reference |
+| # | Deliverable | Reference |
 |---|---|---|
-| 1 | Aggregated metrics recorder on the existing observation boundary, bounded label sets only | §6.1 |
-| 2 | Per-call cost of synchronous telemetry against a real sink, deciding whether the asynchronous sink is built now. The end-to-end §6.2 comparison under load is PR2's | §6.2 |
-| 3 | External load generator: workload shapes, closed-loop concurrency, synchronized start, valid idempotent requests, client-side outcome capture, machine-readable summary, own utilisation | §6.3 |
-| 4 | Run manifest emitted with every run and **enforced**: every field the generator determines for itself, plus everything the service reports at `/meta`. The fields no endpoint reports stay operator-supplied and staged to PR2–PR4 | §6.4 |
-| 5 | Correctness reconciliation used by every later run | §6.5 |
-| 6 | Response-validation-active negative control | §12.1, `measurement-contract.md` §5.5 |
-| 7 | One controlled local smoke run exercising all of the above | §14 PR1 |
+| 1 | Aggregated metrics recorder on the existing observation boundary, bounded label sets only | `observability.md` §2, §2.1; `measurement-contract.md` §6 |
+| 2 | Per-call cost of synchronous telemetry against a real sink, deciding whether the asynchronous sink is built now. The end-to-end comparison under load is PR2's | VAL-NEG-3 |
+| 3 | External load generator: workload shapes, closed-loop concurrency, synchronized start, valid idempotent requests, client-side outcome capture, machine-readable summary, own utilisation | `measurement-contract.md` §5, §13.1; validation plan §3 |
+| 4 | Run manifest emitted with every run and **enforced**: every field the generator determines for itself, plus everything the service reports at `/meta`. The fields no endpoint reports stay operator-supplied and staged to PR2–PR4 | measurement-contract §11 |
+| 5 | Correctness reconciliation used by every later run | measurement-contract §12 |
+| 6 | Response-validation-active negative control | VAL-NEG-1, `measurement-contract.md` §5 item 5 |
+| 7 | One controlled local smoke run exercising all of the above | `ag-sept-plan-v0.4.md` §14 PR1 |
 
-Deliverable 6 is mandatory and not descopable: `measurement-contract.md` §5.5 requires a
+Deliverable 6 is mandatory and not descopable: `measurement-contract.md` §5 item 5 requires a
 control that **fails when response validation is silently disabled**, so a reported success
 cannot be an unchecked `200`.
 
@@ -61,8 +72,8 @@ error text.
 
 `cmd/alloca-verify` reads the generator's machine-readable client summary and a saved
 `/metrics` scrape, queries the database directly, and emits the reconciliation report of
-§6.5. Chosen so the load generator holds **no database credentials** and stays genuinely
-external, which §6.3 requires for publishable runs.
+measurement-contract §12. Chosen so the load generator holds **no database credentials** and
+stays genuinely external, which `measurement-contract.md` §13.1 requires for publishable runs.
 
 The scrape is passed as a file (`-metrics`) rather than fetched by the verifier from the
 service. Two reasons, and the second is the load-bearing one: the verifier would otherwise
@@ -97,7 +108,7 @@ $ go test ./internal/telemetry/ -bench Recorder -benchmem -run '^$' -count 5
 ```
 
 Five runs, so the figures below are the **median with the observed range**, not one sample.
-Quoted from the artifact rather than from a terminal, per `measurement-contract` §5.3.
+Quoted from the artifact rather than from a terminal, per `measurement-contract.md` §5 item 3.
 
 | Recorder | Sink | ns/op (median) | range | B/op | allocs/op |
 |---|---|---:|---:|---:|---:|
@@ -153,13 +164,14 @@ workload-level comparison — same dataset, concurrency and environment, telemet
 off, reporting the throughput and p99 delta. **PR1 does not do that, and does not claim
 §6.2 is discharged.** What PR1 discharges is the decision §6.2 gates — whether to build the
 asynchronous sink now — on the evidence that a healthy sink costs under 0.2% of a request.
-The end-to-end comparison belongs with the sweeps that can run it, and is scoped to PR2 in
-[`ag-sept-plan-old.md`](../../planning/ag-sept-plan-old.md) §14.
+The end-to-end comparison belongs with the sweeps that can run it, and was scoped to PR2 in
+[`ag-sept-plan-v0.4.md`](../../planning/ag-sept-plan-v0.4.md) §14.
 
 ### 3.4 Quotability is a level, not a boolean (settled 2026-08-03)
 
 The harness first recorded `quotable: true|false`. That field could not be answered honestly,
-because §6.4 gates a *capacity* claim on topology provenance and §6.3 gates a *publishable*
+because measurement-contract §11 gates a *capacity* claim on topology provenance and
+`measurement-contract.md` §13.1 gates a *publishable*
 one on the generator running off the service host — so "is this quotable?" has no answer
 until the claim is named. A PR1 smoke run with an empty commit SHA and no service-shape
 fields nonetheless reported `quotable: true`, which is what surfaced the problem.
@@ -169,7 +181,8 @@ next level up and what blocks it. Both binaries take `-require` so the bar is de
 caller, who is the only one who knows what the number is for. The ladder and the per-level
 field lists are in
 [`docs/operations/load-harness.md`](../../operations/load-harness.md) §4; the staging they
-implement is `ag-sept-plan-old.md` §14's.
+implement is the plan's staging — `ag-sept-plan-v0.4.md` §14 when this was written, and
+`ag-sept-plan.md` §4 now.
 
 Levels are named for the claim rather than for the PR that first reaches them. A report in
 `docs/measurements/` outlives the schedule, and `"PR1"` would oblige a later reader to
@@ -244,7 +257,7 @@ An earlier revision of the verifier consumed only the client report and the data
 server column was compared by eye and the run could have been certified with the scrape
 disagreeing or absent. `alloca-verify` now takes the scrape as an input (`-metrics`), sums
 the `alloca_requests_total` cells, and compares them cell by cell; a run supplied with no
-scrape is **not quotable**, because two counts agreeing out of three is not the rule §6.5
+scrape is **not quotable**, because two counts agreeing out of three is not the rule measurement-contract §12
 states.
 
 **2. The response-validation control passes.** End-to-end, not only in unit tests:
@@ -271,8 +284,14 @@ keeps them apart. See §3.5.
 **What this run is not.** It is a smoke run: 60 requests at concurrency 8 on one host, with
 the generator and service sharing a machine. It proves the substrate works end to end; it
 establishes no capacity, and no number in it may be quoted as one. PR2 measures the
-one-instance frontier, still co-resident and therefore still bounded rather than published;
-separate generator compute arrives with PR4 (`ag-sept-plan-old.md` §14).
+one-instance frontier, still co-resident and therefore still bounded rather than published.
+
+When this was written, v0.4 expected separate generator compute to arrive with the AWS
+deployment. **It does not arrive in AG-Sept at all** — that path was withdrawn
+(`ag-sept-plan.md` §6.3), so **no AG-Sept run can reach `publishable`** and the
+`measurement-contract.md` §13.1 rule is honoured by labelling rather than by satisfying it. That
+is the only level co-residency blocks; PR1's own runs sit at `local` because the deployment
+provenance above that level was not yet populated, which is a different reason.
 
 ## 4. Non-goals
 

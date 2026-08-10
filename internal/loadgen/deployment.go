@@ -15,8 +15,9 @@ import (
 // (docs/decisions/0003-deployed-artifact-identity.md). The summary below is why *this file*
 // looks as it does; the ADR is why the approach was chosen at all.
 //
-// **Why this is a file and not a field of `/meta`.** The plan's §6.4 image identity is a fact
-// about the deployed *artifact*, and a process cannot observe which image wraps it. Asking
+// **Why this is a file and not a field of `/meta`.** The measurement-contract §11 image
+// identity is a fact about the deployed *artifact*, and a process cannot observe which image
+// wraps it. Asking
 // the service would only have it repeat an environment variable back, which is asserted
 // provenance standing next to a compiler-observed commit SHA under names that do not say
 // which is which — the shape of the PR1 defect where `commit_sha` named the generator rather
@@ -24,9 +25,10 @@ import (
 //
 // So the observation is taken where it can actually be made, by inspecting the live
 // containers from the host (`test/scripts/record-deployment.sh`), and travels to the run as
-// a file. That also keeps §6.3 intact: `alloca-load` holds no credentials and speaks only
-// HTTP, and a Docker socket is root on the host — the last thing a generator that must later
-// move to separate compute should hold. The file crosses that boundary; the socket does not.
+// a file. That also keeps measurement-contract §13.1 intact: `alloca-load` holds no credentials and
+// speaks only HTTP, and a Docker socket is root on the host — the last thing a generator that
+// must later move to separate compute should hold. The file crosses that boundary; the socket
+// does not.
 //
 // What it cannot do is prove itself. An operator who hand-writes this file gets whatever
 // they wrote, exactly as `generator_location` is a declaration the manifest takes at face
@@ -147,7 +149,7 @@ func LoadDeployment(path string) (Deployment, error) {
 //
 // The correspondence must be exact in both directions, and each direction fails for its own
 // reason. An **unobserved** target is a unit the run drove whose artifact is unknown, which is
-// the whole gap §6.4 exists to close. An **unrouted** observation means the record describes a
+// the whole gap §11 exists to close. An **unrouted** observation means the record describes a
 // topology other than the one measured — most often a stale file — and a record that is wrong
 // about the unit set is not evidence that its image identity is right either.
 func (d Deployment) BindTo(targets []string) error {

@@ -424,10 +424,10 @@ func summarise(
 		// fail a correct service — so PR1 refuses the run rather than reporting one that
 		// cannot be reconciled. Making warm-up quotable needs a separate warm-up phase
 		// with a reset between, or per-cell warm-up totals carried for the verifier;
-		// both belong to PR2 with the sweeps that need them (ag-sept-plan §14).
+		// both belong with the sweeps that need them, and are scheduled there.
 		s.NotSoundBecause = fmt.Sprintf("-warm-up discarded %d responses from the "+
 			"client totals while their rows remain in the database, which persisted-state "+
-			"reconciliation cannot reconcile in PR1 (ag-sept-plan §6.5)", s.WarmUpDiscarded)
+			"reconciliation cannot reconcile in PR1 (measurement-contract §12)", s.WarmUpDiscarded)
 	default:
 		s.Sound = true
 	}

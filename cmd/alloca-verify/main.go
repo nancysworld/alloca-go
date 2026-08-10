@@ -1,9 +1,9 @@
 // Command alloca-verify reconciles a load run against persisted state.
 //
 // It reads the report alloca-load wrote and queries PostgreSQL directly, running the four
-// checks of ag-sept-plan §6.5. It is a separate binary from the generator so the generator
-// can run on compute separate from the service without database credentials (§6.3); this
-// one runs wherever the database is reachable.
+// checks of measurement-contract §12. It is a separate binary from the generator so the
+// generator can run on compute separate from the service without database credentials
+// (measurement-contract §13.1); this one runs wherever the database is reachable.
 //
 // It exits non-zero when the run is not quotable, so a pipeline cannot collect numbers from
 // a run whose totals do not reconcile.

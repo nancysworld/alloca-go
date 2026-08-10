@@ -140,14 +140,15 @@ type Resolution struct {
 // reports what each turned out to be.
 //
 // Call it after the affected authority is available again and before the correctness
-// verdict (ag-sept-plan-new.md §6.5). Until it has run, an authority-failure run has
+// verdict (measurement-contract §12). Until it has run, an authority-failure run has
 // mutations whose persisted state and whose client record genuinely disagree, and no
 // reconciliation over them means anything.
 //
 // **This is not a retry control.** It does not run during load, it does not shape
 // arrival, and it never amplifies: each entry is replayed exactly once, after the run,
 // under the key the original used. The retry-on-timeout control that shapes load during
-// a run is separate work and remains unassigned (ag-sept-plan-new.md §14, group A).
+// a run is separate work and remains unassigned — a scheduling fact, recorded as group A of the
+// PR2 deferral register in the AG-Sept plan.
 // Conflating the two is how that group creeps into a PR that cannot fund it.
 //
 // It iterates a snapshot, and the replays reissue through the ordinary request path — so a

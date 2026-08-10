@@ -154,8 +154,9 @@ func TestDashboardMatchesCanonicalPanels(t *testing.T) {
 }
 
 // TestDashboardIsDeliberatelySmall pins the scope bound rather than a style preference.
-// ag-sept-plan §14 excludes rich dashboards, alerting and plugins from PR2, and every one of
-// those arrives by accretion — one more panel at a time, each individually reasonable.
+// measurement-contract §6 scopes the diagnostic view to the indicators a frontier argument
+// rests on and excludes alerting, templating and shared-library machinery — and every one of
+// those arrives by accretion, one more panel at a time, each individually reasonable.
 func TestDashboardIsDeliberatelySmall(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Clean(dashboardPath))
 	if err != nil {
@@ -169,7 +170,7 @@ func TestDashboardIsDeliberatelySmall(t *testing.T) {
 
 	for _, banned := range []string{"alerting", "annotations", "templating", "libraryPanels"} {
 		if v, ok := generic[banned]; ok && v != nil {
-			t.Errorf("dashboard declares %q, which PR2 excludes (ag-sept-plan §14)", banned)
+			t.Errorf("dashboard declares %q, which measurement-contract §6 excludes", banned)
 		}
 	}
 

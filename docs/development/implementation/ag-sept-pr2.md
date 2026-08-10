@@ -3,10 +3,22 @@
 **Type:** Implementation record
 **Status:** Shipped and merged — every decision in §5 settled, nothing open in §6. Results and the
 frontier report are in [`docs/measurements/pr2-frontier/`](../../measurements/pr2-frontier/)
-**Budget:** 2.5 development days ([AG-Sept plan](../../planning/ag-sept-plan-old.md) §14) — 1.0 for the retention
-path and diagnostic panels, 1.5 for the sweeps, controls, and report
-**Owner doc:** [ag-sept-plan-old.md](../../planning/ag-sept-plan-old.md) §7 and §12.2 are normative for what this PR
-measured; this record covers only how PR2 discharged them and the choices made along the way.
+**Budget:** 2.5 development days (scheduled under
+[`ag-sept-plan-v0.4.md`](../../planning/ag-sept-plan-v0.4.md) §14) — 1.0 for the retention path
+and diagnostic panels, 1.5 for the sweeps, controls, and report
+**Owner docs:** [`measurement-contract.md`](../../design/measurement-contract.md) §3 and §6 — the
+capacity vocabulary and required indicators — and VAL-NEG-2 in
+[`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) are
+normative for what this PR measured. (PR2 was planned under `ag-sept-plan-v0.4.md` §7 and §12.2,
+which carried those rules before they were migrated to their durable owners.) This record covers
+only how PR2 discharged them and the choices made along the way.
+
+**Reading the section references below.** A bare `§n` in this record refers to
+`ag-sept-plan-v0.4.md`, the plan in force when PR2 was written, unless another document is named
+on the line — except within §5, where a bare `§5.n` is this record's own subsection. Those plan
+sections have since been migrated to the durable owners named above; the bare references are
+retained because this record is a dated account of what the work was measured against, not a
+current contract.
 
 ## 1. Exit gate
 
@@ -20,24 +32,28 @@ Four clauses. The fourth is the one that decides whether PR2 succeeds honestly: 
 deferred with evidence" means a frontier PR2 cannot resolve is a valid outcome, provided the
 bound is stated and shown. An unresolved frontier reported as a number would be the failure.
 
-**What PR2 may not claim, whatever it measures.** The generator shares a host with the service
-until PR4 (§14), so every figure here is a *bounded local* result. §12.2's headroom control is
+**What PR2 may not claim, whatever it measures.** The generator shares a host with the service —
+for the whole of AG-Sept, since the compute that would separate them is not funded
+(`ag-sept-plan.md` §6.3) — so every figure here is a *bounded local* result. The VAL-NEG-2
+headroom control is
 what limits how much the co-resident generator can be distorting it, and that limitation
-travels with each number rather than sitting in a footnote. `quotability.level` stays `local`
-for PR2's runs by construction — `publishable` requires the separate compute of §10.
+travels with each number rather than sitting in a footnote. `quotability.level` is `local` for
+PR2's runs because the operator-supplied deployment fields above that level were not populated
+when they were taken; separately, co-residency puts `publishable` out of reach for the whole
+milestone (`measurement-contract.md` §13.1–§13.2).
 
 ## 2. What PR2 delivers
 
-| # | Deliverable | Plan reference |
+| # | Deliverable | Reference |
 |---|---|---|
 | 1 | Minimal reproducible Prometheus retention path, version-controlled | §14 PR2 |
 | 2 | Compact diagnostic panel set over the §6.1 signals, reproducible and version-controlled | §14 PR2 |
-| 3 | The two remaining §6.4 service-shape fields — see §3.1, which are fewer than the plan assumes | §6.4 |
-| 4 | Bounded one-instance sweeps for dispersed, hot-slot and hot-identity | §7 |
-| 5 | §6.2 discharged end to end: throughput and p99 with telemetry on versus off, same dataset, concurrency and environment | §6.2 |
-| 6 | Generator-bottleneck control, and demonstrated generator headroom | §12.2 |
-| 7 | Peak observed throughput, SLO-safe capacity, recommended operating capacity — or a documented reason each remains unresolved | §7, `measurement-contract.md` §3 |
-| 8 | Retained run reports, verdicts, environment details, and time-series exports | §14 PR2 |
+| 3 | The two remaining measurement-contract §11 service-shape fields — see §3.1, which are fewer than the plan assumes | measurement-contract §11 |
+| 4 | Bounded one-instance sweeps for dispersed, hot-slot and hot-identity | validation plan §3.1–§3.3 |
+| 5 | Telemetry comparison end to end: throughput and p99 with telemetry on versus off, same dataset, concurrency and environment | VAL-NEG-3 |
+| 6 | Generator-bottleneck control, and demonstrated generator headroom | VAL-NEG-2 |
+| 7 | Peak observed throughput, SLO-safe capacity, recommended operating capacity — or a documented reason each remains unresolved | `measurement-contract.md` §3 |
+| 8 | Retained run reports, verdicts, environment details, and time-series exports | `ag-sept-plan-v0.4.md` §14 PR2 |
 
 ## 3. What PR1 changed about PR2's scope
 
@@ -47,8 +63,11 @@ read against what actually exists.
 
 ### 3.1 Three of the five service-shape fields already populate themselves
 
-The plan asks PR2 to "populate the §6.4 service-shape fields … PostgreSQL version, pool size
-per replica, server `GOMAXPROCS`, timeout budget, and reservation TTL."
+The plan asks PR2 to populate the service-shape fields of measurement-contract §11 —
+PostgreSQL version, pool size per replica, server `GOMAXPROCS`, timeout budget, and
+reservation TTL. (The plan carried that field list itself, as `ag-sept-plan-v0.4.md` §6.4, when
+this record was written; the list is now the measurement contract's and only the staging is the
+plan's.)
 
 PR1 made the generator read the service's `/meta`, which already supplies **server
 `GOMAXPROCS`, the timeout budget, and the reservation TTL** — and `local` already refuses a run
@@ -136,7 +155,7 @@ log write is essentially all of it, so this arm isolates the cost that matters w
 the run reconcilable.
 
 **`off` refuses itself, deliberately.** With no aggregate series there is no server-side count,
-so §6.5's three-way agreement has only two — and a verdict reached on two of three is the
+so measurement-contract §12's three-way agreement has only two — and a verdict reached on two of three is the
 weaker gate wearing the stronger one's name. The manifest gate rejects `telemetry_mode: off`
 with that reason rather than letting it surface as a confusing "server counted 0". It is a
 control, not a measurement, which is exactly how `-validate=false` is treated.
@@ -151,7 +170,7 @@ downstream could tell them apart.
 
 A sweep cell is seed → restart service → load → scrape → verify, and PR1's own operator guide
 shows how easily a missed restart contaminates a scrape. Hand-driving a matrix would reproduce
-that failure at scale, and the §5.3 clean-start hazard makes a contaminated cell look like a
+that failure at scale, and the validation plan §3.3 clean-start hazard makes a contaminated cell look like a
 result rather than an error. The sweep runner is therefore a script under `test/scripts/`,
 emitting one directory of artifacts per cell.
 
@@ -175,7 +194,7 @@ the panels need, no polish.** Those are the features that turn a diagnostic aid 
 **The snapshot exporter** is what the report quotes. At the end of each cell the runner saves a
 Prometheus TSDB snapshot and exports each panel's query result as CSV into that cell's artifact
 directory. A screenshot is not re-derivable; a CSV beside the snapshot it came from is, and
-`measurement-contract.md` §5.3 requires reports to quote from raw artifacts rather than from a
+`measurement-contract.md` §5 item 3 requires reports to quote from raw artifacts rather than from a
 view.
 
 The two share one query source, so the panel you looked at and the number you quoted cannot
@@ -256,7 +275,12 @@ over-provision and check: **a cell whose goodput plateaus at exactly the fixture
 measuring the fixture, not the service**, and the sweep runner should refuse it rather than
 report it.
 
-### 5.6 The recommended-operating-capacity number is deferred to PR3 (Nancy's call, 2026-08-03)
+### 5.6 The recommended-operating-capacity number is deferred (Nancy's call, 2026-08-03)
+
+Deferred to the v0.4 plan's PR3 when this was written; that work is now PR4
+(`ag-sept-plan.md` §3), because the milestone was reordered to put database-authority
+composition ahead of replica scaling. The section number is retained — other documents cite
+into it (`tech-debts.md` DEBT-7).
 
 `measurement-contract.md` §3 defines it as "a conservative cap below SLO-safe capacity that
 reserves headroom for **variance, rolling deployment, and loss of one unit**." At one replica,
@@ -332,11 +356,11 @@ right thing.** `dispersed` reached ~2,200 req/s with goodput equal to throughput
 the same concurrency reached ~630 req/s with goodput of 5/s — the single contended row
 admitting its capacity and refusing the rest, which is §5.2's expected serialization rather
 than a fault. Generator CPU stayed at 0.008–0.019 per core throughout, so nothing here is
-generator-limited; the §12.2 control still has to establish that properly.
+generator-limited; the VAL-NEG-2 control still has to establish that properly.
 
 ### 5.8 Every figure is labelled against its artifact
 
-`measurement-contract.md` §2 and §5.3 already require this, and PR1's own scope note still
+`measurement-contract.md` §2 and §5 item 3 already require this, and PR1's own scope note still
 managed to quote a range that matched neither its table nor its artifact. PR2's report
 therefore derives every quoted number from a retained file by script, and the script is part
 of the deliverable.
@@ -367,9 +391,9 @@ application resources **only as needed** to identify or tightly bound the fronti
 | Workload | dispersed, hot-slot, hot-identity | §5's three controls; each isolates one mechanism |
 | Concurrency | to be set by a ranging pass, then refined around the knee | a fixed ladder spends cells where nothing changes |
 | Pool size | default, plus one smaller and one larger | separates application compute from database admission |
-| Telemetry | on, off — dispersed only | §6.2 needs one comparison, not one per workload |
+| Telemetry | on, off — dispersed only | VAL-NEG-3 needs one comparison, not one per workload |
 
-Application-CPU variation (§12.4) is *desirable*, not mandatory, and is the first thing to drop
+Application-CPU variation (VAL-NEG-5) is *desirable*, not mandatory, and is the first thing to drop
 if the budget bites.
 
 ## 8. Exit gate — how it stands
@@ -377,7 +401,7 @@ if the budget bites.
 | Clause | Status |
 |---|---|
 | each controlled workload has a repeatable one-instance result | **met** — dispersed, hot_slot and hot_identity each run twice, spreads reported |
-| the generator is ruled out | **met** — §12.2 control, throughput flat across a 10x change in generator compute |
+| the generator is ruled out | **met** — VAL-NEG-2 control, throughput flat across a 10x change in generator compute |
 | the time series expose or tightly bound the limiting mechanism | **met** — pool saturation identified and confirmed by a pool-size ladder |
 | the recommended operating point is reported **or explicitly deferred with evidence** | **deferred with evidence** — §5.6 and the frontier report §5 |
 
@@ -393,5 +417,5 @@ permit.
 ## 8. Not in PR2
 
 Replica scaling, Kubernetes, AWS, rich dashboards, alerting, and the optional synchronized
-release wave (plan §5.4) — all per the plan. Also not in PR2: any published capacity number, which
-requires the separate generator compute of §10.
+release wave (validation plan §3.7) — all per the plan. Also not in PR2: any externally presented
+capacity number, which requires the separate generator compute of `measurement-contract.md` §13.1.

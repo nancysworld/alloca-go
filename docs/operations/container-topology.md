@@ -175,20 +175,12 @@ dynamic port range at boot, so a higher port works or not by luck of the reboot.
 ### Set the addresses once
 
 **Every command from here on uses `$S1` and `$S2` rather than a literal port**, because the
-sections below are the ones that break when you take the override above. Set them from the last
+sections below are the ones that break when you take the override above. Copy them from the last
 line `make topo-up` printed:
 
 ```sh
-S1=localhost:${SERVICE_1_PORT:-8081}
-S2=localhost:${SERVICE_2_PORT:-8082}
-```
-
-If you passed the ports to `make` on the command line rather than exporting them, your interactive
-shell does not have them — set `S1` and `S2` to the printed addresses directly:
-
-```sh
-S1=localhost:18081
-S2=localhost:18082
+S1=localhost:8081        # whatever `make topo-up` printed
+S2=localhost:8082
 ```
 
 Every `curl` below uses `-sS` rather than `-s` for the same reason: with `-s`, a connection to the

@@ -29,9 +29,12 @@ make image
 # 2. raise the topology                                                     (§4)
 make topo-up
 
-# 3. copy the two addresses the line above printed                          (§4)
-S1=localhost:8081
-S2=localhost:8082
+# 3. read the addresses off the running containers — do not type them       (§4)
+port() { docker inspect --format \
+  '{{with index .NetworkSettings.Ports "8080/tcp"}}{{(index . 0).HostPort}}{{end}}' "$1"; }
+S1=localhost:$(port alloca-service-1)
+S2=localhost:$(port alloca-service-2)
+echo "$S1 $S2"
 
 # 4. each unit is bound to the authority it claims                          (§5)
 curl -sS $S1/meta | jq '{a: .placement.authority_id, orgs: .placement.organisations}'
@@ -230,10 +233,12 @@ make topo-up SERVICE_1_PORT=18081 SERVICE_2_PORT=18082
 Command-line and environment variables are exported to the recipe, so Compose and the
 readiness poll both see the override and agree.
 
-**It does not come back to your shell.** A variable passed to `make` reaches the recipe's
-child processes, not the interactive shell you typed it in — so afterwards `$SERVICE_1_PORT`
-is still unset for you, and anything deriving an address from it silently gets the default.
-That is why the next section says to copy what `topo-up` printed rather than to recompute it.
+**It does not come back to your shell.** A variable passed to `make` reaches the recipe and the
+processes it starts — Compose and the readiness poll both see it, which is why they agree — but
+not the interactive shell you typed it in. Afterwards `$SERVICE_1_PORT` is still unset for you,
+so anything that recomputes an address from it silently gets the default. That is why the next
+section reads the addresses off the containers instead of recomputing or transcribing them, and
+why doing so makes this whole section harmless.
 
 The one thing to keep in step by hand is the *default*, which is written in two places —
 `SERVICE_1_PORT ?= 8081` in the `Makefile` and `${SERVICE_1_PORT:-8081}` in the Compose file.
@@ -249,13 +254,28 @@ dynamic port range at boot, so a higher port works or not by luck of the reboot.
 ### Set the addresses once
 
 **Every command from here on uses `$S1` and `$S2` rather than a literal port**, because the
-sections below are the ones that break when you take the override above. Copy them from the last
-line `make topo-up` printed:
+sections below are the ones that break when you take the override above.
+
+**Read them off the running containers. Do not transcribe them from anything, including this
+page:**
 
 ```sh
-S1=localhost:8081        # whatever `make topo-up` printed
-S2=localhost:8082
+port() { docker inspect --format \
+  '{{with index .NetworkSettings.Ports "8080/tcp"}}{{(index . 0).HostPort}}{{end}}' "$1"; }
+S1=localhost:$(port alloca-service-1)
+S2=localhost:$(port alloca-service-2)
+echo "$S1 $S2"
 ```
+
+A container's published port binding is the one authority on where it can be reached, and it is
+the same fact `record-deployment.sh` records for the run manifest — so this cannot disagree with
+what the run is later certified against.
+
+**An earlier version of this section told you to copy the addresses `make topo-up` printed, into a
+block containing the defaults. That was wrong**, and wrong in the way this page keeps being wrong:
+it worked if you had not overridden the ports and silently pointed you at nothing if you had, so
+the walkthrough passed or failed depending on which of the two paths above you took. A value you
+are asked to substitute by hand is a value that will eventually not be substituted.
 
 Every `curl` below uses `-sS` rather than `-s` for the same reason: with `-s`, a connection to the
 wrong port prints nothing at all, and `jq` then prints nothing, so a refused connection is

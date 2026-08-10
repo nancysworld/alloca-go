@@ -506,6 +506,26 @@ Every measured run carries a self-check. At minimum it must reconcile:
 
 A run with unreconciled client totals, server totals, or persisted state is not quotable.
 
+**Ambiguity resolution extends one logical mutation across multiple HTTP attempts; it does not
+create multiple logical mutations.** When an `unknown_replayable` request is resolved by replaying
+its own idempotency key:
+
+1. the original attempt and every resolution attempt are completed HTTP requests and belong to the
+   same client/server accounting population. The final server scrape used for reconciliation is
+   taken after resolution, so its delta includes the resolution traffic;
+2. if resolution returns `replay=true`, the idempotency record proves that the original attempt
+   committed. That key contributes exactly one fresh logical mutation, attributed to the original
+   attempt; the resolving HTTP request is counted as a replay, not as a second mutation;
+3. if resolution returns `replay=false`, the original attempt did not leave a recorded mutation
+   and the resolution request performs it. The key still contributes exactly one fresh logical
+   mutation, now attributed to the resolution attempt;
+4. a key that remains ambiguous after the resolution pass makes the run unreconcilable and
+   therefore unquotable.
+
+Request accounting and logical-mutation accounting are deliberately different views: every HTTP
+attempt must reconcile with service observations, while one idempotency key may contribute at most
+one fresh logical mutation to persisted-state accounting.
+
 **Multiple authorities extend the contract, not the mechanism:**
 
 1. the run is quiesced, and any `unknown_replayable` mutation is resolved by replaying its own

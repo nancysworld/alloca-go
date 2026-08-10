@@ -314,10 +314,11 @@ curl -sS -X POST $S1/v1/slots/org-a/slot-0/reservations \
   -d '{"user_organisation_id":"org-a","user_id":"u-1"}'
 
 # 2. a colocated cross-organisation booking also succeeds — org-a and org-c
-#    share authority-1, so this is supported, and it is what INV-13 protects
+#    share authority-1, so this is supported, and it is what INV-13 protects.
+#    NOTE the different user: u-2, not u-1. See below.
 curl -sS -X POST $S1/v1/slots/org-c/slot-0/reservations \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: k2' \
-  -d '{"user_organisation_id":"org-a","user_id":"u-1"}'
+  -d '{"user_organisation_id":"org-a","user_id":"u-2"}'
 
 # 3. a cross-AUTHORITY booking is refused on policy — 409, not an edge error.
 #    Routed to the user's own unit, which understands the request and declines it.
@@ -331,6 +332,17 @@ curl -sS -X POST $S2/v1/slots/org-a/slot-0/reservations \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: k4' \
   -d '{"user_organisation_id":"org-a","user_id":"u-1"}'
 ```
+
+Expected in order: **`200` admitted, `200` admitted, `409 cross_authority_unsupported`,
+`400 invalid_request`.**
+
+**Case 2 books as `u-2`, and that is not cosmetic.** The seeded `slot-0` of each organisation
+covers very nearly the same hour, so a user who took case 1's slot already holds an overlapping
+claim. Running case 2 as `u-1` returns `409 business_refusal / schedule_conflict` — INV-13
+working exactly as designed, since a claim is keyed by the *caller's* organisation and therefore
+protects that user across every organisation they book into. It is a correct refusal that looks
+like a broken topology, so the check that demonstrates colocated booking must not collide with the
+check before it.
 
 Cases 3 and 4 look similar and are not. A cross-authority refusal (`409`,
 `cross_authority_unsupported`) is the service applying Phase 1 policy to a request it
@@ -575,8 +587,27 @@ observation was bound to the routed units and moved ahead of the workload:
 | the report | `container_deployment: true`, the observed `image_id`, `unit_count: 2`, certified `local` |
 | the same run with no `-deployment` and `-require none` | refused, exit 1, **no report written** |
 
-The last row is the control for §7's rule that no level excuses the record. It stops before
-any measured request, which is why there is no report to inspect — a refusal that produced
+The whole page was walked again from `topo-down` on 2026-08-10 at `164e72e`, which is where the
+§0 minimum path and the port and `-n 400` corrections come from:
+
+| Step | Result |
+|---|---|
+| `make topo-up` from clean | image `164e72e`, both units ready on the default ports |
+| both units' `/meta` | `authority-1`/`["org-a","org-c"]`, `authority-2`/`["org-b","org-d"]`, one `pr3b-v1`, schema 1, `modified: false` |
+| seeding, four organisations | `org-a\|100`, `org-c\|100` on authority-1; `org-b\|100`, `org-d\|100` on authority-2 |
+| `make topo-deployment` | one image ID across both containers, matching both targets |
+| `multi-org-dispersed`, `-n 400` | **400 `admitted_success`**, `measurement_sound: true`, 0 invalid, certified `local` |
+| §5 routing checks 1–4 | `200`, `200` (as `u-2`), `409 cross_authority_unsupported`, `400 invalid_request` |
+| failure isolation | unit 1 `503`, unit 2 `200` and still booking; `200` again after restart |
+
+**Case 2 was wrong on this page until it was run.** It reused `u-1` from case 1, and the two
+`slot-0`s overlap, so it returned `409 schedule_conflict` — INV-13 refusing correctly, in a way
+that reads as a broken topology. It now books as `u-2`, and §5 says why. That is the third recipe
+on this page to have shipped broken and been caught only by execution, after the `-reset` scope and
+the port override.
+
+The last row of the previous table is the control for §7's rule that no level excuses the record.
+It stops before any measured request, which is why there is no report to inspect — a refusal that produced
 one would mean the check had moved back after the workload.
 
 Four things are worth recording because they were found by running rather than reading.

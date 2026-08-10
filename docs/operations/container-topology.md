@@ -425,6 +425,7 @@ routed by the same placement document the services enforce:
 ```sh
 go build -o bin/alloca-load ./cmd/alloca-load
 
+mkdir -p test/results   # git-ignored, and absent on a fresh clone
 make topo-deployment > test/results/deployment.json
 
 ./bin/alloca-load \

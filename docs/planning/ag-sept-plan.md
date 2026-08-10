@@ -40,12 +40,20 @@ AG-Sept's governing goal, its iteration history, and the currently open problem 
 - **Iteration A — identify the first scaling frontier.** Resolved. PR2 established PostgreSQL as
   the limiting subsystem while the Go service retained substantial compute headroom. The goal was
   *not* thereby achieved; the evidence created the next problem.
-- **Iteration B — compose independent writable database authorities.** Current. PR3a and PR3b
-  have shipped the placement model, booking policy, multi-authority topology, and authority-aware
-  verification. PR3c owes the correctness and failure-isolation evidence.
+- **Iteration B — compose independent writable database authorities.** Current, and it **spans
+  PR3a, PR3b and PR3c**. PR3a and PR3b shipped the placement model, booking policy,
+  multi-authority topology and authority-aware verification; PR3c is the evidence-producing work
+  unit. The iteration closes at Analyse & Review afterwards, not inside PR3c.
 - **No iteration after B has been selected yet.** Stateless service replicas are the current
   *candidate* next Problem, not committed scope. Budget is reserved for whatever Iteration B's
   Analyse & Review chooses (§3, *post-Iteration-B scaling envelope*).
+
+The decision order is fixed:
+
+```text
+PR3a -> PR3b -> PR3c evidence -> Iteration B Analyse & Review -> next Problem / END
+                                                              -> only then schedule the envelope
+```
 
 | Workstream | Work unit | Status |
 |---|---|---|
@@ -54,7 +62,8 @@ AG-Sept's governing goal, its iteration history, and the currently open problem 
 | Placement, booking policy, confirm/cancel ownership | PR3a | merged `aa1e3a5` |
 | Multi-authority harness — topology, routing, certification, verifier | PR3b | merged `57f501d` |
 | Multi-authority correctness and failure-isolation evidence | PR3c | not started |
-| Post-Iteration-B scaling envelope | not yet selected | budget reserved; scope chosen by Analyse & Review |
+| Iteration B Analyse & Review | review step, not a PR | after PR3c; from the review reserve, no new allocation |
+| Post-Iteration-B scaling envelope | not yet selected | budget reserved; scope chosen by that review |
 | Architecture conclusions and one justified boundary | PR5 | not started |
 
 Validation status — what is established, what is pending, and what is explicitly *not*
@@ -243,6 +252,17 @@ the report, including the organisation-to-authority distribution each run measur
 **Owners:** REQ-COR-1, REQ-COR-2, REQ-FAIL-1, REQ-ROUTE-1; VAL-COR-1..6, VAL-FAIL-1, VAL-SCALE-3;
 validation plan §4.5; `measurement-contract.md` §12–§13.
 
+**PR3c is not a service-replica experiment (Nancy's call, 2026-08-10).** It stays at 2.0 days and
+does not add replicas or exporters, force the service to become the bottleneck, or draw on the
+post-Iteration-B envelope.
+
+What it *should* do, at no extra cost, is **retain the service and database resource evidence its
+runs already produce** — CPU, pool acquisition and saturation alongside the correctness verdicts —
+so the Analyse & Review that follows can judge where the next limiting boundary probably sits.
+That review has to answer whether service compute is the next meaningful frontier, or whether the
+resource balance must change first; it cannot answer either from correctness verdicts alone. This
+is retention of what the run already measures, not a new experiment.
+
 **Opportunistic:** if a deliberately timed mid-commit connection loss can be produced, it
 discharges the rest of INV-21 — the register's longest-standing "not directly proven" entry. PR3b
 closed the narrower half. What remains is the fault the entry was named for, which needs something
@@ -255,7 +275,28 @@ authorities; every accepted transaction semantic on the supported path is unchan
 claims a throughput multiplier from this workstation.
 
 **Not in PR3c:** cross-authority booking, rebalancing, replica scaling, any capacity-composition
-claim.
+claim, and the Analyse & Review below — PR3c produces the evidence, it does not close the
+iteration on itself.
+
+### Iteration B Analyse & Review — an explicit step, no new allocation
+
+**PR3a + PR3b + PR3c together are Iteration B, and it closes here rather than inside PR3c**
+(Nancy's call, 2026-08-10). This is review and interpretation work: reading PR3c's evidence against
+the problem, the requirements, and the **governing goal**, then writing the five-part closure
+record into [`../requirements/ag-sept.md`](../requirements/ag-sept.md)
+(`engineering-process.md` §1.4.1).
+
+**Its time comes from the existing 2–3 day review/rerun/interpretation reserve** described in §2,
+not from a new development allocation and not from PR3c's 2.0. Nothing in the budget table changes
+for it.
+
+It is **not a pre-created PR4.** No work unit exists for the next iteration until this review
+selects one.
+
+The review must explicitly revisit the goal's service-compute clause — whether service compute is
+now the meaningful next frontier, whether the resource balance inside a shard group has to change
+before one could be exposed, or whether another problem carries more value. The requirements record
+owns those questions and the answer.
 
 ### Post-Iteration-B scaling envelope — 4.5 days reserved
 
@@ -317,9 +358,15 @@ remain reproducible and reconciled.
 **Outside this envelope whatever it funds:** AWS, Kubernetes, autoscaling, a service mesh, or an
 attempt to eliminate the hot-authority serialization frontier.
 
-The four obligations above are **owed by the milestone, not by a particular PR**. If Analyse &
-Review selects a different Problem, they remain owed and are either scheduled elsewhere or
-recorded as unmet — a resolved-differently iteration does not silently discharge them.
+**The four obligations above are conditional on the selected Problem, not owed regardless of it**
+(Nancy's call, 2026-08-10). If Analyse & Review selects a service/replica-scaling iteration, they
+become obligations *of that iteration*. If it selects another Problem, or the goal closes or is
+revised, they are recorded as **explicitly unproven, deferred, or outside selected scope** — not
+silently discharged, but not mandatory implementation work regardless of the decision either.
+
+The distinction matters both ways: a milestone that quietly drops them is over-claiming, and a
+milestone that treats them as unconditional would let a superseded plan dictate work the evidence
+no longer justifies.
 
 ### PR5 — Architecture conclusion and boundary decision
 

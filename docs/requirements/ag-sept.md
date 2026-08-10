@@ -97,6 +97,11 @@ should scale. The next problem is therefore Iteration B, below.
 
 ## 2. Iteration B — compose independent writable database authority
 
+**Iteration B spans PR3a, PR3b and PR3c.** PR3a and PR3b built the placement model, booking policy,
+multi-authority topology and authority-aware verification; PR3c is the evidence-producing work
+unit. **The iteration does not close inside PR3c** — it closes at Analyse & Review, which is an
+explicit step of its own afterwards (Nancy's call, 2026-08-10).
+
 ### Problem
 
 The evidence-backed problem is now:
@@ -165,13 +170,34 @@ The concrete validation is owned by
 
 **Pending — Iteration B's evidence is not yet produced.** PR3c owes it.
 
-When it is, this section records the same five-part closure record §1.4.1 requires, written to the
-worked example under Iteration A: problem verdict, evidence, durable learning, **goal progress**,
-and the loop decision. The last two are the ones this iteration must not skip — whether the
-problem is resolved and whether the AG-Sept goal is sufficiently achieved are different questions,
-and the reserved post-Iteration-B budget
-([`../planning/ag-sept-plan.md`](../planning/ag-sept-plan.md) §3) buys nothing until this review
-selects what it is for.
+**This review is an explicit step of its own, after PR3c completes**, not something PR3c performs
+on itself and not a pre-created PR4. Its time comes from the milestone's existing 2–3 day
+review/rerun/interpretation reserve; no new development allocation is created for it (Nancy's
+call, 2026-08-10).
+
+When PR3c reports, this section records the same five-part closure record §1.4.1 requires, written
+to the worked example under Iteration A: problem verdict, evidence, durable learning, **goal
+progress**, and the loop decision. The last two are the ones this iteration must not skip —
+whether the problem is resolved and whether the AG-Sept goal is sufficiently achieved are
+different questions.
+
+**The review must explicitly revisit the goal's service-compute clause.** The goal asks for
+evidence that independent work can use additional *service-compute* as well as writable-database
+resources, and Iteration B addresses only the second. So the review asks, on the evidence:
+
+- does the multi-authority result and its resource balance make service compute the next
+  meaningful frontier?
+- or must the resource allocation within a shard group change first, before a service frontier
+  could even be exposed — in which case *that* is the next problem?
+- or does another problem carry higher value, or is the goal sufficiently achieved for scope?
+
+**The goal itself stands unchanged until that review.** If the evidence justifies revising it, that
+is an explicit goal/scope decision, taken then and recorded here — never an implicit consequence of
+what the next iteration happens to schedule.
+
+Only that review may select the next iteration and release the reserved post-Iteration-B envelope
+([`../planning/ag-sept-plan.md`](../planning/ag-sept-plan.md) §3). Until it happens, the envelope
+buys nothing.
 
 ## 3. Candidate next iteration — stateless service replicas
 
@@ -189,6 +215,12 @@ If that is still the right problem for achieving the goal, it begins a new itera
 **Problem**. Requirements and design may remain largely unchanged; the validation plan already
 records the candidate replica and connection-budget validations, and only then should the
 milestone schedule commit their scope and budget.
+
+It is not the only candidate. If Iteration B's evidence shows that service compute cannot become a
+meaningful frontier without first changing the resource balance within a shard group, then
+**rebalancing is the next problem** and replica scaling waits behind it. A third possibility is
+that another problem carries more value, or that the goal is sufficiently achieved for scope and
+the loop ends. The review chooses; this section only records what is currently most likely.
 
 If the Iteration B evidence shows that the AG-Sept goal is already sufficiently achieved for
 scope, the loop ends. If it exposes a more important problem, the next iteration starts from that

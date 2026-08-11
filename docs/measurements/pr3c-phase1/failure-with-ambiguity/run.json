@@ -1,0 +1,116 @@
+{
+  "manifest": {
+    "service_commit_sha": "2991940d4abdc26b697cf9984f0168c5ce61c553",
+    "service_source_modified": false,
+    "service_go_version": "go1.26.5",
+    "image_id": "sha256:3da62f4e2463853ae59bd24495eac3dda93a96fc34f88b49b8f896cee69fcad6",
+    "image_tag": "alloca-go:2991940",
+    "container_deployment": true,
+    "generator_commit_sha": "2991940d4abdc26b697cf9984f0168c5ce61c553",
+    "generator_source_modified": false,
+    "generator_go_version": "go1.26.5",
+    "replica_count": 0,
+    "deployment_topology": "",
+    "environment": "",
+    "authority_count": 2,
+    "routing_version": "pr3b-v1",
+    "placement_assignment": {
+      "authority-1": [
+        "org-a",
+        "org-c"
+      ],
+      "authority-2": [
+        "org-b",
+        "org-d"
+      ]
+    },
+    "placement_digest": "fb42ec8e5c1c27e2f3e74468b857e90db435879c46f9f460b1324b9a911dbd85",
+    "unit_count": 2,
+    "server_gomaxprocs": 10,
+    "timeout_budget": "admission_cap=250ms client_deadline=6s db_acquire_cap=500ms lock_timeout=2s server_deadline=5s statement_timeout=3s txn_budget=3.5s",
+    "reservation_ttl": "2m0s",
+    "postgres_version": "16.14",
+    "pool_size_per_replica": 10,
+    "telemetry_mode": "full",
+    "workload": "multi-org-dispersed",
+    "concurrency": 8,
+    "duration": "40s",
+    "warm_up": "0s",
+    "dataset_slots": 4800,
+    "generator_location": "local",
+    "generator_gomaxprocs": 10,
+    "generator_num_cpu": 10,
+    "target": "http://localhost:8081,http://localhost:8082",
+    "timestamp": "2026-08-11T09:16:07.194358138Z"
+  },
+  "summary": {
+    "workload": "multi-org-dispersed",
+    "concurrency": 8,
+    "iterations": 0,
+    "duration_requested_seconds": 40,
+    "completed_iterations": 36794,
+    "duration_seconds": 40.005737182,
+    "warm_up_seconds": 0,
+    "warm_up_discarded": 0,
+    "totals": [
+      {
+        "operation": "reserve",
+        "outcome": "admitted_success",
+        "replay": false,
+        "count": 35981
+      },
+      {
+        "operation": "reserve",
+        "outcome": "internal_failure",
+        "replay": false,
+        "count": 508
+      },
+      {
+        "operation": "reserve",
+        "outcome": "timeout_server",
+        "replay": false,
+        "count": 304
+      },
+      {
+        "operation": "reserve",
+        "outcome": "unknown_replayable",
+        "replay": false,
+        "count": 1
+      }
+    ],
+    "completed_requests": 36794,
+    "successful_mutation_goodput": 35981,
+    "replayed_mutations": 0,
+    "latency_ms": {
+      "p50": 3.760855,
+      "p95": 8.579664,
+      "p99": 16.841759,
+      "max": 503.891125
+    },
+    "generator": {
+      "gomaxprocs": 10,
+      "goroutines": 39,
+      "cpu_seconds": 4.249403,
+      "cpu_utilisation_per_core": 0.01062198399361569,
+      "num_cpu": 10
+    },
+    "response_validation_enabled": true,
+    "invalid_responses": 0,
+    "measurement_sound": true,
+    "ambiguity_resolutions": [
+      {
+        "operation": "reserve",
+        "user_organisation_id": "org-d",
+        "user_id": "u-20623",
+        "idempotency_key": "multi-org-dispersed-20623-reserve",
+        "outcome": "admitted_success",
+        "replay": false
+      }
+    ]
+  },
+  "quotability": {
+    "level": "local",
+    "blocked_from": "capacity",
+    "blocked_because": "manifest is incomplete for a capacity claim: aggregate_pool_size is not positive (operator-supplied); replica_count is not positive (operator-supplied); deployment_topology is empty (operator-supplied); environment is empty (operator-supplied)"
+  }
+}

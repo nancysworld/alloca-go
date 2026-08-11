@@ -1,0 +1,433 @@
+# AG-Sept PR3c — Phase 1 correctness and failure isolation
+
+> ## The conclusion
+>
+> **Two independent writable authorities compose without weakening any accepted transaction
+> semantic, and one of them failing does not reach the other.**
+>
+> Across two passes of a five-cell matrix, every reconciliation check passed on both
+> authorities and in aggregate — 11 of 11 per cell, per pass — with each authority's rows
+> counted only over the organisations the placement map gives it. The supported booking path,
+> the cross-authority refusal, the misrouting refusal and the confirm/cancel ownership check
+> all behave as their contracts state.
+>
+> With one authority's database stopped mid-run: its unit reported `503` while its peer
+> reported `200` and kept booking; the affected unit's requests took bounded infrastructure
+> outcomes; **no request failed over to the surviving writer**, and no organisation holds a row
+> on an authority that does not own it. Restoration needed no compensating write anywhere.
+>
+> In one further run of the same cell, the fault produced a real `unknown_replayable` — a
+> mutation whose outcome the client could not settle — and the post-run resolution pass settled
+> it: that run's two accounting populations differ by exactly the one replay, 36,794 measured
+> requests against 36,795 counted by the two units, while the databases hold 35,982 rows for
+> 35,982 final logical mutations. That is `measurement-contract.md` §12 on a live fault rather
+> than only in tests. It is retained separately, as one observation and not a rate (§5.2), and
+> it is **not** INV-21's unproven case: resolution proved the original had never committed
+> (§7.3).
+>
+> **No throughput multiplier is claimed, and none can be from this machine.** Both authorities,
+> both units, the generator and the databases share one 10-vCPU WSL2 allocation. The runs here
+> are correctness experiments at concurrency 8; the resource figures in §6 are retained for the
+> Iteration B review, not offered as a capacity result.
+>
+> Evidence: [`pr3c-phase1/pass-1/`](../pr3c-phase1/pass-1/) ·
+> [`pr3c-phase1/pass-2/`](../pr3c-phase1/pass-2/). Reproduce with
+> [§8](#8-reproducing-this).
+
+**Status:** this is the evidence PR3c's exit gate asks for — Phase 1 correctness and failure
+isolation demonstrated on independent writable authorities, with every accepted transaction
+semantic on the supported path unchanged and no throughput multiplier claimed. Whether that
+discharges the gate is the maintainer's call at merge, not this document's. What the evidence
+does **not** reach, and does not claim: INV-21's acknowledgement-lost half (§7.3), and any
+statement about capacity, scaling or the next frontier (§7.1).
+
+All figures are `[MEASURED]` from the artifacts in
+[`../pr3c-phase1/`](../pr3c-phase1/) unless labelled otherwise. Every number is derived from a
+retained `run.json`, `verdict.json`, `.prom` scrape or row census; none is quoted from a
+terminal. Both passes are reported wherever they differ, because a single load reading is
+provisional under the measurement contract even when the property it supports is a gate.
+
+**Certification.** Every run reached `quotability.level: local`, the floor of the ladder, and
+`local` is also the floor the harness *requires*, so a cell that fell below it would fail rather
+than report itself passed.
+
+**Why these runs stop at `local`, precisely.** Their manifests carry none of the four
+operator-supplied fields a `capacity` claim needs — `aggregate_pool_size`, `replica_count`,
+`deployment_topology` and `environment` — which is what the verdict says when the floor is
+raised:
+
+```
+run reached level "local", below the required "publishable": manifest is incomplete for a
+capacity claim: aggregate_pool_size is not positive (operator-supplied); replica_count is not
+positive (operator-supplied); deployment_topology is empty (operator-supplied); environment is
+empty (operator-supplied)
+```
+
+**Co-residency is not the reason**, and saying so would misstate the contract
+([`measurement-contract.md`](../../design/measurement-contract.md) §13): a fully described
+co-resident run *can* reach `capacity`. What co-residency blocks is `publishable`, and only
+that. These runs are correctness experiments that describe no capacity claim, so the missing
+fields are appropriate rather than an omission — but they, not co-residency, are what holds the
+level here. Service, generator, verifier and image all carry the same clean revision, and the units
+were bound to the observed image before any measured request:
+
+| Provenance field | Value |
+|---|---|
+| `service_commit_sha` / `generator_commit_sha` | `d8a6b2e…` / `d8a6b2e…`, both `source_modified: false` |
+| verifier revision (from [`experiments.txt`](../pr3c-phase1/pass-1/experiments.txt)) | `d8a6b2e…` `(clean)` |
+| `image_id` | `sha256:4a12f38eaf1bd7e2…`, one image across both units |
+| `unit_count` / `authority_count` | 2 / 2 |
+| `routing_version` / `placement_digest` | `pr3b-v1` / `fb42ec8e5c1c27e2…` |
+| `topology_disagreement` / `service_identity_drift` | empty / empty |
+| `postgres_version` / `pool_max_conns` / `server_gomaxprocs` | 16.14 / 10 / 10 |
+
+The verifier's revision is here because it is the binary that produced every verdict below, and
+its stamp is carried in no report: certification would refuse a modified *generator*, but
+nothing downstream would ever mention a modified verifier. The harness checks it and the
+transcript records it, so "which binary certified this?" is answerable from the artifacts.
+
+## 1. What was run
+
+The topology is the PR3b two-authority stack
+([`container-topology.md`](../../operations/container-topology.md)): `authority-1` owning
+`org-a` and `org-c`, `authority-2` owning `org-b` and `org-d`, one placement document mounted
+into both units. The fixture is 1,200 slots per organisation at capacity 20 — 96,000 units in
+all — re-seeded before every cell, because a cell that starts on a used fixture measures
+capacity exhaustion while passing every gate.
+
+| Cell | Shape | Bound | Discharges |
+|---|---|---|---|
+| `controls` | five request-level assertions | — | VAL-COR-2, VAL-COR-3, VAL-COR-5 |
+| `correctness` | `multi-org-dispersed` | 2,000 requests | VAL-COR-1, VAL-COR-2 |
+| `distribution` | `hot-organisation`, `org-a` | 2,000 requests | organisation-to-authority distribution |
+| `refusal` | `cross-authority-control` | 2,000 requests | VAL-COR-4 |
+| `failure-isolation` | `multi-org-dispersed`, one authority stopped | 40 s | VAL-FAIL-1, VAL-COR-6 |
+
+Together the `correctness` and `failure-isolation` cells discharge **VAL-SCALE-3 in the sense
+that validation names**: the multi-organisation dispersed workload across two writable
+authorities, establishing correctness and failure independence, interpreted on a co-resident
+workstation as *architecture and correctness evidence rather than a production capacity
+multiplier*. The validation itself says to read it that way, and §7.1 says why no other reading
+is available here.
+
+Each load cell is scraped per unit before and after, verified immediately, and its verdict
+retained. The scrapes are taken once the generator has **exited**, not when the workload ends,
+because the resolution pass sends requests after the measured interval closes (§5.3).
+
+## 2. Correctness on independent authorities `[MEASURED]`
+
+The `correctness` cell drives supported traffic across both authorities: same-organisation and
+colocated cross-organisation bookings, routed by user organisation.
+
+| | pass 1 | pass 2 |
+|---|---:|---:|
+| completed / goodput | 2,000 / 2,000 | 2,000 / 2,000 |
+| requests served by `authority-1` / `authority-2` | 1,000 / 1,000 | 1,000 / 1,000 |
+| reconciliation checks passed | 11 / 11 | 11 / 11 |
+| p50 / p99 latency (ms) | 3.74 / 10.09 | 3.66 / 7.74 |
+
+Every request was admitted; no refusal, no infrastructure outcome, no replay. The per-unit
+split comes from the units' own scrapes rather than from the client, which carries no authority
+dimension by design ([`ag-sept-pr3.md`](../../development/implementation/ag-sept-pr3.md) §3.2).
+
+**The five request-level controls** ([`pass-1/experiments.txt`](../pr3c-phase1/pass-1/experiments.txt)),
+each asserted rather than eyeballed, and each identical in both passes:
+
+| Control | Result | Why it is not the one above it |
+|---|---|---|
+| same-organisation booking on its own authority | `200 admitted_success` | — |
+| colocated cross-organisation booking (`org-a` user, `org-c` slot) | `200 admitted_success` | the Phase 1 policy compares *resolved authorities*, so this must keep working — INV-13 |
+| cross-authority booking (`org-a` user, `org-b` slot) | `409 business_refusal / cross_authority_unsupported` | policy, applied by the unit that understood the request |
+| misroute (`org-b` user sent to `authority-1`'s unit) | `400 invalid_request`, misroute counter +1 | the transport edge, refusing a request that reached the wrong unit |
+| confirm and cancel with a wrong `UserRef` | `404 business_refusal / unknown_target` (both) | a domain answer about a reservation that exists |
+
+The misroute control is the one that makes REQ-ROUTE-1 a property of the *service* rather than
+of the generator's routing table, which is why it asserts the counter as well as the outcome: a
+400 that is really a misconfiguration must not hide among client errors. The ownership control
+then confirms the owner can still confirm afterwards (`200`), so the two refusals did not
+consume the reservation.
+
+## 3. The cross-authority refusal, as its own evidence class `[MEASURED]`
+
+| | pass 1 | pass 2 |
+|---|---:|---:|
+| completed | 2,000 | 2,000 |
+| `business_refusal / cross_authority_unsupported` | 2,000 | 2,000 |
+| goodput | 0 | 0 |
+| per-unit split | 1,000 / 1,000 | 1,000 / 1,000 |
+
+Every request was refused, at the unit owning the *user's* organisation, and **no partial
+booking state was created**: the aggregate persisted counts are unchanged by this cell and its
+verdict reconciles at zero fresh mutations. It is reported separately and never mixed into the
+supported workload — a refusal is a correct answer, not a failure, and averaging the two would
+describe neither (VAL-COR-4).
+
+## 4. Organisation-to-authority distribution `[MEASURED]`
+
+The one-hot cell puts the whole load on `org-a`, which `pr3b-v1` places on `authority-1`:
+
+| | pass 1 | pass 2 |
+|---|---:|---:|
+| requests served by `authority-1` | 2,000 | 2,000 |
+| requests served by `authority-2` | **0** | **0** |
+| `authority-2` CPU over the cell | 0.00 s | 0.00 s |
+
+An idle peer is the point: placement decides where work lands, and an authority that owns none
+of the loaded organisations does none of the work. The `correctness` cell is the companion
+reading — 1,000/1,000 — so the two together show the distribution *following the map* rather
+than following the generator's own balance.
+
+## 5. Failure isolation `[MEASURED]`
+
+**The fault is a stopped container**, `alloca-authority-2-db`. The sequence is: stop at +10 s
+into a 40 s window, assert isolation while it is down, hold it down for a further configured
+15 s, then restore — inside the same window. Because the hold begins *after* the assertion, the
+retained transcripts show **16 and 17 seconds** between stop and start rather than 15; the
+configured `FAULT_FOR` is the hold, not the whole outage. The failure mode is named because the
+outcome depends on it: a stopped container drops packets rather than refusing them, and a
+killed container or a database refusing connections classifies differently
+([`ag-sept-pr3.md`](../../development/implementation/ag-sept-pr3.md) §6b).
+
+| | pass 1 | pass 2 |
+|---|---:|---:|
+| completed / goodput | 36,362 / 35,565 | 35,298 / 34,561 |
+| `internal_failure` | 493 | 433 |
+| `timeout_server` | 304 | 304 |
+| requests to `authority-1` / `authority-2` | 18,181 / 18,181 | 17,649 / 17,649 |
+| infrastructure outcomes on `authority-1` | **0** | **0** |
+| infrastructure outcomes on `authority-2` | 797 | 737 |
+| reconciliation checks passed | 11 / 11 | 11 / 11 |
+
+### 5.1 What isolation looks like from each side
+
+**The unaffected authority did not notice.** `authority-1` served 18,181 requests in pass 1 and
+17,649 in pass 2 with **zero** infrastructure outcomes and no measurable pool acquire-wait. Its
+readiness stayed `200` throughout while the affected unit reported `503`
+([`readiness-during-fault.txt`](../pr3c-phase1/pass-1/failure-isolation/readiness-during-fault.txt)).
+
+Both halves of that are **asserted by the harness, not merely recorded**: the cell fails if the
+healthy peer ever answers anything but `200` while the fault is in place, and fails if the
+affected unit does not reach `503` within a bounded wait. Recording the two status codes and
+leaving the reading to whoever opens the file was the earlier version, and it would have passed
+a run in which containment did not hold, on the strength of the topology recovering afterwards.
+
+**The affected authority took bounded outcomes and recovered.** Every failed request landed in
+the closed outcome set — `internal_failure` where the pool already held a broken connection,
+`timeout_server` where a new connection could not be established — and the unit resumed serving
+its own organisations after the database returned, with no operator action beyond starting the
+container.
+
+**No request failed over to the surviving writer.** The row census taken after each pass shows
+each authority holding rows for its own organisations only
+([`authority-1-rows-by-organisation.txt`](../pr3c-phase1/pass-1/failure-isolation/authority-1-rows-by-organisation.txt),
+[`authority-2-rows-by-organisation.txt`](../pr3c-phase1/pass-1/failure-isolation/authority-2-rows-by-organisation.txt)):
+`org-a` and `org-c` on `authority-1`, `org-b` and `org-d` on `authority-2`, nothing else on
+either.
+
+**The census is a gate, and it has to be**, because reconciliation cannot catch this on its own:
+`RunTopology` counts each authority only over the organisations placement gives it, so a stray
+row on the wrong writer sits outside every scoped count and the aggregate still balances
+whenever the correct row also exists. The cell now fails if any organisation appears on an
+authority the run's own manifest does not place it on — checked against the manifest rather than
+a second copy of the placement, so the gate cannot drift from the map the run actually used.
+Proven by injecting an `org-b` idempotency row into `authority-1` and confirming the check
+fails on it.
+
+**Restoration required no compensating write on the unaffected authority.** Nothing was
+replayed, reconciled or cleaned up on `authority-1`; the only post-restoration work anywhere
+was the single same-key replay in §5.2, on the authority that had failed.
+
+**Recovery happened inside the measured window**, which is what makes the outage the one this
+report describes rather than a longer one ending after the measurement. What the retained
+artifacts establish is the restart instant: the authority was started **14 and 13 seconds**
+before each window closed (`experiments.txt`: windows opening at 11:17:51 and 11:19:01 for 40 s,
+restarts at 11:18:17 and 11:19:28, one-second resolution), and both runs then completed and
+reconciled.
+
+**How long the unit took to report ready after that is not in these artifacts.** The old harness
+logged the restart but not the ready-again instant; precise margin logging came later, with the
+gate that enforces it. So this report states the restart margin, which is retained, and claims
+no recovery duration, which is not. The harness now refuses a cell whose authority is not observed
+ready before the window closes, and logs the remaining margin — so future runs state it instead
+of leaving it to be inferred.
+
+### 5.2 One real `unknown_replayable`, resolved — VAL-COR-6 on a live fault
+
+**The distinction the wording has to keep.** `unknown_replayable` says the *client* cannot tell
+whether the mutation committed. It does not say a commit landed. In this run the replay proved
+the original had **not** committed, so the resolution performed the mutation itself — which is
+why this is not INV-21's outstanding case, where the commit lands and only the acknowledgement
+is lost (§7.3).
+
+**Neither retained pass produced one.** Of the runs of this cell driven on 2026-08-11, exactly
+one did, and that run is retained separately as
+[`failure-with-ambiguity/`](../pr3c-phase1/failure-with-ambiguity/) — same cell, same fault and
+same fault timing, at the earlier commit `2991940` and therefore **before the harness gained the
+assertions §5.1 and §8 describe**. What that costs is stated in that directory's own README:
+its containment and partition properties were recorded rather than asserted, and its verifier's
+provenance was not yet captured. The accounting claim below does not rest on any of that — it
+is read from the run's own client totals and the persisted-row counts in its verdict, both
+retained and independently checkable.
+
+It is reported as one observation of the contract holding on a real fault, **not as a rate**,
+and VAL-COR-6's accounting does not depend on it: the validation plan discharges that on
+deterministic end-to-end tests precisely so no experiment has to produce a commit-ambiguous
+outcome to order.
+
+That run's fault produced exactly one `unknown_replayable`. The generator replayed it under its
+own idempotency key after the authority returned:
+
+```json
+{ "operation": "reserve", "user_organisation_id": "org-d", "user_id": "u-20623",
+  "idempotency_key": "multi-org-dispersed-20623-reserve",
+  "outcome": "admitted_success", "replay": false }
+```
+
+`replay: false` means the original attempt had **not** committed and the resolution performed
+the mutation itself — VAL-COR-6's second state, arriving on its own rather than by
+construction. The generator reported `replayed 1 ambiguous mutation(s), 0 still unresolved`.
+
+The accounting is where this matters, and the verdict shows both populations in one place:
+
+| Quantity | Value | What it is |
+|---|---:|---|
+| measured `completed_requests` | 36,794 | the measurement population: what the client saw inside the interval |
+| measured goodput | 35,981 | **excludes** the resolved mutation — the client received no definite success for it inside the interval |
+| server-counted requests | 36,795 | the reconciliation population: measured **+ 1** resolution attempt |
+| fresh admitted reserves | 35,982 | 35,981 measured + 1 established by the resolution |
+| live reservations / claims / idempotency records | 35,982 / 35,982 / 35,982 | what the two databases actually hold |
+
+The two populations differ by exactly one request, in the direction the contract requires:
+post-run resolution changed what is known about final logical state without rewriting a single
+measured field. An implementation that folded the replay into measured goodput would report
+35,982 there and reconcile just as cleanly — which is why the separation is a contract rather
+than an implementation detail (`measurement-contract.md` §12).
+
+In the two retained passes the resolution pass was correctly a no-op, and their verdicts show
+the two populations coinciding, as they must when nothing was ambiguous: 36,362 completed
+against 36,362 server-counted in pass 1, 35,298 against 35,298 in pass 2.
+
+## 6. Resource evidence, retained for the Iteration B review `[MEASURED]`
+
+Retention, not an experiment: these are figures the runs above already produced, kept so the
+review can judge where the next limiting boundary probably sits without re-running anything.
+Both passes, so the spread is visible rather than asserted.
+
+| Cell | Unit | CPU | Pool acquires | Acquire-wait |
+|---|---|---:|---:|---:|
+| correctness (2,000 req) | `authority-1` | 0.71 / 0.70 s | 1,000 / 1,000 | 0.02 / 0.00 s |
+| correctness | `authority-2` | 0.73 / 0.71 s | 1,000 / 1,000 | 0.02 / 0.00 s |
+| failure isolation (40 s) | `authority-1` | 12.89 / 12.58 s | 18,190 / 17,658 | 0.00 s |
+| failure isolation | `authority-2` | 12.61 / 12.27 s | 17,398 / 16,928 | **44.28 / 40.78 s** |
+
+Read with care, and with §7.1:
+
+- **at concurrency 8 the pool is not contended on a healthy authority** — acquire-wait is
+  0.00–0.02 s across every healthy cell in both passes. PR2's frontier was found at far higher
+  concurrency, where acquire-wait was the dominant term; these runs say nothing about that
+  regime and were not driven into it;
+- **service CPU is roughly 0.32 cores per unit** over the failure window (12.89 s of a 40 s
+  window), against WSL2's 10-vCPU allocation shared by everything. Whether service compute is
+  the next frontier is exactly the question the Iteration B review must answer, and this is an
+  input to it rather than an answer;
+- **the 41–44 s of acquire-wait on the affected authority is the outage**, accumulated by
+  requests waiting on connections that could not be established. It is also the loosest figure
+  here — an 8.6% spread across two faults of identical timing — and its shape is the open lead
+  in §7.2.
+
+## 7. What this does not establish
+
+### 7.1 No capacity, throughput or scaling claim
+
+Both authorities, both service units, both databases and the generator share one 10-vCPU WSL2
+allocation ([`environment.md`](../environment.md)). Authority composition cannot be quoted as a
+capacity multiplier from this machine, and nothing here attempts it: the cells are bounded at
+2,000 requests or 40 seconds at concurrency 8, sized so that every request can succeed against
+the fixture rather than to find a limit. PR2's unexplained ~2× excursions are still open, so
+any single throughput reading from this workstation carries that caveat regardless.
+
+### 7.2 Two reproducible observations that are not diagnoses
+
+**`timeout_server` was exactly 304 in all three retained failure runs** — pass 1, pass 2 and
+[`failure-with-ambiguity/`](../pr3c-phase1/failure-with-ambiguity/) — while `internal_failure`
+moved freely across them (493, 433, 508) and total volume varied by 4.2%. Every number in that
+sentence is re-derivable from a retained `run.json`.
+
+A quantity that is bit-identical across runs whose other outcome counts are not is structural
+rather than incidental, and it is not explained here. `[HYPOTHESIS]`, from unretained
+harness-validation runs on the same day and offered only as a direction for whoever picks this
+up: 304 held there too, and the one run whose fault was hand-timed rather than script-timed
+produced a different count — which would make the figure a function of the fault's *timing*
+rather than of the run's size. That is a lead, not evidence, and no run behind it is retained.
+
+**The worst client-observed latency was 507.1 ms and 503.2 ms** in the two passes, against a 5 s
+server deadline and a 500 ms `db_acquire_cap`. That is consistent with the acquisition cap
+bounding the wait when the pool is warm — and it points the *opposite* way from the single
+observation recorded in `ag-sept-pr3.md` §6b, where an idle request against a stopped authority
+took ~5 s. The plausible reconciliation is warm pool versus new connection, but that is a
+hypothesis, not a diagnosis: it needs the investigation §6b asks for, and neither reading should
+be used to change a timeout budget.
+
+### 7.3 INV-21's acknowledgement-lost half is still unproven
+
+PR3b proved the narrower fault — a `COMMIT` attempted on an already-terminated session
+classifies conservatively. The remaining half, *commit landed but the acknowledgement was
+lost*, needs something interposed between client and server that drops the reply, and a generic
+authority shutdown does not produce it. The single `unknown_replayable` in §5.2 is **not** that
+proof, and is the case most likely to be mistaken for it: it resolved `replay=false`, meaning
+the original had never committed. INV-21's outstanding half needs the opposite — `replay=true`,
+a commit that landed while its acknowledgement did not. The invariant
+register still says so.
+
+## 8. Reproducing this
+
+```sh
+make image                                                  # clean tree required
+make image-provenance                                       # want modified=false
+go build -o bin/alloca-load ./cmd/alloca-load               # also from a clean tree
+go build -o bin/alloca-verify ./cmd/alloca-verify
+make topo-up
+make topo-deployment > test/results/deployment.json
+test/scripts/pr3c-experiments.sh all                        # one pass of the matrix
+make topo-down
+```
+
+**Build everything before retaining anything, and keep the tree clean until the runs are done.**
+The artifacts under [`../pr3c-phase1/`](../pr3c-phase1/) are *tracked* files, so copying a run
+into them dirties the working tree — and `make topo-up` depends on `image`, so it rebuilds and
+re-tags from whatever the tree looks like *then*, silently replacing a clean image with a
+modified one under the same tag. Ordering is the whole defence, and the harness catches the
+mistake rather than producing a run that cannot certify.
+
+The script seeds, scrapes, drives, injects the fault, resolves and verifies. It **fails the
+cell** — rather than recording and moving on — when any of these does not hold, each of which
+was demonstrated by removing the property and watching the cell fail:
+
+| Gate | What it refuses |
+|---|---|
+| generator and verifier stamps | either binary built from a modified tree; the verifier's stamp is carried in no report, so nothing downstream would ever mention it |
+| service `/meta` `modified` | an image whose binary cannot certify a run |
+| `-require local` | a cell whose reconciliation checks all pass while its *certification* level is `none` — unsound, unresolved or drifted |
+| readiness during the fault | a healthy peer answering anything but `200`, or the affected unit never reaching `503` |
+| recovery inside the window | an authority not observed ready before the measured window closed — the outage would then outlast the interval the run is reported against |
+| row census against the manifest | any organisation holding rows on an authority the run's own placement does not put it on |
+| seed clean-start assertion | a fixture carrying live claims or idempotency records from an earlier run |
+
+Cell selectors (`controls`, `correctness`, `distribution`, `refusal`, `failure`) run one at a
+time. `REQUIRE`, `FAULT_CONTAINER`, `WINDOW_SECONDS`, `FAULT_AFTER`, `FAULT_FOR` and the fixture
+size are environment overrides; a fault that cannot open *and* close inside the window is
+refused before the run starts.
+
+Each cell directory holds:
+
+| File | Why it is kept |
+|---|---|
+| `run.json` | client totals, the manifest, `ambiguity_resolutions`, and the run's own certification |
+| `verdict.json` | the per-authority and aggregate reconciliation checks that make the run admissible |
+| `s1-baseline.prom`, `s1-after.prom`, `s2-*.prom` | each unit's own scrape pair, differenced separately before summing |
+| `authority-N-rows-by-organisation.txt` | the row census behind §5.1 (failure cell only) |
+| `readiness-during-fault.txt` | both units' `/readyz` while the authority was down (failure cell only) |
+| `generator-output.txt` | what the resolution pass reported |
+
+with `experiments.txt` at the top of each pass recording the control assertions, the artifact
+identity, and the fault timings.

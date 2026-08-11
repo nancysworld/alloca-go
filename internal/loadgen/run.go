@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -253,6 +254,177 @@ type Summary struct {
 	// Level is the field to read. An unsound run is LevelNone whatever its manifest says.
 	Sound           bool   `json:"measurement_sound"`
 	NotSoundBecause string `json:"not_sound_because,omitempty"`
+
+	// Resolved records the ambiguity-resolution pass, empty for a run that produced no
+	// `unknown_replayable`. It is what makes the two accountings measurement-contract §12
+	// distinguishes both derivable from one artifact: Totals already carries every HTTP
+	// attempt including the resolution requests, while this says which logical mutation each
+	// key turned out to hold.
+	//
+	// Kept as the resolution's *outcome* rather than as a recomputed count, so a reader can
+	// audit the arithmetic rather than trust it.
+	Resolved []ResolvedMutation `json:"ambiguity_resolutions,omitempty"`
+}
+
+// ResolvedMutation is one ambiguous mutation's settled identity and answer.
+//
+// Key and User are recorded because the resolution is only meaningful as a statement about
+// *that* idempotency scope: "one key contributed one fresh mutation" cannot be checked from
+// an artifact that does not say which key.
+type ResolvedMutation struct {
+	Operation string         `json:"operation"`
+	UserOrg   string         `json:"user_organisation_id"`
+	UserID    string         `json:"user_id"`
+	Key       string         `json:"idempotency_key"`
+	Outcome   domain.Outcome `json:"outcome"`
+	Reason    domain.Reason  `json:"reason,omitempty"`
+	// Replay is the load-bearing field. True means the original attempt had committed and
+	// this returned its record, so the fresh mutation belongs to the original; false means
+	// the original had not committed and this request performed it.
+	Replay bool `json:"replay"`
+	// StillAmbiguous means the replay did not settle the key: it returned
+	// `unknown_replayable` again, or failed at the transport, or was refused at the edge.
+	// Any of these makes the run unreconcilable (measurement-contract §12).
+	StillAmbiguous bool `json:"still_ambiguous,omitempty"`
+	// Invalid carries the harness's validation complaint about the resolution response, or
+	// is empty when it satisfied the contract. Recorded here rather than folded into the
+	// measured Invalid count, which describes the measured interval alone.
+	Invalid string `json:"invalid,omitempty"`
+}
+
+// WithResolutions records a post-run resolution pass, per measurement-contract §12.
+//
+// **It deliberately does not touch a single measured field.** Totals, Completed, Goodput,
+// ReplayedMutations, latency and the duration stay exactly as the measured interval observed
+// them, because post-run resolution may change what we know about final logical state but must
+// not rewrite performance history. An original that returned `unknown_replayable` contributes
+// one measured request and zero measured goodput, and goes on doing so even after a resolution
+// proves its mutation committed — the client did not receive a definite successful outcome
+// inside the interval, and no later discovery changes what happened during it.
+//
+// What the pass produces instead is Resolved: the retained, auditable record of the
+// reconciliation population. Two derivations read it, and nothing else does —
+// ReconciliationTotals/ReconciliationCompleted for the server-scrape comparison, and
+// FreshAdmittedFor/FreshMutations for final logical state.
+//
+// A run carrying any still-ambiguous entry is marked unsound: no final logical-mutation count
+// is established for that key, so no verdict over the run means anything. A resolution
+// response that failed validation does the same, for the reason validation always does — the
+// service answered something the contract does not define, and post-run traffic is no more
+// exempt from that than measured traffic is.
+func (s Summary) WithResolutions(resolutions []Resolution) Summary {
+	if len(resolutions) == 0 {
+		return s
+	}
+
+	resolved := make([]ResolvedMutation, 0, len(resolutions))
+	var stillAmbiguous, invalid int
+
+	for _, r := range resolutions {
+		if r.StillAmbiguous {
+			stillAmbiguous++
+		}
+		if r.Response.Invalid != "" {
+			invalid++
+		}
+		resolved = append(resolved, ResolvedMutation{
+			Operation:      string(r.Ambiguous.Operation),
+			UserOrg:        string(r.Ambiguous.User.OrganisationID),
+			UserID:         string(r.Ambiguous.User.UserID),
+			Key:            r.Ambiguous.Key,
+			Outcome:        r.Response.Outcome,
+			Reason:         r.Response.Reason,
+			Replay:         r.Response.Replay,
+			StillAmbiguous: r.StillAmbiguous,
+			Invalid:        r.Response.Invalid,
+		})
+	}
+	s.Resolved = resolved
+
+	var refusals []string
+	if stillAmbiguous > 0 {
+		refusals = append(refusals, fmt.Sprintf(
+			"%d mutation(s) remain ambiguous after the resolution pass: their persisted state "+
+				"and client record still disagree, so no correctness verdict over this run is "+
+				"meaningful (measurement-contract §12)", stillAmbiguous))
+	}
+	if invalid > 0 {
+		refusals = append(refusals, fmt.Sprintf(
+			"%d resolution response(s) failed validation: the service answered the replay with "+
+				"something the outcome contract does not define", invalid))
+	}
+	if len(refusals) > 0 && s.Sound {
+		s.Sound = false
+		s.NotSoundBecause = strings.Join(refusals, "; ")
+	}
+	return s
+}
+
+// addTotal merges one observation into the cell it belongs to, appending a cell only when
+// none matches. Totals is a set of (operation, outcome, reason, replay) cells, not a log.
+func addTotal(totals []Total, add Total) []Total {
+	for i := range totals {
+		t := &totals[i]
+		if t.Operation == add.Operation && t.Outcome == add.Outcome &&
+			t.Reason == add.Reason && t.Replay == add.Replay {
+			t.Count += add.Count
+			return totals
+		}
+	}
+	return append(totals, add)
+}
+
+// resolvedLogicalMutations counts the final logical mutations a resolution pass established
+// for the given operation and outcome.
+//
+// **Both definitive branches count, and each counts once.** `replay=true` proves the original
+// committed; `replay=false` means the resolution performed the mutation itself after the
+// measured interval. Either way the key holds exactly one final logical mutation. This is not
+// a distinction persisted state can see — the database holds one row in both cases — which is
+// precisely why it must not be inferred from measured Totals, where only one of the two ever
+// appears. A still-ambiguous entry establishes nothing and is excluded.
+func (s Summary) resolvedLogicalMutations(operation domain.Operation, want domain.Outcome) int {
+	n := 0
+	for _, r := range s.Resolved {
+		if !r.StillAmbiguous && r.Outcome == want &&
+			(operation == "" || r.Operation == string(operation)) {
+			n++
+		}
+	}
+	return n
+}
+
+// ResolutionAttempts counts the post-run HTTP requests the resolution pass issued, including
+// those that stayed ambiguous — the service completed them and counted them either way.
+func (s Summary) ResolutionAttempts() int { return len(s.Resolved) }
+
+// ReconciliationCompleted is the request count the reconciliation population covers: everything
+// the measured interval saw, plus the post-run resolution attempts.
+//
+// This is the number to compare against a server scrape taken *after* resolution, which is what
+// measurement-contract §12 requires. Measured `Completed` deliberately excludes the resolution
+// traffic and must not be used for that comparison.
+func (s Summary) ReconciliationCompleted() int { return s.Completed + s.ResolutionAttempts() }
+
+// ReconciliationTotals is the measured cells plus one cell per resolution attempt, as observed.
+//
+// The measured Totals are returned unchanged when nothing was resolved, and are never mutated:
+// the slice is copied before any resolution cell is merged in.
+func (s Summary) ReconciliationTotals() []Total {
+	if len(s.Resolved) == 0 {
+		return s.Totals
+	}
+	totals := append([]Total(nil), s.Totals...)
+	for _, r := range s.Resolved {
+		totals = addTotal(totals, Total{
+			Operation: r.Operation,
+			Outcome:   r.Outcome,
+			Reason:    r.Reason,
+			Replay:    r.Replay,
+			Count:     1,
+		})
+	}
+	return totals
 }
 
 // FreshAdmittedFor counts admitted successes for one operation, excluding replays.
@@ -262,6 +434,12 @@ type Summary struct {
 // Counting it would compare N+R client admissions against N persisted rows and fail a
 // service behaving exactly as the idempotency contract requires — which is what an earlier
 // version of this did, caught by the integration suite rather than by reading.
+// **This is a reconciliation view, not a measured one.** It answers "how many rows should the
+// database hold?", so it counts the final logical mutations a resolution pass established as
+// well as the ones the measured interval saw definitively. Neither resolution branch appears in
+// measured Totals — §12 keeps post-run traffic out of the measurement population — so both are
+// added here rather than inferred. Measured performance is Goodput; the two are different
+// questions and are deliberately allowed to differ.
 func (s Summary) FreshAdmittedFor(operation domain.Operation) int {
 	n := 0
 	for _, t := range s.Totals {
@@ -269,7 +447,7 @@ func (s Summary) FreshAdmittedFor(operation domain.Operation) int {
 			n += t.Count
 		}
 	}
-	return n
+	return n + s.resolvedLogicalMutations(operation, domain.OutcomeAdmittedSuccess)
 }
 
 // FreshMutations counts non-replay mutation requests that reached a terminal domain
@@ -279,6 +457,12 @@ func (s Summary) FreshAdmittedFor(operation domain.Operation) int {
 // record; counting them would demand one record per replay and fail a correct service.
 // invalid_request is excluded too: it stops at the transport edge and may carry no key to
 // scope a record by (transaction-semantics §5.5, INV-7).
+//
+// Like FreshAdmittedFor this is a reconciliation view. A resolved key holds an idempotency
+// record whichever branch it took — written by the original when the replay proves it
+// committed, or by the resolution when it performs the mutation — while the original's
+// `unknown_replayable` cell is excluded from the sum below because INV-7 requires no record for
+// it. Without the credit this would demand fewer records than the database holds.
 func (s Summary) FreshMutations() int {
 	n := 0
 	for _, t := range s.Totals {
@@ -290,6 +474,12 @@ func (s Summary) FreshMutations() int {
 			continue
 		}
 		n += t.Count
+	}
+	for _, r := range s.Resolved {
+		if !r.StillAmbiguous &&
+			domain.Operation(r.Operation).IsKnown() && isDefiniteTerminal(r.Outcome) {
+			n++
+		}
 	}
 	return n
 }

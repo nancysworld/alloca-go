@@ -129,6 +129,7 @@ func RunTopology(ctx context.Context, scopes []AuthorityScope, r loadgen.Report)
 
 	var total authorityCounts
 	var serverTotals ServerTotals
+	var scraped int
 
 	for _, scope := range ordered {
 		if scope.Querier == nil {
@@ -158,11 +159,41 @@ func RunTopology(ctx context.Context, scopes []AuthorityScope, r loadgen.Report)
 			})
 			return finish(res, r), nil
 		}
+		if scope.Scrapes.After != nil {
+			scraped++
+		}
 		serverTotals = append(serverTotals, measured...)
 	}
 
-	res.Aggregate = aggregateChecks(total, serverTotals, r.Summary)
+	res.Aggregate = aggregateChecks(total, serverTotals, r.Summary, missingScrapes(scraped, ordered))
 	return finish(res, r), nil
+}
+
+// missingScrapes explains a topology where only some units were scraped, or returns "" when
+// every unit was or none was.
+//
+// A partial set is the dangerous case and it is not self-announcing. The server total is a sum
+// across units, so leaving one unit out produces a count that is simply *low* — arithmetically
+// indistinguishable from a service that dropped requests, and reported as though the units that
+// were scraped had disagreed with the client. Nothing about the message would point at the
+// scrape that was never taken.
+//
+// None at all is a different and honest state: no server-side count participates, the check
+// says so, and the run is refused for lacking one of the three counts §12 requires.
+func missingScrapes(scraped int, scopes []AuthorityScope) string {
+	if scraped == 0 || scraped == len(scopes) {
+		return ""
+	}
+	var missing []string
+	for _, scope := range scopes {
+		if scope.Scrapes.After == nil {
+			missing = append(missing, string(scope.Authority))
+		}
+	}
+	return fmt.Sprintf("%d of %d units were scraped: no scrape was supplied for %s. The "+
+		"server-side count is a sum across units, so a missing one lowers the total and reads "+
+		"as a service that dropped requests. Supply every unit's scrape, or none",
+		scraped, len(scopes), strings.Join(missing, ", "))
 }
 
 // scopesMatchReport refuses to verify a topology that is not the one the report certified.
@@ -341,7 +372,8 @@ func localSafetyChecks(scope AuthorityScope, c authorityCounts) []Check {
 
 // aggregateChecks compare the whole topology's persisted state, and the whole topology's
 // server counters, against the run's global client totals — once each.
-func aggregateChecks(total authorityCounts, server ServerTotals, s loadgen.Summary) []Check {
+func aggregateChecks(total authorityCounts, server ServerTotals, s loadgen.Summary,
+	scrapeGap string) []Check {
 	admitted := s.FreshAdmittedFor(domain.OpReserve)
 	fresh := s.FreshMutations()
 
@@ -393,5 +425,10 @@ func aggregateChecks(total authorityCounts, server ServerTotals, s loadgen.Summa
 	// define. It cannot fail on its Querier because it never uses one.
 	closure, _ := outcomeClosureCheck(context.Background(), nil, "", s)
 
-	return []Check{reservations, claims, records, closure, serverTotalsCheckFromMeasured(s, server)}
+	serverCheck := serverTotalsCheckFromMeasured(s, server)
+	if scrapeGap != "" {
+		serverCheck = Check{Name: serverCheck.Name, Detail: scrapeGap}
+	}
+
+	return []Check{reservations, claims, records, closure, serverCheck}
 }

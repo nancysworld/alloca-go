@@ -1,0 +1,33 @@
+11:18:35Z  artifacts -> test/results/pr3c-20260811T111835Z
+11:18:35Z  generator   d8a6b2e4dba3c9211cb86bc1e173f9843cf66f53 (clean)
+11:18:36Z  verifier    d8a6b2e4dba3c9211cb86bc1e173f9843cf66f53 (clean)
+11:18:36Z  image       alloca-go:d8a6b2e sha256:4a12f38eaf1bd7e22df0c7963bdc5f0a92930e6f440f1151cc5e2378224a39ac
+11:18:36Z  require     local
+11:18:36Z  seeding 1200 slots per organisation
+11:18:40Z  same-organisation booking: ok (200, admitted_success)
+11:18:40Z  colocated cross-organisation booking: ok (200, admitted_success)
+11:18:40Z  cross-authority refusal: ok (409, cross_authority_unsupported)
+11:18:40Z  misrouted request: ok (400, invalid_request)
+11:18:40Z  misroute counter: 1 -> 2
+11:18:40Z  reservation for the ownership control: ok (200, admitted_success)
+11:18:40Z  confirm with a wrong UserRef: ok (404, unknown_target)
+11:18:40Z  cancel with a wrong UserRef: ok (404, unknown_target)
+11:18:40Z  the owner can still confirm: ok (200, admitted_success)
+11:18:40Z  controls: all assertions passed
+11:18:40Z  seeding 1200 slots per organisation
+11:18:45Z  correctness: driving load
+11:18:46Z  test/results/pr3c-20260811T111835Z/correctness: every check passed, level local
+11:18:46Z  seeding 1200 slots per organisation
+11:18:51Z  distribution: driving load
+11:18:51Z  test/results/pr3c-20260811T111835Z/distribution: every check passed, level local
+11:18:51Z  seeding 1200 slots per organisation
+11:18:56Z  refusal: driving load
+11:18:57Z  test/results/pr3c-20260811T111835Z/refusal: every check passed, level local
+11:18:57Z  seeding 1200 slots per organisation
+11:19:01Z  failure: driving 40s of load; alloca-authority-2-db stops at +10s for 15s
+11:19:11Z  failure: alloca-authority-2-db stopped
+11:19:12Z  failure: isolation asserted — unit-1 200, unit-2 503 after 0s
+11:19:28Z  failure: alloca-authority-2-db started; waiting for its unit to report ready
+11:19:41Z  test/results/pr3c-20260811T111835Z/failure-isolation: every check passed, level local
+11:19:41Z  test/results/pr3c-20260811T111835Z/failure-isolation: row census clean — every row sits on the authority its organisation is placed on
+11:19:41Z  done; artifacts in test/results/pr3c-20260811T111835Z

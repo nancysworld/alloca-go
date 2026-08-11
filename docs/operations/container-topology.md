@@ -55,6 +55,8 @@ seed 15434 org-d
 go build -o bin/alloca-load ./cmd/alloca-load
 mkdir -p test/results
 make topo-deployment > test/results/deployment.json
+curl -sS http://localhost:9091/metrics > test/results/s1-baseline.prom
+curl -sS http://localhost:9092/metrics > test/results/s2-baseline.prom
 ./bin/alloca-load \
   -placement deploy/topology/placement.json \
   -endpoint authority-1=http://$S1 -endpoint authority-2=http://$S2 \
@@ -63,12 +65,27 @@ make topo-deployment > test/results/deployment.json
   -concurrency 32 -n 400 -slots 100 \
   -out test/results/topo-run.json
 
-# 7. tear it down                                                           (§7)
+# 7. reconcile it against both authorities — after the run has exited       (§6.1)
+curl -sS http://localhost:9091/metrics > test/results/s1-after.prom
+curl -sS http://localhost:9092/metrics > test/results/s2-after.prom
+go build -o bin/alloca-verify ./cmd/alloca-verify
+./bin/alloca-verify \
+  -run test/results/topo-run.json \
+  -placement deploy/topology/placement.json \
+  -authority-db "authority-1=postgres://alloca:alloca@localhost:15433/alloca?sslmode=disable" \
+  -authority-db "authority-2=postgres://alloca:alloca@localhost:15434/alloca?sslmode=disable" \
+  -authority-metrics authority-1=test/results/s1-after.prom \
+  -authority-metrics authority-2=test/results/s2-after.prom \
+  -authority-metrics-baseline authority-1=test/results/s1-baseline.prom \
+  -authority-metrics-baseline authority-2=test/results/s2-baseline.prom \
+  -out test/results/topo-verdict.json
+
+# 8. tear it down                                                           (§7)
 make topo-down
 ```
 
-Expect **400 `admitted_success`** and `measurement_sound: true`. If you get anything else, §8 is
-the place to start.
+Expect **400 `admitted_success`** and `measurement_sound: true` from step 6, and every check
+passing in step 7. If you get anything else, §8 is the place to start.
 
 Each step is explained in the section named beside it, and the explanations carry the traps —
 particularly step 5, where `-reset` on the wrong call silently empties the previous
@@ -78,7 +95,7 @@ organisation's slots.
 
 | Optional | When you want it | Where |
 |---|---|---|
-| the `docker` shim for WSL | `docker` is not found at all | §2 |
+| getting `docker` onto `PATH` in WSL | `docker` is not found at all | §2 |
 | `make image-provenance` | proving an image's revision and clean-tree stamp end to end | §3 |
 | changing ports | 8081/8082 are already taken on your machine | §4 |
 | the four routing behaviours | seeing placement, colocated booking, cross-authority refusal and misrouting behave differently — this is what the topology exists to demonstrate, so it is the first thing worth adding | §5 |
@@ -141,18 +158,28 @@ WSL integration is off for this distro". Check which:
 docker.exe ps
 ```
 
-If that works, the daemon is up and only the WSL shim is missing. Either switch on WSL
-integration in Docker Desktop settings, or put a one-line shim on `PATH`:
+If that works, the daemon is up and only the WSL integration is off. **Switch it on in Docker
+Desktop's settings** — that puts a Linux `docker` on `PATH`, usually as `/usr/bin/docker`. Ports
+published by Docker Desktop are reachable from WSL on `localhost`, so nothing else needs
+changing. If `docker.exe ps` also fails, the daemon really is down.
+
+**Do not reach for a `~/bin/docker` shim that execs `docker.exe`.** It runs, it builds, and it
+poisons every image it produces. The Windows client reads the build context through the Windows
+view of the WSL filesystem, where every file arrives mode `0755` against an index recording
+`0644`; `go build` inside the builder stage runs `git status` on that context, sees a wholly
+modified tree, and stamps the binary `vcs.modified=true`. `make image-provenance` then fails
+with "the binary is stamped vcs.modified=true, but the checkout is clean", every run against the
+image is refused at `local` on `service_source_modified`, and nothing in either message points
+at the client. This page recommended the shim until 2026-08-11, which is how it was found.
+
+If a build is stamped modified against a clean checkout, that is the first thing to check:
 
 ```sh
-mkdir -p ~/bin
-printf '#!/bin/sh\nexec "/mnt/c/Program Files/Docker/Docker/resources/bin/docker.exe" "$@"\n' > ~/bin/docker
-chmod +x ~/bin/docker
-PATH=~/bin:$PATH make topo-up
+docker build --target builder -t alloca-probe .
+docker run --rm -w /src alloca-probe sh -c \
+  "git config --global --add safe.directory /src; git diff -- README.md | head -3"
+# "old mode 100644 / new mode 100755" means the client, not your working tree.
 ```
-
-Ports published by Docker Desktop are reachable from WSL on `localhost`, so nothing else
-needs changing. If `docker.exe ps` also fails, the daemon really is down.
 
 ## 3. Building the image
 
@@ -371,6 +398,13 @@ refuses connections, classifies differently. This is recorded as
 [`ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md) §6b, and any experiment must name
 which fault it injected.
 
+**A *measured* failure-isolation run adds one requirement to the sequence above: restore the
+authority while the run is still going.** The generator replays ambiguous mutations when the
+workload ends (§6.2), and it can only do that against an authority that is answering; a run whose
+replays find the database still down is refused as unresolved. Stop the container inside the
+measured window, start it again inside the same window, and let the run finish on a healthy
+topology.
+
 ## 6. Driving a multi-authority load run
 
 Seeding is per authority and per organisation, because `alloca-seed` takes one DSN and one
@@ -506,6 +540,80 @@ The report records what the run actually reached: `authority_count`, `routing_ve
 `placement_assignment`, `placement_digest`, and `topology_disagreement` — empty when the
 units described one deployment.
 
+### 6.1 Reconciling the run against both authorities
+
+A report says what the client observed. It does not say whether the databases agree, and a
+multi-authority run has three counts to bring together rather than two — client, both units'
+own counters, and the rows on each authority
+([`measurement-contract.md`](../design/measurement-contract.md) §12). `alloca-verify -placement`
+is that step, and it is what turns a run into evidence:
+
+```sh
+./bin/alloca-verify \
+  -run test/results/topo-run.json \
+  -placement deploy/topology/placement.json \
+  -authority-db "authority-1=postgres://alloca:alloca@localhost:15433/alloca?sslmode=disable" \
+  -authority-db "authority-2=postgres://alloca:alloca@localhost:15434/alloca?sslmode=disable" \
+  -authority-metrics authority-1=test/results/s1-after.prom \
+  -authority-metrics authority-2=test/results/s2-after.prom \
+  -authority-metrics-baseline authority-1=test/results/s1-baseline.prom \
+  -authority-metrics-baseline authority-2=test/results/s2-baseline.prom \
+  -out test/results/topo-verdict.json
+```
+
+The verdict names every authority it read, carries each one's local safety checks — capacity,
+schedule non-overlap, one key one outcome — and then compares the *summed* persisted and server
+counts once against the run's client totals. It exits non-zero when the run does not reach the
+level `-require` asks for.
+
+The organisation set comes from the placement document, not from the databases. An authority
+asked to discover its own scope would silently absorb rows that are on the wrong authority,
+which is the one failure placement exists to prevent.
+
+Four things this step is particular about, each of which otherwise produces a wrong answer that
+looks right:
+
+- **`-placement` and `-database-url`/`-org` are mutually exclusive**, as they are in the
+  generator. The single-authority flags verify one database against a report describing several,
+  which is the comparison §12 forbids;
+- **every unit's scrape, or none.** Each unit's before/after pair is differenced on its own and
+  only then summed, so a unit whose scrape is missing lowers the total — arithmetically identical
+  to a service that dropped requests. A partial set is refused by name rather than reported as a
+  disagreement;
+- **scrape after the process has exited, not when the workload ends.** `alloca-load` replays any
+  ambiguous mutation after the measured interval (§6.2), and those requests reach the service. A
+  scrape taken before it exits misses them and the counts disagree by exactly the number of
+  replays;
+- **verify promptly.** Unconfirmed holds expire on the reservation TTL — two minutes by default,
+  and `/meta` reports it — so live reservations decay after the run while the idempotency records
+  and claims stay. The check tolerates fewer reservations than admitted mutations, because that
+  is what expiry looks like, but a verdict taken an hour later is evidence about expiry rather
+  than about the run.
+
+### 6.2 Ambiguous mutations are replayed before the report is written
+
+When the service answers a mutation `unknown_replayable`, the commit may or may not have landed
+and the client cannot tell. Such a run is not reconcilable until each of those keys has been
+replayed and settled, and the register that knows the keys lives in the generator process.
+
+`alloca-load` therefore replays them itself, after the measured interval and before it writes the
+report. There is no flag: a healthy run registers nothing and the pass costs nothing. It prints
+what it did:
+
+```
+alloca-load: replayed 3 ambiguous mutation(s), 0 still unresolved
+```
+
+The replays are kept out of measured performance — goodput, latency and the interval describe
+what happened during the run — and appear in the report's `ambiguity_resolutions`, which is what
+the reconciliation population and the final logical-mutation count are built from.
+
+**Anything still unresolved refuses the run.** The usual cause is resolving too early: an
+authority that is still down cannot answer a replay, and a replay that never reached the service
+settles nothing. So an experiment that takes an authority away must **restore it before the run
+ends** — not after `alloca-load` exits. `-resolve-timeout` bounds the pass so a large register
+against a dead authority cannot hang the harness.
+
 ## 7. Down
 
 The last step, once you have the report you came for:
@@ -555,15 +663,15 @@ a dirty tree, or the build context is missing tracked files. Run
 
 ## 9. What is not wired yet
 
-Deliberately, and recorded in [`ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md) §6a:
+Both entries that stood here — the multi-authority verifier CLI and the post-restoration
+resolution pass — were built in PR3c and are documented in §6.1 and §6.2.
 
-- **`cmd/alloca-verify` is still single-authority.** It takes one `--database-url` and one
-  `--org`. The authority-aware verifier (`reconcile.RunTopology`) is built and tested as a
-  package but has no CLI; its flags are shaped by how PR3c drives a run. So there is no
-  one-command multi-authority reconciliation yet — verify per authority, or wait for PR3c.
-- **The post-restoration resolution pass** — replaying ambiguous mutations after an
-  authority returns, before the correctness verdict — is PR3c, along with the summary
-  accounting it needs (§6c).
+What remains deliberately unbuilt is recorded in
+[`ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md) §7, and one item is worth naming
+here because an operator will look for it: there is **no targeted mid-`COMMIT` fault injection**.
+Stopping an authority proves containment, not the acknowledgement-lost half of INV-21, which
+needs something interposed between client and server. A generic shutdown must not be reported as
+proof of that fault.
 
 ## 10. What has been run
 
@@ -646,6 +754,20 @@ requests on correct `no_capacity` refusals — a sound run whose throughput desc
 fixture rather than booking. §6 now carries `-n 400` and says why. The run that exposed this was
 not retained (`test/results/` is git-ignored), so no figure from it is quotable; the arithmetic
 above is derived from the fixture this page defines.
+
+**§6.1 and §6.2 were added in PR3c and executed on 2026-08-11**, at `5f61db5`, against the live
+topology. The verification command in §6.1 was run exactly as written — same flags, same order,
+paths pointed at a real cell — and returned 11 of 11 checks at `local`. The resolution pass in
+§6.2 was exercised repeatedly by the failure-isolation cell, including one run where a fault
+produced a genuine `unknown_replayable` and the pass settled it
+([`ag-sept-pr3c-phase1-correctness.md`](../measurements/reports/ag-sept-pr3c-phase1-correctness.md)
+§5.2).
+
+One honest limit on that: the `curl` and `docker inspect` steps of §0 could not be run *verbatim*
+from the agent environment, which reaches published ports through a proxy and cannot address the
+Docker socket from inside its sandbox. They were exercised in equivalent form. If you are the
+first person to run §0 end to end on a workstation, that is still worth doing — this page's
+history is mostly recipes that survived review and failed on execution.
 
 Still not covered here: `make test-integration` is a separate suite with its own database,
 and CI runs it.

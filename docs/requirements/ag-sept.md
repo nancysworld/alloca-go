@@ -191,6 +191,39 @@ resources, and Iteration B addresses only the second. So the review asks, on the
   could even be exposed — in which case *that* is the next problem?
 - or does another problem carry higher value, or is the goal sufficiently achieved for scope?
 
+**Inputs to carry into that review — hypotheses and experiment dimensions, not PR3c requirements
+or conclusions:**
+
+- **Shard-affine serving constrains the nominal two-axis topology.** If authority `i` has `x_i`
+  compatible service replicas, then `x_i >= 1` for every actively served authority and total
+  service replicas are `N = sum(x_i)`. The shorthand `N:M` remains useful but is lossy: `[3,2]`
+  and `[4,1]` are both `5:2` topologies and may behave differently. The current local example is
+  `[1,1]`, not an architectural requirement.
+- **“Service scaling” means adding replicas within an existing database-authority shard group.**
+  Iteration A's mutation-heavy frontier suggests one Go service may already be enough to saturate
+  one PostgreSQL writer under that workload, so additional replicas may add little capacity or may
+  merely add connection pressure. That is a hypothesis to test, not a conclusion. Replica count
+  also has a distinct availability/redundancy purpose that must not be confused with capacity.
+- **Shard-group sizing is workload-shaped, not a raw organisation/user-count constant.** Active
+  request rate and concurrency, organisation skew, hot slots/identities, service CPU, database
+  pressure and connection demand are more direct capacity variables. Organisation or user counts
+  may become useful placement proxies only if evidence shows they correlate with active load.
+- **The timetable/read path is underrepresented in the evidence so far.** The current frontier is
+  dominated by mutation workloads, while a real deployment may issue substantially more slot/
+  timetable reads than mutations. Read-heavy traffic can move the limiting resource toward HTTP/
+  serialization work, service CPU, database query/cache/I/O pressure or connection concurrency,
+  and can make additional service replicas useful even when the mutation path is database-bound.
+- **A later capacity investigation should therefore distinguish workload mix.** At minimum the
+  review should decide whether the next problem needs mutation-heavy, read-heavy and realistic
+  mixed read/write shapes rather than treating one mutation benchmark as representative of the
+  shard group. Read scalability may eventually justify mechanisms different from writable-authority
+  composition, but caching, read replicas or a separate read model are not selected without that
+  evidence.
+- **The service-to-database resource ratio is therefore a property of a shard-group topology and
+  workload, not a constant.** The next experiment should be chosen to expose whichever resource
+  actually limits the workload we care about, rather than assuming either more replicas or more
+  database authorities is automatically the next scaling lever.
+
 **The goal itself stands unchanged until that review.** If the evidence justifies revising it, that
 is an explicit goal/scope decision, taken then and recorded here — never an implicit consequence of
 what the next iteration happens to schedule.

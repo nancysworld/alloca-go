@@ -66,9 +66,12 @@ All rates are per second over a stated measurement interval.
   service can admit or complete them.
 - **Completed throughput** — responses completed per second, separated by response
   and domain outcome (see §4).
-- **Goodput** — correct, useful domain operations completed per second. Expected
-  sold-out / insufficient-balance responses are reported **separately**, never as
-  infrastructure failures.
+- **Goodput** — correct, useful domain operations completed per second. For the current AG-Sept
+  mutation-path experiments this means **definite, fresh successful mutations completed inside
+  the stated measurement interval**. Timetable/read-path success is not folded into this mutation
+  goodput scalar; read-path capacity is a separate workload question to define when that problem is
+  scheduled. Expected sold-out / insufficient-balance responses are reported **separately**, never
+  as infrastructure failures.
 - **SLO-safe capacity** — the highest sustained goodput that satisfies *all* latency,
   timeout, correctness, saturation, and headroom gates for the interval.
 - **Recommended operating capacity** — a conservative cap below SLO-safe capacity
@@ -506,6 +509,45 @@ Every measured run carries a self-check. At minimum it must reconcile:
 
 A run with unreconciled client totals, server totals, or persisted state is not quotable.
 
+**Ambiguity resolution extends one logical mutation across multiple HTTP attempts, but post-run
+resolution does not rewrite the performance history of the measured interval.** Two accounting
+populations are therefore distinct:
+
+- the **measurement population** is the requests completed inside the stated measurement interval.
+  It owns measured `Completed`, `Goodput`, latency, terminal-outcome/timeout rates, replay counts,
+  and every rate whose denominator is that interval;
+- the **reconciliation population** is the measurement population plus the post-run same-key
+  resolution attempts needed to establish final logical state. Resolution traffic is retained and
+  auditable so client observations can be compared with the final server scrape and persisted
+  state, but it is not folded indistinguishably into measured performance fields.
+
+For an original measured request that returned `unknown_replayable`:
+
+1. it contributes **one measured request and zero measured Goodput**. That remains true even if a
+   later resolution proves that its mutation committed; the client did not receive a definite
+   successful outcome inside the measured interval;
+2. if same-key resolution returns `replay=true`, the idempotency record proves the original attempt
+   committed. Reconciliation therefore counts exactly one final logical mutation for that key. The
+   resolution HTTP request is a replay in the reconciliation population, not a second logical
+   mutation and not measured-window Goodput;
+3. if same-key resolution returns `replay=false`, the original attempt did not leave a recorded
+   mutation and the resolution request performs it after the measured interval. Reconciliation
+   again counts exactly one final logical mutation for that key, while measured-window Goodput
+   remains unchanged;
+4. a key that remains ambiguous after the resolution pass establishes no final logical-mutation
+   count and makes the run unreconcilable and therefore unquotable.
+
+**Denominators must follow the population they describe.** Measured performance may report the
+original ambiguous attempt as `0` Goodput over `1` measured request. Recovery analysis may report
+that one eventual logical mutation required two HTTP attempts when one post-run resolution was
+needed. It must not report `0/2` or `1/2` as measured Goodput, because the second request is outside
+the measured interval. Likewise, post-run resolution never changes the measured duration or
+retroactively changes measured terminal outcomes.
+
+The retained artifact must make both populations reconstructible. The exact Go representation is
+an implementation choice; the contract requires only that measured performance, resolution HTTP
+traffic, and final logical-mutation reconciliation cannot be confused or silently combined.
+
 **Multiple authorities extend the contract, not the mechanism:**
 
 1. the run is quiesced, and any `unknown_replayable` mutation is resolved by replaying its own
@@ -514,8 +556,9 @@ A run with unreconciled client totals, server totals, or persisted state is not 
    non-overlap, idempotency, and lifecycle are all local properties of the rows one authority
    owns;
 3. **persisted and server totals are aggregated across authorities and compared once** with the
-   run's global client totals — once, not per authority, because the client's totals are a
-   property of the run rather than of any one authority;
+   run's reconciliation population — once, not per authority, because the client's totals are a
+   property of the run rather than of any one authority. Measured performance fields remain scoped
+   to the measurement population above;
 4. **each service unit's scrape pair is differenced independently before the sum is taken.**
    Differencing the sums instead would let one unit restarting mid-run vanish into another
    unit's counters, which is the one arithmetic error this contract exists to prevent;

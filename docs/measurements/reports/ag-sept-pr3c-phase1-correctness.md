@@ -32,8 +32,11 @@
 > [`pr3c-phase1/pass-2/`](../pr3c-phase1/pass-2/). Reproduce with
 > [§8](#8-reproducing-this).
 
-**Status:** the PR3c exit gate is discharged for correctness and failure isolation. What is
-*not* discharged, and is not claimed: INV-21's acknowledgement-lost half (§7.3), and any
+**Status:** this is the evidence PR3c's exit gate asks for — Phase 1 correctness and failure
+isolation demonstrated on independent writable authorities, with every accepted transaction
+semantic on the supported path unchanged and no throughput multiplier claimed. Whether that
+discharges the gate is the maintainer's call at merge, not this document's. What the evidence
+does **not** reach, and does not claim: INV-21's acknowledgement-lost half (§7.3), and any
 statement about capacity, scaling or the next frontier (§7.1).
 
 All figures are `[MEASURED]` from the artifacts in

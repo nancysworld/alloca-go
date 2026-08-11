@@ -755,6 +755,20 @@ fixture rather than booking. §6 now carries `-n 400` and says why. The run that
 not retained (`test/results/` is git-ignored), so no figure from it is quotable; the arithmetic
 above is derived from the fixture this page defines.
 
+**§6.1 and §6.2 were added in PR3c and executed on 2026-08-11**, at `5f61db5`, against the live
+topology. The verification command in §6.1 was run exactly as written — same flags, same order,
+paths pointed at a real cell — and returned 11 of 11 checks at `local`. The resolution pass in
+§6.2 was exercised repeatedly by the failure-isolation cell, including one run where a fault
+produced a genuine `unknown_replayable` and the pass settled it
+([`ag-sept-pr3c-phase1-correctness.md`](../measurements/reports/ag-sept-pr3c-phase1-correctness.md)
+§5.2).
+
+One honest limit on that: the `curl` and `docker inspect` steps of §0 could not be run *verbatim*
+from the agent environment, which reaches published ports through a proxy and cannot address the
+Docker socket from inside its sandbox. They were exercised in equivalent form. If you are the
+first person to run §0 end to end on a workstation, that is still worth doing — this page's
+history is mostly recipes that survived review and failed on execution.
+
 Still not covered here: `make test-integration` is a separate suite with its own database,
 and CI runs it.
 

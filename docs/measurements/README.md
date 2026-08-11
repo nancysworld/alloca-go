@@ -24,12 +24,14 @@ artifact directories are large and are kept anyway: without them a report is an 
 | Report | Milestone | What it establishes |
 |---|---|---|
 | [AG-Sept PR2 — single-instance frontier](reports/ag-sept-pr2-single-instance-frontier.md) | AG-Sept | **The load-bearing result so far.** This machine reaches ~4,300 booking req/s and the limiting subsystem is PostgreSQL, not alloca-go — so service replicas raise throughput only up to the database's frontier and cannot lift the saturated ceiling beyond it. The sub-mechanism inside PostgreSQL (write-path contention, led by `LWLock:WALWrite`) is provisional pending database-side instrumentation. |
+| [AG-Sept PR3c — Phase 1 correctness and failure isolation](reports/ag-sept-pr3c-phase1-correctness.md) | AG-Sept | Two independent writable authorities compose without weakening any accepted transaction semantic, and one failing does not reach the other: no request failed over to the surviving writer, no organisation holds a row on an authority that does not own it, and one real ambiguous commit was resolved under its own key with the measurement and reconciliation populations differing by exactly that replay. **Correctness only — it claims no capacity or throughput multiplier**, and none is available from a machine where both authorities and the generator are co-resident. |
 
 ### Artifacts
 
 | Directory | Produced by | Contents |
 |---|---|---|
 | [`pr2-frontier/`](pr2-frontier/) | `test/scripts/sweep.sh` | The frontier sweeps: `dispersed/` (concurrency ladder), `pool/` + `pool-repeat/` (pool ladder), `plateau/` + `plateau-repeat/` (the two combined), `contended-1/` + `contended-2/` (hot-slot and hot-identity), and `postgres-waits/` (database-side sampling, diagnostic only) |
+| [`pr3c-phase1/`](pr3c-phase1/) | `test/scripts/pr3c-experiments.sh` | Two passes of the Phase 1 matrix on the two-authority topology: `controls` assertions, `correctness`, `distribution` (one-hot organisation), `refusal` (cross-authority control) and `failure-isolation` (one authority stopped and restored mid-run). Each cell holds its run, verdict and both units' scrape pairs; the failure cell adds the per-authority row census and both units' readiness during the fault |
 | [`pr2-generator-control/`](pr2-generator-control/) | `test/scripts/control-generator.sh` | The mandatory VAL-NEG-2 generator-headroom control, at ~2,150 req/s |
 | [`pr2-generator-control-plateau/`](pr2-generator-control-plateau/) | `test/scripts/control-generator.sh` | The same control re-run at the ~4,300 req/s operating point the PR2 conclusion rests on |
 | [`pr2-telemetry/`](pr2-telemetry/) | `test/scripts/sweep.sh` | The VAL-NEG-3 telemetry comparison: `full` and `metrics_only`, two passes each. VAL-NEG-3 is **not discharged** — within-mode spread exceeded the between-mode delta, so no overhead figure is claimed |

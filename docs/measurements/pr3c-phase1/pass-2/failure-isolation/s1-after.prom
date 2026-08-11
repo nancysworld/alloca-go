@@ -1,0 +1,270 @@
+# HELP alloca_db_pool_acquire_wait_seconds_total Cumulative time spent waiting to acquire.
+# TYPE alloca_db_pool_acquire_wait_seconds_total counter
+alloca_db_pool_acquire_wait_seconds_total 0.097346344
+# HELP alloca_db_pool_acquired_connections Connections currently in use.
+# TYPE alloca_db_pool_acquired_connections gauge
+alloca_db_pool_acquired_connections 0
+# HELP alloca_db_pool_acquires_total Cumulative successful acquires.
+# TYPE alloca_db_pool_acquires_total counter
+alloca_db_pool_acquires_total 176558
+# HELP alloca_db_pool_idle_connections Connections idle in the pool.
+# TYPE alloca_db_pool_idle_connections gauge
+alloca_db_pool_idle_connections 9
+# HELP alloca_db_pool_max_connections Configured maximum pool size.
+# TYPE alloca_db_pool_max_connections gauge
+alloca_db_pool_max_connections 10
+# HELP alloca_db_pool_total_connections Connections the pool currently holds.
+# TYPE alloca_db_pool_total_connections gauge
+alloca_db_pool_total_connections 9
+# HELP alloca_expiry_iteration_duration_seconds Duration of one expiry worker iteration.
+# TYPE alloca_expiry_iteration_duration_seconds histogram
+alloca_expiry_iteration_duration_seconds_bucket{le="0.01"} 185
+alloca_expiry_iteration_duration_seconds_bucket{le="0.05"} 185
+alloca_expiry_iteration_duration_seconds_bucket{le="0.1"} 259
+alloca_expiry_iteration_duration_seconds_bucket{le="0.5"} 274
+alloca_expiry_iteration_duration_seconds_bucket{le="1"} 274
+alloca_expiry_iteration_duration_seconds_bucket{le="5"} 274
+alloca_expiry_iteration_duration_seconds_bucket{le="15"} 274
+alloca_expiry_iteration_duration_seconds_bucket{le="60"} 274
+alloca_expiry_iteration_duration_seconds_bucket{le="+Inf"} 274
+alloca_expiry_iteration_duration_seconds_sum 8.074841069
+alloca_expiry_iteration_duration_seconds_count 274
+# HELP alloca_expiry_iterations_total Expiry worker iterations, by whether the iteration ended in an error.
+# TYPE alloca_expiry_iterations_total counter
+alloca_expiry_iterations_total{failed="false"} 273
+alloca_expiry_iterations_total{failed="true"} 1
+# HELP alloca_expiry_reservations_expired_total Held reservations transitioned to expired by the worker.
+# TYPE alloca_expiry_reservations_expired_total counter
+alloca_expiry_reservations_expired_total 22385
+# HELP alloca_expiry_slots_examined_total Candidate slots examined by the expiry worker.
+# TYPE alloca_expiry_slots_examined_total counter
+alloca_expiry_slots_examined_total 4450
+# HELP alloca_placement_misrouted_requests_total Requests refused because they reached a unit that does not own the requested organisation. A deployment fault, counted separately from invalid_request so it is not buried among malformed client requests. Not labelled by organisation: that is unbounded (observability.md §2.1).
+# TYPE alloca_placement_misrouted_requests_total counter
+alloca_placement_misrouted_requests_total{operation="reserve"} 9
+# HELP alloca_request_duration_seconds Handler duration including the transaction it drove. Excludes reason to bound series count; the counter carries that dimension.
+# TYPE alloca_request_duration_seconds histogram
+alloca_request_duration_seconds_bucket{operation="cancel",outcome="business_refusal",le="0.001"} 0
+alloca_request_duration_seconds_bucket{operation="cancel",outcome="business_refusal",le="0.0025"} 9
+alloca_request_duration_seconds_bucket{operation="cancel",outcome="business_refusal",le="0.005"} 9
+alloca_request_duration_seconds_bucket{operation="cancel",outcome="business_refusal",le="0.01"} 9
+alloca_request_duration_seconds_bucket{operation="cancel",outcome="business_refusal",le="0.025"} 9
+alloca_request_duration_seconds_bucket{operation="cancel",outcome="business_refusal",le="0.05"} 9
+alloca_request_duration_seconds_bucket{operation="cancel",outcome="business_refusal",le="0.1"} 9
+alloca_request_duration_seconds_bucket{operation="cancel",outcome="business_refusal",le="0.25"} 9
+alloca_request_duration_seconds_bucket{operation="cancel",outcome="business_refusal",le="0.5"} 9
+alloca_request_duration_seconds_bucket{operation="cancel",outcome="business_refusal",le="1"} 9
+alloca_request_duration_seconds_bucket{operation="cancel",outcome="business_refusal",le="2.5"} 9
+alloca_request_duration_seconds_bucket{operation="cancel",outcome="business_refusal",le="5"} 9
+alloca_request_duration_seconds_bucket{operation="cancel",outcome="business_refusal",le="10"} 9
+alloca_request_duration_seconds_bucket{operation="cancel",outcome="business_refusal",le="+Inf"} 9
+alloca_request_duration_seconds_sum{operation="cancel",outcome="business_refusal"} 0.012453062
+alloca_request_duration_seconds_count{operation="cancel",outcome="business_refusal"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="admitted_success",le="0.001"} 0
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="admitted_success",le="0.0025"} 4
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="admitted_success",le="0.005"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="admitted_success",le="0.01"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="admitted_success",le="0.025"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="admitted_success",le="0.05"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="admitted_success",le="0.1"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="admitted_success",le="0.25"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="admitted_success",le="0.5"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="admitted_success",le="1"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="admitted_success",le="2.5"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="admitted_success",le="5"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="admitted_success",le="10"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="admitted_success",le="+Inf"} 9
+alloca_request_duration_seconds_sum{operation="confirm",outcome="admitted_success"} 0.023160284999999996
+alloca_request_duration_seconds_count{operation="confirm",outcome="admitted_success"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="business_refusal",le="0.001"} 0
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="business_refusal",le="0.0025"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="business_refusal",le="0.005"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="business_refusal",le="0.01"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="business_refusal",le="0.025"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="business_refusal",le="0.05"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="business_refusal",le="0.1"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="business_refusal",le="0.25"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="business_refusal",le="0.5"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="business_refusal",le="1"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="business_refusal",le="2.5"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="business_refusal",le="5"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="business_refusal",le="10"} 9
+alloca_request_duration_seconds_bucket{operation="confirm",outcome="business_refusal",le="+Inf"} 9
+alloca_request_duration_seconds_sum{operation="confirm",outcome="business_refusal"} 0.013066112000000001
+alloca_request_duration_seconds_count{operation="confirm",outcome="business_refusal"} 9
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.001"} 0
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.0025"} 47291
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.005"} 145294
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.01"} 163102
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.025"} 163796
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.05"} 163797
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.1"} 163797
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.25"} 163797
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.5"} 163797
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="1"} 163797
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="2.5"} 163797
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="5"} 163797
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="10"} 163797
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="+Inf"} 163797
+alloca_request_duration_seconds_sum{operation="reserve",outcome="admitted_success"} 559.6406706470005
+alloca_request_duration_seconds_count{operation="reserve",outcome="admitted_success"} 163797
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="business_refusal",le="0.001"} 146
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="business_refusal",le="0.0025"} 7311
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="business_refusal",le="0.005"} 7973
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="business_refusal",le="0.01"} 8007
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="business_refusal",le="0.025"} 8009
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="business_refusal",le="0.05"} 8009
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="business_refusal",le="0.1"} 8009
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="business_refusal",le="0.25"} 8009
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="business_refusal",le="0.5"} 8009
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="business_refusal",le="1"} 8009
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="business_refusal",le="2.5"} 8009
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="business_refusal",le="5"} 8009
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="business_refusal",le="10"} 8009
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="business_refusal",le="+Inf"} 8009
+alloca_request_duration_seconds_sum{operation="reserve",outcome="business_refusal"} 13.632435235000008
+alloca_request_duration_seconds_count{operation="reserve",outcome="business_refusal"} 8009
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="invalid_request",le="0.001"} 9
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="invalid_request",le="0.0025"} 9
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="invalid_request",le="0.005"} 9
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="invalid_request",le="0.01"} 9
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="invalid_request",le="0.025"} 9
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="invalid_request",le="0.05"} 9
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="invalid_request",le="0.1"} 9
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="invalid_request",le="0.25"} 9
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="invalid_request",le="0.5"} 9
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="invalid_request",le="1"} 9
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="invalid_request",le="2.5"} 9
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="invalid_request",le="5"} 9
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="invalid_request",le="10"} 9
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="invalid_request",le="+Inf"} 9
+alloca_request_duration_seconds_sum{operation="reserve",outcome="invalid_request"} 0.000483225
+alloca_request_duration_seconds_count{operation="reserve",outcome="invalid_request"} 9
+# HELP alloca_requests_total Completed requests by terminal outcome. replay is the orthogonal disposition flag (measurement-contract §4), never an outcome of its own.
+# TYPE alloca_requests_total counter
+alloca_requests_total{operation="cancel",outcome="business_refusal",reason="unknown_target",replay="false"} 9
+alloca_requests_total{operation="confirm",outcome="admitted_success",reason="",replay="false"} 9
+alloca_requests_total{operation="confirm",outcome="business_refusal",reason="unknown_target",replay="false"} 9
+alloca_requests_total{operation="reserve",outcome="admitted_success",reason="",replay="false"} 163797
+alloca_requests_total{operation="reserve",outcome="business_refusal",reason="cross_authority_unsupported",replay="false"} 8009
+alloca_requests_total{operation="reserve",outcome="invalid_request",reason="",replay="false"} 9
+# HELP go_gc_duration_seconds A summary of the wall-time pause (stop-the-world) duration in garbage collection cycles.
+# TYPE go_gc_duration_seconds summary
+go_gc_duration_seconds{quantile="0"} 2.414e-05
+go_gc_duration_seconds{quantile="0.25"} 4.271e-05
+go_gc_duration_seconds{quantile="0.5"} 5.4079e-05
+go_gc_duration_seconds{quantile="0.75"} 9.0518e-05
+go_gc_duration_seconds{quantile="1"} 0.005162982
+go_gc_duration_seconds_sum 0.51647386
+go_gc_duration_seconds_count 3516
+# HELP go_gc_gogc_percent Heap size target percentage configured by the user, otherwise 100. This value is set by the GOGC environment variable, and the runtime/debug.SetGCPercent function. Sourced from /gc/gogc:percent.
+# TYPE go_gc_gogc_percent gauge
+go_gc_gogc_percent 100
+# HELP go_gc_gomemlimit_bytes Go runtime memory limit configured by the user, otherwise math.MaxInt64. This value is set by the GOMEMLIMIT environment variable, and the runtime/debug.SetMemoryLimit function. Sourced from /gc/gomemlimit:bytes.
+# TYPE go_gc_gomemlimit_bytes gauge
+go_gc_gomemlimit_bytes 9.223372036854776e+18
+# HELP go_goroutines Number of goroutines that currently exist.
+# TYPE go_goroutines gauge
+go_goroutines 12
+# HELP go_info Information about the Go environment.
+# TYPE go_info gauge
+go_info{version="go1.26.5"} 1
+# HELP go_memstats_alloc_bytes Number of bytes allocated in heap and currently in use. Equals to /memory/classes/heap/objects:bytes.
+# TYPE go_memstats_alloc_bytes gauge
+go_memstats_alloc_bytes 2.033832e+06
+# HELP go_memstats_alloc_bytes_total Total number of bytes allocated in heap until now, even if released already. Equals to /gc/heap/allocs:bytes.
+# TYPE go_memstats_alloc_bytes_total counter
+go_memstats_alloc_bytes_total 3.9604032e+09
+# HELP go_memstats_buck_hash_sys_bytes Number of bytes used by the profiling bucket hash table. Equals to /memory/classes/profiling/buckets:bytes.
+# TYPE go_memstats_buck_hash_sys_bytes gauge
+go_memstats_buck_hash_sys_bytes 1.44453e+06
+# HELP go_memstats_frees_total Total number of heap objects frees. Equals to /gc/heap/frees:objects + /gc/heap/tiny/allocs:objects.
+# TYPE go_memstats_frees_total counter
+go_memstats_frees_total 6.7122385e+07
+# HELP go_memstats_gc_sys_bytes Number of bytes used for garbage collection system metadata. Equals to /memory/classes/metadata/other:bytes.
+# TYPE go_memstats_gc_sys_bytes gauge
+go_memstats_gc_sys_bytes 3.220208e+06
+# HELP go_memstats_heap_alloc_bytes Number of heap bytes allocated and currently in use, same as go_memstats_alloc_bytes. Equals to /memory/classes/heap/objects:bytes.
+# TYPE go_memstats_heap_alloc_bytes gauge
+go_memstats_heap_alloc_bytes 2.033832e+06
+# HELP go_memstats_heap_idle_bytes Number of heap bytes waiting to be used. Equals to /memory/classes/heap/released:bytes + /memory/classes/heap/free:bytes.
+# TYPE go_memstats_heap_idle_bytes gauge
+go_memstats_heap_idle_bytes 5.619712e+06
+# HELP go_memstats_heap_inuse_bytes Number of heap bytes that are in use. Equals to /memory/classes/heap/objects:bytes + /memory/classes/heap/unused:bytes
+# TYPE go_memstats_heap_inuse_bytes gauge
+go_memstats_heap_inuse_bytes 5.128192e+06
+# HELP go_memstats_heap_objects Number of currently allocated objects. Equals to /gc/heap/objects:objects.
+# TYPE go_memstats_heap_objects gauge
+go_memstats_heap_objects 6955
+# HELP go_memstats_heap_released_bytes Number of heap bytes released to OS. Equals to /memory/classes/heap/released:bytes.
+# TYPE go_memstats_heap_released_bytes gauge
+go_memstats_heap_released_bytes 4.9152e+06
+# HELP go_memstats_heap_sys_bytes Number of heap bytes obtained from system. Equals to /memory/classes/heap/objects:bytes + /memory/classes/heap/unused:bytes + /memory/classes/heap/released:bytes + /memory/classes/heap/free:bytes.
+# TYPE go_memstats_heap_sys_bytes gauge
+go_memstats_heap_sys_bytes 1.0747904e+07
+# HELP go_memstats_last_gc_time_seconds Number of seconds since 1970 of last garbage collection.
+# TYPE go_memstats_last_gc_time_seconds gauge
+go_memstats_last_gc_time_seconds 1.7864403299985504e+09
+# HELP go_memstats_mallocs_total Total number of heap objects allocated, both live and gc-ed. Semantically a counter version for go_memstats_heap_objects gauge. Equals to /gc/heap/allocs:objects + /gc/heap/tiny/allocs:objects.
+# TYPE go_memstats_mallocs_total counter
+go_memstats_mallocs_total 6.712934e+07
+# HELP go_memstats_mcache_inuse_bytes Number of bytes in use by mcache structures. Equals to /memory/classes/metadata/mcache/inuse:bytes.
+# TYPE go_memstats_mcache_inuse_bytes gauge
+go_memstats_mcache_inuse_bytes 22960
+# HELP go_memstats_mcache_sys_bytes Number of bytes used for mcache structures obtained from system. Equals to /memory/classes/metadata/mcache/inuse:bytes + /memory/classes/metadata/mcache/free:bytes.
+# TYPE go_memstats_mcache_sys_bytes gauge
+go_memstats_mcache_sys_bytes 32144
+# HELP go_memstats_mspan_inuse_bytes Number of bytes in use by mspan structures. Equals to /memory/classes/metadata/mspan/inuse:bytes.
+# TYPE go_memstats_mspan_inuse_bytes gauge
+go_memstats_mspan_inuse_bytes 209280
+# HELP go_memstats_mspan_sys_bytes Number of bytes used for mspan structures obtained from system. Equals to /memory/classes/metadata/mspan/inuse:bytes + /memory/classes/metadata/mspan/free:bytes.
+# TYPE go_memstats_mspan_sys_bytes gauge
+go_memstats_mspan_sys_bytes 244800
+# HELP go_memstats_next_gc_bytes Number of heap bytes when next garbage collection will take place. Equals to /gc/heap/goal:bytes.
+# TYPE go_memstats_next_gc_bytes gauge
+go_memstats_next_gc_bytes 4.230986e+06
+# HELP go_memstats_other_sys_bytes Number of bytes used for other system allocations. Equals to /memory/classes/other:bytes.
+# TYPE go_memstats_other_sys_bytes gauge
+go_memstats_other_sys_bytes 2.04431e+06
+# HELP go_memstats_stack_inuse_bytes Number of bytes obtained from system for stack allocator in non-CGO environments. Equals to /memory/classes/heap/stacks:bytes.
+# TYPE go_memstats_stack_inuse_bytes gauge
+go_memstats_stack_inuse_bytes 1.835008e+06
+# HELP go_memstats_stack_sys_bytes Number of bytes obtained from system for stack allocator. Equals to /memory/classes/heap/stacks:bytes + /memory/classes/os-stacks:bytes.
+# TYPE go_memstats_stack_sys_bytes gauge
+go_memstats_stack_sys_bytes 1.835008e+06
+# HELP go_memstats_sys_bytes Number of bytes obtained from system. Equals to /memory/classes/total:byte.
+# TYPE go_memstats_sys_bytes gauge
+go_memstats_sys_bytes 1.9568904e+07
+# HELP go_sched_gomaxprocs_threads The current runtime.GOMAXPROCS setting, or the number of operating system threads that can execute user-level Go code simultaneously. Sourced from /sched/gomaxprocs:threads.
+# TYPE go_sched_gomaxprocs_threads gauge
+go_sched_gomaxprocs_threads 10
+# HELP go_threads Number of OS threads created.
+# TYPE go_threads gauge
+go_threads 16
+# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total 122.83
+# HELP process_max_fds Maximum number of open file descriptors.
+# TYPE process_max_fds gauge
+process_max_fds 1.048576e+06
+# HELP process_network_receive_bytes_total Number of bytes received by the process over the network.
+# TYPE process_network_receive_bytes_total counter
+process_network_receive_bytes_total 3.48878487e+08
+# HELP process_network_transmit_bytes_total Number of bytes sent by the process over the network.
+# TYPE process_network_transmit_bytes_total counter
+process_network_transmit_bytes_total 5.39499326e+08
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+process_open_fds 20
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes 2.5841664e+07
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds 1.78643895893e+09
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes 1.30766848e+09
+# HELP process_virtual_memory_max_bytes Maximum amount of virtual memory available in bytes.
+# TYPE process_virtual_memory_max_bytes gauge
+process_virtual_memory_max_bytes 1.8446744073709552e+19

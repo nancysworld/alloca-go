@@ -356,15 +356,22 @@ deliberately trigger it is PR3c's, which lands after. The window is now closed.
 1. the **post-restoration resolution pass**, driven by `alloca-load` after the measured
    interval and before the report is written, with the summary accounting §6c asked for.
 
+2. the **failure-isolation experiment**, with affected and unaffected populations reported
+   separately and the injected failure mode named — a *stopped* container, which is why §6b
+   matters;
+3. the **Phase 1 correctness matrix** and per-authority verdicts.
+
+Both are run, twice each, and reported in
+[`ag-sept-pr3c-phase1-correctness.md`](../../measurements/reports/ag-sept-pr3c-phase1-correctness.md);
+the artifacts are [`pr3c-phase1/`](../../measurements/pr3c-phase1/).
+
 **Still PR3c's, and still to be done:**
 
-2. the **failure-isolation experiment** itself, with affected and unaffected populations
-   reported separately as their own evidence class. **It must state which failure mode it
-   injected**, because the outcome depends on it — see §6b;
-3. the **Phase 1 correctness matrix** and per-authority verdicts;
 4. **INV-21's remaining half.** The *commit-landed-but-acknowledgement-lost* case is still
    unproven and needs a proxy that drops the reply; the register says so, and PR3c must not
-   claim the whole invariant on the strength of the half that is tested.
+   claim the whole invariant on the strength of the half that is tested. The one live
+   ambiguous commit the experiments produced does **not** discharge it: it resolved
+   `replay=false`, meaning the original had not committed at all.
 
 ### 6b. The unavailable-authority outcome depends on *how* the authority is unavailable
 
@@ -514,10 +521,11 @@ The record schema, the flag, the matching rules, and the tests live in
 [`../../operations/container-topology.md`](../../operations/container-topology.md) §6. None of
 that is restated here.
 
-### 6e. What building PR3c's harness found
+### 6e. What building and running PR3c found
 
-The two mechanics §6a left to this PR are built. What they cost is not interesting; what they
-found is, because in three cases the code was already wrong in a way no test then held.
+The two mechanics §6a left to this PR are built, and the matrix has been driven twice. What
+they cost is not interesting; what they found is, because in three cases the code was already
+wrong in a way no test then held.
 
 **A replay that never reached the service was recorded as a resolution.** `ResolveAmbiguous`
 asked whether the replay returned `unknown_replayable` and treated everything else as settled.
@@ -550,34 +558,67 @@ excused by `-require` (§6d): a healthy run registers nothing and the pass is a 
 only runs it touches are the ones §12 requires it for — while an operator who forgot the flag
 would hold an unreconcilable artifact whose register had already died with the process.
 
-**Why the experiments are not in this record yet.** The harness was validated end to end
-against the live two-authority topology at `2ac86eb` — placement-routed run, both units'
-`/meta`, per-unit scrapes, the new `alloca-verify -placement` path against both databases, and
-an authority stopped and restarted mid-run — and every check passed. **None of it is evidence
-and none of its numbers are quoted here**: the images were built through a Docker client that
-made every binary read as `vcs.modified=true`, so the runs certify at `none` by the quotability
-ladder. The defect was an environment one, is now recorded in
-[`container-topology.md`](../../operations/container-topology.md) §2, and the page that caused
-it has been corrected.
+**What blocked the experiments for half a day, because the shape recurs.** The harness was
+finished and validated against the live topology long before any of it could be *evidence*: two
+provenance stamps were false for unrelated reasons, and neither announces itself until a verdict
+reads `level: none`. The service was built through a Docker client that read the build context
+through a Windows filesystem view, so every file arrived mode 0755 against an index of 0644 and
+`go build` stamped the binary `vcs.modified=true` from a spotless checkout — and the operations
+page was recommending that client. The generator was built inside a sandbox whose view of the
+repository is not the repository's. Both are environment defects, both are now recorded where
+they will be met ([`container-topology.md`](../../operations/container-topology.md) §2), and the
+lesson is the ordering: **check the two stamps before driving anything**, which is why
+`pr3c-experiments.sh` refuses to start without them.
 
-Two things that validation established for the experiment design, neither of them a result:
+Three things the validation runs established for the experiment design, none of them a result:
 
-- **the fixture must be sized against the run, not the reverse.** `[HYPOTHESIS]` a 40-second
-  multi-organisation run at concurrency 8 needs on the order of 10⁵ units of seeded capacity to
-  keep every request admissible; the correctness experiments will show what it actually
-  consumed. A sold-out fixture turns a correctness run into a measurement of capacity
-  exhaustion, which is the trap `container-topology.md` §6 already records for `-duration`;
+- **the fixture must be sized against the run, not the reverse.** A sold-out fixture turns a
+  correctness run into a measurement of capacity exhaustion, which is the trap
+  `container-topology.md` §6 records for `-duration`. The matrix seeds 1,200 slots per
+  organisation — 96,000 units — against runs that consumed at most 36,000;
 - **verify promptly.** Unconfirmed holds expire on the reservation TTL, so live reservations
   decay after a run while idempotency records and claims remain. The reconciliation check
   tolerates fewer reservations than admitted mutations — that is what expiry looks like — but a
-  verdict taken long afterwards is evidence about expiry rather than about the run.
+  verdict taken long afterwards is evidence about expiry rather than about the run;
+- **`alloca-seed -reset` can deadlock against the running service.** `TRUNCATE` takes
+  ACCESS EXCLUSIVE on every booking table while the expiry worker sweeps the same tables on its
+  own schedule, and the two deadlocked once in roughly ten seeds (40P01, killing a matrix at its
+  last cell). The script now retries once and says so in its log; a second failure stops the
+  run, because a fixture in an unknown state makes every cell below it meaningless.
 
-The `db_acquire_cap` question §6b leaves open is **not** settled by that validation either, and
-the observation there points the other way from §6b's: under load with a warm pool, no
-client-observed latency during the outage came close to the server deadline. That is consistent
-with the acquisition cap bounding the wait when a connection is already established, and with
-§6b's single idle request having paid for a *new* connection. It is a lead for the
-investigation §6b asks for, not a diagnosis, and it was seen in a run that cannot certify.
+The `db_acquire_cap` question §6b leaves open is **not** settled, but the experiments give it a
+better lead than §6b had: across both retained passes the worst client-observed latency during
+the outage was ~503 ms against a 5 s server deadline and a 500 ms acquisition cap. That points
+the opposite way from §6b's single observation of a ~5 s wait, and the plausible reconciliation
+— warm pool versus a new connection — is a hypothesis to test, not a diagnosis to act on.
+
+### 6f. What the experiments established, and the one thing that surprised them
+
+The reading is [`ag-sept-pr3c-phase1-correctness.md`](../../measurements/reports/ag-sept-pr3c-phase1-correctness.md)
+and is not restated here. Three things belong in this record rather than in the report, because
+they are about how the evidence was produced rather than what it says.
+
+**The `unknown_replayable` case arrived once, unbidden, in nine runs.** The plan and the
+validation plan both say the failure-isolation experiment need not manufacture one, and this is
+why that was the right call: the fault produces it stochastically, so an experiment *required*
+to produce one would have been tuned until it did. The run that produced it is retained beside
+the two passes rather than substituted for one of them, and the report states it as a single
+observation. Its accounting is the whole §6c contract holding on a live fault — measured and
+reconciliation populations differing by exactly one replay — which is worth more than the two
+clean passes it sits next to.
+
+**A number that does not move is worth as much as one that does.** `timeout_server` was exactly
+304 in every script-driven failure run — nine of them, across a 13% spread in volume and a
+372–508 spread in `internal_failure` — and different when the fault was hand-timed. Nothing
+explains it yet, and it is recorded as an open lead rather than smoothed over, because a
+quantity that is bit-identical across runs of different size is structural.
+
+**Evidence was regenerated three times over artifact hygiene, not over results.** Once because
+the retained transcripts were named `*.log`, which `.gitignore` excludes — a report citing files
+the repository does not carry is an assertion — and once because the per-authority row census
+belonged in the script rather than in an operator's shell history. The rule that came out of it:
+**the artifact set and the script that produces it must match exactly**, or reproduction
+instructions describe a run nobody can repeat.
 
 ## 7. Not in PR3
 

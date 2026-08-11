@@ -1,0 +1,8 @@
+{
+  "image_id": "sha256:3da62f4e2463853ae59bd24495eac3dda93a96fc34f88b49b8f896cee69fcad6",
+  "image_tag": "alloca-go:2991940",
+  "units": {
+    "alloca-service-1": {"image_id": "sha256:3da62f4e2463853ae59bd24495eac3dda93a96fc34f88b49b8f896cee69fcad6", "target": "http://localhost:8081"},
+    "alloca-service-2": {"image_id": "sha256:3da62f4e2463853ae59bd24495eac3dda93a96fc34f88b49b8f896cee69fcad6", "target": "http://localhost:8082"}
+  }
+}

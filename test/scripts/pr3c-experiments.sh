@@ -49,6 +49,10 @@ DEPLOYMENT="${DEPLOYMENT:-test/results/deployment.json}"
 OUT="${OUT:-test/results/pr3c-$(date -u +%Y%m%dT%H%M%SZ)}"
 
 SLOTS="${SLOTS:-1200}"
+# The one-hot cell names the organisation that carries the whole load, and the default is not
+# usable: `-org` defaults to `load-org`, which no placement in this topology mentions, so the
+# run is refused before it starts rather than silently spreading.
+HOT_ORG="${HOT_ORG:-org-a}"
 CONCURRENCY="${CONCURRENCY:-8}"
 ITERATIONS="${ITERATIONS:-2000}"
 WINDOW="${WINDOW:-40s}"
@@ -59,8 +63,20 @@ FAULT_CONTAINER="${FAULT_CONTAINER:-alloca-authority-2-db}"
 LOAD=bin/alloca-load
 VERIFY=bin/alloca-verify
 
-log()  { printf '%s  %s\n' "$(date -u +%H:%M:%S)" "$*"; }
-fail() { printf '\n!! %s\n' "$*" >&2; exit 1; }
+# Every line the run prints is also retained beside the artifacts it describes. The controls
+# are the reason: their evidence *is* the sequence of assertions, and a summary line saying
+# they passed is not something a later reader can check anything against.
+RUNLOG=""
+log()  {
+  printf '%s  %s\n' "$(date -u +%H:%M:%S)" "$*"
+  [ -n "$RUNLOG" ] && printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*" >> "$RUNLOG"
+  return 0
+}
+fail() {
+  printf '\n!! %s\n' "$*" >&2
+  [ -n "$RUNLOG" ] && printf 'FAILED: %s\n' "$*" >> "$RUNLOG"
+  exit 1
+}
 
 # --- preflight ---------------------------------------------------------------------------
 #
@@ -85,7 +101,13 @@ preflight() {
   done
 
   mkdir -p "$OUT"
+  # .txt, not .log: `.gitignore` excludes `*.log` so a 34 MB per-cell service log can never be
+  # committed by accident, and these two transcripts are *evidence* — the control assertions
+  # exist nowhere else, and a report citing an artifact the repository does not carry is an
+  # assertion.
+  RUNLOG="$OUT/experiments.txt"
   log "artifacts -> $OUT"
+  log "generator $(go version -m "$LOAD" | awk '/vcs.revision/ {print $2}'), image $(grep -o '"image_tag": "[^"]*"' "$DEPLOYMENT" | cut -d'"' -f4)"
 }
 
 # --- fixture -----------------------------------------------------------------------------
@@ -95,10 +117,30 @@ preflight() {
 # run whose missing half comes back as ordinary-looking `unknown_target` refusals.
 seed() {
   log "seeding $SLOTS slots per organisation"
-  go run ./cmd/alloca-seed -reset -database-url "$A1_DSN" -org org-a -slots "$SLOTS" >/dev/null
-  go run ./cmd/alloca-seed        -database-url "$A1_DSN" -org org-c -slots "$SLOTS" >/dev/null
-  go run ./cmd/alloca-seed -reset -database-url "$A2_DSN" -org org-b -slots "$SLOTS" >/dev/null
-  go run ./cmd/alloca-seed        -database-url "$A2_DSN" -org org-d -slots "$SLOTS" >/dev/null
+  seed_one -reset "$A1_DSN" org-a
+  seed_one ""     "$A1_DSN" org-c
+  seed_one -reset "$A2_DSN" org-b
+  seed_one ""     "$A2_DSN" org-d
+}
+
+# seed_one retries once, because `-reset` deadlocks with the running service often enough to
+# lose a matrix at the last cell.
+#
+# TRUNCATE takes ACCESS EXCLUSIVE on every booking table while the expiry worker is sweeping
+# the same tables on its own schedule, so the two can deadlock (40P01) — observed once in ten
+# seeds against this topology. The retry is logged rather than silent: a *second* failure is
+# not a race and the run stops, and a fixture that needed a retry is something the operator
+# should see next to the results.
+seed_one() {
+  local reset="$1" dsn="$2" org="$3"
+  # shellcheck disable=SC2086 # $reset is a bare flag or empty, deliberately unquoted
+  if go run ./cmd/alloca-seed $reset -database-url "$dsn" -org "$org" -slots "$SLOTS" >/dev/null 2>&1; then
+    return 0
+  fi
+  log "seed of $org failed (likely a TRUNCATE deadlock with the expiry worker); retrying once"
+  sleep 2
+  go run ./cmd/alloca-seed $reset -database-url "$dsn" -org "$org" -slots "$SLOTS" >/dev/null \
+    || fail "seeding $org failed twice: the fixture is not in a known state, so no cell below it means anything"
 }
 
 scrape() { curl -fsS -m 10 "$1" -o "$2"; }
@@ -144,7 +186,7 @@ cell() {
     -deployment "$DEPLOYMENT" \
     -slots "$SLOTS" -concurrency "$CONCURRENCY" \
     -require none -out "$dir/run.json" \
-    "$@" 2>&1 | tee "$dir/generator.log"
+    "$@" 2>&1 | tee "$dir/generator-output.txt"
 
   scrape "$M1" "$dir/s1-after.prom"
   scrape "$M2" "$dir/s2-after.prom"
@@ -177,8 +219,6 @@ expect() { # expect <what> <got> <status> [<substring>]
 }
 
 controls() {
-  local dir="$OUT/controls"
-  mkdir -p "$dir"
   seed
   local stamp; stamp="$(date -u +%s)"
 
@@ -229,7 +269,7 @@ controls() {
     "$(post "$S1/v1/reservations/$id/confirm" "c8-$stamp" '{"user_organisation_id":"org-a","user_id":"c5"}')" \
     200 admitted_success
 
-  log "controls: all assertions passed" | tee "$dir/controls.log"
+  log "controls: all assertions passed"
 }
 
 # --- failure isolation ----------------------------------------------------------------------
@@ -258,7 +298,7 @@ failure() {
     -deployment "$DEPLOYMENT" \
     -workload multi-org-dispersed \
     -slots "$SLOTS" -concurrency "$CONCURRENCY" -duration "$WINDOW" \
-    -require none -out "$dir/run.json" > "$dir/generator.log" 2>&1 &
+    -require none -out "$dir/run.json" > "$dir/generator-output.txt" 2>&1 &
   local load_pid=$!
 
   sleep "$FAULT_AFTER"
@@ -281,23 +321,49 @@ failure() {
     sleep 1
   done
 
-  wait "$load_pid" || fail "the generator exited non-zero; read $dir/generator.log"
+  wait "$load_pid" || fail "the generator exited non-zero; read $dir/generator-output.txt"
   scrape "$M1" "$dir/s1-after.prom"
   scrape "$M2" "$dir/s2-after.prom"
   verify "$dir"
+  partition_check "$dir"
+}
+
+# partition_check reads each authority's rows *by organisation*, which is the direct form of
+# "no request failed over to the surviving writer" (VAL-FAIL-1).
+#
+# The verdict already implies it: each authority is counted only over the organisations the
+# placement gives it, so a row written to the wrong authority is excluded from both scopes and
+# the aggregate comes up short against the client's totals. This asks the databases the
+# question outright, because the implication takes a paragraph to explain and the row counts
+# take a glance.
+partition_check() {
+  local dir="$1" authority
+  for authority in 1 2; do
+    docker exec "alloca-authority-${authority}-db" psql -U alloca -d alloca -tAc "
+      select 'reservations ' || slot_organisation_id || '=' || n
+        from (select slot_organisation_id, count(*) n from reservations group by 1) r
+      union all
+      select 'claims ' || user_organisation_id || '=' || n
+        from (select user_organisation_id, count(*) n from user_time_claims group by 1) c
+      union all
+      select 'idempotency ' || user_organisation_id || '=' || n
+        from (select user_organisation_id, count(*) n from idempotency_records group by 1) i
+      order by 1" > "$dir/authority-${authority}-rows-by-organisation.txt"
+  done
+  log "$dir: per-authority row census written"
 }
 
 case "${1:-all}" in
   controls)     preflight; controls ;;
   correctness)  preflight; cell correctness  -workload multi-org-dispersed -n "$ITERATIONS" ;;
-  distribution) preflight; cell distribution -workload hot-organisation    -n "$ITERATIONS" ;;
+  distribution) preflight; cell distribution -workload hot-organisation -org "$HOT_ORG" -n "$ITERATIONS" ;;
   refusal)      preflight; cell refusal      -workload cross-authority-control -n "$ITERATIONS" ;;
   failure)      preflight; failure ;;
   all)
     preflight
     controls
     cell correctness  -workload multi-org-dispersed      -n "$ITERATIONS"
-    cell distribution -workload hot-organisation         -n "$ITERATIONS"
+    cell distribution -workload hot-organisation -org "$HOT_ORG" -n "$ITERATIONS"
     cell refusal      -workload cross-authority-control  -n "$ITERATIONS"
     failure
     ;;

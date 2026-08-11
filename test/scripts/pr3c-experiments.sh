@@ -382,12 +382,22 @@ failure() {
   # verification to certify a longer outage than the report describes. That is most likely
   # exactly when nothing was ambiguous, because the generator then exits the moment the window
   # closes rather than lingering in a resolution pass.
+  #
+  # The deadline is tested *before* each probe, including the first. Testing it only when the
+  # unit is still unready means a unit that answers `200` on the first attempt skips the check
+  # entirely — so a recovery that landed after the window closed was reported as a pass, with
+  # the margin printed as a negative number nobody read. Observed by running the mutation for
+  # this very gate, which is the argument for running them rather than reasoning about them.
+  #
+  # It is deliberately conservative: the cell refuses when the window has closed by the time it
+  # can look, rather than claiming readiness it did not observe.
   local restarted_at now
   restarted_at="$(date +%s)"
-  while [ "$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$AFFECTED_URL/readyz")" != "200" ]; do
+  while :; do
     now="$(date +%s)"
     [ "$now" -lt "$window_closes" ] \
-      || fail "$AFFECTED_NAME did not report ready before the measured window closed $((now - window_closes))s ago: the outage outlasted the interval this run describes, so the fault is not the one the report would state"
+      || fail "$AFFECTED_NAME was not observed ready before the measured window closed $((now - window_closes))s ago: the outage outlasted the interval this run describes, so the fault is not the one the report would state"
+    [ "$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$AFFECTED_URL/readyz")" = "200" ] && break
     sleep 1
   done
   now="$(date +%s)"

@@ -439,7 +439,8 @@ The discriminating control is VAL-COR-5 and is mandatory for a multi-authority t
 | telemetry-overhead control | **not discharged** | PR2 found within-mode spread larger than the between-mode delta; no overhead figure is claimed |
 | Phase 1 placement and supported policy implementation | established for Iteration B | PR3a/PR3b implementation records plus PR3c controls/evidence |
 | multi-authority reconciliation | established for Iteration B | PR3b harness exercised and reconciled by PR3c retained runs |
-| Phase 1 correctness and failure isolation | established for Iteration B | PR3c report and retained artifacts; VAL-COR-1..6 and VAL-FAIL-1 |
+| Phase 1 correctness and failure isolation | established for Iteration B | PR3c report and retained artifacts; VAL-COR-1..3, VAL-COR-5, VAL-COR-6 and VAL-FAIL-1 |
+| cross-authority refusal (VAL-COR-4) | **partially discharged** | the refusal and the absence of partial mutation are established on the deployed topology; §3.5's **same-key replay** clause is proven only in deterministic service/adapter tests and is not exercised by the retained control (PR3c report §7.4) |
 | database-authority composition (VAL-SCALE-3) | established as architecture/correctness evidence | PR3c; explicitly **not** a capacity multiplier on the co-resident workstation |
 | Iteration C shard-group capacity | **Problem selected; validation not yet defined** | Requirements → Design → Validation plan must precede Schedule |
 | stateless replica scaling | unproven and not selected by this A&R | existing VAL-SCALE-1/2 remain candidate validation definitions, not committed Iteration C work |

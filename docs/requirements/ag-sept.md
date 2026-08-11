@@ -220,8 +220,19 @@ The trigger is the concrete one the report itself states: **neither reading may 
 timeout budget**, and the family is investigated if a decision comes to depend on the failure
 path's timing behaviour.
 
-Separately, INV-21's live “commit landed, acknowledgement lost” injection remains explicit
-validation debt, tracked by the invariant register, rather than a blocker to scaling work.
+Two items of **named validation debt** are carried, neither of which blocks the verdict or the
+scaling work:
+
+- INV-21's live “commit landed, acknowledgement lost” injection, tracked by the invariant register;
+- **`VAL-COR-4`'s same-key replay clause is not exercised on the deployed topology.** The exit
+  criterion asks for “an explicit replayable policy result with no partial mutation”. The refusal
+  and the absence of partial mutation are established on the two-authority stack; *replayability*
+  is established a layer below it, by `TestCrossAuthorityRefusalIsReplayable` at the service layer
+  and `TestRefusalIsRecordedAndReplayed` on the PostgreSQL adapter. The retained control drives
+  2,000 distinct keys and reposts none of them (PR3c report §7.4). The property is proven and the
+  criterion is met in substance, but by composition rather than by one observation on the deployed
+  stack, and the closure records that rather than reading the 2,000 persisted records as a replay
+  demonstration.
 
 No accepted Phase 1 requirement or architecture needs revision.
 

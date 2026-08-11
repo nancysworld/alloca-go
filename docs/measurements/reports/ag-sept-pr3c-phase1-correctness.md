@@ -38,8 +38,9 @@
 isolation demonstrated on independent writable authorities, with every accepted transaction
 semantic on the supported path unchanged and no throughput multiplier claimed. Whether that
 discharges the gate is the maintainer's call at merge, not this document's. What the evidence
-does **not** reach, and does not claim: INV-21's acknowledgement-lost half (§7.3), and any
-statement about capacity, scaling or the next frontier (§7.1).
+does **not** reach, and does not claim: INV-21's acknowledgement-lost half (§7.3), the refusal's
+same-key replay on the deployed topology (§7.4), and any statement about capacity, scaling or the
+next frontier (§7.1).
 
 All figures are `[MEASURED]` from the artifacts in
 [`../pr3c-phase1/`](../pr3c-phase1/) unless labelled otherwise. Every number is derived from a
@@ -160,13 +161,17 @@ Every request was refused, at the unit owning the *user's* organisation, and **n
 state was created**: the verdict records `0 live reservations`, `0 live claims`, and `0 fresh
 admitted reserves` across the topology.
 
-**The refusal is recorded, and that is the point.** `cross_authority_unsupported` is a *replayable*
-`409 business_refusal` written on user-home without contacting slot-home
+**The refusal is recorded**, because `cross_authority_unsupported` is a terminal outcome written on
+user-home without contacting slot-home
 ([`horizontal-database-authority.md`](../../design/horizontal-database-authority.md) §8, decision 8),
 so the same verdict also shows **2,000 idempotency records against 2,000 fresh mutations** — 1,000
 per authority, every key distinct (INV-5). Booking state and recorded-outcome state are different
-populations here and only the first is zero: a refusal that persisted nothing at all would not be
-replayable, which is exactly what the policy contract requires it to be.
+populations here, and only the first is zero.
+
+**What that does not show is replay**, and the distinction matters because the design calls this
+refusal *replayable*. Every key in this cell is distinct and the run reports
+`replayed_mutations: 0`, so no second request against an already-recorded refusal was issued here.
+A persisted record is a necessary condition for replay, not a demonstration of it — see §7.4.
 
 It is reported separately and never mixed into the supported workload — a refusal is a correct
 answer, not a failure, and averaging the two would describe neither (VAL-COR-4).
@@ -387,6 +392,30 @@ proof, and is the case most likely to be mistaken for it: it resolved `replay=fa
 the original had never committed. INV-21's outstanding half needs the opposite — `replay=true`,
 a commit that landed while its acknowledgement did not. The invariant
 register still says so.
+
+### 7.4 The refusal's same-key replay is not exercised on this topology
+
+[`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) §3.5 asks the
+refusal control to establish four things: the normative refusal, **same-key replay**, absence of
+reservation/booking/claim/slot-side mutation, and absence of a remote slot-authority participant
+call. Three are established here — the refusal by §3 and §2's control, the absence of mutation by
+the verdict's zero reservations/claims/fresh reserves, and the absence of a remote participant call
+structurally, since no unit holds a client for another unit.
+
+**The replay clause is not.** The cell drives 2,000 distinct keys, §2's control posts its key once,
+and the run reports `replayed_mutations: 0`. No request in any retained run reposts a key whose
+cross-authority refusal is already recorded.
+
+Replay is proven, but a layer below the deployed stack:
+
+| Proof | What it establishes | Where it runs |
+|---|---|---|
+| `internal/service/placement_test.go` — `TestCrossAuthorityRefusalIsReplayable` | reposting the key returns the recorded outcome and reason with `replay=true` rather than re-deciding | service layer, in-memory store |
+| `internal/postgres/idempotency_test.go` — `TestRefusalIsRecordedAndReplayed` | PostgreSQL records a business refusal and replays it with `replay=true` | PostgreSQL adapter (`no_capacity`) |
+
+Composing those two with the 2,000 records above is an argument, not an observation, and this report
+does not offer it as one. What is missing is one same-key repost through the deployed two-authority
+stack — a small addition to the control rather than a new experiment.
 
 ## 8. Reproducing this
 

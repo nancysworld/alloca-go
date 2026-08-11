@@ -58,7 +58,14 @@ ITERATIONS="${ITERATIONS:-2000}"
 WINDOW="${WINDOW:-40s}"
 FAULT_AFTER="${FAULT_AFTER:-10}"        # seconds into the window before the authority stops
 FAULT_FOR="${FAULT_FOR:-15}"            # seconds it stays down; must end inside the window
+# How long the affected unit may take to report itself unready. Readiness is a live database
+# probe, so `503` follows the fault by up to the unit's readiness timeout rather than instantly.
+FAULT_ISOLATION_WAIT="${FAULT_ISOLATION_WAIT:-10}"
 FAULT_CONTAINER="${FAULT_CONTAINER:-alloca-authority-2-db}"
+# The level every cell must reach for its numbers to mean anything. `local` is the floor of the
+# ladder and the highest a co-resident generator can reach; it is a floor rather than a target,
+# so a deployment that could certify higher is not held back by it.
+REQUIRE="${REQUIRE:-local}"
 
 LOAD=bin/alloca-load
 VERIFY=bin/alloca-verify
@@ -90,8 +97,15 @@ preflight() {
   [ -f "$PLACEMENT" ] || fail "no placement document at $PLACEMENT"
   [ -f "$DEPLOYMENT" ] || fail "no deployment record at $DEPLOYMENT — run 'make topo-deployment > $DEPLOYMENT'"
 
+  # Both binaries, for different reasons. The generator's stamp is *carried into the report*,
+  # so a modified one is refused at `local` by certification. The verifier's is not carried
+  # anywhere — nothing downstream would notice — and it is the binary that decides whether every
+  # cell reconciled, so a stale or locally modified verifier can certify the whole matrix while
+  # this script reports success. That asymmetry is exactly why it needs the check *here*.
   go version -m "$LOAD" | grep -q 'vcs.modified=false' \
     || fail "$LOAD is stamped vcs.modified=true: every run would be refused at 'local' for generator_source_modified"
+  go version -m "$VERIFY" | grep -q 'vcs.modified=false' \
+    || fail "$VERIFY is stamped vcs.modified=true: its verdicts would be produced by a binary this repository cannot identify, and nothing downstream would report that"
 
   local unit
   for unit in "$S1" "$S2"; do
@@ -107,7 +121,22 @@ preflight() {
   # assertion.
   RUNLOG="$OUT/experiments.txt"
   log "artifacts -> $OUT"
-  log "generator $(go version -m "$LOAD" | awk '/vcs.revision/ {print $2}'), image $(grep -o '"image_tag": "[^"]*"' "$DEPLOYMENT" | cut -d'"' -f4)"
+  # Every binary and artifact the evidence depends on, named in the transcript. The verifier
+  # belongs here as much as the generator: a reader asking "which binary certified this?" must
+  # not have to take the report's word for it.
+  log "generator   $(revision_of "$LOAD")"
+  log "verifier    $(revision_of "$VERIFY")"
+  log "image       $(grep -o '"image_tag": "[^"]*"' "$DEPLOYMENT" | cut -d'"' -f4) $(grep -o '"image_id": "[^"]*"' "$DEPLOYMENT" | head -1 | cut -d'"' -f4)"
+  log "require     $REQUIRE"
+}
+
+# revision_of reports a binary's VCS stamp as `<revision> (clean)`, which is what makes the
+# transcript checkable rather than reassuring.
+revision_of() {
+  go version -m "$1" | awk '
+    /vcs.revision/ {rev=$2}
+    /vcs.modified/ {mod=$2}
+    END {sub(/vcs.revision=/, "", rev); print rev, (mod == "vcs.modified=false" ? "(clean)" : "(MODIFIED)")}'
 }
 
 # --- fixture -----------------------------------------------------------------------------
@@ -139,6 +168,7 @@ seed_one() {
   fi
   log "seed of $org failed (likely a TRUNCATE deadlock with the expiry worker); retrying once"
   sleep 2
+  # shellcheck disable=SC2086 # $reset is a bare flag or empty, deliberately unquoted
   go run ./cmd/alloca-seed $reset -database-url "$dsn" -org "$org" -slots "$SLOTS" >/dev/null \
     || fail "seeding $org failed twice: the fixture is not in a known state, so no cell below it means anything"
 }
@@ -147,22 +177,32 @@ scrape() { curl -fsS -m 10 "$1" -o "$2"; }
 
 # verify reconciles one cell against both authorities and keeps the verdict beside its run.
 #
-# -require none, deliberately: the level a run reaches belongs in its own artifact, and a cell
-# that fails certification must still leave a verdict explaining why rather than exiting before
-# it is written.
+# **Passing checks are not a usable cell, and `-require none` let that difference through.**
+# Reconciliation compares the numbers a run produced; certification decides whether those
+# numbers may be quoted at all. A run whose response validation failed, whose ambiguity is
+# unresolved, or whose units drifted mid-run reaches `quotability.level: none` with every
+# reconciliation check still `ok: true` — so a floor of `none` exits zero and the cell reports
+# itself passed while discharging nothing.
+#
+# The earlier version justified `none` as keeping the diagnostic artifact, which was simply
+# wrong about the verifier: it writes the verdict *before* enforcing `-require`, so a real floor
+# costs no diagnostics. Both failures are checked, separately, because they mean different
+# things to whoever reads the message.
 verify() {
   local dir="$1"
-  "$VERIFY" \
-    -run "$dir/run.json" \
-    -placement "$PLACEMENT" \
-    -authority-db "authority-1=$A1_DSN" \
-    -authority-db "authority-2=$A2_DSN" \
-    -authority-metrics authority-1="$dir/s1-after.prom" \
-    -authority-metrics authority-2="$dir/s2-after.prom" \
-    -authority-metrics-baseline authority-1="$dir/s1-baseline.prom" \
-    -authority-metrics-baseline authority-2="$dir/s2-baseline.prom" \
-    -require none \
-    -out "$dir/verdict.json"
+  if ! "$VERIFY" \
+      -run "$dir/run.json" \
+      -placement "$PLACEMENT" \
+      -authority-db "authority-1=$A1_DSN" \
+      -authority-db "authority-2=$A2_DSN" \
+      -authority-metrics authority-1="$dir/s1-after.prom" \
+      -authority-metrics authority-2="$dir/s2-after.prom" \
+      -authority-metrics-baseline authority-1="$dir/s1-baseline.prom" \
+      -authority-metrics-baseline authority-2="$dir/s2-baseline.prom" \
+      -require "$REQUIRE" \
+      -out "$dir/verdict.json"; then
+    fail "$dir: the run did not reach '$REQUIRE'; the verdict says why, and it was written before the level was enforced: $dir/verdict.json"
+  fi
   if grep -q '"ok": false' "$dir/verdict.json"; then
     fail "$dir: a reconciliation check failed; read $dir/verdict.json"
   fi
@@ -304,12 +344,7 @@ failure() {
   sleep "$FAULT_AFTER"
   docker stop "$FAULT_CONTAINER" >/dev/null
   log "failure: $FAULT_CONTAINER stopped"
-  # Isolation, observed while it is actually down: the affected unit must report itself
-  # unready and its peer must not.
-  {
-    printf 'unit-1 readyz: %s\n' "$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$S1/readyz")"
-    printf 'unit-2 readyz: %s\n' "$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$S2/readyz")"
-  } | tee "$dir/readiness-during-fault.txt"
+  assert_isolated "$dir"
 
   sleep "$FAULT_FOR"
   docker start "$FAULT_CONTAINER" >/dev/null
@@ -326,6 +361,38 @@ failure() {
   scrape "$M2" "$dir/s2-after.prom"
   verify "$dir"
   partition_check "$dir"
+}
+
+# assert_isolated proves containment *while the authority is actually down*, which is the only
+# window in which it can be proven at all.
+#
+# Recording the two status codes is not the same as checking them, and the difference is the
+# whole claim: `printf` succeeds whatever curl returns, so a regression that leaves the affected
+# unit ready — or takes both units down — produced an artifact that contradicted the containment
+# claim while the cell passed on the strength of the run recovering afterwards.
+#
+# The affected unit is polled rather than sampled once. Readiness is a live database probe
+# bounded by the unit's own readiness timeout, so `503` follows the fault by up to that bound;
+# sampling immediately would make the assertion a race. The healthy peer is checked at the same
+# moment and must be `200` — that is the containment half, and it is asserted every second the
+# affected unit is still refusing.
+assert_isolated() {
+  local dir="$1" waited=0 affected peer
+  : > "$dir/readiness-during-fault.txt"
+  while :; do
+    affected="$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$S2/readyz" || true)"
+    peer="$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$S1/readyz" || true)"
+    printf 'after %2ds of fault: unit-1 readyz %s, unit-2 readyz %s\n' \
+      "$waited" "$peer" "$affected" >> "$dir/readiness-during-fault.txt"
+
+    [ "$peer" = "200" ] || fail "unit-1 reported $peer while ONLY authority-2's database was stopped: the fault reached the unaffected authority, which is the failure REQ-FAIL-1 exists to exclude"
+    [ "$affected" = "503" ] && break
+
+    waited=$((waited + 1))
+    [ "$waited" -lt "$FAULT_ISOLATION_WAIT" ] || fail "unit-2 still reported $affected ${waited}s after its database stopped: an authority that cannot reach its database must not report itself ready"
+    sleep 1
+  done
+  log "failure: isolation asserted — unit-1 200, unit-2 503 after ${waited}s"
 }
 
 # partition_check reads each authority's rows *by organisation*, which is the direct form of
@@ -350,7 +417,45 @@ partition_check() {
         from (select user_organisation_id, count(*) n from idempotency_records group by 1) i
       order by 1" > "$dir/authority-${authority}-rows-by-organisation.txt"
   done
-  log "$dir: per-authority row census written"
+
+  # The census is a *gate*, not a keepsake. Writing it and leaving the reading to whoever
+  # opens the file is how "no request failed over to the surviving writer" becomes something a
+  # report author eyeballs — and reconciliation will not catch it either: `RunTopology` counts
+  # each authority only over the organisations placement gives it, so a stray row on the wrong
+  # writer sits outside every scoped count and the aggregate still balances whenever the correct
+  # row also exists.
+  #
+  # The expected sets come from the run's own manifest rather than from constants here, so the
+  # gate follows the placement the run actually reached instead of a second copy of it that can
+  # drift.
+  python3 - "$dir" <<'PY' || fail "$dir: rows exist on an authority that does not own them; a request reached the wrong writer (VAL-FAIL-1)"
+import json, re, sys
+
+directory = sys.argv[1]
+assignment = json.load(open(f"{directory}/run.json"))["manifest"]["placement_assignment"]
+
+violations = []
+for authority, organisations in sorted(assignment.items()):
+    number = authority.rsplit("-", 1)[1]
+    for line in open(f"{directory}/authority-{number}-rows-by-organisation.txt"):
+        if not line.strip():
+            continue
+        # "<relation> <organisation>=<count>"
+        found = re.match(r"(\S+) (.+)=(\d+)$", line.strip())
+        if not found:
+            violations.append(f"{authority}: unparsable census line {line.strip()!r}")
+            continue
+        relation, organisation, count = found.groups()
+        if organisation not in organisations:
+            violations.append(
+                f"{authority} holds {count} {relation} row(s) for {organisation}, which the "
+                f"run's placement assigns elsewhere ({', '.join(organisations)})")
+
+for v in violations:
+    print(v, file=sys.stderr)
+sys.exit(1 if violations else 0)
+PY
+  log "$dir: row census clean — every row sits on the authority its organisation is placed on"
 }
 
 case "${1:-all}" in

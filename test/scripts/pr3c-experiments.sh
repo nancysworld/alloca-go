@@ -383,21 +383,30 @@ failure() {
   # exactly when nothing was ambiguous, because the generator then exits the moment the window
   # closes rather than lingering in a resolution pass.
   #
-  # The deadline is tested *before* each probe, including the first. Testing it only when the
-  # unit is still unready means a unit that answers `200` on the first attempt skips the check
-  # entirely — so a recovery that landed after the window closed was reported as a pass, with
-  # the margin printed as a negative number nobody read. Observed by running the mutation for
-  # this very gate, which is the argument for running them rather than reasoning about them.
+  # The deadline is tested on **both sides of every probe**, and each side closes a hole the
+  # other leaves open:
+  #
+  #   - before, including the first probe. Testing only after a *miss* means a unit answering
+  #     `200` on the first attempt skips the check entirely, so a recovery that landed after the
+  #     window closed passed the cell with its margin printed as a negative number nobody read;
+  #   - after, because a probe may take up to its own timeout. One issued while the window was
+  #     still open can return once it has closed, and that answer describes a readiness observed
+  #     outside the interval the run is reported against.
+  #
+  # Both were found by running this gate's own mutations rather than reasoning about them.
   #
   # It is deliberately conservative: the cell refuses when the window has closed by the time it
-  # can look, rather than claiming readiness it did not observe.
-  local restarted_at now
+  # can look, rather than claiming a readiness it did not observe inside the interval.
+  local restarted_at now ready
   restarted_at="$(date +%s)"
   while :; do
-    now="$(date +%s)"
-    [ "$now" -lt "$window_closes" ] \
-      || fail "$AFFECTED_NAME was not observed ready before the measured window closed $((now - window_closes))s ago: the outage outlasted the interval this run describes, so the fault is not the one the report would state"
-    [ "$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$AFFECTED_URL/readyz")" = "200" ] && break
+    require_window_open "$window_closes"
+    ready="$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$AFFECTED_URL/readyz" || true)"
+    # Again, after the probe. A probe may take up to its own timeout, so one issued while the
+    # window was still open can *return* after it closed — and accepting that answer would
+    # record a readiness observed outside the interval the run is reported against.
+    require_window_open "$window_closes"
+    [ "$ready" = "200" ] && break
     sleep 1
   done
   now="$(date +%s)"
@@ -455,6 +464,17 @@ assert_isolated() {
 # came back inside the measured window — so verification could wait for the database afterwards
 # and certify a fault interval that was not the one the experiment described. One mapping, one
 # place, and a third consumer inherits it rather than re-deriving it.
+# require_window_open refuses once the measured window has closed. One definition, called on
+# both sides of the readiness probe, so the two checks cannot drift into disagreeing about what
+# "inside the window" means.
+require_window_open() {
+  local closes="$1" now
+  now="$(date +%s)"
+  if [ "$now" -ge "$closes" ]; then
+    fail "$AFFECTED_NAME was not observed ready before the measured window closed $((now - closes))s ago: the outage outlasted the interval this run describes, so the fault is not the one the report would state"
+  fi
+}
+
 fault_roles() {
   case "$FAULT_CONTAINER" in
     alloca-authority-1-db) AFFECTED_URL="$S1"; PEER_URL="$S2"; AFFECTED_NAME="unit-1"; PEER_NAME="unit-2" ;;

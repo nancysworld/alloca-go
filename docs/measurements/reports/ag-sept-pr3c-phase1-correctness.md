@@ -224,9 +224,10 @@ was the single same-key replay in §5.2, on the authority that had failed.
 
 **Recovery happened inside the measured window**, which is what makes the outage the one this
 report describes rather than a longer one ending after the measurement. In the retained passes
-the authority was restarted 14 and 16 seconds before their windows closed, and recovery takes
-about 2–4 seconds; the margin was not *recorded* in those runs, so this is read from their
-timeline rather than measured. The harness now refuses a cell whose authority is not observed
+the authority was restarted **14 and 13 seconds** before their windows closed
+(`experiments.txt`: windows opening at 11:17:51 and 11:19:01 for 40 s, restarts at 11:18:17 and
+11:19:28), and recovery measures 2–4 seconds. The margin was not *recorded* in those runs, so
+this is read from their timeline at one-second resolution rather than measured. The harness now refuses a cell whose authority is not observed
 ready before the window closes, and logs the remaining margin — so future runs state it instead
 of leaving it to be inferred.
 

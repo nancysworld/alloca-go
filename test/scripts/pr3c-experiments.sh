@@ -55,7 +55,10 @@ SLOTS="${SLOTS:-1200}"
 HOT_ORG="${HOT_ORG:-org-a}"
 CONCURRENCY="${CONCURRENCY:-8}"
 ITERATIONS="${ITERATIONS:-2000}"
-WINDOW="${WINDOW:-40s}"
+# Seconds, not a duration string, because the script has to *compare* the window against a clock
+# and not merely pass it to the generator: the failure cell's claim is that the authority came
+# back before the measured window closed, and that is arithmetic.
+WINDOW_SECONDS="${WINDOW_SECONDS:-40}"
 FAULT_AFTER="${FAULT_AFTER:-10}"        # seconds into the window before the authority stops
 FAULT_FOR="${FAULT_FOR:-15}"            # seconds it stays down; must end inside the window
 # How long the affected unit may take to report itself unready. Readiness is a live database
@@ -65,9 +68,13 @@ FAULT_ISOLATION_WAIT="${FAULT_ISOLATION_WAIT:-10}"
 # failing authority from its healthy peer.
 AFFECTED_URL=""; PEER_URL=""; AFFECTED_NAME=""; PEER_NAME=""
 FAULT_CONTAINER="${FAULT_CONTAINER:-alloca-authority-2-db}"
-# The level every cell must reach for its numbers to mean anything. `local` is the floor of the
-# ladder and the highest a co-resident generator can reach; it is a floor rather than a target,
-# so a deployment that could certify higher is not held back by it.
+# The level every cell must reach for its numbers to mean anything.
+#
+# `local` is the floor of the ladder, and a floor rather than a target: a run that describes
+# enough to certify higher is not held back by it. It is **not** the ceiling for a co-resident
+# generator — co-residency blocks `publishable` alone (`measurement-contract.md` §13), and these
+# cells stop at `local` because they are correctness experiments whose manifests carry none of
+# the operator-supplied fields a `capacity` claim needs.
 REQUIRE="${REQUIRE:-local}"
 
 LOAD=bin/alloca-load
@@ -342,13 +349,22 @@ failure() {
   scrape "$M1" "$dir/s1-baseline.prom"
   scrape "$M2" "$dir/s2-baseline.prom"
 
-  log "failure: driving $WINDOW of load; $FAULT_CONTAINER stops at +${FAULT_AFTER}s for ${FAULT_FOR}s"
+  # The fault must open *and close* inside the measured window, or the experiment is not the one
+  # the report describes — recovery outside the window makes the outage look longer than stated
+  # to everything downstream.
+  [ $((FAULT_AFTER + FAULT_FOR)) -lt "$WINDOW_SECONDS" ] \
+    || fail "the fault runs from +${FAULT_AFTER}s to +$((FAULT_AFTER + FAULT_FOR))s of a ${WINDOW_SECONDS}s window: it cannot be restored inside a window it outlives"
+
+  log "failure: driving ${WINDOW_SECONDS}s of load; $FAULT_CONTAINER stops at +${FAULT_AFTER}s for ${FAULT_FOR}s"
+  local window_opened window_closes
+  window_opened="$(date +%s)"
+  window_closes=$((window_opened + WINDOW_SECONDS))
   "$LOAD" \
     -placement "$PLACEMENT" \
     -endpoint "authority-1=$S1" -endpoint "authority-2=$S2" \
     -deployment "$DEPLOYMENT" \
     -workload multi-org-dispersed \
-    -slots "$SLOTS" -concurrency "$CONCURRENCY" -duration "$WINDOW" \
+    -slots "$SLOTS" -concurrency "$CONCURRENCY" -duration "${WINDOW_SECONDS}s" \
     -require none -out "$dir/run.json" > "$dir/generator-output.txt" 2>&1 &
   local load_pid=$!
 
@@ -360,13 +376,22 @@ failure() {
   sleep "$FAULT_FOR"
   docker start "$FAULT_CONTAINER" >/dev/null
   log "failure: $FAULT_CONTAINER started; waiting for $AFFECTED_NAME to report ready"
-  local waited=0
+  # **The deadline is the measured window, not a count of attempts.** An iteration bound is
+  # unrelated to the claim being made: the loop could run past the end of the load run and then
+  # log "inside the measured window" about a recovery that happened after it, leaving
+  # verification to certify a longer outage than the report describes. That is most likely
+  # exactly when nothing was ambiguous, because the generator then exits the moment the window
+  # closes rather than lingering in a resolution pass.
+  local restarted_at now
+  restarted_at="$(date +%s)"
   while [ "$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$AFFECTED_URL/readyz")" != "200" ]; do
-    waited=$((waited + 1))
-    [ "$waited" -lt 60 ] || fail "$FAULT_CONTAINER came back but $AFFECTED_NAME never reported ready: the run would be verified over a fault interval longer than the one it describes"
+    now="$(date +%s)"
+    [ "$now" -lt "$window_closes" ] \
+      || fail "$AFFECTED_NAME did not report ready before the measured window closed $((now - window_closes))s ago: the outage outlasted the interval this run describes, so the fault is not the one the report would state"
     sleep 1
   done
-  log "failure: $AFFECTED_NAME ready again after ${waited}s, inside the measured window"
+  now="$(date +%s)"
+  log "failure: $AFFECTED_NAME ready again $((now - restarted_at))s after restart, with $((window_closes - now))s of the measured window left"
 
   wait "$load_pid" || fail "the generator exited non-zero; read $dir/generator-output.txt"
   scrape "$M1" "$dir/s1-after.prom"

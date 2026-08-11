@@ -61,6 +61,9 @@ FAULT_FOR="${FAULT_FOR:-15}"            # seconds it stays down; must end inside
 # How long the affected unit may take to report itself unready. Readiness is a live database
 # probe, so `503` follows the fault by up to the unit's readiness timeout rather than instantly.
 FAULT_ISOLATION_WAIT="${FAULT_ISOLATION_WAIT:-10}"
+# Resolved from FAULT_CONTAINER by fault_roles, and used by every step that has to tell the
+# failing authority from its healthy peer.
+AFFECTED_URL=""; PEER_URL=""; AFFECTED_NAME=""; PEER_NAME=""
 FAULT_CONTAINER="${FAULT_CONTAINER:-alloca-authority-2-db}"
 # The level every cell must reach for its numbers to mean anything. `local` is the floor of the
 # ladder and the highest a co-resident generator can reach; it is a floor rather than a target,
@@ -333,6 +336,7 @@ failure() {
   # EXIT rather than RETURN: `fail` exits, and an exit does not run a RETURN trap — so the one
   # path that matters is the one RETURN would miss.
   trap 'docker start "$FAULT_CONTAINER" >/dev/null 2>&1 || true' EXIT
+  fault_roles
   seed
 
   scrape "$M1" "$dir/s1-baseline.prom"
@@ -355,13 +359,14 @@ failure() {
 
   sleep "$FAULT_FOR"
   docker start "$FAULT_CONTAINER" >/dev/null
-  log "failure: $FAULT_CONTAINER started; waiting for its unit to report ready"
+  log "failure: $FAULT_CONTAINER started; waiting for $AFFECTED_NAME to report ready"
   local waited=0
-  while [ "$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$S2/readyz")" != "200" ]; do
+  while [ "$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$AFFECTED_URL/readyz")" != "200" ]; do
     waited=$((waited + 1))
-    [ "$waited" -lt 60 ] || fail "$FAULT_CONTAINER came back but its unit never reported ready"
+    [ "$waited" -lt 60 ] || fail "$FAULT_CONTAINER came back but $AFFECTED_NAME never reported ready: the run would be verified over a fault interval longer than the one it describes"
     sleep 1
   done
+  log "failure: $AFFECTED_NAME ready again after ${waited}s, inside the measured window"
 
   wait "$load_pid" || fail "the generator exited non-zero; read $dir/generator-output.txt"
   scrape "$M1" "$dir/s1-after.prom"
@@ -386,32 +391,41 @@ failure() {
 # affected unit is still refusing.
 assert_isolated() {
   local dir="$1" waited=0 affected peer
-  # Which unit is expected to fail follows the container the experiment stopped. Assuming it is
-  # always authority-2's would make an inverted fault fail with a message naming the wrong
-  # authority — observed while proving this assertion fires.
-  local affected_url peer_url affected_name peer_name
-  case "$FAULT_CONTAINER" in
-    alloca-authority-1-db) affected_url="$S1"; peer_url="$S2"; affected_name="unit-1"; peer_name="unit-2" ;;
-    alloca-authority-2-db) affected_url="$S2"; peer_url="$S1"; affected_name="unit-2"; peer_name="unit-1" ;;
-    *) fail "FAULT_CONTAINER=$FAULT_CONTAINER: this cell knows which unit each authority's database belongs to, and that is not one of them" ;;
-  esac
 
   : > "$dir/readiness-during-fault.txt"
   while :; do
-    affected="$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$affected_url/readyz" || true)"
-    peer="$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$peer_url/readyz" || true)"
+    affected="$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$AFFECTED_URL/readyz" || true)"
+    peer="$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$PEER_URL/readyz" || true)"
     printf 'after %2ds of fault (%s stopped): %s readyz %s, %s readyz %s\n' \
-      "$waited" "$FAULT_CONTAINER" "$peer_name" "$peer" "$affected_name" "$affected" \
+      "$waited" "$FAULT_CONTAINER" "$PEER_NAME" "$peer" "$AFFECTED_NAME" "$affected" \
       >> "$dir/readiness-during-fault.txt"
 
-    [ "$peer" = "200" ] || fail "$peer_name reported $peer while only $FAULT_CONTAINER was stopped: the fault reached the unaffected authority, which is what REQ-FAIL-1 exists to exclude"
+    [ "$peer" = "200" ] || fail "$PEER_NAME reported $peer while only $FAULT_CONTAINER was stopped: the fault reached the unaffected authority, which is what REQ-FAIL-1 exists to exclude"
     [ "$affected" = "503" ] && break
 
     waited=$((waited + 1))
-    [ "$waited" -lt "$FAULT_ISOLATION_WAIT" ] || fail "$affected_name still reported $affected ${waited}s after $FAULT_CONTAINER stopped: an authority that cannot reach its database must not report itself ready"
+    [ "$waited" -lt "$FAULT_ISOLATION_WAIT" ] || fail "$AFFECTED_NAME still reported $affected ${waited}s after $FAULT_CONTAINER stopped: an authority that cannot reach its database must not report itself ready"
     sleep 1
   done
-  log "failure: isolation asserted — $peer_name 200, $affected_name 503 after ${waited}s"
+  log "failure: isolation asserted — $PEER_NAME 200, $AFFECTED_NAME 503 after ${waited}s"
+}
+
+# fault_roles resolves which unit the injected fault belongs to, once, for every step that needs
+# it.
+#
+# It is a function of its own because the mapping had **two** consumers and only one of them
+# knew: the isolation assertion resolved the roles locally while the recovery wait below still
+# polled unit 2 by name. With an inverted fault that loop watched the *healthy* peer, saw 200
+# immediately, and let the cell continue without ever establishing that the restarted authority
+# came back inside the measured window — so verification could wait for the database afterwards
+# and certify a fault interval that was not the one the experiment described. One mapping, one
+# place, and a third consumer inherits it rather than re-deriving it.
+fault_roles() {
+  case "$FAULT_CONTAINER" in
+    alloca-authority-1-db) AFFECTED_URL="$S1"; PEER_URL="$S2"; AFFECTED_NAME="unit-1"; PEER_NAME="unit-2" ;;
+    alloca-authority-2-db) AFFECTED_URL="$S2"; PEER_URL="$S1"; AFFECTED_NAME="unit-2"; PEER_NAME="unit-1" ;;
+    *) fail "FAULT_CONTAINER=$FAULT_CONTAINER: this cell knows which unit each authority's database belongs to, and that is not one of them" ;;
+  esac
 }
 
 # partition_check reads each authority's rows *by organisation*, which is the direct form of

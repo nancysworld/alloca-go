@@ -42,11 +42,28 @@ retained `run.json`, `verdict.json`, `.prom` scrape or row census; none is quote
 terminal. Both passes are reported wherever they differ, because a single load reading is
 provisional under the measurement contract even when the property it supports is a gate.
 
-**Certification.** Every run reached `quotability.level: local` — the floor of the ladder and
-the highest level available here, since generator and service are co-resident
-([`measurement-contract.md`](../../design/measurement-contract.md) §13) — and `local` is the
-floor the harness *requires*, so a cell that fell below it would fail rather than report itself
-passed. Service, generator, verifier and image all carry the same clean revision, and the units
+**Certification.** Every run reached `quotability.level: local`, the floor of the ladder, and
+`local` is also the floor the harness *requires*, so a cell that fell below it would fail rather
+than report itself passed.
+
+**Why these runs stop at `local`, precisely.** Their manifests carry none of the four
+operator-supplied fields a `capacity` claim needs — `aggregate_pool_size`, `replica_count`,
+`deployment_topology` and `environment` — which is what the verdict says when the floor is
+raised:
+
+```
+run reached level "local", below the required "publishable": manifest is incomplete for a
+capacity claim: aggregate_pool_size is not positive (operator-supplied); replica_count is not
+positive (operator-supplied); deployment_topology is empty (operator-supplied); environment is
+empty (operator-supplied)
+```
+
+**Co-residency is not the reason**, and saying so would misstate the contract
+([`measurement-contract.md`](../../design/measurement-contract.md) §13): a fully described
+co-resident run *can* reach `capacity`. What co-residency blocks is `publishable`, and only
+that. These runs are correctness experiments that describe no capacity claim, so the missing
+fields are appropriate rather than an omission — but they, not co-residency, are what holds the
+level here. Service, generator, verifier and image all carry the same clean revision, and the units
 were bound to the observed image before any measured request:
 
 | Provenance field | Value |
@@ -336,11 +353,12 @@ test/scripts/pr3c-experiments.sh all                        # one pass of the ma
 make topo-down
 ```
 
-**Build everything before retaining anything.** The artifacts under
-[`../pr3c-phase1/`](../pr3c-phase1/) are *tracked* files, so copying a run into them dirties the
-working tree, and the next `make image` stamps a binary `vcs.modified=true` from what looks like
-a clean checkout. Ordering is the whole defence, and the harness catches the mistake rather than
-producing a run that cannot certify.
+**Build everything before retaining anything, and keep the tree clean until the runs are done.**
+The artifacts under [`../pr3c-phase1/`](../pr3c-phase1/) are *tracked* files, so copying a run
+into them dirties the working tree — and `make topo-up` depends on `image`, so it rebuilds and
+re-tags from whatever the tree looks like *then*, silently replacing a clean image with a
+modified one under the same tag. Ordering is the whole defence, and the harness catches the
+mistake rather than producing a run that cannot certify.
 
 The script seeds, scrapes, drives, injects the fault, resolves and verifies. It **fails the
 cell** — rather than recording and moving on — when any of these does not hold, each of which

@@ -44,18 +44,25 @@ provisional under the measurement contract even when the property it supports is
 
 **Certification.** Every run reached `quotability.level: local` — the floor of the ladder and
 the highest level available here, since generator and service are co-resident
-([`measurement-contract.md`](../../design/measurement-contract.md) §13). Both binaries and the
-image are stamped from a clean tree at `2991940`, and the units were bound to the observed
-image before any measured request:
+([`measurement-contract.md`](../../design/measurement-contract.md) §13) — and `local` is the
+floor the harness *requires*, so a cell that fell below it would fail rather than report itself
+passed. Service, generator, verifier and image all carry the same clean revision, and the units
+were bound to the observed image before any measured request:
 
 | Provenance field | Value |
 |---|---|
-| `service_commit_sha` / `generator_commit_sha` | `2991940…` / `2991940…`, both `source_modified: false` |
-| `image_id` | `sha256:3da62f4e2463853a…`, one image across both units |
+| `service_commit_sha` / `generator_commit_sha` | `d8a6b2e…` / `d8a6b2e…`, both `source_modified: false` |
+| verifier revision (from [`experiments.txt`](../pr3c-phase1/pass-1/experiments.txt)) | `d8a6b2e…` `(clean)` |
+| `image_id` | `sha256:4a12f38eaf1bd7e2…`, one image across both units |
 | `unit_count` / `authority_count` | 2 / 2 |
 | `routing_version` / `placement_digest` | `pr3b-v1` / `fb42ec8e5c1c27e2…` |
 | `topology_disagreement` / `service_identity_drift` | empty / empty |
 | `postgres_version` / `pool_max_conns` / `server_gomaxprocs` | 16.14 / 10 / 10 |
+
+The verifier's revision is here because it is the binary that produced every verdict below, and
+its stamp is carried in no report: certification would refuse a modified *generator*, but
+nothing downstream would ever mention a modified verifier. The harness checks it and the
+transcript records it, so "which binary certified this?" is answerable from the artifacts.
 
 ## 1. What was run
 
@@ -88,7 +95,7 @@ colocated cross-organisation bookings, routed by user organisation.
 | completed / goodput | 2,000 / 2,000 | 2,000 / 2,000 |
 | requests served by `authority-1` / `authority-2` | 1,000 / 1,000 | 1,000 / 1,000 |
 | reconciliation checks passed | 11 / 11 | 11 / 11 |
-| p50 / p99 latency (ms) | 3.65 / 8.50 | 3.57 / 8.25 |
+| p50 / p99 latency (ms) | 3.74 / 10.09 | 3.66 / 7.74 |
 
 Every request was admitted; no refusal, no infrastructure outcome, no replay. The per-unit
 split comes from the units' own scrapes rather than from the client, which carries no authority
@@ -151,20 +158,26 @@ killed container or a database refusing connections classifies differently
 
 | | pass 1 | pass 2 |
 |---|---:|---:|
-| completed / goodput | 32,543 / 31,867 | 33,016 / 32,230 |
-| `internal_failure` | 372 | 482 |
+| completed / goodput | 36,362 / 35,565 | 35,298 / 34,561 |
+| `internal_failure` | 493 | 433 |
 | `timeout_server` | 304 | 304 |
-| requests to `authority-1` / `authority-2` | 16,272 / 16,271 | 16,508 / 16,508 |
+| requests to `authority-1` / `authority-2` | 18,181 / 18,181 | 17,649 / 17,649 |
 | infrastructure outcomes on `authority-1` | **0** | **0** |
-| infrastructure outcomes on `authority-2` | 676 | 786 |
+| infrastructure outcomes on `authority-2` | 797 | 737 |
 | reconciliation checks passed | 11 / 11 | 11 / 11 |
 
 ### 5.1 What isolation looks like from each side
 
-**The unaffected authority did not notice.** `authority-1` served 16,272 requests in pass 1 and
-16,508 in pass 2 with **zero** infrastructure outcomes and at most 0.01 s of pool acquire-wait.
-Its readiness stayed `200` throughout while the affected unit reported `503`
+**The unaffected authority did not notice.** `authority-1` served 18,181 requests in pass 1 and
+17,649 in pass 2 with **zero** infrastructure outcomes and no measurable pool acquire-wait. Its
+readiness stayed `200` throughout while the affected unit reported `503`
 ([`readiness-during-fault.txt`](../pr3c-phase1/pass-1/failure-isolation/readiness-during-fault.txt)).
+
+Both halves of that are **asserted by the harness, not merely recorded**: the cell fails if the
+healthy peer ever answers anything but `200` while the fault is in place, and fails if the
+affected unit does not reach `503` within a bounded wait. Recording the two status codes and
+leaving the reading to whoever opens the file was the earlier version, and it would have passed
+a run in which containment did not hold, on the strength of the topology recovering afterwards.
 
 **The affected authority took bounded outcomes and recovered.** Every failed request landed in
 the closed outcome set — `internal_failure` where the pool already held a broken connection,
@@ -177,10 +190,16 @@ each authority holding rows for its own organisations only
 ([`authority-1-rows-by-organisation.txt`](../pr3c-phase1/pass-1/failure-isolation/authority-1-rows-by-organisation.txt),
 [`authority-2-rows-by-organisation.txt`](../pr3c-phase1/pass-1/failure-isolation/authority-2-rows-by-organisation.txt)):
 `org-a` and `org-c` on `authority-1`, `org-b` and `org-d` on `authority-2`, nothing else on
-either. The verdict already implies this — each authority is counted only over the
-organisations the placement gives it, so a row written to the wrong writer would be excluded
-from both scopes and the aggregate would come up short — but the census asks the databases
-outright.
+either.
+
+**The census is a gate, and it has to be**, because reconciliation cannot catch this on its own:
+`RunTopology` counts each authority only over the organisations placement gives it, so a stray
+row on the wrong writer sits outside every scoped count and the aggregate still balances
+whenever the correct row also exists. The cell now fails if any organisation appears on an
+authority the run's own manifest does not place it on — checked against the manifest rather than
+a second copy of the placement, so the gate cannot drift from the map the run actually used.
+Proven by injecting an `org-b` idempotency row into `authority-1` and confirming the check
+fails on it.
 
 **Restoration required no compensating write on the unaffected authority.** Nothing was
 replayed, reconciled or cleaned up on `authority-1`; the only post-restoration work anywhere
@@ -188,13 +207,20 @@ was the single same-key replay in §5.2, on the authority that had failed.
 
 ### 5.2 One real ambiguous commit, resolved — VAL-COR-6 on a live fault
 
-**Neither retained pass produced an ambiguous commit.** Of nine runs of this cell driven on
+**Neither retained pass produced an ambiguous commit.** Of eleven runs of this cell driven on
 2026-08-11, exactly one did, and that run is retained separately as
-[`failure-with-ambiguity/`](../pr3c-phase1/failure-with-ambiguity/) — same script, same commit,
-same image, same fault timing. It is reported as one observation of the contract holding on a
-real fault, **not as a rate**, and VAL-COR-6's accounting does not depend on it: the validation
-plan discharges that on deterministic end-to-end tests precisely so no experiment has to
-produce an ambiguous commit to order.
+[`failure-with-ambiguity/`](../pr3c-phase1/failure-with-ambiguity/) — same cell, same fault and
+same fault timing, at the earlier commit `2991940` and therefore **before the harness gained the
+assertions §5.1 and §8 describe**. What that costs is stated in that directory's own README:
+its containment and partition properties were recorded rather than asserted, and its verifier's
+provenance was not yet captured. The accounting claim below does not rest on any of that — it
+is read from the run's own client totals and the persisted-row counts in its verdict, both
+retained and independently checkable.
+
+It is reported as one observation of the contract holding on a real fault, **not as a rate**,
+and VAL-COR-6's accounting does not depend on it: the validation plan discharges that on
+deterministic end-to-end tests precisely so no experiment has to produce an ambiguous commit to
+order.
 
 That run's fault produced exactly one `unknown_replayable`. The generator replayed it under its
 own idempotency key after the authority returned:
@@ -226,8 +252,8 @@ measured field. An implementation that folded the replay into measured goodput w
 than an implementation detail (`measurement-contract.md` §12).
 
 In the two retained passes the resolution pass was correctly a no-op, and their verdicts show
-the two populations coinciding, as they must when nothing was ambiguous: 32,543 completed
-against 32,543 server-counted in pass 1, 33,016 against 33,016 in pass 2.
+the two populations coinciding, as they must when nothing was ambiguous: 36,362 completed
+against 36,362 server-counted in pass 1, 35,298 against 35,298 in pass 2.
 
 ## 6. Resource evidence, retained for the Iteration B review `[MEASURED]`
 
@@ -237,24 +263,24 @@ Both passes, so the spread is visible rather than asserted.
 
 | Cell | Unit | CPU | Pool acquires | Acquire-wait |
 |---|---|---:|---:|---:|
-| correctness (2,000 req) | `authority-1` | 0.70 / 0.68 s | 1,000 / 1,001 | 0.00 s |
-| correctness | `authority-2` | 0.72 / 0.70 s | 1,000 / 1,001 | 0.00 s |
-| failure isolation (40 s) | `authority-1` | 11.92 / 12.11 s | 16,281 / 16,517 | 0.01 / 0.00 s |
-| failure isolation | `authority-2` | 11.46 / 11.74 s | 15,611 / 15,739 | **40.45 / 44.65 s** |
+| correctness (2,000 req) | `authority-1` | 0.71 / 0.70 s | 1,000 / 1,000 | 0.02 / 0.00 s |
+| correctness | `authority-2` | 0.73 / 0.71 s | 1,000 / 1,000 | 0.02 / 0.00 s |
+| failure isolation (40 s) | `authority-1` | 12.89 / 12.58 s | 18,190 / 17,658 | 0.00 s |
+| failure isolation | `authority-2` | 12.61 / 12.27 s | 17,398 / 16,928 | **44.28 / 40.78 s** |
 
 Read with care, and with §7.1:
 
 - **at concurrency 8 the pool is not contended on a healthy authority** — acquire-wait is
-  0.00–0.01 s across every healthy cell in both passes. PR2's frontier was found at far higher
+  0.00–0.02 s across every healthy cell in both passes. PR2's frontier was found at far higher
   concurrency, where acquire-wait was the dominant term; these runs say nothing about that
   regime and were not driven into it;
-- **service CPU is roughly 0.30 cores per unit** over the failure window (11.92 s of a 40 s
+- **service CPU is roughly 0.32 cores per unit** over the failure window (12.89 s of a 40 s
   window), against WSL2's 10-vCPU allocation shared by everything. Whether service compute is
   the next frontier is exactly the question the Iteration B review must answer, and this is an
   input to it rather than an answer;
-- **the 40–45 s of acquire-wait on the affected authority is the outage**, accumulated by
+- **the 41–44 s of acquire-wait on the affected authority is the outage**, accumulated by
   requests waiting on connections that could not be established. It is also the loosest figure
-  here — an 11% spread across two faults of identical timing — and its shape is the open lead
+  here — an 8.6% spread across two faults of identical timing — and its shape is the open lead
   in §7.2.
 
 ## 7. What this does not establish
@@ -270,16 +296,17 @@ any single throughput reading from this workstation carries that caveat regardle
 
 ### 7.2 Two reproducible observations that are not diagnoses
 
-**`timeout_server` was exactly 304 in every script-driven run of this cell** — both retained
-passes, the separately retained ambiguity run, and six further runs during harness validation
-that are not retained. Across those runs `internal_failure` varied between 372 and 508 and
-total volume by 13%, while 304 did not move once. The one run whose fault was hand-timed rather
-than script-timed produced a different count, so the figure appears to be fixed by the fault's
-*timing* rather than by the run's size. A quantity that is bit-identical across runs of
-different volume is structural rather than incidental. It is not explained here, and it is
-cheap to notice now and expensive to rediscover later.
+**`timeout_server` was exactly 304 in every script-driven run of this cell** — eleven of them
+now, including both retained passes, the separately retained ambiguity run, and runs driven
+during harness validation that are not retained. Across them `internal_failure` moved freely
+(372 to 508; 493 and 433 in the two passes) and total volume by 13%, while 304 did not move
+once. The one run whose fault was hand-timed rather than script-timed produced a different
+count, so the figure appears to be fixed by the fault's *timing* rather than by the run's size.
+A quantity that is bit-identical across runs of different volume is structural rather than
+incidental. It is not explained here, and it is cheap to notice now and expensive to rediscover
+later.
 
-**The worst client-observed latency was 503.1 ms and 502.7 ms** in the two passes, against a 5 s
+**The worst client-observed latency was 507.1 ms and 503.2 ms** in the two passes, against a 5 s
 server deadline and a 500 ms `db_acquire_cap`. That is consistent with the acquisition cap
 bounding the wait when the pool is warm — and it points the *opposite* way from the single
 observation recorded in `ag-sept-pr3.md` §6b, where an idle request against a stopped authority
@@ -301,18 +328,36 @@ register still says so.
 ```sh
 make image                                                  # clean tree required
 make image-provenance                                       # want modified=false
+go build -o bin/alloca-load ./cmd/alloca-load               # also from a clean tree
+go build -o bin/alloca-verify ./cmd/alloca-verify
 make topo-up
 make topo-deployment > test/results/deployment.json
-go build -o bin/alloca-load ./cmd/alloca-load
-go build -o bin/alloca-verify ./cmd/alloca-verify
 test/scripts/pr3c-experiments.sh all                        # one pass of the matrix
 make topo-down
 ```
 
-The script seeds, scrapes, drives, injects the fault, resolves, verifies and writes the row
-census; its preflight refuses a generator or an image stamped from a modified tree, which is
-the failure that otherwise surfaces only as `quotability.level: none` after the runs. Cell
-selectors (`controls`, `correctness`, `distribution`, `refusal`, `failure`) run one at a time.
+**Build everything before retaining anything.** The artifacts under
+[`../pr3c-phase1/`](../pr3c-phase1/) are *tracked* files, so copying a run into them dirties the
+working tree, and the next `make image` stamps a binary `vcs.modified=true` from what looks like
+a clean checkout. Ordering is the whole defence, and the harness catches the mistake rather than
+producing a run that cannot certify.
+
+The script seeds, scrapes, drives, injects the fault, resolves and verifies. It **fails the
+cell** — rather than recording and moving on — when any of these does not hold, each of which
+was demonstrated by removing the property and watching the cell fail:
+
+| Gate | What it refuses |
+|---|---|
+| generator and verifier stamps | either binary built from a modified tree; the verifier's stamp is carried in no report, so nothing downstream would ever mention it |
+| service `/meta` `modified` | an image whose binary cannot certify a run |
+| `-require local` | a cell whose reconciliation checks all pass while its *certification* level is `none` — unsound, unresolved or drifted |
+| readiness during the fault | a healthy peer answering anything but `200`, or the affected unit never reaching `503` |
+| row census against the manifest | any organisation holding rows on an authority the run's own placement does not put it on |
+| seed clean-start assertion | a fixture carrying live claims or idempotency records from an earlier run |
+
+Cell selectors (`controls`, `correctness`, `distribution`, `refusal`, `failure`) run one at a
+time. `REQUIRE`, `FAULT_CONTAINER`, `FAULT_AFTER`, `FAULT_FOR` and the fixture size are
+environment overrides.
 
 Each cell directory holds:
 

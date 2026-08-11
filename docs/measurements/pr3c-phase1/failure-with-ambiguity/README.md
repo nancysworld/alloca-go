@@ -7,9 +7,20 @@ the measured and reconciliation populations differ by exactly that one replay.
 
 It is a full cell directory with the same files as
 [`../pass-1/failure-isolation/`](../pass-1/failure-isolation/), produced by
-`test/scripts/pr3c-experiments.sh failure` at the same commit (`2991940`) against the same
-image (`alloca-go:2991940`), with the same fault: `alloca-authority-2-db` stopped 10 s into a
-40 s window and started 15 s later.
+`test/scripts/pr3c-experiments.sh failure` at commit `2991940` against image
+`alloca-go:2991940`, with the same fault as the retained passes: `alloca-authority-2-db`
+stopped 10 s into a 40 s window and started 15 s later.
+
+**It predates the harness hardening, and that is worth knowing before reading it.** At
+`2991940` the script recorded the readiness codes during the fault and the per-authority row
+census without checking either, ran the verifier with a floor of `none`, and did not capture
+the verifier's own provenance. The two passes beside it were produced after all four became
+failing gates (`d8a6b2e`). So for *this* run, containment and partition are observations rather
+than assertions — they read correctly, and nothing enforced that they would.
+
+What the run is kept for does not depend on any of that. The accounting claim is read from its
+own `run.json` (client totals and `ambiguity_resolutions`) and the persisted-row counts in its
+`verdict.json`, both retained here and checkable without re-running anything.
 
 **Two transcripts were renamed, and nothing else was changed.** This run predates a correction
 to the script: it wrote `experiments.log` and `generator.log`, which `.gitignore` excludes as
@@ -19,8 +30,8 @@ byte as the run wrote them, and the script now emits those names itself.
 
 **Ambiguity is not manufactured and is not required.** `ag-sept-validation-plan.md` VAL-COR-6
 discharges the accounting on deterministic end-to-end tests precisely so that no experiment has
-to produce an ambiguous commit to order; the eight other runs produced none. Read this
-directory as one observation of the contract holding on a real fault, not as a rate.
+to produce an ambiguous commit to order; the ten other runs of this cell produced none. Read
+this directory as one observation of the contract holding on a real fault, not as a rate.
 
 The reading is in
 [`../../reports/ag-sept-pr3c-phase1-correctness.md`](../../reports/ag-sept-pr3c-phase1-correctness.md)

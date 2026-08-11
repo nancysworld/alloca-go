@@ -9,19 +9,19 @@
         "name": "capacity within every slot's limit",
         "invariant": "INV-1",
         "ok": true,
-        "detail": "authority authority-1 (org-a, org-c): 16272 live reservations, no slot over capacity"
+        "detail": "authority authority-1 (org-a, org-c): 18181 live reservations, no slot over capacity"
       },
       {
         "name": "no identity holds overlapping claims",
         "invariant": "INV-4",
         "ok": true,
-        "detail": "authority authority-1 (org-a, org-c): 16272 live claims, no overlapping pair"
+        "detail": "authority authority-1 (org-a, org-c): 18181 live claims, no overlapping pair"
       },
       {
         "name": "one scoped key, one recorded outcome",
         "invariant": "INV-5",
         "ok": true,
-        "detail": "authority authority-1 (org-a, org-c): 16272 records, all keys distinct"
+        "detail": "authority authority-1 (org-a, org-c): 18181 records, all keys distinct"
       }
     ],
     "authority-2": [
@@ -29,19 +29,19 @@
         "name": "capacity within every slot's limit",
         "invariant": "INV-1",
         "ok": true,
-        "detail": "authority authority-2 (org-b, org-d): 15595 live reservations, no slot over capacity"
+        "detail": "authority authority-2 (org-b, org-d): 17384 live reservations, no slot over capacity"
       },
       {
         "name": "no identity holds overlapping claims",
         "invariant": "INV-4",
         "ok": true,
-        "detail": "authority authority-2 (org-b, org-d): 15595 live claims, no overlapping pair"
+        "detail": "authority authority-2 (org-b, org-d): 17384 live claims, no overlapping pair"
       },
       {
         "name": "one scoped key, one recorded outcome",
         "invariant": "INV-5",
         "ok": true,
-        "detail": "authority authority-2 (org-b, org-d): 15595 records, all keys distinct"
+        "detail": "authority authority-2 (org-b, org-d): 17384 records, all keys distinct"
       }
     ]
   },
@@ -50,31 +50,31 @@
       "name": "persisted reservations vs admitted reserves (all authorities)",
       "invariant": "INV-1",
       "ok": true,
-      "detail": "31867 live reservations across the topology, 31867 fresh admitted reserves"
+      "detail": "35565 live reservations across the topology, 35565 fresh admitted reserves"
     },
     {
       "name": "persisted claims vs admitted reserves (all authorities)",
       "invariant": "INV-4",
       "ok": true,
-      "detail": "31867 live claims across the topology, 31867 fresh admitted reserves"
+      "detail": "35565 live claims across the topology, 35565 fresh admitted reserves"
     },
     {
       "name": "idempotency records vs fresh mutations (all authorities)",
       "invariant": "INV-5",
       "ok": true,
-      "detail": "31867 records across the topology, 31867 fresh mutations"
+      "detail": "35565 records across the topology, 35565 fresh mutations"
     },
     {
       "name": "outcomes within the closed set, replay orthogonal",
       "invariant": "INV-7",
       "ok": true,
-      "detail": "32543 completed requests, all outcomes in the closed set"
+      "detail": "36362 completed requests, all outcomes in the closed set"
     },
     {
       "name": "server totals vs client totals",
       "invariant": "",
       "ok": true,
-      "detail": "32543 requests, every operation/outcome/reason/replay cell agrees with the client"
+      "detail": "36362 requests, every operation/outcome/reason/replay cell agrees with the client"
     }
   ],
   "quotability": {

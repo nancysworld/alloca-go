@@ -613,12 +613,51 @@ clean passes it sits next to.
 explains it yet, and it is recorded as an open lead rather than smoothed over, because a
 quantity that is bit-identical across runs of different size is structural.
 
-**Evidence was regenerated three times over artifact hygiene, not over results.** Once because
+**Evidence was regenerated several times over artifact hygiene, not over results.** Once because
 the retained transcripts were named `*.log`, which `.gitignore` excludes — a report citing files
-the repository does not carry is an assertion — and once because the per-authority row census
-belonged in the script rather than in an operator's shell history. The rule that came out of it:
-**the artifact set and the script that produces it must match exactly**, or reproduction
-instructions describe a run nobody can repeat.
+the repository does not carry is an assertion — once because the per-authority row census
+belonged in the script rather than in an operator's shell history, and finally after the review
+below. The rule that came out of it: **the artifact set and the script that produces it must
+match exactly**, or reproduction instructions describe a run nobody can repeat.
+
+**Retained artifacts are tracked files, and that has an ordering consequence.** Copying a run
+into `docs/measurements/` dirties the working tree, so a `make image` *after* retaining stamps
+the binary `vcs.modified=true` from what looks like a clean checkout — the same failure as the
+Docker client above, reached from the opposite direction. Build, run, retain, commit, in that
+order. The harness catches the mistake, which is the argument for the preflight rather than for
+remembering.
+
+### 6g. The review round, and why every finding was the same defect
+
+Four P1s (Codex ×2, Nancy ×2) on the experiment harness, and they share one shape: **a gate that
+reported success while the thing it gated had not happened** — the pattern PR2's review named,
+and which this record should have been checked against before asking for review.
+
+- **the cell passed at `quotability.level: none`**, because `verify` ran with `-require none`.
+  Reconciliation checks compare the numbers a run produced; certification decides whether they
+  may be quoted at all, and the two disagree exactly when a run is unsound, unresolved or
+  drifted. The comment defending `none` claimed a real floor would cost the diagnostic
+  artifact — **wrong about the verifier**, which writes the verdict before enforcing the level.
+  A wrong justification in a comment is worse than none, because it answers the reviewer's
+  question before they ask it;
+- **the readiness codes during the fault were recorded, not checked.** `printf` succeeds
+  whatever `curl` returns, so the artifact could contradict the containment claim while the cell
+  passed on the strength of recovering afterwards;
+- **the verifier's provenance was never established.** The generator's stamp is carried into the
+  report and refused at `local`; the verifier's is carried nowhere, so a stale or modified
+  verifier could certify the whole matrix silently. Asymmetries like that are where a
+  provenance chain breaks;
+- **the row census was an artifact, not a gate**, and reconciliation cannot cover for it:
+  `RunTopology` counts each authority only over the organisations placement gives it, so a stray
+  row on the wrong writer sits outside every scoped count while the aggregate still balances.
+
+**Writing the discriminating tests found two more defects**, which is the argument for writing
+them rather than reasoning about them: the isolation assertion hardcoded which unit was expected
+to fail while the container it stops is a variable, and a failed cell left the topology
+mid-fault, so one failed assertion cost a manual repair before anything else could run. Each
+gate was then proven by removing its property — a floor the run cannot reach, a fault that never
+happens, a fault that reaches both authorities, a modified verifier, and an injected `org-b` row
+on `authority-1`.
 
 ## 7. Not in PR3
 

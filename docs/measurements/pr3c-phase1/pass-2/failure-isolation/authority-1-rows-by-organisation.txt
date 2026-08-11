@@ -1,6 +1,6 @@
-claims org-a=8254
-claims org-c=8254
-idempotency org-a=8254
-idempotency org-c=8254
-reservations org-a=9308
-reservations org-c=7200
+claims org-a=8825
+claims org-c=8824
+idempotency org-a=8825
+idempotency org-c=8824
+reservations org-a=9600
+reservations org-c=8049

@@ -1,29 +1,33 @@
-09:23:17Z  artifacts -> test/results/pr3c-20260811T092317Z
-09:23:17Z  generator vcs.revision=2991940d4abdc26b697cf9984f0168c5ce61c553, image alloca-go:2991940
-09:23:17Z  seeding 1200 slots per organisation
-09:23:22Z  same-organisation booking: ok (200, admitted_success)
-09:23:22Z  colocated cross-organisation booking: ok (200, admitted_success)
-09:23:22Z  cross-authority refusal: ok (409, cross_authority_unsupported)
-09:23:22Z  misrouted request: ok (400, invalid_request)
-09:23:22Z  misroute counter: 7 -> 8
-09:23:22Z  reservation for the ownership control: ok (200, admitted_success)
-09:23:22Z  confirm with a wrong UserRef: ok (404, unknown_target)
-09:23:22Z  cancel with a wrong UserRef: ok (404, unknown_target)
-09:23:22Z  the owner can still confirm: ok (200, admitted_success)
-09:23:22Z  controls: all assertions passed
-09:23:22Z  seeding 1200 slots per organisation
-09:23:26Z  correctness: driving load
-09:23:27Z  test/results/pr3c-20260811T092317Z/correctness: every check passed, level local
-09:23:27Z  seeding 1200 slots per organisation
-09:23:31Z  distribution: driving load
-09:23:32Z  test/results/pr3c-20260811T092317Z/distribution: every check passed, level local
-09:23:32Z  seeding 1200 slots per organisation
-09:23:36Z  refusal: driving load
-09:23:37Z  test/results/pr3c-20260811T092317Z/refusal: every check passed, level local
-09:23:37Z  seeding 1200 slots per organisation
-09:23:41Z  failure: driving 40s of load; alloca-authority-2-db stops at +10s for 15s
-09:23:52Z  failure: alloca-authority-2-db stopped
-09:24:08Z  failure: alloca-authority-2-db started; waiting for its unit to report ready
-09:24:21Z  test/results/pr3c-20260811T092317Z/failure-isolation: every check passed, level local
-09:24:21Z  test/results/pr3c-20260811T092317Z/failure-isolation: per-authority row census written
-09:24:21Z  done; artifacts in test/results/pr3c-20260811T092317Z
+11:17:27Z  artifacts -> test/results/pr3c-20260811T111727Z
+11:17:27Z  generator   d8a6b2e4dba3c9211cb86bc1e173f9843cf66f53 (clean)
+11:17:28Z  verifier    d8a6b2e4dba3c9211cb86bc1e173f9843cf66f53 (clean)
+11:17:28Z  image       alloca-go:d8a6b2e sha256:4a12f38eaf1bd7e22df0c7963bdc5f0a92930e6f440f1151cc5e2378224a39ac
+11:17:28Z  require     local
+11:17:28Z  seeding 1200 slots per organisation
+11:17:32Z  same-organisation booking: ok (200, admitted_success)
+11:17:32Z  colocated cross-organisation booking: ok (200, admitted_success)
+11:17:32Z  cross-authority refusal: ok (409, cross_authority_unsupported)
+11:17:32Z  misrouted request: ok (400, invalid_request)
+11:17:32Z  misroute counter: 0 -> 1
+11:17:32Z  reservation for the ownership control: ok (200, admitted_success)
+11:17:32Z  confirm with a wrong UserRef: ok (404, unknown_target)
+11:17:32Z  cancel with a wrong UserRef: ok (404, unknown_target)
+11:17:32Z  the owner can still confirm: ok (200, admitted_success)
+11:17:32Z  controls: all assertions passed
+11:17:32Z  seeding 1200 slots per organisation
+11:17:36Z  correctness: driving load
+11:17:37Z  test/results/pr3c-20260811T111727Z/correctness: every check passed, level local
+11:17:37Z  seeding 1200 slots per organisation
+11:17:41Z  distribution: driving load
+11:17:42Z  test/results/pr3c-20260811T111727Z/distribution: every check passed, level local
+11:17:42Z  seeding 1200 slots per organisation
+11:17:46Z  refusal: driving load
+11:17:47Z  test/results/pr3c-20260811T111727Z/refusal: every check passed, level local
+11:17:47Z  seeding 1200 slots per organisation
+11:17:51Z  failure: driving 40s of load; alloca-authority-2-db stops at +10s for 15s
+11:18:01Z  failure: alloca-authority-2-db stopped
+11:18:02Z  failure: isolation asserted — unit-1 200, unit-2 503 after 0s
+11:18:17Z  failure: alloca-authority-2-db started; waiting for its unit to report ready
+11:18:31Z  test/results/pr3c-20260811T111727Z/failure-isolation: every check passed, level local
+11:18:31Z  test/results/pr3c-20260811T111727Z/failure-isolation: row census clean — every row sits on the authority its organisation is placed on
+11:18:31Z  done; artifacts in test/results/pr3c-20260811T111727Z

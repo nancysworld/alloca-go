@@ -1,12 +1,12 @@
 {
   "manifest": {
-    "service_commit_sha": "2991940d4abdc26b697cf9984f0168c5ce61c553",
+    "service_commit_sha": "d8a6b2e4dba3c9211cb86bc1e173f9843cf66f53",
     "service_source_modified": false,
     "service_go_version": "go1.26.5",
-    "image_id": "sha256:3da62f4e2463853ae59bd24495eac3dda93a96fc34f88b49b8f896cee69fcad6",
-    "image_tag": "alloca-go:2991940",
+    "image_id": "sha256:4a12f38eaf1bd7e22df0c7963bdc5f0a92930e6f440f1151cc5e2378224a39ac",
+    "image_tag": "alloca-go:d8a6b2e",
     "container_deployment": true,
-    "generator_commit_sha": "2991940d4abdc26b697cf9984f0168c5ce61c553",
+    "generator_commit_sha": "d8a6b2e4dba3c9211cb86bc1e173f9843cf66f53",
     "generator_source_modified": false,
     "generator_go_version": "go1.26.5",
     "replica_count": 0,
@@ -41,15 +41,15 @@
     "generator_gomaxprocs": 10,
     "generator_num_cpu": 10,
     "target": "http://localhost:8081,http://localhost:8082",
-    "timestamp": "2026-08-11T09:25:30.023838553Z"
+    "timestamp": "2026-08-11T11:19:41.222796334Z"
   },
   "summary": {
     "workload": "multi-org-dispersed",
     "concurrency": 8,
     "iterations": 0,
     "duration_requested_seconds": 40,
-    "completed_iterations": 33016,
-    "duration_seconds": 40.006424771,
+    "completed_iterations": 35298,
+    "duration_seconds": 40.008596117,
     "warm_up_seconds": 0,
     "warm_up_discarded": 0,
     "totals": [
@@ -57,13 +57,13 @@
         "operation": "reserve",
         "outcome": "admitted_success",
         "replay": false,
-        "count": 32230
+        "count": 34561
       },
       {
         "operation": "reserve",
         "outcome": "internal_failure",
         "replay": false,
-        "count": 482
+        "count": 433
       },
       {
         "operation": "reserve",
@@ -72,20 +72,20 @@
         "count": 304
       }
     ],
-    "completed_requests": 33016,
-    "successful_mutation_goodput": 32230,
+    "completed_requests": 35298,
+    "successful_mutation_goodput": 34561,
     "replayed_mutations": 0,
     "latency_ms": {
-      "p50": 4.273463,
-      "p95": 9.587644,
-      "p99": 17.320476,
-      "max": 502.682359
+      "p50": 3.827737,
+      "p95": 10.550812,
+      "p99": 22.573228,
+      "max": 503.210528
     },
     "generator": {
       "gomaxprocs": 10,
       "goroutines": 39,
-      "cpu_seconds": 3.953656,
-      "cpu_utilisation_per_core": 0.009882552671554747,
+      "cpu_seconds": 4.199925,
+      "cpu_utilisation_per_core": 0.010497556544393256,
       "num_cpu": 10
     },
     "response_validation_enabled": true,

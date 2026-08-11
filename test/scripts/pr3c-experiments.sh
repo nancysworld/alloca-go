@@ -60,7 +60,10 @@ ITERATIONS="${ITERATIONS:-2000}"
 # back before the measured window closed, and that is arithmetic.
 WINDOW_SECONDS="${WINDOW_SECONDS:-40}"
 FAULT_AFTER="${FAULT_AFTER:-10}"        # seconds into the window before the authority stops
-FAULT_FOR="${FAULT_FOR:-15}"            # seconds it stays down; must end inside the window
+# Seconds the authority is held down *after* isolation has been asserted — not the whole outage,
+# which also covers the assertion and so runs a second or two longer. The restoration must still
+# land inside the window.
+FAULT_FOR="${FAULT_FOR:-15}"
 # How long the affected unit may take to report itself unready. Readiness is a live database
 # probe, so `503` follows the fault by up to the unit's readiness timeout rather than instantly.
 FAULT_ISOLATION_WAIT="${FAULT_ISOLATION_WAIT:-10}"

@@ -16,12 +16,14 @@
 > outcomes; **no request failed over to the surviving writer**, and no organisation holds a row
 > on an authority that does not own it. Restoration needed no compensating write anywhere.
 >
-> In one further run of the same cell, the fault produced a genuinely ambiguous commit and the
-> post-run resolution pass settled it: that run's two accounting populations differ by exactly
-> the one replay — 36,794 measured requests against 36,795 counted by the two units — while the
-> databases hold 35,982 rows for 35,982 final logical mutations. That is
-> `measurement-contract.md` §12 on a live fault rather than only in tests. It is retained
-> separately, as one observation and not a rate (§5.2).
+> In one further run of the same cell, the fault produced a real `unknown_replayable` — a
+> mutation whose outcome the client could not settle — and the post-run resolution pass settled
+> it: that run's two accounting populations differ by exactly the one replay, 36,794 measured
+> requests against 36,795 counted by the two units, while the databases hold 35,982 rows for
+> 35,982 final logical mutations. That is `measurement-contract.md` §12 on a live fault rather
+> than only in tests. It is retained separately, as one observation and not a rate (§5.2), and
+> it is **not** INV-21's unproven case: resolution proved the original had never committed
+> (§7.3).
 >
 > **No throughput multiplier is claimed, and none can be from this machine.** Both authorities,
 > both units, the generator and the databases share one 10-vCPU WSL2 allocation. The runs here
@@ -101,6 +103,13 @@ capacity exhaustion while passing every gate.
 | `refusal` | `cross-authority-control` | 2,000 requests | VAL-COR-4 |
 | `failure-isolation` | `multi-org-dispersed`, one authority stopped | 40 s | VAL-FAIL-1, VAL-COR-6 |
 
+Together the `correctness` and `failure-isolation` cells discharge **VAL-SCALE-3 in the sense
+that validation names**: the multi-organisation dispersed workload across two writable
+authorities, establishing correctness and failure independence, interpreted on a co-resident
+workstation as *architecture and correctness evidence rather than a production capacity
+multiplier*. The validation itself says to read it that way, and §7.1 says why no other reading
+is available here.
+
 Each load cell is scraped per unit before and after, verified immediately, and its verdict
 retained. The scrapes are taken once the generator has **exited**, not when the workload ends,
 because the resolution pass sends requests after the measured interval closes (§5.3).
@@ -170,8 +179,11 @@ than following the generator's own balance.
 
 ## 5. Failure isolation `[MEASURED]`
 
-**The fault is a stopped container**, `alloca-authority-2-db`, stopped 10 s into a 40 s window
-and started again 15 s later, inside the same window. The failure mode is named because the
+**The fault is a stopped container**, `alloca-authority-2-db`. The sequence is: stop at +10 s
+into a 40 s window, assert isolation while it is down, hold it down for a further configured
+15 s, then restore — inside the same window. Because the hold begins *after* the assertion, the
+retained transcripts show **16 and 17 seconds** between stop and start rather than 15; the
+configured `FAULT_FOR` is the hold, not the whole outage. The failure mode is named because the
 outcome depends on it: a stopped container drops packets rather than refusing them, and a
 killed container or a database refusing connections classifies differently
 ([`ag-sept-pr3.md`](../../development/implementation/ag-sept-pr3.md) §6b).
@@ -226,18 +238,29 @@ replayed, reconciled or cleaned up on `authority-1`; the only post-restoration w
 was the single same-key replay in §5.2, on the authority that had failed.
 
 **Recovery happened inside the measured window**, which is what makes the outage the one this
-report describes rather than a longer one ending after the measurement. In the retained passes
-the authority was restarted **14 and 13 seconds** before their windows closed
-(`experiments.txt`: windows opening at 11:17:51 and 11:19:01 for 40 s, restarts at 11:18:17 and
-11:19:28), and recovery measures 2–4 seconds. The margin was not *recorded* in those runs, so
-this is read from their timeline at one-second resolution rather than measured. The harness now refuses a cell whose authority is not observed
+report describes rather than a longer one ending after the measurement. What the retained
+artifacts establish is the restart instant: the authority was started **14 and 13 seconds**
+before each window closed (`experiments.txt`: windows opening at 11:17:51 and 11:19:01 for 40 s,
+restarts at 11:18:17 and 11:19:28, one-second resolution), and both runs then completed and
+reconciled.
+
+**How long the unit took to report ready after that is not in these artifacts.** The old harness
+logged the restart but not the ready-again instant; precise margin logging came later, with the
+gate that enforces it. So this report states the restart margin, which is retained, and claims
+no recovery duration, which is not. The harness now refuses a cell whose authority is not observed
 ready before the window closes, and logs the remaining margin — so future runs state it instead
 of leaving it to be inferred.
 
-### 5.2 One real ambiguous commit, resolved — VAL-COR-6 on a live fault
+### 5.2 One real `unknown_replayable`, resolved — VAL-COR-6 on a live fault
 
-**Neither retained pass produced an ambiguous commit.** Of eleven runs of this cell driven on
-2026-08-11, exactly one did, and that run is retained separately as
+**The distinction the wording has to keep.** `unknown_replayable` says the *client* cannot tell
+whether the mutation committed. It does not say a commit landed. In this run the replay proved
+the original had **not** committed, so the resolution performed the mutation itself — which is
+why this is not INV-21's outstanding case, where the commit lands and only the acknowledgement
+is lost (§7.3).
+
+**Neither retained pass produced one.** Of the runs of this cell driven on 2026-08-11, exactly
+one did, and that run is retained separately as
 [`failure-with-ambiguity/`](../pr3c-phase1/failure-with-ambiguity/) — same cell, same fault and
 same fault timing, at the earlier commit `2991940` and therefore **before the harness gained the
 assertions §5.1 and §8 describe**. What that costs is stated in that directory's own README:
@@ -248,8 +271,8 @@ retained and independently checkable.
 
 It is reported as one observation of the contract holding on a real fault, **not as a rate**,
 and VAL-COR-6's accounting does not depend on it: the validation plan discharges that on
-deterministic end-to-end tests precisely so no experiment has to produce an ambiguous commit to
-order.
+deterministic end-to-end tests precisely so no experiment has to produce a commit-ambiguous
+outcome to order.
 
 That run's fault produced exactly one `unknown_replayable`. The generator replayed it under its
 own idempotency key after the authority returned:
@@ -325,15 +348,17 @@ any single throughput reading from this workstation carries that caveat regardle
 
 ### 7.2 Two reproducible observations that are not diagnoses
 
-**`timeout_server` was exactly 304 in every script-driven run of this cell** — eleven of them
-now, including both retained passes, the separately retained ambiguity run, and runs driven
-during harness validation that are not retained. Across them `internal_failure` moved freely
-(372 to 508; 493 and 433 in the two passes) and total volume by 13%, while 304 did not move
-once. The one run whose fault was hand-timed rather than script-timed produced a different
-count, so the figure appears to be fixed by the fault's *timing* rather than by the run's size.
-A quantity that is bit-identical across runs of different volume is structural rather than
-incidental. It is not explained here, and it is cheap to notice now and expensive to rediscover
-later.
+**`timeout_server` was exactly 304 in all three retained failure runs** — pass 1, pass 2 and
+[`failure-with-ambiguity/`](../pr3c-phase1/failure-with-ambiguity/) — while `internal_failure`
+moved freely across them (493, 433, 508) and total volume varied by 4.2%. Every number in that
+sentence is re-derivable from a retained `run.json`.
+
+A quantity that is bit-identical across runs whose other outcome counts are not is structural
+rather than incidental, and it is not explained here. `[HYPOTHESIS]`, from unretained
+harness-validation runs on the same day and offered only as a direction for whoever picks this
+up: 304 held there too, and the one run whose fault was hand-timed rather than script-timed
+produced a different count — which would make the figure a function of the fault's *timing*
+rather than of the run's size. That is a lead, not evidence, and no run behind it is retained.
 
 **The worst client-observed latency was 507.1 ms and 503.2 ms** in the two passes, against a 5 s
 server deadline and a 500 ms `db_acquire_cap`. That is consistent with the acquisition cap
@@ -348,8 +373,10 @@ be used to change a timeout budget.
 PR3b proved the narrower fault — a `COMMIT` attempted on an already-terminated session
 classifies conservatively. The remaining half, *commit landed but the acknowledgement was
 lost*, needs something interposed between client and server that drops the reply, and a generic
-authority shutdown does not produce it. The single ambiguous commit in §5.2 is **not** that
-proof: it resolved `replay=false`, meaning the original had not committed at all. The invariant
+authority shutdown does not produce it. The single `unknown_replayable` in §5.2 is **not** that
+proof, and is the case most likely to be mistaken for it: it resolved `replay=false`, meaning
+the original had never committed. INV-21's outstanding half needs the opposite — `replay=true`,
+a commit that landed while its acknowledgement did not. The invariant
 register still says so.
 
 ## 8. Reproducing this

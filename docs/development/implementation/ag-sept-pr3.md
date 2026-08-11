@@ -370,8 +370,9 @@ with artifacts in [`pr3c-phase1/`](../../measurements/pr3c-phase1/):
 4. **INV-21's remaining half.** The *commit-landed-but-acknowledgement-lost* case is still
    unproven and needs a proxy that drops the reply; the register says so, and PR3c must not
    claim the whole invariant on the strength of the half that is tested. The one live
-   ambiguous commit the experiments produced does **not** discharge it: it resolved
-   `replay=false`, meaning the original had not committed at all.
+   `unknown_replayable` the experiments produced does **not** discharge it: it resolved
+   `replay=false`, meaning the original had never committed. The outstanding case is the
+   opposite one, `replay=true` — a commit that landed while its acknowledgement was lost.
 
 ### 6b. The unavailable-authority outcome depends on *how* the authority is unavailable
 
@@ -598,7 +599,8 @@ The reading is [`ag-sept-pr3c-phase1-correctness.md`](../../measurements/reports
 and is not restated here. Three things belong in this record rather than in the report, because
 they are about how the evidence was produced rather than what it says.
 
-**The `unknown_replayable` case arrived once, unbidden, in nine runs.** The plan and the
+**The `unknown_replayable` case arrived once, unbidden, and only once across the retained
+runs.** The plan and the
 validation plan both say the failure-isolation experiment need not manufacture one, and this is
 why that was the right call: the fault produces it stochastically, so an experiment *required*
 to produce one would have been tuned until it did. The run that produced it is retained beside
@@ -608,10 +610,11 @@ reconciliation populations differing by exactly one replay — which is worth mo
 clean passes it sits next to.
 
 **A number that does not move is worth as much as one that does.** `timeout_server` was exactly
-304 in every script-driven failure run — nine of them, across a 13% spread in volume and a
-372–508 spread in `internal_failure` — and different when the fault was hand-timed. Nothing
-explains it yet, and it is recorded as an open lead rather than smoothed over, because a
-quantity that is bit-identical across runs of different size is structural.
+304 in all three retained failure runs, while `internal_failure` moved across them (493, 433,
+508) and volume by 4.2%. It held in the unretained harness-validation runs too and was different
+when the fault was hand-timed — a lead worth writing down, but one whose runs are not retained,
+so the report labels it as such rather than counting it as evidence. Nothing explains the
+figure yet, and it is recorded as an open lead rather than smoothed over.
 
 **Evidence was regenerated several times over artifact hygiene, not over results.** Once because
 the retained transcripts were named `*.log`, which `.gitignore` excludes — a report citing files

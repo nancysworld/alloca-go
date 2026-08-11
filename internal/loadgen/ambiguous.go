@@ -130,9 +130,14 @@ type Resolution struct {
 	// and this performed it. Either way exactly one logical mutation exists afterwards,
 	// which is the property INV-21 asserts.
 	Response Response
-	// StillAmbiguous is set when the replay was itself ambiguous — the authority is
-	// still unavailable, or became unavailable again. Such an entry is *not* resolved
-	// and the caller must not treat the run as reconcilable.
+	// StillAmbiguous is set when the replay did not settle the mutation. Such an entry is
+	// *not* resolved and the caller must not treat the run as reconcilable
+	// (measurement-contract §12).
+	//
+	// **The test is whether a definite domain answer came back, not whether the replay
+	// happened to return `unknown_replayable` again.** A replay that times out, fails at
+	// the transport, or is refused at the edge leaves the original's commit state exactly
+	// as unknown as it was — which is what §12 means by a key that remains ambiguous.
 	StillAmbiguous bool
 }
 
@@ -158,19 +163,29 @@ type Resolution struct {
 // idempotent in the way that matters: running it twice replays each unsettled mutation once
 // more and each settled one not at all, and once everything resolves Ambiguous() is empty
 // and a further pass is a no-op.
+//
+// **Settled means a definite domain answer came back**, not merely that the replay avoided
+// returning `unknown_replayable` again. Resolving too early — while the authority is still
+// down, which is exactly when an operator reaches for this — makes every replay fail at the
+// transport, and those responses are classified as timeouts rather than ambiguity. Treating
+// them as resolutions would retire entries whose commit state nobody established, empty the
+// register irreversibly (a transport failure never re-enters it, since only a parsed
+// `unknown_replayable` is recorded), and let the run certify over keys whose final logical
+// state is unknown. Left unsettled, the entries stay outstanding and a later pass replays
+// them once the authority is genuinely back.
 func (c *Client) ResolveAmbiguous(ctx context.Context) []Resolution {
 	entries := c.Ambiguous()
 	resolutions := make([]Resolution, 0, len(entries))
 	for _, entry := range entries {
 		replayed := c.do(ctx, entry.Operation, entry.path, entry.User, entry.Key)
-		stillAmbiguous := replayed.Outcome == domain.OutcomeUnknownReplayable
-		if !stillAmbiguous {
+		settled := isDefiniteTerminal(replayed.Outcome)
+		if settled {
 			c.ambiguous.retire(entry.identity())
 		}
 		resolutions = append(resolutions, Resolution{
 			Ambiguous:      entry,
 			Response:       replayed,
-			StillAmbiguous: stillAmbiguous,
+			StillAmbiguous: !settled,
 		})
 	}
 	return resolutions

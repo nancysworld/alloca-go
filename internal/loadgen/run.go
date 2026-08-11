@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -281,9 +282,14 @@ type ResolvedMutation struct {
 	// this returned its record, so the fresh mutation belongs to the original; false means
 	// the original had not committed and this request performed it.
 	Replay bool `json:"replay"`
-	// StillAmbiguous means the replay was itself ambiguous. Any of these makes the run
-	// unreconcilable (measurement-contract §12).
+	// StillAmbiguous means the replay did not settle the key: it returned
+	// `unknown_replayable` again, or failed at the transport, or was refused at the edge.
+	// Any of these makes the run unreconcilable (measurement-contract §12).
 	StillAmbiguous bool `json:"still_ambiguous,omitempty"`
+	// Invalid carries the harness's validation complaint about the resolution response, or
+	// is empty when it satisfied the contract. Recorded here rather than folded into the
+	// measured Invalid count, which describes the measured interval alone.
+	Invalid string `json:"invalid,omitempty"`
 }
 
 // WithResolutions records a post-run resolution pass, per measurement-contract §12.
@@ -302,18 +308,24 @@ type ResolvedMutation struct {
 // FreshAdmittedFor/FreshMutations for final logical state.
 //
 // A run carrying any still-ambiguous entry is marked unsound: no final logical-mutation count
-// is established for that key, so no verdict over the run means anything.
+// is established for that key, so no verdict over the run means anything. A resolution
+// response that failed validation does the same, for the reason validation always does — the
+// service answered something the contract does not define, and post-run traffic is no more
+// exempt from that than measured traffic is.
 func (s Summary) WithResolutions(resolutions []Resolution) Summary {
 	if len(resolutions) == 0 {
 		return s
 	}
 
 	resolved := make([]ResolvedMutation, 0, len(resolutions))
-	var stillAmbiguous int
+	var stillAmbiguous, invalid int
 
 	for _, r := range resolutions {
 		if r.StillAmbiguous {
 			stillAmbiguous++
+		}
+		if r.Response.Invalid != "" {
+			invalid++
 		}
 		resolved = append(resolved, ResolvedMutation{
 			Operation:      string(r.Ambiguous.Operation),
@@ -324,16 +336,26 @@ func (s Summary) WithResolutions(resolutions []Resolution) Summary {
 			Reason:         r.Response.Reason,
 			Replay:         r.Response.Replay,
 			StillAmbiguous: r.StillAmbiguous,
+			Invalid:        r.Response.Invalid,
 		})
 	}
 	s.Resolved = resolved
 
-	if stillAmbiguous > 0 && s.Sound {
-		s.Sound = false
-		s.NotSoundBecause = fmt.Sprintf(
+	var refusals []string
+	if stillAmbiguous > 0 {
+		refusals = append(refusals, fmt.Sprintf(
 			"%d mutation(s) remain ambiguous after the resolution pass: their persisted state "+
 				"and client record still disagree, so no correctness verdict over this run is "+
-				"meaningful (measurement-contract §12)", stillAmbiguous)
+				"meaningful (measurement-contract §12)", stillAmbiguous))
+	}
+	if invalid > 0 {
+		refusals = append(refusals, fmt.Sprintf(
+			"%d resolution response(s) failed validation: the service answered the replay with "+
+				"something the outcome contract does not define", invalid))
+	}
+	if len(refusals) > 0 && s.Sound {
+		s.Sound = false
+		s.NotSoundBecause = strings.Join(refusals, "; ")
 	}
 	return s
 }

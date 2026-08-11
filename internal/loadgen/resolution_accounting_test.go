@@ -254,6 +254,112 @@ func TestStillAmbiguousAfterResolutionMakesTheRunUnsound(t *testing.T) {
 	}
 }
 
+// State 3, the other way it arrives: the resolution pass ran while the authority was still
+// down, so the replay never reached a domain answer at all.
+//
+// **This is the discriminating case for the settlement predicate.** Testing for
+// `unknown_replayable` alone — which is what an earlier version did — makes a transport
+// failure look like a resolution: the entry is retired, the run reports nothing outstanding,
+// and a key whose commit state nobody established is certified. It is also irreversible,
+// because a transport failure never re-enters the register: only a parsed `unknown_replayable`
+// is recorded, so the mutation could never be replayed again.
+//
+// Resolving too early is the expected operator error, not an exotic one — the authority being
+// down is precisely the condition that produced the ambiguity.
+func TestResolutionThatNeverReachedTheAuthorityLeavesTheMutationAmbiguous(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"outcome": domain.OutcomeUnknownReplayable, "replay": false,
+		})
+	}))
+
+	c := loadgen.NewClient(srv.URL, 5*time.Second, true)
+	ctx := context.Background()
+	user := loadgen.User{OrganisationID: "org-a", UserID: "u-1"}
+	slot := loadgen.Slot{OrganisationID: "org-a", SlotID: "slot-1"}
+
+	original := c.Reserve(ctx, user, slot, "k-1")
+	if original.Outcome != domain.OutcomeUnknownReplayable {
+		t.Fatalf("setup: original outcome = %q, want unknown_replayable", original.Outcome)
+	}
+
+	// The authority goes away before the resolution pass, so the replay fails at the
+	// transport rather than being answered.
+	srv.Close()
+
+	resolutions := c.ResolveAmbiguous(ctx)
+	if n := loadgen.Unresolved(resolutions); n != 1 {
+		t.Fatalf("Unresolved = %d, want 1: a replay that never reached the service settles "+
+			"nothing about whether the original committed", n)
+	}
+	if pending := c.Ambiguous(); len(pending) != 1 {
+		t.Fatalf("register holds %d entries, want 1: an unsettled mutation must stay "+
+			"outstanding so a later pass can replay it once the authority is back", len(pending))
+	}
+
+	summary := summaryOf(original).WithResolutions(resolutions)
+	if summary.Sound {
+		t.Error("run is sound with a mutation whose commit state was never established")
+	}
+	if got := summary.FreshAdmittedFor(domain.OpReserve); got != 0 {
+		t.Errorf("FreshAdmittedFor = %d, want 0", got)
+	}
+	if len(summary.Resolved) != 1 || !summary.Resolved[0].StillAmbiguous {
+		t.Errorf("resolved record = %+v, want one entry flagged still-ambiguous", summary.Resolved)
+	}
+}
+
+// A resolution response that contradicts the outcome contract makes the run unsound, exactly
+// as it would inside the measured interval. Post-run traffic is not exempt from validation:
+// the artifact is only worth reading if the service answered within the contract throughout.
+func TestInvalidResolutionResponseMakesTheRunUnsound(t *testing.T) {
+	seenKeys := map[string]bool{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := r.Header.Get("Idempotency-Key")
+		w.Header().Set("Content-Type", "application/json")
+
+		if !seenKeys[key] {
+			seenKeys[key] = true
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"outcome": domain.OutcomeUnknownReplayable, "replay": false,
+			})
+			return
+		}
+		// A definite outcome under a status the contract maps elsewhere: settled as a
+		// logical mutation, and not a response this run may be read through.
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"outcome": domain.OutcomeAdmittedSuccess, "replay": true, "reservation_id": "res-1",
+		})
+	}))
+	t.Cleanup(srv.Close)
+
+	c := loadgen.NewClient(srv.URL, 5*time.Second, true)
+	ctx := context.Background()
+	user := loadgen.User{OrganisationID: "org-a", UserID: "u-1"}
+	slot := loadgen.Slot{OrganisationID: "org-a", SlotID: "slot-1"}
+
+	original := c.Reserve(ctx, user, slot, "k-1")
+	summary := summaryOf(original).WithResolutions(c.ResolveAmbiguous(ctx))
+
+	if summary.Sound {
+		t.Error("run is sound although the service answered the replay outside the contract")
+	}
+	if !strings.Contains(summary.NotSoundBecause, "validation") {
+		t.Errorf("not_sound_because = %q, want it to name the failed validation", summary.NotSoundBecause)
+	}
+	if len(summary.Resolved) != 1 || summary.Resolved[0].Invalid == "" {
+		t.Errorf("resolved record = %+v, want the validation complaint retained", summary.Resolved)
+	}
+	if summary.Invalid != 0 {
+		t.Errorf("measured invalid_responses = %d, want 0: the resolution ran after the "+
+			"measured interval and must not be added to its counts", summary.Invalid)
+	}
+}
+
 // A run that produced no ambiguity must be untouched by the fold — the common case, and the
 // control that the credit cannot fire spontaneously.
 func TestWithResolutionsIsANoOpWhenNothingWasAmbiguous(t *testing.T) {

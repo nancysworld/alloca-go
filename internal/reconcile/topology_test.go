@@ -144,6 +144,70 @@ func TestAnAuthorityWithNoOrganisationsIsASetupError(t *testing.T) {
 	}
 }
 
+// A topology where only some units were scraped must be refused for *that* reason.
+//
+// The server-side count is a sum across units, so an unscraped unit lowers it — which is
+// arithmetically indistinguishable from a service that dropped requests, and is reported as
+// though the units that were scraped had disagreed with the client. The operator is then
+// looking for a defect in a service that behaved correctly.
+func TestAPartiallyScrapedTopologyIsRefusedForTheMissingScrape(t *testing.T) {
+	scraped := scope(t, "authority-1", []domain.OrganisationID{"org-a", "org-c"},
+		counts{live: 2, claims: 2, records: 2}, 4)
+	unscraped := scope(t, "authority-2", []domain.OrganisationID{"org-b", "org-d"},
+		counts{live: 3, claims: 3, records: 3}, 6)
+	unscraped.Scrapes = reconcile.Scrapes{}
+
+	res, err := reconcile.RunTopology(context.Background(),
+		[]reconcile.AuthorityScope{scraped, unscraped}, reportWith(10))
+	if err != nil {
+		t.Fatalf("RunTopology: %v", err)
+	}
+	if res.ChecksOK() {
+		t.Fatal("a topology missing one unit's scrape produced a clean verdict")
+	}
+
+	var detail string
+	for _, c := range res.Aggregate {
+		if !c.OK && c.Name == "server totals vs client totals" {
+			detail = c.Detail
+		}
+	}
+	if !strings.Contains(detail, "authority-2") {
+		t.Errorf("the failing check does not name the unscraped unit: %q", detail)
+	}
+	if strings.Contains(detail, "server counted") {
+		t.Errorf("the failure is reported as a count disagreement, which sends the operator "+
+			"looking for a service defect: %q", detail)
+	}
+}
+
+// The control for the case above: scraping *nothing* is a different and honest state. No
+// server-side count participates, and the run is refused for lacking one of the three counts
+// §12 requires rather than for a partial one.
+func TestATopologyWithNoScrapesAtAllSaysSo(t *testing.T) {
+	scopes := []reconcile.AuthorityScope{
+		scope(t, "authority-1", []domain.OrganisationID{"org-a", "org-c"}, counts{live: 2, claims: 2, records: 2}, 4),
+		scope(t, "authority-2", []domain.OrganisationID{"org-b", "org-d"}, counts{live: 3, claims: 3, records: 3}, 6),
+	}
+	for i := range scopes {
+		scopes[i].Scrapes = reconcile.Scrapes{}
+	}
+
+	res, err := reconcile.RunTopology(context.Background(), scopes, reportWith(10))
+	if err != nil {
+		t.Fatalf("RunTopology: %v", err)
+	}
+	var detail string
+	for _, c := range res.Aggregate {
+		if !c.OK && c.Name == "server totals vs client totals" {
+			detail = c.Detail
+		}
+	}
+	if !strings.Contains(detail, "no metrics scrape was supplied") {
+		t.Errorf("an unscraped topology should say no scrape participated; got %q", detail)
+	}
+}
+
 func TestNoAuthoritiesIsASetupError(t *testing.T) {
 	if _, err := reconcile.RunTopology(context.Background(), nil, reportWith(0)); err == nil {
 		t.Fatal("a run with no authorities produced a verdict")

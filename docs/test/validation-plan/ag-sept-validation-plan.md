@@ -204,7 +204,7 @@ The smallest set of runs that discharges the validations below. Replica and auth
 | Phase 1 supported correctness | 2 authorities × 1 replica | multi-organisation dispersed; colocated cross-organisation booking; one-hot-organisation; wrong-`UserRef` confirm and cancel | VAL-COR-1..3 |
 | Cross-authority refusal control | 2 authorities × 1 replica | bounded cross-authority reserves, as their own evidence class | VAL-COR-4 |
 | Placement enforcement | 2 authorities × 1 replica | deliberate misroute | VAL-COR-5, VAL-NEG-6 |
-| Phase 1 failure isolation | 2 authorities × 1 replica | multi-organisation dispersed, one authority taken down, ambiguous mutations replayed, authority restored | VAL-COR-6, VAL-FAIL-1 |
+| Phase 1 failure isolation | 2 authorities × 1 replica | multi-organisation dispersed, one authority taken down, any ambiguity it produces resolved after restoration | VAL-COR-6, VAL-FAIL-1 |
 | Replica matrix | 1 authority × several replica counts | dispersed across all counts; hot-slot and hot-identity at the extremes | VAL-SCALE-1 |
 | Connection-budget control | 1 authority × ≥2 replica counts | dispersed, under both budget configurations | VAL-SCALE-2, VAL-NEG-4 |
 | Composed run | 2 authorities × chosen replica count | multi-organisation dispersed | VAL-SCALE-3, VAL-SCALE-4 |
@@ -269,11 +269,40 @@ generator's routing table rather than of the system, and REQ-ROUTE-1 is untested
 **Requirements:** REQ-COR-2.
 
 Where a fault produces `unknown_replayable`, retain the idempotency key, restore the dependency,
-replay that same key, and resolve the ambiguity before the final correctness verdict.
+replay that same key, and resolve the ambiguity before the final correctness verdict. Resolution
+must satisfy the measurement/reconciliation population contract in `measurement-contract.md` §12.
 
-A deliberately timed loss while `COMMIT` or its acknowledgement is in flight is the strongest
-remaining control for the unresolved commit-ambiguity case. A generic stopped authority must not
-be reported as proof of that specific fault.
+The accounting mechanism is validated discriminatingly in deterministic end-to-end tests, not by
+requiring three corresponding live fault injections. In every case the original
+`unknown_replayable` remains part of the measured population exactly as observed: one measured
+request, zero measured Goodput, and no retroactive rewrite of measured latency, outcome totals,
+replay counts, or duration-based rates. Resolution attempts are retained separately for
+reconciliation/recovery accounting.
+
+The three states are:
+
+1. **original committed** — same-key resolution returns `replay=true`; measured performance remains
+   unchanged, while reconciliation establishes exactly one final logical mutation for the key and
+   records the resolution HTTP attempt as a replay. With one resolution attempt, recovery may be
+   described as one eventual logical mutation across two HTTP attempts, but not as measured
+   `1/2` Goodput;
+2. **original did not commit** — same-key resolution returns `replay=false`; measured performance
+   again remains unchanged, while the resolution request performs exactly one final logical
+   mutation after the measured interval and is retained in the reconciliation population;
+3. **still ambiguous** — no final logical-mutation credit is established and the run is rejected
+   from reconciliation/certification rather than producing a verdict from incomplete state.
+
+The test must make the population boundary discriminating: an implementation that folds resolution
+requests into measured `Completed`, `Goodput`, measured outcome/replay totals, latency, or the
+measurement interval fails even if its final persisted-row count is correct. Conversely, an
+implementation that omits resolution traffic from reconciliation/server-scrape accounting also
+fails.
+
+These accounting cases do not depend on the failure-isolation experiment naturally producing an
+ambiguous commit. A deliberately timed loss while `COMMIT` or its acknowledgement is in flight is
+the strongest remaining control for INV-21's acknowledgement-lost case, but it is a separate,
+opportunistic fault injection. A generic stopped authority must not be reported as proof of that
+specific fault.
 
 ## 6. Failure-isolation validation
 
@@ -289,7 +318,8 @@ Demonstrate that:
 - organisations owned by another healthy authority continue independently;
 - no request fails over to the surviving writer;
 - restoration requires no compensating writes on the unaffected authority;
-- ambiguous mutations are resolved before the final persisted-state verdict;
+- **any** ambiguous mutations the experiment actually produces are resolved before the final
+  persisted-state verdict; the experiment is not required to manufacture `unknown_replayable`;
 - the failure experiment is reported separately from healthy capacity/SLO runs.
 
 ## 7. Scaling validations

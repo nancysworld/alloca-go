@@ -218,15 +218,23 @@ func serverTotalsCheckFromMeasured(s loadgen.Summary, server ServerTotals) Check
 		return c
 	}
 
-	// Warm-up discards are the one legitimate asymmetry: the client drops those responses
-	// from its totals, but the service completed the requests and counted them.
-	clientTotal := s.Completed + s.WarmUpDiscarded
+	// Two legitimate asymmetries between the client's measured totals and the server's count.
+	//
+	// Warm-up discards are the first: the client drops those responses from its totals, but
+	// the service completed the requests and counted them.
+	//
+	// Post-run ambiguity resolution is the second, and it runs the other way. Those requests
+	// are deliberately *not* in the measured population — measurement-contract §12 keeps them
+	// out so they cannot rewrite the measured interval — but the service completed them and a
+	// scrape taken after resolution includes them. So this comparison is over the
+	// reconciliation population, which is exactly what §12 says it must be.
+	clientTotal := s.ReconciliationCompleted() + s.WarmUpDiscarded
 	if got := server.Sum(); got != clientTotal {
 		c.Detail = fmt.Sprintf("server counted %d completed requests, client reports %d "+
-			"(%d completed + %d discarded by warm-up): the two disagree about how much "+
-			"work happened. A scrape taken without restarting the service carries earlier "+
-			"runs as well, which looks exactly like this",
-			got, clientTotal, s.Completed, s.WarmUpDiscarded)
+			"(%d measured + %d resolution attempts + %d discarded by warm-up): the two "+
+			"disagree about how much work happened. A scrape taken without restarting the "+
+			"service carries earlier runs as well, which looks exactly like this",
+			got, clientTotal, s.Completed, s.ResolutionAttempts(), s.WarmUpDiscarded)
 		return c
 	}
 
@@ -238,7 +246,7 @@ func serverTotalsCheckFromMeasured(s loadgen.Summary, server ServerTotals) Check
 		return c
 	}
 
-	if diff := firstCellDisagreement(s.Totals, server); diff != "" {
+	if diff := firstCellDisagreement(s.ReconciliationTotals(), server); diff != "" {
 		c.Detail = diff
 		return c
 	}

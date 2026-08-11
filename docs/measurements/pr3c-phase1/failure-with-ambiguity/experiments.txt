@@ -1,0 +1,29 @@
+09:15:03Z  artifacts -> test/results/pr3c-20260811T091503Z
+09:15:03Z  generator vcs.revision=2991940d4abdc26b697cf9984f0168c5ce61c553, image alloca-go:2991940
+09:15:03Z  seeding 1200 slots per organisation
+09:15:07Z  same-organisation booking: ok (200, admitted_success)
+09:15:07Z  colocated cross-organisation booking: ok (200, admitted_success)
+09:15:07Z  cross-authority refusal: ok (409, cross_authority_unsupported)
+09:15:07Z  misrouted request: ok (400, invalid_request)
+09:15:07Z  misroute counter: 5 -> 6
+09:15:07Z  reservation for the ownership control: ok (200, admitted_success)
+09:15:07Z  confirm with a wrong UserRef: ok (404, unknown_target)
+09:15:07Z  cancel with a wrong UserRef: ok (404, unknown_target)
+09:15:07Z  the owner can still confirm: ok (200, admitted_success)
+09:15:07Z  controls: all assertions passed
+09:15:07Z  seeding 1200 slots per organisation
+09:15:11Z  correctness: driving load
+09:15:12Z  test/results/pr3c-20260811T091503Z/correctness: every check passed, level local
+09:15:12Z  seeding 1200 slots per organisation
+09:15:17Z  distribution: driving load
+09:15:18Z  test/results/pr3c-20260811T091503Z/distribution: every check passed, level local
+09:15:18Z  seeding 1200 slots per organisation
+09:15:22Z  refusal: driving load
+09:15:23Z  test/results/pr3c-20260811T091503Z/refusal: every check passed, level local
+09:15:23Z  seeding 1200 slots per organisation
+09:15:27Z  failure: driving 40s of load; alloca-authority-2-db stops at +10s for 15s
+09:15:37Z  failure: alloca-authority-2-db stopped
+09:15:53Z  failure: alloca-authority-2-db started; waiting for its unit to report ready
+09:16:07Z  test/results/pr3c-20260811T091503Z/failure-isolation: every check passed, level local
+09:16:07Z  test/results/pr3c-20260811T091503Z/failure-isolation: per-authority row census written
+09:16:07Z  done; artifacts in test/results/pr3c-20260811T091503Z

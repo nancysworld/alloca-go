@@ -42,8 +42,9 @@ AG-Sept's governing goal, its iteration history, and the currently open problem 
   *not* thereby achieved; the evidence created the next problem.
 - **Iteration B — compose independent writable database authorities.** Current, and it **spans
   PR3a, PR3b and PR3c**. PR3a and PR3b shipped the placement model, booking policy,
-  multi-authority topology and authority-aware verification; PR3c is the evidence-producing work
-  unit. The iteration closes at Analyse & Review afterwards, not inside PR3c.
+  multi-authority topology and authority-aware verification; PR3c has completed the evidence-producing
+  work and is in final docs-only cleanup before merge. The iteration closes at Analyse & Review
+  afterwards, not inside PR3c.
 - **No iteration after B has been selected yet.** Stateless service replicas are the current
   *candidate* next Problem, not committed scope. Budget is reserved for whatever Iteration B's
   Analyse & Review chooses (§3, *post-Iteration-B scaling envelope*).
@@ -61,7 +62,7 @@ PR3a -> PR3b -> PR3c evidence -> Iteration B Analyse & Review -> next Problem / 
 | Single-instance frontier | PR2 | merged `0d40de4` |
 | Placement, booking policy, confirm/cancel ownership | PR3a | merged `aa1e3a5` |
 | Multi-authority harness — topology, routing, certification, verifier | PR3b | merged `57f501d` |
-| Multi-authority correctness and failure-isolation evidence | PR3c | not started |
+| Multi-authority correctness and failure-isolation evidence | PR3c | complete in #16; final docs-only cleanup before merge |
 | Iteration B Analyse & Review | review step, not a PR | after PR3c; from the review reserve, no new allocation |
 | Post-Iteration-B scaling envelope | not yet selected | budget reserved; scope chosen by that review |
 | Architecture conclusions and one justified boundary | PR5 | not started |
@@ -81,17 +82,17 @@ granularity is false precision that invites its own overrun (Nancy's call, 2026-
 | Single-instance frontier, with the diagnostic time-series minimum | PR2 | 2.5 | spent 2.5 |
 | Placement, booking policy, and confirm/cancel ownership | PR3a | 3.0 | **done in 1.0; 2.0 returned to contingency** |
 | Multi-authority harness | PR3b | 2.5 | spent 2.5 |
-| Multi-authority correctness and failure-isolation evidence | PR3c | 2.0 | remaining |
+| Multi-authority correctness and failure-isolation evidence | PR3c | 2.0 | **done in 1.5; 0.5 returned to contingency** |
 | Post-Iteration-B scaling envelope | not yet selected | 4.5 | **reserved budget, uncommitted scope** |
 | Architecture conclusions and one justified boundary | PR5 | 1.5 | remaining |
-| **Allocated development budget** | | **16.0** | 8.0 spent, 8.0 remaining |
-| Contingency | | 3.5 | **1.0 drawn (§2.1.1), 2.5 remaining** |
-| **Total milestone budget** | | **19.5** | **9.0 spent, 10.5 remaining** |
+| **Allocated development budget** | | **15.5** | 9.5 spent, 6.0 remaining |
+| Contingency | | 4.0 | **1.0 drawn (§2.1.1), 3.0 remaining** |
+| **Total milestone budget** | | **19.5** | **10.5 spent, 9.0 remaining** |
 
-**Allocated is not committed.** The 16.0 row is the development budget this milestone has
-apportioned, not a statement that all of it is committed technical scope. The 4.5-day envelope is
-reserved so the milestone arithmetic holds; **what it buys is selected by Iteration B's Analyse &
-Review**, not decided here (§3).
+**Allocated is not committed.** The 15.5 row is the development budget this milestone has
+apportioned after completed work returns unused allocation to contingency, not a statement that all
+of it is committed technical scope. The 4.5-day envelope is reserved so the milestone arithmetic
+holds; **what it buys is selected by Iteration B's Analyse & Review**, not decided here (§3).
 
 A further **2–3 days** are reserved beyond the development budget for rerunning decisive
 experiments, validating negative controls, reviewing measurements and interpretations, correcting
@@ -103,25 +104,26 @@ incidental complexity.
 
 ### 2.1 How the contingency is spent
 
-**PR3a came in at 1.0 against 3.0, and the 2.0 goes to contingency rather than to scope.** The
-figure recorded is the conservative one: implementation alone was about half a day, and 1.0 is
-what it cost including the design decisions and the re-planning around it. Being generous to
-ourselves on our own favourable numbers is how estimates stop meaning anything.
+**Completed work returns unused allocation to contingency rather than to scope.** PR3a came in at
+1.0 against 3.0 and returned 2.0; PR3c came in at 1.5 against 2.0 and returns 0.5 (§2.1.2). The
+figures recorded are conservative under the half-day rule rather than attempts to account for
+hours precisely.
 
 The gain is **not** an invitation to widen the post-Iteration-B envelope. It is held for where
 this milestone is most
 likely to need it — reruns, an investigation that does not resolve on the first attempt, a hard
 problem that deserves more argument than a day allows. PR2's unexplained ~2× excursion is the
-standing example of work that consumed far more than its share, and nothing about PR3a going well
-makes that less likely to recur.
+standing example of work that consumed far more than its share, and nothing about a later work
+unit going well makes that less likely to recur.
 
 **Every PR is funded at what its scope costs.** No PR carries a deliberate shortfall, and nothing
 in §3 depends on the reserve to be reachable. That is the difference the increased budget bought,
 and it is worth naming: v0.4 planned AWS experiments outside its own table, which is how a plan
 overruns on day one.
 
-**Contingency is not scope.** It is drawn on before §5's descope order. Of the original 3.5, **1.0
-is drawn** (§2.1.1) and **2.5 remains**. Two things could plausibly claim the rest, in this order:
+**Contingency is not scope.** It is drawn on before §5's descope order. After PR3c's 0.5-day return,
+contingency is **4.0 total**: **1.0 is drawn** (§2.1.1) and **3.0 remains**. Two things could
+plausibly claim the rest, in this order:
 
 1. **PR2's unexplained ~2× excursions turning out to be reproducible and diagnosable** once a
    node exporter can see them. That would be a real finding, and chasing it is worth more than
@@ -129,8 +131,8 @@ is drawn** (§2.1.1) and **2.5 remains**. Two things could plausibly claim the r
 2. **The overload question deferred from PR2** — roughly 1.5 days. It is the founding
    unreproduced question in [`../design/high-level-design.md`](../design/high-level-design.md)
    §1.1, and it is the one candidate here that is *new scope* rather than insurance. Adding it is
-   Nancy's call, not a default — and PR3a's returned 2.0 makes it affordable for the first time,
-   which is a reason to decide it deliberately rather than to let it drift in.
+   Nancy's call, not a default — and the returned budget makes it affordable, which is a reason to
+   decide it deliberately rather than to let it drift in.
 
 Unspent contingency is not a licence to expand a PR. It returns to the reserve.
 
@@ -141,14 +143,26 @@ by PR #15 — the goal/problem/requirements split, the validation-plan and explo
 ownership model, the iteration-loop definition, and the citation migration that followed — is
 charged to **AG-Sept contingency**.
 
-**It does not consume PR3c's 2.0-day allocation.** PR3c is funded for the multi-authority
-correctness and failure-isolation evidence and nothing else; methodology work that happened to
-land before it must not arrive as a silent shortfall in the evidence PR.
+**It does not consume PR3c's allocation.** PR3c is funded for the multi-authority correctness and
+failure-isolation evidence and nothing else; methodology work that happened to land before it must
+not arrive as a silent shortfall in the evidence PR.
 
-**Drawn: 1.0 day** (Nancy's figure at merge, rounded under the half-day rule of §2). Contingency
-goes from 3.5 to **2.5**; the milestone total is unchanged at 19.5, with 9.0 spent and 10.5
-remaining. The allocated-workstream row is untouched at 16.0 — the methodology work is not one of
-those workstreams, which is the whole point of charging it here.
+**Drawn: 1.0 day** (Nancy's figure at merge, rounded under the half-day rule of §2). This remains
+the only contingency draw so far; §2.1.2 records PR3c's 0.5-day return separately.
+
+### 2.1.2 PR3c returns its unused half day
+
+**Nancy's decision, 2026-08-11:** PR3c is charged at **1.5 days actual** against its 2.0-day
+allocation. The 0.5-day difference returns to contingency rather than being carried into Analyse &
+Review or silently charged to the next work unit.
+
+The charge includes the final review and docs-only cleanup already in flight on PR #16. Recording
+it before merge is deliberate: PR3c owns the work that produced and closed its evidence, while the
+Analyse & Review that follows is funded from the separate 2–3 day review/rerun/interpretation
+reserve.
+
+The accounting therefore moves contingency from 3.5 to **4.0 total**, with **1.0 drawn and 3.0
+remaining**. The milestone total stays **19.5 days**; **10.5 are spent and 9.0 remain**.
 
 ### 2.2 Review depth is the throughput control
 
@@ -240,9 +254,10 @@ multi-service certification; the authority-aware verifier and its aggregated ver
 aggregated correctness verdict naming every authority it read, and is refused certification when
 the units disagree.
 
-### PR3c — Multi-authority correctness and failure isolation
+### PR3c — Multi-authority correctness and failure isolation — complete in #16
 
-**Budget:** 2.0 days. **This is the current work unit.**
+**Budget:** 2.0 days; **actual 1.5, with 0.5 returned to contingency** (§2.1.2). The evidence work
+is complete; only the final docs-only cleanup from review remains before merge.
 
 **Delivers:** the Phase 1 correctness experiments and per-authority verdicts; the cross-authority
 refusal control as its own bounded evidence class; the failure-isolation experiment — one
@@ -253,16 +268,16 @@ organisation-to-authority distribution each run measured.
 **Owners:** REQ-COR-1, REQ-COR-2, REQ-FAIL-1, REQ-ROUTE-1; VAL-COR-1..6, VAL-FAIL-1, VAL-SCALE-3;
 validation plan §4.5; `measurement-contract.md` §12–§13.
 
-**PR3c is not a service-replica experiment (Nancy's call, 2026-08-10).** It stays at 2.0 days and
-does not add replicas or exporters, force the service to become the bottleneck, or draw on the
-post-Iteration-B envelope.
+**PR3c is not a service-replica experiment (Nancy's call, 2026-08-10).** Its scope stayed inside
+the 2.0-day allocation and does not add replicas or exporters, force the service to become the
+bottleneck, or draw on the post-Iteration-B envelope.
 
-What it *should* do, at no extra cost, is **retain the service and database resource evidence its
-runs already produce** — CPU, pool acquisition and saturation alongside the correctness verdicts —
-so the Analyse & Review that follows can judge where the next limiting boundary probably sits.
-That review has to answer whether service compute is the next meaningful frontier, or whether the
-resource balance must change first; it cannot answer either from correctness verdicts alone. This
-is retention of what the run already measures, not a new experiment.
+It **retains the service and database resource evidence its runs already produce** — CPU, pool
+acquisition and saturation alongside the correctness verdicts — so the Analyse & Review that
+follows can judge where the next limiting boundary probably sits. That review has to answer
+whether service compute is the next meaningful frontier, or whether the resource balance inside a
+shard group has to change first; it cannot answer either from correctness verdicts alone. This is
+retention of what the run already measures, not a new experiment.
 
 **Opportunistic:** if a deliberately timed mid-commit connection loss can be produced, it
 discharges the rest of INV-21 — the register's longest-standing "not directly proven" entry. PR3b
@@ -290,8 +305,8 @@ record into [`../requirements/ag-sept.md`](../requirements/ag-sept.md)
 (`engineering-process.md` §1.4.1).
 
 **Its time comes from the existing 2–3 day review/rerun/interpretation reserve** described in §2,
-not from a new development allocation and not from PR3c's 2.0. Nothing in the budget table changes
-for it.
+not from a new development allocation and not from PR3c's allocation. Nothing in the budget table
+changes for it.
 
 It is **not a pre-created PR4.** No work unit exists for the next iteration until this review
 selects one.

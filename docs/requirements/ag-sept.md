@@ -184,48 +184,30 @@ and failure containment. A separately retained live `unknown_replayable` demonst
 measurement/reconciliation population contract on a real fault. The report explicitly makes **no
 capacity or throughput multiplier claim** from the co-resident 10-vCPU workstation topology.
 
-**3. Durable learning.**
+**3. Durable learning.** Authority composition is now a correctness-proven architecture, not yet a
+capacity-proven scaling result. A database authority plus its serving replica group is the
+meaningful writable scaling unit; changing the number of authorities and changing replica count
+within one authority remain distinct experiments. PR2's mutation-heavy evidence still puts the
+first limit in PostgreSQL, so service replicas or microservice decomposition are not promoted
+without evidence that service compute or an independent service boundary is actually limiting.
 
-- **Authority composition is now a correctness-proven architecture, not yet a capacity-proven
-  scaling result.** `VAL-SCALE-3` is discharged in the validation plan's intended sense:
-  architecture/correctness and failure-independence evidence on multiple writable authorities.
-  Whether equivalent independently provisioned shard groups produce approximately additive useful
-  capacity is a separate question and requires like-for-like independent resource envelopes.
-- **The database authority plus its serving replica group is the meaningful writable scaling
-  unit.** The general topology remains `M` writable authorities with replica allocation
-  `[x1, ..., xM]`, `x_i >= 1`; changing `M` and changing an `x_i` are different scaling operations
-  and must be measured separately.
-- **Service replicas are not promoted merely because they are easy to add.** PR2's mutation-heavy
-  evidence still says PostgreSQL is the first limiting subsystem and the Go service has headroom.
-  Adding replicas within the same saturated writer may improve availability or a different
-  workload, but no current evidence makes it the next capacity problem.
-- **Application characteristics choose the mechanism.** Alloca-Go is currently database-bound on
-  the measured mutation path, so speculative microservice decomposition, orchestration, caching,
-  or other distributed machinery is not a substitute for evidence about the actual limiting
-  boundary.
-- **Two observations are carried forward without becoming Iteration C requirements.** The
-  repeatable ~500 ms failure-path latency versus the earlier ~5 s stopped-authority observation is
-  a diagnostic lead to investigate if timeout/pool behaviour becomes decision-relevant. INV-21's
-  acknowledgement-lost fault injection remains explicit correctness-validation debt: the semantics
-  and deterministic accounting branches are tested, but a live “commit landed, reply lost” fault
-  has not yet been injected.
-
-No accepted Phase 1 requirement or architecture needs revision as a result of PR3c.
+Two observations are carried forward without becoming the next Problem: the ~500 ms versus ~5 s
+stopped-authority timeout-path difference remains a diagnostic lead to investigate if it becomes
+decision-relevant, and INV-21's live “commit landed, acknowledgement lost” injection remains
+explicit validation debt rather than a blocker to scaling work. No accepted Phase 1 requirement
+or architecture needs revision.
 
 **4. Goal progress.** Iteration B establishes that independent work can be partitioned across
-independently writable PostgreSQL authorities **without weakening correctness**, which closes the
-architectural/correctness half of the writable-resource clause in the governing goal. It does not
-yet establish that adding independently provisioned writable resources increases aggregate
-mutation capacity, because PR3c's authorities shared one workstation resource envelope. The
-service-compute clause also remains open: the current mutation-heavy evidence does not justify
-adding replicas to an already database-bound shard group merely to satisfy the wording of the
-goal.
+independently writable PostgreSQL authorities **without weakening correctness**. It does not yet
+establish that adding independently provisioned writable resources increases aggregate mutation
+capacity, because PR3c's authorities shared one workstation resource envelope. The service-compute
+clause also remains open; the current mutation-heavy evidence does not justify adding replicas to
+an already database-bound shard group merely to satisfy the wording of the goal.
 
-**5. Loop decision — continue.** The goal is not yet sufficiently achieved. The next problem is
-not “add service replicas”; it is to test whether the correctness-proven shard-group boundary is
-also an effective **capacity** scaling unit under independent provisioning. That starts Iteration C
-below. Service-replica scaling remains a later candidate when a workload or resource balance makes
-service compute a meaningful frontier.
+**5. Loop decision — continue.** The goal is not yet sufficiently achieved. The next Problem is to
+test whether the correctness-proven shard-group boundary is also an effective **capacity** scaling
+unit under independent provisioning. Service-replica scaling remains a later candidate when a
+workload or resource balance makes service compute a meaningful frontier.
 
 ## 3. Iteration C — establish shard-group capacity scaling
 
@@ -243,63 +225,9 @@ one shard group's safe operating boundary lie?
 
 This is a capacity question about the architecture already accepted. It does **not** preselect AWS,
 Kubernetes, a managed database, service-replica multiplication, or another deployment mechanism.
-The validation environment must provide resource independence strong enough to support the claim;
-the smallest mechanism that does so should be chosen in Design and Schedule.
+The smallest design and validation environment capable of supporting the claim should be chosen
+after this A&R is accepted.
 
-### Requirements in scope
-
-- **REQ-COR-1** — scaling evidence remains conditional on preserved transactional correctness;
-- **REQ-SCALE-1** — independent work should benefit from independently provisioned resources;
-- **REQ-SCALE-3** — hot slot, identity, organisation, or authority boundaries remain explicit and
-  are not averaged away by aggregate throughput;
-- **REQ-FAIL-1** — the capacity unit must retain the failure-isolation property established in
-  Iteration B;
-- **REQ-EVID-1** — baseline and scaled runs must be like-for-like, reproducible, and admissible at
-  the level required for the claim;
-- **REQ-EVID-2** — service, PostgreSQL, connection, generator, workload-skew, and shared-resource
-  limits must remain distinguishable explanations for scale efficiency.
-
-The existing requirements remain sufficient at Problem framing. Design and validation may expose
-a missing durable requirement; if so it is added explicitly rather than hidden in the experiment
-mechanism.
-
-### Questions the validation must be able to distinguish
-
-These are experiment dimensions, not conclusions or scheduled matrix cells:
-
-- **Horizontal efficiency:** with equivalent independent work and equivalent independent resource
-  envelopes, does aggregate goodput approach the sum of the shard groups' single-unit goodput?
-- **Fixed-demand relief:** when a known independent organisation workload is spread over more
-  writable authorities, does the database bottleneck move as predicted rather than merely moving
-  contention somewhere else?
-- **Workload shape:** how do mutation-heavy, read-heavy, or realistic mixed workloads change the
-  limiting resource? The current evidence is mutation-dominated and must not be generalized to a
-  read-heavy deployment without measurement.
-- **Placement/skew:** shard sizing follows active request rate, concurrency, contention, workload
-  mix and resource demand more directly than raw organisation or user count. Counts are useful
-  placement proxies only if evidence shows they correlate with load.
-- **Replica allocation:** one service replica per authority (`x_i = 1`) is a plausible mutation-path
-  baseline, not an architectural law. Additional replicas within one shard group are tested only
-  when service compute, availability, or a read-heavy workload gives a reason to test them.
-
-### Sufficiently resolved when
-
-Iteration C is sufficiently resolved when retained evidence can say, for at least one controlled
-independent-organisation workload and resource envelope:
-
-- what one shard group's sustainable mutation-capacity baseline is under the chosen environment;
-- how aggregate goodput changes when equivalent independently provisioned shard groups are added;
-- the resulting horizontal scale efficiency under like-for-like conditions;
-- which subsystem limits each measured topology, with generator/shared-environment alternatives
-  ruled out strongly enough for the claim;
-- that correctness and the Iteration B authority/failure boundaries remain intact;
-- what workload/placement conditions bound the conclusion, including hot-authority or skew cases
-  where aggregate independence does not apply.
-
-The Validation plan and Schedule are downstream of this A&R decision and are not committed by this
-Problem record.
-
-### Analyse & Review outcome
-
-**Pending.** Iteration C starts at Problem after this Iteration B A&R is accepted. Requirements,
-design, validation, and schedule follow in dependency order.
+**Iteration C starts here at Problem only.** Requirements, Design, Validation plan, and Schedule
+follow in dependency order; this A&R does not pre-commit their mechanism, experiment matrix, or
+budget.

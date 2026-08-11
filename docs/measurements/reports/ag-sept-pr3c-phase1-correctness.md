@@ -222,6 +222,14 @@ fails on it.
 replayed, reconciled or cleaned up on `authority-1`; the only post-restoration work anywhere
 was the single same-key replay in §5.2, on the authority that had failed.
 
+**Recovery happened inside the measured window**, which is what makes the outage the one this
+report describes rather than a longer one ending after the measurement. In the retained passes
+the authority was restarted 14 and 16 seconds before their windows closed, and recovery takes
+about 2–4 seconds; the margin was not *recorded* in those runs, so this is read from their
+timeline rather than measured. The harness now refuses a cell whose authority is not observed
+ready before the window closes, and logs the remaining margin — so future runs state it instead
+of leaving it to be inferred.
+
 ### 5.2 One real ambiguous commit, resolved — VAL-COR-6 on a live fault
 
 **Neither retained pass produced an ambiguous commit.** Of eleven runs of this cell driven on
@@ -370,12 +378,14 @@ was demonstrated by removing the property and watching the cell fail:
 | service `/meta` `modified` | an image whose binary cannot certify a run |
 | `-require local` | a cell whose reconciliation checks all pass while its *certification* level is `none` — unsound, unresolved or drifted |
 | readiness during the fault | a healthy peer answering anything but `200`, or the affected unit never reaching `503` |
+| recovery inside the window | an authority not observed ready before the measured window closed — the outage would then outlast the interval the run is reported against |
 | row census against the manifest | any organisation holding rows on an authority the run's own placement does not put it on |
 | seed clean-start assertion | a fixture carrying live claims or idempotency records from an earlier run |
 
 Cell selectors (`controls`, `correctness`, `distribution`, `refusal`, `failure`) run one at a
-time. `REQUIRE`, `FAULT_CONTAINER`, `FAULT_AFTER`, `FAULT_FOR` and the fixture size are
-environment overrides.
+time. `REQUIRE`, `FAULT_CONTAINER`, `WINDOW_SECONDS`, `FAULT_AFTER`, `FAULT_FOR` and the fixture
+size are environment overrides; a fault that cannot open *and* close inside the window is
+refused before the run starts.
 
 Each cell directory holds:
 

@@ -326,6 +326,13 @@ controls() {
 failure() {
   local dir="$OUT/failure-isolation"
   mkdir -p "$dir"
+  # Whatever happens below, the authority comes back. A cell that fails its own assertions
+  # would otherwise leave the topology mid-fault, and the next run's preflight refuses a unit
+  # that is not ready — so one failed cell costs a manual repair before anything else can run.
+  # Observed while proving those assertions fire.
+  # EXIT rather than RETURN: `fail` exits, and an exit does not run a RETURN trap — so the one
+  # path that matters is the one RETURN would miss.
+  trap 'docker start "$FAULT_CONTAINER" >/dev/null 2>&1 || true' EXIT
   seed
 
   scrape "$M1" "$dir/s1-baseline.prom"
@@ -361,6 +368,7 @@ failure() {
   scrape "$M2" "$dir/s2-after.prom"
   verify "$dir"
   partition_check "$dir"
+  trap - EXIT
 }
 
 # assert_isolated proves containment *while the authority is actually down*, which is the only
@@ -378,21 +386,32 @@ failure() {
 # affected unit is still refusing.
 assert_isolated() {
   local dir="$1" waited=0 affected peer
+  # Which unit is expected to fail follows the container the experiment stopped. Assuming it is
+  # always authority-2's would make an inverted fault fail with a message naming the wrong
+  # authority — observed while proving this assertion fires.
+  local affected_url peer_url affected_name peer_name
+  case "$FAULT_CONTAINER" in
+    alloca-authority-1-db) affected_url="$S1"; peer_url="$S2"; affected_name="unit-1"; peer_name="unit-2" ;;
+    alloca-authority-2-db) affected_url="$S2"; peer_url="$S1"; affected_name="unit-2"; peer_name="unit-1" ;;
+    *) fail "FAULT_CONTAINER=$FAULT_CONTAINER: this cell knows which unit each authority's database belongs to, and that is not one of them" ;;
+  esac
+
   : > "$dir/readiness-during-fault.txt"
   while :; do
-    affected="$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$S2/readyz" || true)"
-    peer="$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$S1/readyz" || true)"
-    printf 'after %2ds of fault: unit-1 readyz %s, unit-2 readyz %s\n' \
-      "$waited" "$peer" "$affected" >> "$dir/readiness-during-fault.txt"
+    affected="$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$affected_url/readyz" || true)"
+    peer="$(curl -sS -o /dev/null -w '%{http_code}' -m 5 "$peer_url/readyz" || true)"
+    printf 'after %2ds of fault (%s stopped): %s readyz %s, %s readyz %s\n' \
+      "$waited" "$FAULT_CONTAINER" "$peer_name" "$peer" "$affected_name" "$affected" \
+      >> "$dir/readiness-during-fault.txt"
 
-    [ "$peer" = "200" ] || fail "unit-1 reported $peer while ONLY authority-2's database was stopped: the fault reached the unaffected authority, which is the failure REQ-FAIL-1 exists to exclude"
+    [ "$peer" = "200" ] || fail "$peer_name reported $peer while only $FAULT_CONTAINER was stopped: the fault reached the unaffected authority, which is what REQ-FAIL-1 exists to exclude"
     [ "$affected" = "503" ] && break
 
     waited=$((waited + 1))
-    [ "$waited" -lt "$FAULT_ISOLATION_WAIT" ] || fail "unit-2 still reported $affected ${waited}s after its database stopped: an authority that cannot reach its database must not report itself ready"
+    [ "$waited" -lt "$FAULT_ISOLATION_WAIT" ] || fail "$affected_name still reported $affected ${waited}s after $FAULT_CONTAINER stopped: an authority that cannot reach its database must not report itself ready"
     sleep 1
   done
-  log "failure: isolation asserted — unit-1 200, unit-2 503 after ${waited}s"
+  log "failure: isolation asserted — $peer_name 200, $affected_name 503 after ${waited}s"
 }
 
 # partition_check reads each authority's rows *by organisation*, which is the direct form of

@@ -40,24 +40,10 @@ func writeDeploymentFor(t *testing.T, targets ...string) string {
 	return path
 }
 
-// unit stands in for one shard-affine service unit: it answers /meta with its own authority
-// and organisations, and admits every mutation, recording which organisation each request
-// was routed to it for.
-type unit struct {
-	server    *httptest.Server
-	authority string
-	orgs      []string
-
-	mu    sync.Mutex
-	users []string
-}
-
-func newUnit(t *testing.T, authority string, orgs []string, routing string) *unit {
-	t.Helper()
-	u := &unit{authority: authority, orgs: orgs}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/meta", func(w http.ResponseWriter, _ *http.Request) {
+// metaHandler answers /meta as a unit bound to one authority. A run reads it before and after
+// the workload, so every fixture serving requests needs one.
+func metaHandler(authority string, orgs []string, routing string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"go_version":      "go1.26.5",
@@ -76,7 +62,27 @@ func newUnit(t *testing.T, authority string, orgs []string, routing string) *uni
 				"sharded": true, "organisations": orgs,
 			},
 		})
-	})
+	}
+}
+
+// unit stands in for one shard-affine service unit: it answers /meta with its own authority
+// and organisations, and admits every mutation, recording which organisation each request
+// was routed to it for.
+type unit struct {
+	server    *httptest.Server
+	authority string
+	orgs      []string
+
+	mu    sync.Mutex
+	users []string
+}
+
+func newUnit(t *testing.T, authority string, orgs []string, routing string) *unit {
+	t.Helper()
+	u := &unit{authority: authority, orgs: orgs}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/meta", metaHandler(authority, orgs, routing))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			UserOrganisationID string `json:"user_organisation_id"`
@@ -436,6 +442,98 @@ func TestAMatchingDeploymentRecordCarriesTheArtifactIdentity(t *testing.T) {
 	}
 	if report.Manifest.ImageID != "sha256:1111111111111111" {
 		t.Errorf("image_id = %q, want the observed identity", report.Manifest.ImageID)
+	}
+}
+
+// The resolution pass is part of driving a run, not a package API waiting for a caller.
+//
+// This is the wiring test for the second half of measurement-contract §12: a run that ends
+// with `unknown_replayable` mutations outstanding is not reconcilable, and the register that
+// could settle them dies with the process. So the harness must replay them itself, and the
+// report must carry what they turned out to be.
+//
+// It is discriminating in the direction that matters. Drop the fold in `run` and the report
+// still parses, still reports every measured field correctly, and still says
+// `measurement_sound: true` — it simply describes four mutations whose commit state nobody
+// established, with no record that the question was ever asked.
+func TestARunEndingWithAmbiguousMutationsResolvesThemBeforeReporting(t *testing.T) {
+	seenKeys := map[string]bool{}
+	var mu sync.Mutex
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/meta", metaHandler("authority-1", nil, "unsharded"))
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		key := r.Header.Get("Idempotency-Key")
+		mu.Lock()
+		first := !seenKeys[key]
+		seenKeys[key] = true
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		if first {
+			// The commit outcome is unknown: the session ended with the work done and the
+			// answer not delivered. This is what a failing authority produces.
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"outcome": domain.OutcomeUnknownReplayable, "replay": false,
+			})
+			return
+		}
+		// The replay finds the record, so the original did commit.
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"outcome": domain.OutcomeAdmittedSuccess, "replay": true, "reservation_id": "res-1",
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	reportPath := filepath.Join(t.TempDir(), "report.json")
+	err := run([]string{
+		"-target", srv.URL,
+		"-workload", "dispersed",
+		"-concurrency", "1", "-n", "4", "-slots", "2",
+		"-require", "none",
+		"-out", reportPath,
+	})
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+
+	raw, readErr := os.ReadFile(reportPath)
+	if readErr != nil {
+		t.Fatalf("reading report: %v", readErr)
+	}
+	var report loadgen.Report
+	if err := json.Unmarshal(raw, &report); err != nil {
+		t.Fatalf("decoding report: %v", err)
+	}
+
+	s := report.Summary
+	if len(s.Resolved) != 4 {
+		t.Fatalf("report carries %d resolutions, want 4: the run ended with four ambiguous "+
+			"mutations and nothing in the artifact says what became of them", len(s.Resolved))
+	}
+	for _, r := range s.Resolved {
+		if r.StillAmbiguous || !r.Replay {
+			t.Errorf("resolution %+v: want a settled replay proving the original committed", r)
+		}
+	}
+
+	// The measured interval is history: the client saw four ambiguous answers and no
+	// successful mutation inside it, and the resolution does not change that.
+	if s.Completed != 4 || s.Goodput != 0 {
+		t.Errorf("measured completed/goodput = %d/%d, want 4/0", s.Completed, s.Goodput)
+	}
+	// Final logical state, which is the question the database will be asked.
+	if got := s.FreshAdmittedFor(domain.OpReserve); got != 4 {
+		t.Errorf("FreshAdmittedFor = %d, want 4: each replay proved its original committed", got)
+	}
+	if got := s.ReconciliationCompleted(); got != 8 {
+		t.Errorf("reconciliation completed = %d, want 8 (4 measured + 4 resolution attempts)", got)
+	}
+	if !s.Sound {
+		t.Errorf("run reported unsound after every mutation resolved: %s", s.NotSoundBecause)
 	}
 }
 

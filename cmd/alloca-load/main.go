@@ -109,8 +109,11 @@ func run(args []string) error {
 		duration    = fs.Duration("duration", 0,
 			"run for this long instead of a fixed -n; required for sweep cells, whose rates "+
 				"are only comparable when every cell covers the same interval")
-		warmUp   = fs.Duration("warm-up", 0, "discard responses completing inside this window")
-		timeout  = fs.Duration("timeout", 10*time.Second, "per-request client timeout")
+		warmUp         = fs.Duration("warm-up", 0, "discard responses completing inside this window")
+		timeout        = fs.Duration("timeout", 10*time.Second, "per-request client timeout")
+		resolveTimeout = fs.Duration("resolve-timeout", time.Minute,
+			"bound on the post-run pass that replays ambiguous mutations under their own keys; "+
+				"anything it cannot settle is reported unresolved and the run is refused")
 		validate = fs.Bool("validate", true, "validate responses; false drives the §5.5 control")
 		org      = fs.String("org", "load-org", "organisation for generated identities")
 		slots    = fs.Int("slots", 100,
@@ -259,6 +262,25 @@ func run(args []string) error {
 		drift = after.DriftFrom(before)
 	}
 
+	// Ambiguity resolution, after the measured interval is closed and bracketed.
+	//
+	// A mutation the service answered `unknown_replayable` is not a result: the commit may or
+	// may not have landed, and the only safe way to find out is to replay that same
+	// idempotency key (transaction-semantics §5.4). Until that has happened the run's client
+	// totals record something that is not yet a fact about persisted state, and no
+	// reconciliation over it means anything (measurement-contract §12).
+	//
+	// **It is not a flag.** A healthy run registers nothing and the pass is a no-op, so the
+	// only runs it touches are the ones §12 requires it for — and an operator who forgot to
+	// ask for it would be holding an unreconcilable artifact with the register that could have
+	// settled it already discarded with the process.
+	//
+	// It runs *after* the post-run /meta read on purpose: that read is what closes the
+	// measured bracket, and resolution traffic is deliberately outside it. WithResolutions
+	// keeps the two populations apart — measured performance is left exactly as observed,
+	// while final logical state gains what the replays established.
+	summary = summary.WithResolutions(resolve(ctx, client, *resolveTimeout))
+
 	// The router's own placement is handed to the manifest so certification can compare what
 	// the generator routed by against what the units report they serve. Equal version labels
 	// do not establish equal maps, and a run where the two differ produces refusals that read
@@ -308,6 +330,37 @@ func run(args []string) error {
 			q.Level, want, q.BlockedBecause)
 	}
 	return nil
+}
+
+// resolve replays every mutation the run could not settle, and says what it found.
+//
+// The bound is its own, not the per-request timeout. Each replay waits up to that timeout,
+// and an authority that is still down fails every one of them — so an unbounded pass over a
+// large register would hang for entries × timeout with nothing on stdout. Exceeding the bound
+// is not silent: the remaining replays fail immediately, stay registered as unresolved, and
+// the run is refused with the count.
+//
+// It inherits the run's context deliberately. A second interrupt during a minute-long
+// resolution pass would otherwise be absorbed by the same signal handler and leave no way out
+// short of SIGKILL. The consequence is that an interrupted run keeps its ambiguity — which is
+// what the contract already says about it: truncated, unresolved, and not reconcilable.
+func resolve(ctx context.Context, client *loadgen.Client, bound time.Duration) []loadgen.Resolution {
+	if len(client.Ambiguous()) == 0 {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, bound)
+	defer cancel()
+
+	resolutions := client.ResolveAmbiguous(ctx)
+	unresolved := loadgen.Unresolved(resolutions)
+	fmt.Fprintf(os.Stderr, "alloca-load: replayed %d ambiguous mutation(s), %d still unresolved\n",
+		len(resolutions), unresolved)
+	if unresolved > 0 {
+		fmt.Fprintln(os.Stderr, "alloca-load: the run is not reconcilable while any mutation's "+
+			"commit state is unknown; the authority may not have been back when the pass ran")
+	}
+	return resolutions
 }
 
 // preflightDeployment establishes what artifact the run is about to measure, or explains why

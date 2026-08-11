@@ -156,11 +156,20 @@ consume the reservation.
 | goodput | 0 | 0 |
 | per-unit split | 1,000 / 1,000 | 1,000 / 1,000 |
 
-Every request was refused, at the unit owning the *user's* organisation, and **no partial
-booking state was created**: the aggregate persisted counts are unchanged by this cell and its
-verdict reconciles at zero fresh mutations. It is reported separately and never mixed into the
-supported workload — a refusal is a correct answer, not a failure, and averaging the two would
-describe neither (VAL-COR-4).
+Every request was refused, at the unit owning the *user's* organisation, and **no partial booking
+state was created**: the verdict records `0 live reservations`, `0 live claims`, and `0 fresh
+admitted reserves` across the topology.
+
+**The refusal is recorded, and that is the point.** `cross_authority_unsupported` is a *replayable*
+`409 business_refusal` written on user-home without contacting slot-home
+([`horizontal-database-authority.md`](../../design/horizontal-database-authority.md) §8, decision 8),
+so the same verdict also shows **2,000 idempotency records against 2,000 fresh mutations** — 1,000
+per authority, every key distinct (INV-5). Booking state and recorded-outcome state are different
+populations here and only the first is zero: a refusal that persisted nothing at all would not be
+replayable, which is exactly what the policy contract requires it to be.
+
+It is reported separately and never mixed into the supported workload — a refusal is a correct
+answer, not a failure, and averaging the two would describe neither (VAL-COR-4).
 
 ## 4. Organisation-to-authority distribution `[MEASURED]`
 

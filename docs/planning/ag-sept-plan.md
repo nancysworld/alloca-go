@@ -44,10 +44,9 @@ AG-Sept's governing goal, its iteration history, and the currently open problem 
   Review in PR #17, on the evidence produced by merged PR3a, PR3b, and PR3c (#16). The Phase 1
   authority model is established as a correctness/composition result, not a capacity multiplier.
 - **Iteration C — independently provisioned shard-group capacity.** The A&R selects the **Problem
-  only**: whether independent shard groups can turn the single-authority PostgreSQL frontier into
-  approximately additive aggregate mutation capacity, and what workload/placement envelope each
-  group should own. Requirements, design, validation, and schedule are intentionally not committed
-  by this A&R.
+  only**: how aggregate mutation capacity scales as independently provisioned shard groups are
+  added, what limits that scaling, and what workload/placement envelope each group should own.
+  Requirements, design, validation, and schedule are intentionally not committed by this A&R.
 
 The decision order is now:
 
@@ -308,9 +307,18 @@ Validation plan, before this plan can assign a work-unit/PR split or spend the e
 
 There is therefore **no PR4 schedule in this PR**. In particular, the old candidate of multiplying
 stateless replicas against one shared PostgreSQL writer is not the selected Iteration C Problem.
-Service replicas, exporters, independently provisioned database resources, cloud infrastructure,
-or another mechanism may become part of the design/validation only if the next iteration justifies
-them.
+Service replicas, exporters, additional instrumentation, or another mechanism may become part of
+the design/validation only if the next iteration justifies them.
+
+**The environment question this plan does not answer.** Iteration C's Problem needs independent
+*growing* resource envelopes, while §5.4 places cloud outside AG-Sept scope, §6.3 records the AWS
+path as withdrawn, and the co-resident workstation
+([`../measurements/environment.md`](../measurements/environment.md)) shares one 10-vCPU allocation
+across both services, both databases and the generator. That conflict is recorded in
+[`../requirements/ag-sept.md`](../requirements/ag-sept.md) §3 and belongs to Iteration C's
+Requirements and Design. **This plan neither reopens §5.4 nor schedules cloud work by
+implication**; if no in-scope environment can support the claim, that is an explicit scope decision
+for the maintainer, taken then and recorded there.
 
 The previously sketched replica-scaling work remains useful as historical scheduling input and as
 unproven validation possibilities, but it is **superseded as the current candidate schedule**.
@@ -392,6 +400,11 @@ not automatically committed Iteration C scope. The next Requirements/Design/Vali
 decide which controls are necessary for the selected shard-group-capacity Problem before this
 priority table is updated again.
 
+**One obligation among them is not optional, though its implementation is.** Any capacity claim
+must explain, exclude, or conservatively bound shared-environment variation (§6.4, Group B). That
+constrains what Iteration C's validation must achieve; it does not pre-select which instrument
+achieves it, and the specific items above stay uncommitted until Schedule.
+
 ### 5.2 P1 — strongly desirable
 
 The entries below predate Iteration B's A&R and are **not automatically Iteration C scope**:
@@ -417,6 +430,11 @@ reproducing a full commercial workload.
 
 Container orchestration is whatever is smallest and reproducible — Compose is sufficient
 (`deployment-architecture.md` §11).
+
+**This exclusion stands, and Iteration C's Problem may come into conflict with it** (§3). Whether
+an in-scope environment can support a defensible capacity-composition claim is a question for
+Iteration C's Requirements and Design; if the answer is no, the exclusion is revisited as an
+explicit maintainer scope decision rather than eroded by the work that needs it.
 
 ### 5.5 Descope order
 
@@ -508,9 +526,15 @@ follows; the full reasoning stays in [`ag-sept-plan-v0.4.md`](ag-sept-plan-v0.4.
   should be fixed opportunistically:** a manifest field that is published, range-validated, and
   enforced nowhere is worse than an absent one, and either enforcing it or removing it is minutes
   of work in any PR that touches the manifest.
-- **Group B — instrumentation** (PostgreSQL exporter, node exporter). **Previously promoted to
-  required for the old replica-scaling envelope; Iteration C must reconsider that requirement
-  against its own validation design before Schedule.**
+- **Group B — instrumentation** (PostgreSQL exporter, node exporter). Previously promoted to
+  required for the old replica-scaling envelope. **The underlying obligation survives the change of
+  Problem and is effectively mandatory for any capacity claim**: a scaling result cannot distinguish
+  linear from materially sub-linear composition unless shared-environment variation is explained,
+  excluded, or conservatively bounded, and the frontier report §6 records that database
+  instrumentation alone cannot do it. A node exporter is the cheapest currently known mechanism.
+  **Which instruments discharge the obligation is Iteration C's Validation/Design choice**, not a
+  scheduling decision this plan makes now — see
+  [`../requirements/ag-sept.md`](../requirements/ag-sept.md) §2.
 - **Group C — evidence hygiene** (per-sweep TSDB snapshots, re-running PR2 cells under the fixed
   exporter, optional histogram buckets). **Previously assigned to the old replica-scaling
   envelope; retained as candidate hygiene work, not automatically Iteration C scope.**

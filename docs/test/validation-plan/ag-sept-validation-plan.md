@@ -58,15 +58,20 @@ and next Problem are owned by `../../requirements/ag-sept.md`.
 
 ### Iteration C — independently provisioned shard-group capacity
 
-Iteration B's A&R selected the next **Problem**: whether independently provisioned shard groups
-turn the single-authority PostgreSQL frontier into approximately additive aggregate mutation
-capacity for independent organisation workloads, and what workload and placement envelope each
-shard group should own.
+Iteration B's A&R selected the next **Problem**: how aggregate mutation capacity scales as
+independently provisioned shard groups are added for independent organisation workloads, what
+limits that scaling, and what workload and placement envelope each shard group should own.
 
 **Validation for Iteration C is not defined in this A&R PR.** The existing scaling validations
 below retain their established meanings, but none is automatically promoted into the new
 iteration merely because it already exists. Iteration C must proceed through Requirements,
 Design, and Validation plan before Schedule commits an experiment matrix.
+
+One constraint is inherited rather than chosen: any capacity claim must **explain, exclude, or
+conservatively bound shared-environment variation**, because PR2's unexplained ~2× excursions
+otherwise leave linear and materially sub-linear composition indistinguishable (frontier report §6;
+`../../requirements/ag-sept.md` §2). That fixes what Iteration C's validation must achieve, not
+which instrument achieves it.
 
 ## 2. Validation principles
 

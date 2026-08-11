@@ -43,19 +43,30 @@ result ended Iteration A and created the next scaling problem.
 **Problem:** how can independent organisation work use independently writable PostgreSQL
 authorities while preserving accepted transactional correctness and failure containment?
 
-Validation covers Phase 1 supported booking, placement enforcement, explicit cross-authority
+Validation covered Phase 1 supported booking, placement enforcement, explicit cross-authority
 refusal, per-authority reconciliation, and authority failure isolation.
 
-The accepted design is owned by `horizontal-database-authority.md`. AG-Sept is currently inside
-this iteration.
+**Analysis outcome:** sufficiently resolved. PR3c demonstrated the accepted Phase 1 design across
+two writable authorities, including supported same-authority operations, explicit cross-authority
+refusal, placement enforcement, multi-authority reconciliation, and failure containment. The
+retained report and artifacts own the evidence. `VAL-SCALE-3` is discharged in the sense it is
+defined here: architecture/correctness and failure-independence evidence on a co-resident
+workstation, **not** a capacity multiplier.
 
-### Later iteration — service-replica scaling, if still justified
+The accepted design remains owned by `horizontal-database-authority.md`; the durable A&R closure
+and next Problem are owned by `../../requirements/ag-sept.md`.
 
-After the multi-authority evidence is analysed and reviewed, the next problem may be how much
-additional stateless service compute contributes within one shard group and where connection
-pressure becomes limiting. If that remains the right problem, the replica and connection-budget
-validations below are scheduled then. Their existence here defines the validation meaning; it
-does not pre-commit the schedule.
+### Iteration C — independently provisioned shard-group capacity
+
+Iteration B's A&R selected the next **Problem**: whether independently provisioned shard groups
+turn the single-authority PostgreSQL frontier into approximately additive aggregate mutation
+capacity for independent organisation workloads, and what workload and placement envelope each
+shard group should own.
+
+**Validation for Iteration C is not defined in this A&R PR.** The existing scaling validations
+below retain their established meanings, but none is automatically promoted into the new
+iteration merely because it already exists. Iteration C must proceed through Requirements,
+Design, and Validation plan before Schedule commits an experiment matrix.
 
 ## 2. Validation principles
 
@@ -421,10 +432,12 @@ The discriminating control is VAL-COR-5 and is mandatory for a multi-authority t
 | single-authority frontier | established | PR2 measurement report; produced Iteration B problem |
 | response validation and generator headroom | established for the baseline scope | retained PR1/PR2 evidence |
 | telemetry-overhead control | **not discharged** | PR2 found within-mode spread larger than the between-mode delta; no overhead figure is claimed |
-| Phase 1 placement and supported policy implementation | implemented | PR3a/PR3b implementation records; correctness evidence still to complete |
-| multi-authority reconciliation harness | implemented | PR3b; exercise against correctness/failure scenarios next |
-| Phase 1 correctness and failure isolation | pending evidence | current Iteration B validation target |
-| stateless replica scaling | not yet the current problem | reconsider after Iteration B Analyse & Review |
+| Phase 1 placement and supported policy implementation | established for Iteration B | PR3a/PR3b implementation records plus PR3c controls/evidence |
+| multi-authority reconciliation | established for Iteration B | PR3b harness exercised and reconciled by PR3c retained runs |
+| Phase 1 correctness and failure isolation | established for Iteration B | PR3c report and retained artifacts; VAL-COR-1..6 and VAL-FAIL-1 |
+| database-authority composition (VAL-SCALE-3) | established as architecture/correctness evidence | PR3c; explicitly **not** a capacity multiplier on the co-resident workstation |
+| Iteration C shard-group capacity | **Problem selected; validation not yet defined** | Requirements → Design → Validation plan must precede Schedule |
+| stateless replica scaling | unproven and not selected by this A&R | existing VAL-SCALE-1/2 remain candidate validation definitions, not committed Iteration C work |
 | composed multi-authority + multi-replica topology | optional later validation | only after both axes are understood separately |
 
 The milestone schedule may change order, budget, or optional depth. A mandatory property does not

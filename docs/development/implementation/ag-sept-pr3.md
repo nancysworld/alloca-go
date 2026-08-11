@@ -1,9 +1,9 @@
 # AG-Sept PR3 — Horizontal database authority, Phase 1
 
 **Type:** Implementation record, spanning PR3a/3b/3c
-**Status:** In progress. PR3a is merged (#13); PR3b is merged (#14, `57f501d`); **PR3c is in
-progress (#16)** — its harness work is built and its experiments are not yet run, which §6e
-records. The
+**Status:** PR3a is merged (#13); PR3b is merged (#14, `57f501d`); **PR3c is complete and under
+review (#16)** — harness, two measured passes and the report, with nothing mandatory
+outstanding. §6a records what remains opportunistic. The
 design was accepted before implementation began (formal design §8), and §6 holds no blocker —
 its one remaining item is a starting fixture, not a contract.
 **Budget:** 7.5 development days across three PRs ([AG-Sept plan](../../planning/ag-sept-plan.md) §2) —
@@ -356,16 +356,16 @@ deliberately trigger it is PR3c's, which lands after. The window is now closed.
 1. the **post-restoration resolution pass**, driven by `alloca-load` after the measured
    interval and before the report is written, with the summary accounting §6c asked for.
 
+**Was PR3c's to run, and is now run** — twice each, reported in
+[`ag-sept-pr3c-phase1-correctness.md`](../../measurements/reports/ag-sept-pr3c-phase1-correctness.md)
+with artifacts in [`pr3c-phase1/`](../../measurements/pr3c-phase1/):
+
 2. the **failure-isolation experiment**, with affected and unaffected populations reported
    separately and the injected failure mode named — a *stopped* container, which is why §6b
    matters;
 3. the **Phase 1 correctness matrix** and per-authority verdicts.
 
-Both are run, twice each, and reported in
-[`ag-sept-pr3c-phase1-correctness.md`](../../measurements/reports/ag-sept-pr3c-phase1-correctness.md);
-the artifacts are [`pr3c-phase1/`](../../measurements/pr3c-phase1/).
-
-**Still PR3c's, and still to be done:**
+**Still PR3c's, and still outstanding — opportunistic, and unfunded:**
 
 4. **INV-21's remaining half.** The *commit-landed-but-acknowledgement-lost* case is still
    unproven and needs a proxy that drops the reply; the register says so, and PR3c must not

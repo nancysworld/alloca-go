@@ -98,13 +98,13 @@ should scale. The next problem is therefore Iteration B, below.
 ## 2. Iteration B — compose independent writable database authority
 
 **Iteration B spans PR3a, PR3b and PR3c.** PR3a and PR3b built the placement model, booking policy,
-multi-authority topology and authority-aware verification; PR3c is the evidence-producing work
-unit. **The iteration does not close inside PR3c** — it closes at Analyse & Review, which is an
-explicit step of its own afterwards (Nancy's call, 2026-08-10).
+multi-authority topology and authority-aware verification; PR3c produced the retained correctness
+and failure-isolation evidence. The iteration closes here at Analyse & Review rather than inside
+its evidence-producing PR.
 
 ### Problem
 
-The evidence-backed problem is now:
+The evidence-backed problem was:
 
 > **What placement and coordination model lets independent organisation work use independently
 > writable PostgreSQL authorities while preserving Alloca-Go’s accepted transactional invariants,
@@ -115,8 +115,8 @@ ownership axes: slot capacity and the user schedule. If those axes resolve to di
 transaction domains, one local PostgreSQL transaction can no longer coordinate the complete
 operation.
 
-Iteration B therefore needs to establish a horizontally composable local path without pretending
-that cross-database atomic booking has already been solved.
+Iteration B therefore needed to establish a horizontally composable local path without pretending
+that cross-database atomic booking had already been solved.
 
 ### Requirements in scope
 
@@ -135,7 +135,7 @@ that cross-database atomic booking has already been solved.
 - **REQ-EVID-1** and **REQ-EVID-2** — correctness/failure conclusions remain reconciled and
   distinct from unsupported capacity-composition claims on shared workstation resources.
 
-### Design consequence already accepted
+### Design consequence accepted for Phase 1
 
 The accepted Phase 1 answer is intentionally narrower than cross-database booking:
 organisations have explicit writable homes; supported reserve keeps user and slot ownership axes
@@ -149,7 +149,7 @@ the complete two-axis model in
 
 ### Sufficiently resolved when
 
-Iteration B can end for AG-Sept scope when evidence demonstrates, at minimum:
+Iteration B could end for AG-Sept scope when evidence demonstrated, at minimum:
 
 - supported same-authority booking preserves the accepted invariant set across multiple writable
   authorities;
@@ -168,94 +168,168 @@ The concrete validation is owned by
 
 ### Analyse & Review outcome
 
-**Pending — Iteration B's evidence is not yet produced.** PR3c owes it.
+**1. Problem verdict — sufficiently resolved.** The Phase 1 placement and coordination model is a
+correct horizontally composable authority boundary for the supported path. Independent writable
+PostgreSQL authorities can serve their own organisation work without weakening the accepted
+transaction semantics, and failure of one authority remains inside its shard-group dependency
+boundary. Cross-authority reserve remains deliberately unsupported rather than being implemented
+with an unproven distributed transaction protocol.
 
-**This review is an explicit step of its own, after PR3c completes**, not something PR3c performs
-on itself and not a pre-created PR4. Its time comes from the milestone's existing 2–3 day
-review/rerun/interpretation reserve; no new development allocation is created for it (Nancy's
-call, 2026-08-10).
+**2. Evidence.**
+[`../measurements/reports/ag-sept-pr3c-phase1-correctness.md`](../measurements/reports/ag-sept-pr3c-phase1-correctness.md)
+and its retained artifacts, produced by PR #16 after the PR3a/PR3b design and harness work.
+Two hardened retained passes demonstrate supported correctness, colocated cross-organisation
+booking, explicit cross-authority refusal, placement enforcement, multi-authority reconciliation,
+and failure containment. A separately retained live `unknown_replayable` demonstrates the
+measurement/reconciliation population contract on a real fault — as **one observation and not a
+rate**, at an earlier commit whose harness had not yet gained the containment assertions, so its
+accounting claim rests only on that run's retained client totals and verdict row counts and not on
+its unasserted containment properties (report §5.2). The report explicitly makes **no capacity or
+throughput multiplier claim** from the co-resident 10-vCPU workstation topology.
 
-When PR3c reports, this section records the same five-part closure record §1.4.1 requires, written
-to the worked example under Iteration A: problem verdict, evidence, durable learning, **goal
-progress**, and the loop decision. The last two are the ones this iteration must not skip —
-whether the problem is resolved and whether the AG-Sept goal is sufficiently achieved are
-different questions.
+**3. Durable learning.** Authority composition is now a correctness-proven architecture, not yet a
+capacity-proven scaling result. The shard group was already the accepted scaling unit
+([`../design/horizontal-scaling.md`](../design/horizontal-scaling.md) owns that model); what
+Iteration B adds is that the accepted shard-group boundary **survived correctness, composition and
+failure-isolation validation on the supported path, and is therefore a candidate capacity unit
+whose capacity behaviour remains unproven.** Changing the number of authorities and changing
+replica count within one authority remain distinct experiments. PR2's mutation-heavy evidence still
+puts the first limit in PostgreSQL, so service replicas or microservice decomposition are not
+promoted without evidence that service compute or an independent service boundary is actually
+limiting.
 
-**The review must explicitly revisit the goal's service-compute clause.** The goal asks for
-evidence that independent work can use additional *service-compute* as well as writable-database
-resources, and Iteration B addresses only the second. So the review asks, on the evidence:
+**An evidence obligation follows for any later capacity claim, independently of mechanism.** PR2's
+unexplained ~2× environmental excursions slow service, database and generator together, and the
+frontier report §6 records that no amount of database instrumentation removes that caveat. A future
+iteration therefore cannot credibly distinguish linear from materially sub-linear scaling unless
+shared-environment variation is **explained, excluded, or conservatively bounded**. That obligation
+is durable; which instrument discharges it is a Validation/Design choice, not settled here.
 
-- does the multi-authority result and its resource balance make service compute the next
-  meaningful frontier?
-- or must the resource allocation within a shard group change first, before a service frontier
-  could even be exposed — in which case *that* is the next problem?
-- or does another problem carry higher value, or is the goal sufficiently achieved for scope?
+**Report §7.2's two observations are carried forward together, as one diagnostic family**, because
+they concern the same failure-path behaviour and neither is promoted into the next Problem:
 
-**Inputs to carry into that review — hypotheses and experiment dimensions, not PR3c requirements
-or conclusions:**
+- the ~500 ms warm/failure-path latency against the ~5 s stopped-authority observation recorded in
+  [`../development/implementation/ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md)
+  §6b; and
+- `timeout_server` holding at exactly 304 across all three retained failure runs while
+  `internal_failure` moved freely and total volume varied by 4.2% — a quantity that is bit-identical
+  across runs whose other outcome counts are not, which the report calls structural rather than
+  incidental and does not explain.
 
-- **Shard-affine serving constrains the nominal two-axis topology.** If authority `i` has `x_i`
-  compatible service replicas, then `x_i >= 1` for every actively served authority and total
-  service replicas are `N = sum(x_i)`. The shorthand `N:M` remains useful but is lossy: `[3,2]`
-  and `[4,1]` are both `5:2` topologies and may behave differently. The current local example is
-  `[1,1]`, not an architectural requirement.
-- **“Service scaling” means adding replicas within an existing database-authority shard group.**
-  Iteration A's mutation-heavy frontier suggests one Go service may already be enough to saturate
-  one PostgreSQL writer under that workload, so additional replicas may add little capacity or may
-  merely add connection pressure. That is a hypothesis to test, not a conclusion. Replica count
-  also has a distinct availability/redundancy purpose that must not be confused with capacity.
-- **Shard-group sizing is workload-shaped, not a raw organisation/user-count constant.** Active
-  request rate and concurrency, organisation skew, hot slots/identities, service CPU, database
-  pressure and connection demand are more direct capacity variables. Organisation or user counts
-  may become useful placement proxies only if evidence shows they correlate with active load.
-- **The timetable/read path is underrepresented in the evidence so far.** The current frontier is
-  dominated by mutation workloads, while a real deployment may issue substantially more slot/
-  timetable reads than mutations. Read-heavy traffic can move the limiting resource toward HTTP/
-  serialization work, service CPU, database query/cache/I/O pressure or connection concurrency,
-  and can make additional service replicas useful even when the mutation path is database-bound.
-- **A later capacity investigation should therefore distinguish workload mix.** At minimum the
-  review should decide whether the next problem needs mutation-heavy, read-heavy and realistic
-  mixed read/write shapes rather than treating one mutation benchmark as representative of the
-  shard group. Read scalability may eventually justify mechanisms different from writable-authority
-  composition, but caching, read replicas or a separate read model are not selected without that
-  evidence.
-- **The service-to-database resource ratio is therefore a property of a shard-group topology and
-  workload, not a constant.** The next experiment should be chosen to expose whichever resource
-  actually limits the workload we care about, rather than assuming either more replicas or more
-  database authorities is automatically the next scaling lever.
+The trigger is the concrete one the report itself states: **neither reading may be used to change a
+timeout budget**, and the family is investigated if a decision comes to depend on the failure
+path's timing behaviour.
 
-**The goal itself stands unchanged until that review.** If the evidence justifies revising it, that
-is an explicit goal/scope decision, taken then and recorded here — never an implicit consequence of
-what the next iteration happens to schedule.
+One item of **named validation debt** is carried, and it blocks neither the verdict nor the scaling
+work: INV-21's live “commit landed, acknowledgement lost” injection, tracked by the invariant
+register.
 
-Only that review may select the next iteration and release the reserved post-Iteration-B envelope
-([`../planning/ag-sept-plan.md`](../planning/ag-sept-plan.md) §3). Until it happens, the envelope
-buys nothing.
+**A second item was found by this review and closed rather than carried.** `VAL-COR-4`'s exit
+criterion asks for “an explicit replayable policy result with no partial mutation”. The refusal and
+the absence of partial mutation were established on the two-authority stack, but *replayability*
+was established a layer below it, by `TestCrossAuthorityRefusalIsReplayable` at the service layer
+and `TestRefusalIsRecordedAndReplayed` on the PostgreSQL adapter, because the retained control
+drives 2,000 distinct keys and reposts none of them (PR3c report §7.4). The criterion was therefore
+met by composition rather than by one observation on the deployed stack.
 
-## 3. Candidate next iteration — stateless service replicas
+The fix was one repost rather than an experiment, so it was made here instead of deferred: the
+`controls` cell gained case 3b, which reposts the cross-authority refusal's own key and asserts the
+recorded reason and `replay=true` against `replay=false` on the decision itself, so what the control
+shows is the transition rather than a flag. VAL-COR-4 is **established for Iteration B** on the
+evidence retained in
+[`../measurements/pr3c-phase1/controls-replay/`](../measurements/pr3c-phase1/controls-replay/).
 
-Service-replica scaling is a plausible next problem, not yet an automatically scheduled
-continuation of Iteration B.
+Two things this deliberately did **not** do. The retained PR3c cells were not re-run or
+reinterpreted — their measured numbers are unchanged, and 2,000 persisted records still do not
+evidence replay. Nor were the PR3c report's findings revised: its §7.4 describes the runs it
+describes and stays accurate about them, so the section gained a narrower heading and a forward
+pointer rather than a correction.
 
-After Iteration B evidence is analysed and reviewed against the governing goal, the project asks
-whether the remaining high-value problem is:
+No accepted Phase 1 requirement or architecture needs revision.
 
-> **What useful capacity or availability do additional stateless replicas add within one
-> database-authority shard group, and how does per-authority connection pressure change that
-> result?**
+**4. Goal progress.** Iteration B establishes that independent work can be partitioned across
+independently writable PostgreSQL authorities **without weakening correctness**. It does not yet
+establish that adding independently provisioned writable resources increases aggregate mutation
+capacity, because PR3c's authorities shared one workstation resource envelope.
 
-If that is still the right problem for achieving the goal, it begins a new iteration at
-**Problem**. Requirements and design may remain largely unchanged; the validation plan already
-records the candidate replica and connection-budget validations, and only then should the
-milestone schedule commit their scope and budget.
+**The service-compute clause, answered on the retained resource evidence rather than by
+assumption.** PR3c §6 was retained specifically for this review. It shows very low service pressure
+on the healthy path — roughly 0.32 service cores per unit over the failure window against a shared
+10-vCPU allocation, and pool acquire-wait of 0.00–0.02 s on every healthy cell in both passes. But
+those cells were bounded correctness runs at concurrency 8, deliberately sized so every request
+could succeed, and the report says plainly that they say nothing about the far higher-concurrency
+regime where PR2 found acquire-wait to be the dominant term. The retained resource evidence
+therefore **does not overturn PR2's database-bound conclusion**, and it does not expose a service
+frontier. Service compute is consequently not the next meaningful frontier on current evidence, and
+adding replicas to an already database-bound shard group is not justified merely to satisfy the
+wording of the goal. The clause remains open rather than discharged.
 
-It is not the only candidate. If Iteration B's evidence shows that service compute cannot become a
-meaningful frontier without first changing the resource balance within a shard group, then
-**rebalancing is the next problem** and replica scaling waits behind it. A third possibility is
-that another problem carries more value, or that the goal is sufficiently achieved for scope and
-the loop ends. The review chooses; this section only records what is currently most likely.
+**5. Loop decision — continue.** The goal is not yet sufficiently achieved. The next Problem is to
+test whether the shard-group boundary that Iteration B established as a **candidate** capacity unit
+behaves as one when shard groups are provisioned independently. Service-replica scaling remains a
+later candidate when a workload or resource balance makes service compute a meaningful frontier.
 
-If the Iteration B evidence shows that the AG-Sept goal is already sufficiently achieved for
-scope, the loop ends. If it exposes a more important problem, the next iteration starts from that
-problem instead. The existence of candidate validation work is not itself a scheduling
-commitment.
+## 3. Iteration C — characterise shard-group capacity scaling
+
+### Problem
+
+> **How does aggregate mutation capacity scale as independently provisioned shard groups are added
+> for independent organisation workloads, what limits that scaling, and what workload and placement
+> envelope should each shard group own?**
+
+Iteration B proved that independent writable authorities compose correctly **on the supported
+path**; it deliberately did not prove that they scale capacity, and cross-authority reserve remains
+refused rather than solved. Iteration C asks the next evidence-backed question: when work that can
+proceed independently is given independently provisioned service and PostgreSQL resources, how does
+useful capacity compose, what limits it, and where does one shard group's safe operating boundary
+lie?
+
+The question is deliberately phrased as *how does it scale* rather than *is it additive*. What
+counts as an acceptable scaling result is a Requirements decision, and stating a target here would
+turn a measurement into a hypothesis the iteration is built to confirm.
+
+This is a capacity question about the architecture already accepted. It does **not** preselect AWS,
+Kubernetes, a managed database, service-replica multiplication, or another deployment mechanism.
+
+### Why Iteration C starts mutation-heavy
+
+Recorded because it is a decision, not an omission. Iteration C follows the causal chain the
+evidence actually produced: PR2 located the first frontier in PostgreSQL under a mutation-heavy
+workload, and Iteration B built and validated the writable-authority architecture that frontier
+implied. Testing that same frontier is what makes the next result comparable with the two before
+it.
+
+Read-heavy and realistic mixed read/write workloads remain important open questions — they can move
+the limiting resource toward service compute, query and cache pressure, or connection concurrency,
+and a mutation benchmark is not representative of a shard group's real envelope. They are held in
+[`../planning/alloca-go-roadmap.md`](../planning/alloca-go-roadmap.md) rather than folded in here,
+because including them now would change the problem instead of testing the frontier just exposed.
+
+### Environment and scope constraint — recorded, not resolved
+
+Iteration C requires an environment capable of supporting a defensible capacity-composition claim.
+Two facts bear on whether one is available:
+
+- **a scheduling fact, cited as such** — AG-Sept's agreed milestone scope currently excludes cloud
+  environments and cloud measurement
+  ([`../planning/ag-sept-plan.md`](../planning/ag-sept-plan.md) §5.4, and §6.3 for why the AWS path
+  was withdrawn). Nothing in this requirements record depends on that plan for normative meaning;
+  it is quoted because milestone scope is what the plan owns, and it can change;
+- **a measured environment fact** — the existing co-resident workstation shares one 10-vCPU
+  allocation across both services, both databases and the generator
+  ([`../measurements/environment.md`](../measurements/environment.md)), so adding a shard group
+  there redistributes a fixed allocation rather than providing an independent *growing* resource
+  envelope.
+
+Requirements and Design must resolve that conflict explicitly before Schedule. If no in-scope
+environment can support the claim, the maintainer makes an explicit scope decision — rather than
+weakening the claim to fit the environment, or scheduling cloud work by implication.
+
+**Iteration C starts here at Problem only.** Requirements, Design, Validation plan, and Schedule
+follow in dependency order; this A&R does not pre-commit their mechanism, experiment matrix, or
+budget.
+
+> **This A&R accepts the Iteration C Problem. It does not establish that AG-Sept's current
+> environment or current scope can execute it.** Discovering that the selected Problem forces an
+> explicit scope or environment decision is a valid output of the next Requirements and Design
+> stages, not a defect in this closure.

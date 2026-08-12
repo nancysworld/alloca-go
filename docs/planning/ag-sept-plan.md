@@ -40,20 +40,21 @@ AG-Sept's governing goal, its iteration history, and the currently open problem 
 - **Iteration A — identify the first scaling frontier.** Resolved. PR2 established PostgreSQL as
   the limiting subsystem while the Go service retained substantial compute headroom. The goal was
   *not* thereby achieved; the evidence created the next problem.
-- **Iteration B — compose independent writable database authorities.** Current, and it **spans
-  PR3a, PR3b and PR3c**. PR3a and PR3b shipped the placement model, booking policy,
-  multi-authority topology and authority-aware verification; PR3c has completed the evidence-producing
-  work and is in final docs-only cleanup before merge. The iteration closes at Analyse & Review
-  afterwards, not inside PR3c.
-- **No iteration after B has been selected yet.** Stateless service replicas are the current
-  *candidate* next Problem, not committed scope. Budget is reserved for whatever Iteration B's
-  Analyse & Review chooses (§3, *post-Iteration-B scaling envelope*).
+- **Iteration B — compose independent writable database authorities.** Resolved by the Analyse &
+  Review in PR #17, on the evidence produced by merged PR3a, PR3b, and PR3c (#16). The Phase 1
+  authority model is established as a correctness/composition result, not a capacity multiplier.
+- **Iteration C — independently provisioned shard-group capacity.** The A&R selects the **Problem
+  only**: how aggregate mutation capacity scales as independently provisioned shard groups are
+  added, what limits that scaling, and what workload/placement envelope each group should own.
+  Requirements, design, validation, and schedule are intentionally not committed by this A&R.
 
-The decision order is fixed:
+The decision order is now:
 
 ```text
-PR3a -> PR3b -> PR3c evidence -> Iteration B Analyse & Review -> next Problem / END
-                                                              -> only then schedule the envelope
+Iteration B evidence -> Analyse & Review -> Iteration C Problem
+                                           |
+                                           v
+                         Requirements -> Design -> Validation plan -> Schedule
 ```
 
 | Workstream | Work unit | Status |
@@ -62,9 +63,9 @@ PR3a -> PR3b -> PR3c evidence -> Iteration B Analyse & Review -> next Problem / 
 | Single-instance frontier | PR2 | merged `0d40de4` |
 | Placement, booking policy, confirm/cancel ownership | PR3a | merged `aa1e3a5` |
 | Multi-authority harness — topology, routing, certification, verifier | PR3b | merged `57f501d` |
-| Multi-authority correctness and failure-isolation evidence | PR3c | complete in #16; final docs-only cleanup before merge |
-| Iteration B Analyse & Review | review step, not a PR | after PR3c; from the review reserve, no new allocation |
-| Post-Iteration-B scaling envelope | not yet selected | budget reserved; scope chosen by that review |
+| Multi-authority correctness and failure-isolation evidence | PR3c | merged #16 |
+| Iteration B Analyse & Review | review step, PR #17 | current; closes Iteration B and selects Iteration C Problem |
+| Iteration C reserved scaling envelope | not yet scheduled | 4.5 days reserved; scope waits for Requirements → Design → Validation plan → Schedule |
 | Architecture conclusions and one justified boundary | PR5 | not started |
 
 Validation status — what is established, what is pending, and what is explicitly *not*
@@ -83,7 +84,7 @@ granularity is false precision that invites its own overrun (Nancy's call, 2026-
 | Placement, booking policy, and confirm/cancel ownership | PR3a | 3.0 | **done in 1.0; 2.0 returned to contingency** |
 | Multi-authority harness | PR3b | 2.5 | spent 2.5 |
 | Multi-authority correctness and failure-isolation evidence | PR3c | 2.0 | **done in 1.5; 0.5 returned to contingency** |
-| Post-Iteration-B scaling envelope | not yet selected | 4.5 | **reserved budget, uncommitted scope** |
+| Iteration C reserved scaling envelope | not yet scheduled | 4.5 | **reserved budget, uncommitted scope** |
 | Architecture conclusions and one justified boundary | PR5 | 1.5 | remaining |
 | **Allocated development budget** | | **15.5** | 9.5 spent, 6.0 remaining |
 | Contingency | | 4.0 | **1.0 drawn (§2.1.1), 3.0 remaining** |
@@ -91,8 +92,9 @@ granularity is false precision that invites its own overrun (Nancy's call, 2026-
 
 **Allocated is not committed.** The 15.5 row is the development budget this milestone has
 apportioned after completed work returns unused allocation to contingency, not a statement that all
-of it is committed technical scope. The 4.5-day envelope is reserved so the milestone arithmetic
-holds; **what it buys is selected by Iteration B's Analyse & Review**, not decided here (§3).
+of it is committed technical scope. The 4.5-day envelope is now reserved for Iteration C, but
+**what work it buys is not scheduled by the A&R**: Requirements, Design, and Validation plan must
+first determine the necessary shape (§3).
 
 A further **2–3 days** are reserved beyond the development budget for rerunning decisive
 experiments, validating negative controls, reviewing measurements and interpretations, correcting
@@ -109,7 +111,7 @@ incidental complexity.
 figures recorded are conservative under the half-day rule rather than attempts to account for
 hours precisely.
 
-The gain is **not** an invitation to widen the post-Iteration-B envelope. It is held for where
+The gain is **not** an invitation to widen the Iteration C envelope. It is held for where
 this milestone is most
 likely to need it — reruns, an investigation that does not resolve on the first attempt, a hard
 problem that deserves more argument than a day allows. PR2's unexplained ~2× excursion is the
@@ -156,10 +158,9 @@ the only contingency draw so far; §2.1.2 records PR3c's 0.5-day return separate
 allocation. The 0.5-day difference returns to contingency rather than being carried into Analyse &
 Review or silently charged to the next work unit.
 
-The charge includes the final review and docs-only cleanup already in flight on PR #16. Recording
-it before merge is deliberate: PR3c owns the work that produced and closed its evidence, while the
-Analyse & Review that follows is funded from the separate 2–3 day review/rerun/interpretation
-reserve.
+The charge includes the final review and docs-only cleanup on PR #16. Recording it before merge
+was deliberate: PR3c owns the work that produced and closed its evidence, while the Analyse &
+Review that follows is funded from the separate 2–3 day review/rerun/interpretation reserve.
 
 The accounting therefore moves contingency from 3.5 to **4.0 total**, with **1.0 drawn and 3.0
 remaining**. The milestone total stays **19.5 days**; **10.5 are spent and 9.0 remain**.
@@ -254,10 +255,9 @@ multi-service certification; the authority-aware verifier and its aggregated ver
 aggregated correctness verdict naming every authority it read, and is refused certification when
 the units disagree.
 
-### PR3c — Multi-authority correctness and failure isolation — complete in #16
+### PR3c — Multi-authority correctness and failure isolation — merged #16
 
-**Budget:** 2.0 days; **actual 1.5, with 0.5 returned to contingency** (§2.1.2). The evidence work
-is complete; only the final docs-only cleanup from review remains before merge.
+**Budget:** 2.0 days; **actual 1.5, with 0.5 returned to contingency** (§2.1.2).
 
 **Delivers:** the Phase 1 correctness experiments and per-authority verdicts; the cross-authority
 refusal control as its own bounded evidence class; the failure-isolation experiment — one
@@ -268,123 +268,62 @@ organisation-to-authority distribution each run measured.
 **Owners:** REQ-COR-1, REQ-COR-2, REQ-FAIL-1, REQ-ROUTE-1; VAL-COR-1..6, VAL-FAIL-1, VAL-SCALE-3;
 validation plan §4.5; `measurement-contract.md` §12–§13.
 
-**PR3c is not a service-replica experiment (Nancy's call, 2026-08-10).** Its scope stayed inside
-the 2.0-day allocation and does not add replicas or exporters, force the service to become the
-bottleneck, or draw on the post-Iteration-B envelope.
+**PR3c was not a service-replica experiment (Nancy's call, 2026-08-10).** Its scope stayed inside
+the allocation and did not add replicas or exporters, force the service to become the bottleneck,
+or draw on the Iteration C envelope.
 
-It **retains the service and database resource evidence its runs already produce** — CPU, pool
-acquisition and saturation alongside the correctness verdicts — so the Analyse & Review that
-follows can judge where the next limiting boundary probably sits. That review has to answer
-whether service compute is the next meaningful frontier, or whether the resource balance inside a
-shard group has to change first; it cannot answer either from correctness verdicts alone. This is
-retention of what the run already measures, not a new experiment.
+It retained the service and database resource evidence its runs already produced — CPU, pool
+acquisition and saturation alongside the correctness verdicts — as input to the Analyse & Review.
+The A&R uses that evidence without promoting the correctness topology into a capacity claim.
 
-**Opportunistic:** if a deliberately timed mid-commit connection loss can be produced, it
-discharges the rest of INV-21 — the register's longest-standing "not directly proven" entry. PR3b
-closed the narrower half. What remains is the fault the entry was named for, which needs something
-interposed between client and server rather than a terminated backend. A generic authority
-shutdown does not claim that proof; only the targeted fault does, and the mechanism is
-implementation's to choose (VAL-COR-6). **This is not a prerequisite for VAL-FAIL-1:** the
-mandatory failure-isolation experiment resolves any ambiguity it actually produces but need not
-manufacture an ambiguous commit.
+**Opportunistic debt retained:** INV-21's acknowledgement-lost case still needs a targeted fault
+that lets `COMMIT` land while its acknowledgement is lost. The generic authority shutdown did not
+claim that proof, and this does not block the scaling Problem selected by the A&R.
 
-**Gate:** Phase 1 correctness and failure isolation are demonstrated on independent writable
-authorities; every accepted transaction semantic on the supported path is unchanged; and no result
-claims a throughput multiplier from this workstation.
+**Gate:** discharged. Phase 1 correctness and failure isolation are demonstrated on independent
+writable authorities; every accepted transaction semantic on the supported path is unchanged; and
+no result claims a throughput multiplier from the shared workstation.
 
-**Not in PR3c:** cross-authority booking, rebalancing, replica scaling, any capacity-composition
-claim, and the Analyse & Review below — PR3c produces the evidence, it does not close the
-iteration on itself.
+### Iteration B Analyse & Review — PR #17
 
-### Iteration B Analyse & Review — an explicit step, no new allocation
-
-**PR3a + PR3b + PR3c together are Iteration B, and it closes here rather than inside PR3c**
-(Nancy's call, 2026-08-10). This is review and interpretation work: reading PR3c's evidence against
-the problem, the requirements, and the **governing goal**, then writing the five-part closure
-record into [`../requirements/ag-sept.md`](../requirements/ag-sept.md)
-(`engineering-process.md` §1.4.1).
+**PR3a + PR3b + PR3c together are Iteration B, and PR #17 closes it** (Nancy's call,
+2026-08-10). The review reads PR3c's retained evidence against the Problem, requirements, and
+governing Goal, then records the five-part closure in
+[`../requirements/ag-sept.md`](../requirements/ag-sept.md) (`engineering-process.md` §1.4.1).
 
 **Its time comes from the existing 2–3 day review/rerun/interpretation reserve** described in §2,
 not from a new development allocation and not from PR3c's allocation. Nothing in the budget table
 changes for it.
 
-It is **not a pre-created PR4.** No work unit exists for the next iteration until this review
-selects one.
+The A&R verdict is that Iteration B is sufficiently resolved and the Goal is not yet sufficiently
+achieved. It therefore selects Iteration C's Problem: independently provisioned shard-group
+capacity. **It does not schedule Iteration C.**
 
-The review must explicitly revisit the goal's service-compute clause — whether service compute is
-now the meaningful next frontier, whether the resource balance inside a shard group has to change
-before one could be exposed, or whether another problem carries more value. The requirements record
-owns those questions and the answer.
+### Iteration C scaling envelope — 4.5 days reserved, not yet scheduled
 
-### Post-Iteration-B scaling envelope — 4.5 days reserved
+The 4.5-day envelope remains a budget reservation, not committed technical scope. A&R has selected
+the next Problem, but the next iteration still starts at **Requirements**, then Design and
+Validation plan, before this plan can assign a work-unit/PR split or spend the envelope.
 
-**This is a budget reservation, not committed technical scope (Nancy's call, 2026-08-05).**
+There is therefore **no PR4 schedule in this PR**. In particular, the old candidate of multiplying
+stateless replicas against one shared PostgreSQL writer is not the selected Iteration C Problem.
+Service replicas, exporters, additional instrumentation, or another mechanism may become part of
+the design/validation only if the next iteration justifies them.
 
-**The next Problem is selected by Iteration B's Analyse & Review**, on PR3c's evidence, against
-the governing goal in [`../requirements/ag-sept.md`](../requirements/ag-sept.md). Until that
-review happens there is no PR4, because the loop has not chosen what it would contain. The
-decision order is: implement and measure PR3c → analyse against the goal → *then* frame the next
-Problem and schedule it.
+**The environment question this plan does not answer.** Iteration C's Problem needs independent
+*growing* resource envelopes, while §5.4 places cloud outside AG-Sept scope, §6.3 records the AWS
+path as withdrawn, and the co-resident workstation
+([`../measurements/environment.md`](../measurements/environment.md)) shares one 10-vCPU allocation
+across both services, both databases and the generator. That conflict is recorded in
+[`../requirements/ag-sept.md`](../requirements/ag-sept.md) §3 and belongs to Iteration C's
+Requirements and Design. **This plan neither reopens §5.4 nor schedules cloud work by
+implication**; if no in-scope environment can support the claim, that is an explicit scope decision
+for the maintainer, taken then and recorded there.
 
-Three outcomes are possible, and the budget follows the choice:
-
-- **Analyse & Review selects stateless replica scaling** — the current candidate. This envelope
-  becomes PR4 with the shape sketched below.
-- **The evidence identifies a different, higher-value Problem.** Scheduling is reconsidered
-  through the new iteration; the envelope funds that instead.
-- **No further iteration is justified for AG-Sept scope.** The loop ends, and the unused budget
-  returns to reserve rather than being spent because it was allocated.
-
-PR2 already demonstrated once that evidence changes which experiment is worth running, which is
-why this is not pre-committed.
-
-**If replica scaling is selected**, the indicative shape is 0.5 replica orchestration, 1.0
-exporters and dashboard extension, 1.0 replica matrix, 0.5 connection-budget control, 0.5
-prediction test and operating-capacity number, 0.5 composed run, 0.5 report — and four obligations
-carried from PR2 survive **as obligations**, though their order, depth, and matrix do not:
-
-1. **PostgreSQL and node exporters, required rather than desirable.** PR2 could name its
-   bottleneck only from hand-driven `pg_stat_activity` sampling, and scale efficiency cannot be
-   honestly computed while the shared authority is the one component with no instrumentation. The
-   node exporter is the only instrument that can see PR2's unexplained ~2× excursions, which slow
-   service, database, and generator together.
-2. **PR2's falsifiable scale-out prediction, tested as a first-class result.** PR2's pool ladder is
-   a scale-out experiment in disguise — from the database's side, two replicas at pool 10 resemble
-   one replica at pool 20 — and it predicts **2 replicas × pool 10 ≈ 3,060 req/s, not 2 × 2,074**.
-   Measure it, state whether it held, and if it did not, say what the pool ladder got wrong (PR2
-   report §5.4).
-3. **The connection-budget control** (VAL-SCALE-2, VAL-NEG-4), mandatory when interpreting replica
-   scale-out.
-4. **The recommended operating capacity number** PR2 deferred, which needs a second replica before
-   two of its three components mean anything.
-
-Also indicated, on that same conditional: the replica matrix and composed run of validation plan
-§4.5; replica-count and aggregate-pool-capacity manifest fields; bounded replica and authority
-identity in the dashboard; like-for-like scale efficiency distinguishing application-compute gains
-from database-admission pressure; the cheap evidence hygiene deferred from PR2 — one TSDB snapshot
-per sweep rather than per cell, and re-running the PR2 cells under the fixed exporter; and
-VAL-NEG-5 if room remains.
-
-**Owners, if selected:** REQ-SCALE-1..3, REQ-EVID-1..2; `horizontal-scaling.md` §7; VAL-SCALE-1..4,
-VAL-NEG-4, VAL-NEG-5.
-
-**Gate, if selected:** dispersed and hot-authority traffic are compared across replica counts
-without changing the correctness model; pool multiplication is explained; PR2's prediction is
-confirmed or refuted with evidence; the operating-capacity number is reported; and all quoted runs
-remain reproducible and reconciled.
-
-**Outside this envelope whatever it funds:** AWS, Kubernetes, autoscaling, a service mesh, or an
-attempt to eliminate the hot-authority serialization frontier.
-
-**The four obligations above are conditional on the selected Problem, not owed regardless of it**
-(Nancy's call, 2026-08-10). If Analyse & Review selects a service/replica-scaling iteration, they
-become obligations *of that iteration*. If it selects another Problem, or the goal closes or is
-revised, they are recorded as **explicitly unproven, deferred, or outside selected scope** — not
-silently discharged, but not mandatory implementation work regardless of the decision either.
-
-The distinction matters both ways: a milestone that quietly drops them is over-claiming, and a
-milestone that treats them as unconditional would let a superseded plan dictate work the evidence
-no longer justifies.
+The previously sketched replica-scaling work remains useful as historical scheduling input and as
+unproven validation possibilities, but it is **superseded as the current candidate schedule**.
+`ag-sept-validation-plan.md` keeps the meanings of VAL-SCALE-1/2 without promoting them into
+Iteration C automatically.
 
 ### PR5 — Architecture conclusion and boundary decision
 
@@ -429,8 +368,8 @@ topology and image identity in PR3b; replica count, aggregate pool capacity and 
 whatever scaling work the next iteration selects.
 
 Reconciliation: PR1 established the single-authority self-check; PR3b extended it to multiple
-authorities; PR3c is where the multi-authority contract is exercised against deliberate failure
-rather than only a healthy topology.
+authorities; PR3c exercised the multi-authority contract against deliberate failure rather than
+only a healthy topology.
 
 **Quotability:** AG-Sept does not fund separate generator compute (§6.3), so **no AG-Sept run can
 reach `publishable`**. That is the only level co-residency blocks. A later run **may reach
@@ -445,7 +384,7 @@ The staging schedules the *work*, never the rule.
 
 ### 5.1 P0 — required
 
-**Unconditional.** These do not depend on what the post-Iteration-B envelope funds:
+**Unconditional.** These do not depend on what the Iteration C envelope ultimately funds:
 
 reproducible external load harness; aggregated metrics; minimal reproducible time-series retention
 and diagnostic dashboard; response-validation control (VAL-NEG-1); correctness reconciliation
@@ -455,23 +394,24 @@ control (VAL-COR-5); multi-authority correctness and failure-isolation evidence 
 separate-generator rule honoured by labelling (`measurement-contract.md` §13.1); and the
 evidence-led architecture conclusion.
 
-**Conditional on the envelope selecting scale-out.** These are P0 *for that work* and cannot be
-skipped inside it, but they are not obligations the milestone owes regardless of what Iteration B's
-Analyse & Review chooses (§3):
+**Iteration C has not yet reached Schedule.** The previous replica-specific conditional P0 items —
+VAL-SCALE-1, VAL-SCALE-2, PostgreSQL exporter, and node exporter — remain unproven planning inputs,
+not automatically committed Iteration C scope. The next Requirements/Design/Validation pass must
+decide which controls are necessary for the selected shard-group-capacity Problem before this
+priority table is updated again.
 
-the multi-instance shared-PostgreSQL comparison (VAL-SCALE-1); the connection-budget control
-(VAL-SCALE-2); and the PostgreSQL and node exporters.
-
-If a different problem is selected, these are not silently discharged: Analyse & Review records
-them as unproven or outside the agreed scope, which is the rule the validation plan's status table
-already applies. **A mandatory property does not disappear because a work unit moved** — it is
-either validated or explicitly recorded as not.
+**One obligation among them is not optional, though its implementation is.** Any capacity claim
+must explain, exclude, or conservatively bound shared-environment variation (§6.4, Group B). That
+constrains what Iteration C's validation must achieve; it does not pre-select which instrument
+achieves it, and the specific items above stay uncommitted until Schedule.
 
 ### 5.2 P1 — strongly desirable
 
+The entries below predate Iteration B's A&R and are **not automatically Iteration C scope**:
 PR2's falsifiable prediction tested as a first-class result; recommended operating capacity; the
 composed two-authority run (VAL-SCALE-4); the resource-limit control (VAL-NEG-5); the simplified
 synchronized release wave (validation plan §3.7); polished architecture and result diagrams.
+They are reclassified when Iteration C reaches Schedule.
 
 ### 5.3 P2 — only after decisive evidence
 
@@ -491,7 +431,16 @@ reproducing a full commercial workload.
 Container orchestration is whatever is smallest and reproducible — Compose is sufficient
 (`deployment-architecture.md` §11).
 
+**This exclusion stands, and Iteration C's Problem may come into conflict with it** (§3). Whether
+an in-scope environment can support a defensible capacity-composition claim is a question for
+Iteration C's Requirements and Design; if the answer is no, the exclusion is revisited as an
+explicit maintainer scope decision rather than eroded by the work that needs it.
+
 ### 5.5 Descope order
+
+**This order is the pre-Iteration-C schedule and will be re-derived when Iteration C reaches
+Schedule.** Until then it is retained as the current reserve/descope history, not as a commitment
+that every listed item belongs to the new Problem.
 
 If time slips, remove work in this order:
 
@@ -508,10 +457,10 @@ enforcement, multi-authority correctness reconciliation, the
 failure-isolation experiment, the one-instance control, minimal
 diagnostic time-series visibility, measurement validity, or the architecture report.
 
-**The correctness work is not a source of budget.** If PR3c overruns, the difference comes first
-from §2's unallocated contingency and then from the post-Iteration-B envelope through this
-list — never from the gates that make a run admissible. That is the order in which the two reserves are spent:
-contingency, then descope, and the 2–3 day reserve last and only for what it is for.
+**The correctness work is not a source of budget.** If later work overruns, the difference comes
+first from §2's unallocated contingency and then from the Iteration C envelope through the schedule
+that has actually been accepted — never from the gates that make a run admissible. The 2–3 day
+reserve stays last and only for what it is for.
 
 ## 6. Scheduling history
 
@@ -535,10 +484,11 @@ a conditional AWS deployment. PR2's measured result changed the order:
    replica scaling. Only Phase 1 is in scope.
 2. **The AWS path was dropped** (§6.3).
 3. **The local scale-out experiment survived intact** but moved behind the database work,
-   carrying v0.4 PR3's obligations forward in full rather than dropping them. It is now held as
+   carrying v0.4 PR3's obligations forward in full rather than dropping them. It was held as
    the post-Iteration-B envelope rather than a committed PR (§3). Nancy's call,
    2026-08-05: the milestone should leave the system scalable on both axes, even if only on local
-   containers.
+   containers. **Iteration B's later A&R superseded stateless-replica scaling as the current
+   candidate Problem; the 4.5-day budget remains reserved for Iteration C instead.**
 4. **The budget rose from 10 development days to 19.5.** Nancy's approval, 2026-08-05.
 
 ### 6.3 The AWS path is withdrawn, not deferred in place
@@ -576,11 +526,18 @@ follows; the full reasoning stays in [`ag-sept-plan-v0.4.md`](ag-sept-plan-v0.4.
   should be fixed opportunistically:** a manifest field that is published, range-validated, and
   enforced nowhere is worse than an absent one, and either enforcing it or removing it is minutes
   of work in any PR that touches the manifest.
-- **Group B — instrumentation** (PostgreSQL exporter, node exporter). **Promoted to required**,
-  and owed by the post-Iteration-B envelope whatever it funds (§3).
+- **Group B — instrumentation** (PostgreSQL exporter, node exporter). Previously promoted to
+  required for the old replica-scaling envelope. **The underlying obligation survives the change of
+  Problem and is effectively mandatory for any capacity claim**: a scaling result cannot distinguish
+  linear from materially sub-linear composition unless shared-environment variation is explained,
+  excluded, or conservatively bounded, and the frontier report §6 records that database
+  instrumentation alone cannot do it. A node exporter is the cheapest currently known mechanism.
+  **Which instruments discharge the obligation is Iteration C's Validation/Design choice**, not a
+  scheduling decision this plan makes now — see
+  [`../requirements/ag-sept.md`](../requirements/ag-sept.md) §2.
 - **Group C — evidence hygiene** (per-sweep TSDB snapshots, re-running PR2 cells under the fixed
-  exporter, optional histogram buckets). **Assigned to the post-Iteration-B envelope**, which
-  re-runs those cells if it selects scale-out.
+  exporter, optional histogram buckets). **Previously assigned to the old replica-scaling
+  envelope; retained as candidate hygiene work, not automatically Iteration C scope.**
 
 ## 7. Final deliverables
 
@@ -599,14 +556,14 @@ The public-ready milestone should leave:
 10. a concise public repository summary;
 11. explicit limitations, evidence labels, and negative-control results.
 
-**Conditional on the post-Iteration-B envelope selecting scale-out** (§3): a local scale-out
-report, and database and host metrics from the PostgreSQL and node exporters. If a different
-problem is selected, those are not deliverables — and item 8 says so rather than leaving a reader
-to assume all three axes were measured.
+Iteration C may add a capacity/scale-efficiency report and further database/host instrumentation,
+but those are **not committed by the A&R**. Its Requirements, Design, Validation plan, and
+Schedule decide which additional deliverables are necessary. Item 8 names unmeasured axes rather
+than letting a reader assume every possible scaling mechanism was exercised.
 
 Together these should answer what is correct, what is fast under which workload, where authority
 composition helps, where shared authority remains the frontier, which dependency becomes limiting,
-and what should be separated next — and, where replica scaling was not measured, that it was not.
+and what should be separated next — and, where a scaling axis was not measured, that it was not.
 
 ## 8. Completion gate
 
@@ -623,12 +580,12 @@ Concretely, before that review can be held:
 
 - required workloads run reproducibly from clean fixtures;
 - single-instance and multi-authority results are available, plus the results of whatever the
-  post-Iteration-B envelope selected, or a record that it selected nothing;
+  Iteration C schedule selects, or a record that it selected nothing;
 - the response-validation, misrouting and generator-headroom controls have been demonstrated, and
-  the connection-budget control too **if** scale-out was selected;
+  any additional controls required by Iteration C's validation design have been demonstrated;
 - outcomes and persisted state reconcile on every participating authority;
 - authority boundaries are visible in retained measurements, and database-connection boundaries
-  too where the exporters were funded;
+  too where the selected validation requires them;
 - one authority's failure is shown to bound its own organisations and no others;
 - measured facts, calculations, and interpretation are separated;
 - the architecture reflects evidence rather than desired presentation;

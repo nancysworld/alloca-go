@@ -13,8 +13,8 @@ meaning ([`../development/engineering-process.md`](../development/engineering-pr
   questions that may be worth exploring. Directional, non-normative, unscheduled, and upstream of
   Goal selection — it says where the project *might* go, never what it has committed to.
 - [`ag-sept-plan.md`](ag-sept-plan.md) — **the current AG-Sept plan**: 19.5 development days,
-  horizontal database authority first, no cloud path, and a reserved post-Iteration-B envelope
-  whose scope the loop has not yet selected.
+  horizontal database authority first, no cloud path, and a 4.5-day envelope reserved for
+  Iteration C, whose Problem is selected but whose scope is not yet scheduled.
 - [`ag-sept-plan-v0.4.md`](ag-sept-plan-v0.4.md) — archived v0.4 snapshot, superseded 5 August 2026. Retained because PR1 and PR2 were planned and reported under it and cite its section numbers.
 - [`ag-m1-implementation-plan.md`](ag-m1-implementation-plan.md) — AG-M1 PR split and correctness gates.
 - [`release-shaping-experiment.md`](release-shaping-experiment.md) — synthetic AG-M2/AG-M5 experiment plan comparing synchronized, rolling, clustered, and hot-slot release shapes.

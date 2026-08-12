@@ -43,19 +43,35 @@ result ended Iteration A and created the next scaling problem.
 **Problem:** how can independent organisation work use independently writable PostgreSQL
 authorities while preserving accepted transactional correctness and failure containment?
 
-Validation covers Phase 1 supported booking, placement enforcement, explicit cross-authority
+Validation covered Phase 1 supported booking, placement enforcement, explicit cross-authority
 refusal, per-authority reconciliation, and authority failure isolation.
 
-The accepted design is owned by `horizontal-database-authority.md`. AG-Sept is currently inside
-this iteration.
+**Analysis outcome:** sufficiently resolved. PR3c demonstrated the accepted Phase 1 design across
+two writable authorities, including supported same-authority operations, explicit cross-authority
+refusal, placement enforcement, multi-authority reconciliation, and failure containment. The
+retained report and artifacts own the evidence. `VAL-SCALE-3` is discharged in the sense it is
+defined here: architecture/correctness and failure-independence evidence on a co-resident
+workstation, **not** a capacity multiplier.
 
-### Later iteration — service-replica scaling, if still justified
+The accepted design remains owned by `horizontal-database-authority.md`; the durable A&R closure
+and next Problem are owned by `../../requirements/ag-sept.md`.
 
-After the multi-authority evidence is analysed and reviewed, the next problem may be how much
-additional stateless service compute contributes within one shard group and where connection
-pressure becomes limiting. If that remains the right problem, the replica and connection-budget
-validations below are scheduled then. Their existence here defines the validation meaning; it
-does not pre-commit the schedule.
+### Iteration C — independently provisioned shard-group capacity
+
+Iteration B's A&R selected the next **Problem**: how aggregate mutation capacity scales as
+independently provisioned shard groups are added for independent organisation workloads, what
+limits that scaling, and what workload and placement envelope each shard group should own.
+
+**Validation for Iteration C is not defined in this A&R PR.** The existing scaling validations
+below retain their established meanings, but none is automatically promoted into the new
+iteration merely because it already exists. Iteration C must proceed through Requirements,
+Design, and Validation plan before Schedule commits an experiment matrix.
+
+One constraint is inherited rather than chosen: any capacity claim must **explain, exclude, or
+conservatively bound shared-environment variation**, because PR2's unexplained ~2× excursions
+otherwise leave linear and materially sub-linear composition indistinguishable (frontier report §6;
+`../../requirements/ag-sept.md` §2). That fixes what Iteration C's validation must achieve, not
+which instrument achieves it.
 
 ## 2. Validation principles
 
@@ -202,7 +218,7 @@ The smallest set of runs that discharges the validations below. Replica and auth
 | Experiment | Topology | Workloads | Discharges |
 |---|---|---|---|
 | Phase 1 supported correctness | 2 authorities × 1 replica | multi-organisation dispersed; colocated cross-organisation booking; one-hot-organisation; wrong-`UserRef` confirm and cancel | VAL-COR-1..3 |
-| Cross-authority refusal control | 2 authorities × 1 replica | bounded cross-authority reserves, as their own evidence class | VAL-COR-4 |
+| Cross-authority refusal control | 2 authorities × 1 replica | bounded cross-authority reserves, as their own evidence class, **plus one same-key repost of a recorded refusal** — the cell's distinct keys cannot show replay | VAL-COR-4 |
 | Placement enforcement | 2 authorities × 1 replica | deliberate misroute | VAL-COR-5, VAL-NEG-6 |
 | Phase 1 failure isolation | 2 authorities × 1 replica | multi-organisation dispersed, one authority taken down, any ambiguity it produces resolved after restoration | VAL-COR-6, VAL-FAIL-1 |
 | Replica matrix | 1 authority × several replica counts | dispersed across all counts; hot-slot and hot-identity at the extremes | VAL-SCALE-1 |
@@ -246,6 +262,14 @@ organisations happen to be colocated. Placement must not accidentally change the
 **Requirements:** REQ-COR-1, REQ-ROUTE-1.
 
 Run the refusal control in §3.5 and prove that Phase 1 creates no partial booking state.
+
+**Two cells discharge it, not one.** The refusal cell drives distinct keys throughout, which is
+what makes it a clean evidence class and also what makes it structurally unable to show §3.5's
+same-key replay clause — a persisted record is a necessary condition for replay, not a
+demonstration of it. That clause is discharged by the `controls` cell's case 3b, which reposts the
+refusal's own key and asserts the recorded reason and `replay=true` against `replay=false` on the
+first post — the transition, rather than a flag that a service labelling every refusal a replay
+would also satisfy. A re-validation that runs only the refusal cell leaves the clause unexercised.
 
 ### VAL-COR-5 — Placement enforcement / misrouting
 
@@ -421,10 +445,13 @@ The discriminating control is VAL-COR-5 and is mandatory for a multi-authority t
 | single-authority frontier | established | PR2 measurement report; produced Iteration B problem |
 | response validation and generator headroom | established for the baseline scope | retained PR1/PR2 evidence |
 | telemetry-overhead control | **not discharged** | PR2 found within-mode spread larger than the between-mode delta; no overhead figure is claimed |
-| Phase 1 placement and supported policy implementation | implemented | PR3a/PR3b implementation records; correctness evidence still to complete |
-| multi-authority reconciliation harness | implemented | PR3b; exercise against correctness/failure scenarios next |
-| Phase 1 correctness and failure isolation | pending evidence | current Iteration B validation target |
-| stateless replica scaling | not yet the current problem | reconsider after Iteration B Analyse & Review |
+| Phase 1 placement and supported policy implementation | established for Iteration B | PR3a/PR3b implementation records plus PR3c controls/evidence |
+| multi-authority reconciliation | established for Iteration B | PR3b harness exercised and reconciled by PR3c retained runs |
+| Phase 1 correctness and failure isolation | established for Iteration B | PR3c report and retained artifacts; VAL-COR-1..3, VAL-COR-5, VAL-COR-6 and VAL-FAIL-1 |
+| cross-authority refusal (VAL-COR-4) | established for Iteration B | all four §3.5 clauses now hold on the deployed topology: the refusal and the absence of partial mutation by the PR3c passes, and **same-key replay** by control 3b, retained in [`../../measurements/pr3c-phase1/controls-replay/`](../../measurements/pr3c-phase1/controls-replay/). The replay clause was the gap the Iteration B A&R found (PR3c report §7.4), and it was closed by adding the repost to the control rather than by re-running or reinterpreting the retained cells |
+| database-authority composition (VAL-SCALE-3) | established as architecture/correctness evidence | PR3c; explicitly **not** a capacity multiplier on the co-resident workstation |
+| Iteration C shard-group capacity | **Problem selected; validation not yet defined** | Requirements → Design → Validation plan must precede Schedule |
+| stateless replica scaling | unproven and not selected by this A&R | existing VAL-SCALE-1/2 remain candidate validation definitions, not committed Iteration C work |
 | composed multi-authority + multi-replica topology | optional later validation | only after both axes are understood separately |
 
 The milestone schedule may change order, budget, or optional depth. A mandatory property does not

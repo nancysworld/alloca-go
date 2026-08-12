@@ -27,7 +27,7 @@
 #
 # Usage:
 #
-#   test/scripts/pr3c-experiments.sh controls      # VAL-COR-2, VAL-COR-3, VAL-COR-5
+#   test/scripts/pr3c-experiments.sh controls      # VAL-COR-2, VAL-COR-3, VAL-COR-4 (replay), VAL-COR-5
 #   test/scripts/pr3c-experiments.sh correctness   # VAL-COR-1, VAL-COR-2
 #   test/scripts/pr3c-experiments.sh distribution  # one-hot organisation
 #   test/scripts/pr3c-experiments.sh refusal       # VAL-COR-4, its own evidence class
@@ -252,6 +252,10 @@ cell() {
 # property the topology exists to have, and three of them look alike from a distance: a
 # cross-authority refusal is policy (409), a misroute is the edge (400), and an ownership
 # mismatch is a domain answer about a reservation that exists (404).
+#
+# The cross-authority refusal is asserted twice, under one key: being refused and *staying*
+# refused on replay are separate properties, and the load cells cannot distinguish them
+# because they never repost a key (case 3b).
 post() { # post <url> <key> <body> -> "<status> <body>"
   local body="${TMPDIR:-/tmp}/pr3c-body.$$"
   curl -sS -o "$body" -w '%{http_code}' -X POST "$1" \
@@ -287,10 +291,36 @@ controls() {
     "$(post "$S1/v1/slots/org-c/slot-0/reservations" "c2-$stamp" '{"user_organisation_id":"org-a","user_id":"c2"}')" \
     200 admitted_success
 
-  # 3. cross-authority booking: policy, at the user's own unit (VAL-COR-4).
-  expect "cross-authority refusal" \
-    "$(post "$S1/v1/slots/org-b/slot-0/reservations" "c3-$stamp" '{"user_organisation_id":"org-a","user_id":"c3"}')" \
-    409 cross_authority_unsupported
+  # 3. cross-authority booking: policy, at the user's own unit (VAL-COR-4). The request is held
+  #    in one place because case 3b has to repost *exactly* it; spelled out twice, an edit to
+  #    one copy would quietly turn 3b into a different request, which cannot replay and would
+  #    fail for a reason that looks like a defect in the service.
+  local refusal_url="$S1/v1/slots/org-b/slot-0/reservations"
+  local refusal_key="c3-$stamp"
+  local refusal_body='{"user_organisation_id":"org-a","user_id":"c3"}'
+  local refused replayed
+
+  refused="$(post "$refusal_url" "$refusal_key" "$refusal_body")"
+  expect "cross-authority refusal" "$refused" 409 cross_authority_unsupported
+  expect "cross-authority refusal is decided, not replayed" "$refused" 409 '"replay":false'
+
+  # 3b. the same key again — VAL-COR-4's *same-key replay* clause, which the refusal cell
+  #     cannot show: it drives distinct keys throughout and reposts none of them, so a
+  #     persisted record is all it establishes. The refusal is recorded on user-home through
+  #     the ordinary idempotency scope before any slot work, so reposting must return the
+  #     *recorded* answer rather than re-deciding the policy a second time.
+  #
+  #     Three assertions, because no two of them are enough. The reason without the flag is what
+  #     a re-decision also produces; the flag without the reason would accept a replay of some
+  #     other recorded outcome; and both of those on the repost, without the first post's
+  #     `replay=false`, would still pass in a build that labelled *every* cross-authority
+  #     refusal a replay. Replay is proven deterministically below the topology by
+  #     TestCrossAuthorityRefusalIsReplayable (service) and TestRefusalIsRecordedAndReplayed
+  #     (PostgreSQL adapter); this is the observation that those two compose on the deployed
+  #     two-authority stack.
+  replayed="$(post "$refusal_url" "$refusal_key" "$refusal_body")"
+  expect "cross-authority refusal replays the recorded reason" "$replayed" 409 cross_authority_unsupported
+  expect "cross-authority refusal is marked as a replay" "$replayed" 409 '"replay":true'
 
   # 4. misroute: the edge, at a unit that does not own the user's organisation (VAL-COR-5).
   local before after

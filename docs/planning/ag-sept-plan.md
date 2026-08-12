@@ -243,6 +243,8 @@ choices are not reopened merely because more alternatives exist.
   **same-organisation under all 1/2/4 placement maps**, with a discriminating test proving the
   request semantics do not change with topology; the existing colocated-cross-organisation
   `multi-org-dispersed` workload remains unchanged;
+- one fixed per-organisation A/B/C/D fixture population sized once for the maximum intended `G4`
+  run and reused unchanged for `G1`, `G2`, and `G4`, with no topology-specific fixture resizing;
 - versioned bootstrap/deployment configuration sufficient to instantiate 1-, 2-, and 4-group
   topologies with the fixed placement maps;
 - per-authority migration and the existing provenance/certification contract;
@@ -257,16 +259,18 @@ headline numbers, or a cloud-production architecture claim.
 **Cost/teardown guard:** before provisioning, PR4a records a dated estimate for the selected EC2
 shapes and an explicit maintainer-approved spend ceiling. It also provides and verifies the teardown
 procedure; experiment instances are stopped or terminated when they are not needed for active work.
-The ceiling is an operator decision, not a number invented by this plan.
+The estimate and ceiling bound **experiment spend** only; they do not select capacity/resource
+economics as an Iteration C analysis output.
 
 **Gate:** clean infrastructure can instantiate the 1/2/4 topology family with equivalent
 capacity-unit hosts and separate generator; the dedicated `WL-MUT-DISP-4` generator preserves the
-same request-pair semantics under every placement; the selected generator is preflighted above the
-intended G4 sweep range; all units pass provenance/readiness/placement checks; a sound run can reach
-`publishable` **provenance** under measurement-contract §13; the measurement system can retain the
-resource evidence required by VAL-SCALE-5/VAL-NEG-7; and the cost ceiling/teardown controls are in
-place. `Publishable` here is a provenance-readiness gate only — PR4b still has to satisfy §5's
-evidence gates before any external capacity claim is admissible.
+same request-pair semantics and fixed per-organisation fixture populations under every placement;
+the selected generator is preflighted above the intended G4 sweep range; all units pass
+provenance/readiness/placement checks; a sound run can reach `publishable` **provenance** under
+measurement-contract §13; the measurement system can retain the resource evidence required by
+VAL-SCALE-5/VAL-NEG-7; and the cost ceiling/teardown controls are in place. `Publishable` here is a
+provenance-readiness gate only — PR4b still has to satisfy §5's evidence gates before any external
+capacity claim is admissible.
 
 ### PR4b — 1/2/4 shard-group capacity evidence — 2.5 days
 
@@ -279,12 +283,20 @@ evidence gates before any external capacity claim is admissible.
   per topology, using the identical point-selection rule in validation-plan §4.6;
 - correctness/reconciliation and generator/resource controls at every quoted point;
 - per-authority data-volume/working-set evidence sufficient to expose the intended change as four
-  organisation datasets are distributed from one authority to four;
+  fixed organisation datasets are distributed from one authority to four;
 - measured `G1/G2/G4`, derived `E2/E4`, limiting-resource analysis, workload/resource envelope,
   limitations, and retained report/artifacts.
 
 There is **no efficiency pass threshold**. A sub-linear result is acceptable evidence if it is
 admissible and explained or conservatively bounded.
+
+**Explicit non-goal — capacity/resource economics.** The roadmap now records this as a worthwhile
+future exploration dimension, but Iteration C does **not** select it. PR4b must not grow cost/hour,
+cost-per-million, cloud-price comparison, instance-shopping, or economic-optimisation analysis from
+the fact that EC2 is being used. PR4a's dated estimate and spend ceiling exist only to control the
+cash cost of running the experiment. If the retained capacity evidence makes economics worth
+pursuing, Iteration C Analyse & Review may select or refine that later Problem through the normal
+engineering loop.
 
 **Gate:** VAL-SCALE-5 and VAL-NEG-7 are either discharged with retained evidence or explicitly
 reported as unproven; every selected capacity point is established by the common saturation rule
@@ -330,7 +342,7 @@ promoted.
 For Iteration C the non-descopable capacity path is now explicit:
 
 - `WL-MUT-DISP-4` workload semantics, including topology-independent same-organisation request
-  pairs;
+  pairs and fixed per-organisation fixture populations across `G1/G2/G4`;
 - the `G1/G2/G4` 1/2/4-shard-group matrix;
 - one equivalent EC2 capacity-unit host per shard group;
 - separate generator compute, preflight sizing, and per-point generator-headroom proof (VAL-NEG-2);
@@ -350,6 +362,9 @@ The older service-replica VAL-SCALE-1/2 path is not Iteration C scope.
 Only after the P0 Iteration C result is secure: a deliberately constrained resource control
 (VAL-NEG-5) if it materially strengthens the limiting-resource diagnosis; polished charts beyond
 the minimum needed to communicate the result; extra diagnostic reruns requested by A&R.
+
+Capacity/resource economics is **not** P1 for Iteration C; it remains an unscheduled roadmap
+direction unless A&R later selects it as a Problem.
 
 ### 5.3 P2 — only after decisive evidence
 
@@ -379,11 +394,11 @@ If time slips, remove work in this order:
    unless A&R needs it to resolve material variation;
 4. PR5 chart production beyond what the decisive findings require.
 
-**Do not descope:** the 1/2/4 matrix, stable `WL-MUT-DISP-4` request semantics, separate generator,
-equivalent growing resource envelopes, response validation, reconciliation, resource-envelope
-evidence, publishable-provenance readiness, the common saturation-point rule, retained provenance,
-or the limiting-resource interpretation. Those properties make the capacity result mean what it
-says.
+**Do not descope:** the 1/2/4 matrix, stable `WL-MUT-DISP-4` request semantics and fixed fixture
+populations, separate generator, equivalent growing resource envelopes, response validation,
+reconciliation, resource-envelope evidence, publishable-provenance readiness, the common
+saturation-point rule, retained provenance, or the limiting-resource interpretation. Those
+properties make the capacity result mean what it says.
 
 Contingency is drawn before weakening any mandatory evidence gate.
 
@@ -464,7 +479,7 @@ explicitly recorded as unproven.
 Before Iteration C A&R can judge the Goal:
 
 - `WL-MUT-DISP-4` runs reproducibly from clean fixtures with topology-independent same-organisation
-  request pairs;
+  request pairs and fixed per-organisation populations reused across `G1/G2/G4`;
 - the AWS 1/2/4 topologies are reproducible with equivalent capacity-unit hosts and separate
   generator compute;
 - PR4a has demonstrated `publishable` provenance readiness before PR4b capacity evidence begins;

@@ -86,26 +86,27 @@
       "key": "process_cpu",
       "title": "Process CPU",
       "unit": "cores",
-      "expr": "rate(process_cpu_seconds_total[$RANGE])"
+      "_note": "JOB-SCOPED, and every panel below it for the same reason. process_* and go_* are exported by *every* Prometheus-instrumented Go process — node_exporter and Prometheus itself included — so an unscoped selector means \"the service\" only while exactly one job is scraped. Adding the host job would otherwise fold three processes into a panel titled for one, and nothing would report it: the CSV still exports, still carries rows, and still passes the populated-series gate.",
+      "expr": "rate(process_cpu_seconds_total{job=\"alloca-go\"}[$RANGE])"
     },
     {
       "key": "process_memory",
       "title": "Process resident memory",
       "unit": "bytes",
-      "expr": "process_resident_memory_bytes"
+      "expr": "process_resident_memory_bytes{job=\"alloca-go\"}"
     },
     {
       "key": "go_goroutines",
       "title": "Goroutines",
       "unit": "count",
-      "expr": "go_goroutines"
+      "expr": "go_goroutines{job=\"alloca-go\"}"
     },
     {
       "key": "go_gc_pause",
       "title": "GC pause quantile",
       "unit": "s",
       "_note": "The Go collector exports this as a summary, so the series carries its own quantile label rather than needing histogram_quantile.",
-      "expr": "go_gc_duration_seconds{quantile=\"0.75\"}"
+      "expr": "go_gc_duration_seconds{job=\"alloca-go\",quantile=\"0.75\"}"
     }
   ],
   "export_range": "15s",

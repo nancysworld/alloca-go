@@ -327,3 +327,81 @@ func TestPanelsSharingAnAxisShareAScale(t *testing.T) {
 		}
 	}
 }
+
+// A metric selector: the name, and the label block constraining it when one is present. The
+// block is consumed by the same match so label names inside it are not read as metric names.
+var selectorRE = regexp.MustCompile(`([a-zA-Z_:][a-zA-Z0-9_:]*)\s*(\{[^}]*\})?`)
+
+// Range selectors and grouping clauses are removed before scanning: `[$RANGE]` holds a token
+// rather than a series, and `by (outcome)` holds label names.
+var (
+	rangeRE    = regexp.MustCompile(`\[[^\]]*\]`)
+	groupingRE = regexp.MustCompile(`\b(?:by|without|on|ignoring|group_left|group_right)\s*\([^)]*\)`)
+)
+
+// promQLKeywords are identifiers that stand where a metric name could and are not one.
+// Functions are excluded separately, by the parenthesis that follows them.
+var promQLKeywords = map[string]bool{
+	"and": true, "or": true, "unless": true, "offset": true, "bool": true,
+}
+
+// metricSelectors maps each metric name an expression selects to the label block that
+// constrains it, which is empty when the selector carries none.
+func metricSelectors(expr string) map[string]string {
+	cleaned := groupingRE.ReplaceAllString(rangeRE.ReplaceAllString(expr, ""), " ")
+
+	out := map[string]string{}
+	for _, loc := range selectorRE.FindAllStringSubmatchIndex(cleaned, -1) {
+		name := cleaned[loc[2]:loc[3]]
+		if promQLKeywords[name] {
+			continue
+		}
+		// A name followed by "(" is a function, not a series.
+		if loc[1] < len(cleaned) && cleaned[loc[1]] == '(' {
+			continue
+		}
+		var labels string
+		if loc[4] >= 0 {
+			labels = cleaned[loc[4]:loc[5]]
+		}
+		out[name] = labels
+	}
+	return out
+}
+
+// TestGenericMetricFamiliesAreScopedToTheirJob guards the meaning of a panel against the
+// arrival of a second scrape job.
+//
+// `process_*` and `go_*` are exported by every Prometheus-instrumented Go process. An unscoped
+// selector therefore means "the service under test" only while Prometheus scrapes exactly one
+// job — true for PR2, and false the moment a host exporter is added beside it. The failure is
+// silent in every direction that normally catches things: the query still succeeds, the CSV
+// still has rows, the populated-series gate still passes, and the panel is three processes
+// wearing the title of one.
+//
+// Metrics this repository owns need no scoping, because `alloca_` is a prefix no other
+// exporter emits. The rule is written that way round so a new generic panel is covered on the
+// day it is added rather than the day someone reads a strange number.
+func TestGenericMetricFamiliesAreScopedToTheirJob(t *testing.T) {
+	canonical := loadJSON[canonicalPanels](t, panelsPath)
+
+	checked := 0
+	for _, p := range canonical.Panels {
+		for name, labels := range metricSelectors(p.Expr) {
+			if strings.HasPrefix(name, "alloca_") {
+				continue
+			}
+			checked++
+			if !strings.Contains(labels, "job=") {
+				t.Errorf("panel %q selects %s without a job matcher: that family is exported by "+
+					"every instrumented Go process, so the panel widens to include the host "+
+					"exporter and Prometheus itself once a second job is scraped\n  %s",
+					p.Key, name, p.Expr)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Error("no canonical panel selects a metric family this repository does not own, so " +
+			"this test proved nothing")
+	}
+}

@@ -178,6 +178,8 @@ Alloca-Go already exposes several distinct scaling questions:
 - one hot slot, identity, organisation, or authority that cannot be averaged away by aggregate
   throughput;
 - placement and workload skew across otherwise independent authorities;
+- **capacity/resource economics** — how much useful capacity an added resource or cost unit buys,
+  and how that relationship changes as an architecture scales;
 - eventually, geographical or other deployment boundaries if a problem justifies them.
 
 These axes should not be conflated. Adding stateless replicas to one saturated database writer is a
@@ -186,7 +188,9 @@ read-heavy workload can expose a service or query frontier that a mutation-heavy
 sees.
 
 A useful scaling claim therefore names its **capacity unit**, workload, resource envelope, and
-scale efficiency rather than saying only that “more instances were faster”.
+scale efficiency rather than saying only that “more instances were faster”. Capacity economics is
+a related but distinct question: cloud pricing can make it concrete, but provider-specific prices
+are evidence inputs rather than an architectural objective.
 
 **Related durable owners:**
 [`../design/horizontal-scaling.md`](../design/horizontal-scaling.md),

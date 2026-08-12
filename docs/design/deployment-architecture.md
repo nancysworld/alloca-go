@@ -188,7 +188,7 @@ Docker Compose is sufficient for the current local evidence because it can prese
 properties. Kubernetes, EKS, a service mesh, GitOps, or custom operators are not architectural
 requirements.
 
-## 12. Local topology versus production-capacity evidence
+## 12. Local topology versus capacity evidence
 
 Running several service units and PostgreSQL authorities as containers on one workstation can
 prove:
@@ -201,13 +201,101 @@ prove:
 - artifact/topology provenance;
 - functional composition of replica and database-authority axes.
 
-It cannot by itself prove a production capacity multiplier when service, generator, telemetry,
-databases, storage path, and host resources contend inside one machine allocation.
+It cannot prove the Iteration C capacity-composition claim when service, generator, telemetry,
+databases, storage path, and host resources contend inside one fixed machine allocation. Adding a
+shard group in that environment redistributes resources rather than adding the controlled resource
+envelope required by REQ-SCALE-4.
 
-That limitation belongs in evidence interpretation, not deployment design. The measurement
-contract determines the admissible claim level.
+That does not invalidate the local topology evidence retained by Iteration B; it limits the claim
+that topology can support.
 
-## 13. Implementation and operations boundary
+## 13. Iteration C capacity environment
+
+Iteration C requires three comparable topologies — 1, 2, and 4 shard groups — in which each added
+shard group adds an equivalent service-and-database resource envelope and the generator is outside
+those envelopes.
+
+The environment choice is derived from that requirement rather than from a desire to add cloud
+technology:
+
+1. the existing workstation cannot grow its fixed 10-vCPU/host/storage allocation when another
+   shard group is added;
+2. the experiment therefore needs externally independent compute envelopes;
+3. AG-Sept has an available reproducible mechanism for creating those envelopes: AWS EC2;
+4. the smallest design that answers the question is selected rather than restoring the earlier
+   EKS/RDS architecture.
+
+**Iteration C therefore uses AWS EC2 as measurement infrastructure, not as a target production
+architecture.** Kubernetes/EKS and managed PostgreSQL/RDS are not required by the Problem and stay
+out of this experiment.
+
+### 13.1 One capacity-unit host per shard group
+
+For Iteration C, one shard-group capacity unit is deployed on one equivalently shaped EC2 instance
+containing:
+
+- one Alloca-Go service replica;
+- one PostgreSQL authority owned by that shard group;
+- the migration invocation for that authority as a separate lifecycle action;
+- only the bounded per-host measurement support required by the validation plan.
+
+Keeping one service replica per group holds the service-replica axis constant while the writable
+resource axis changes. PR2 and PR3c already show service headroom for the mutation-heavy path; if
+Iteration C exposes service compute as the limiting subsystem, that becomes evidence for a later
+service-replica question rather than a reason to vary both axes in the same experiment.
+
+The service and PostgreSQL authority may share the capacity-unit host because the unit being
+measured is the combined shard-group envelope. The comparison must not repartition one fixed
+compute/memory/storage allocation among more shard groups; each added group receives its own
+controlled provisioned envelope. This does not require physically dedicated underlying hardware.
+
+### 13.2 Separate generator host
+
+The load generator runs on separate EC2 compute from all shard-group capacity units. It routes the
+stable workload according to the selected placement map and must retain enough headroom at the
+4-group frontier that generator saturation cannot explain the measured server result.
+
+Before the Iteration C capacity sweeps begin, the selected generator configuration must be
+**preflighted against the intended G4 test range**: its own capacity/headroom control must establish
+that it can drive beyond that range without becoming the limiting resource. If a later G4 sweep
+approaches the demonstrated generator ceiling, the generator is resized and requalified before the
+server point may be quoted.
+
+The generator host is measurement infrastructure and is not counted in `G1`, `G2`, or `G4`.
+Unlike the shard-group capacity units, it is **not** constrained by §13.3's like-for-like instance-
+shape rule: its EC2 shape may change between topology points when required to preserve measurement
+headroom. Every quoted point still records the generator shape/resources actually used and carries
+its own generator-headroom evidence under the measurement contract.
+
+### 13.3 Like-for-like comparison
+
+All shard-group hosts in one comparison use the same selected EC2 instance shape, service image,
+PostgreSQL version/configuration, service/database limits, pool policy, and placement/schema
+contract. The 1-group baseline is measured on the same AWS design as the 2- and 4-group points; a
+local-workstation baseline is not mixed with AWS multi-group results.
+
+All three topologies also use the same **sharded placement path**. `G1` therefore uses an explicit
+versioned one-authority placement map assigning A/B/C/D to that authority rather than
+`domain.Unsharded`, and its retained provenance records that placement assignment even though only
+one authority participates. `G2` and `G4` use the corresponding versioned multi-authority maps.
+This keeps placement enforcement, routing identity, and provenance comparable across `G1/G2/G4`.
+
+The exact EC2 instance type, AWS region/AZ, operating-system image, ports, security-group rules, and
+host bootstrap commands are implementation/operations parameters. Once selected for a retained
+comparison they become fixed experiment inputs and provenance, not degrees of freedom between
+cells.
+
+### 13.4 What the AWS choice does not imply
+
+Using EC2 here does not establish that Alloca-Go needs AWS, VMs, one-host-per-shard production
+placement, or cloud-managed operations. It establishes only that Iteration C needs independently
+growing comparable resource envelopes and that EC2 is the selected bounded mechanism for obtaining
+them within AG-Sept.
+
+A later architecture may use containers on dedicated hosts, Kubernetes, managed databases, bare
+metal, or another environment if its own Problem and requirements justify them.
+
+## 14. Implementation and operations boundary
 
 The current implementation is allowed to choose details such as:
 
@@ -218,11 +306,12 @@ The current implementation is allowed to choose details such as:
 - health-poll implementation;
 - Makefile targets;
 - whether multiple executable roles are packaged in one image;
-- local file paths for placement configuration.
+- local file paths for placement configuration;
+- the concrete AWS bootstrap and networking commands used to instantiate the Iteration C design.
 
 Those details belong to code/configuration and
-[`../operations/container-topology.md`](../operations/container-topology.md) unless changing them
-would alter one of the architectural properties above.
+[`../operations/container-topology.md`](../operations/container-topology.md) or the applicable AWS
+operations note unless changing them would alter one of the architectural properties above.
 
 This boundary is deliberate: the deployment design should remain valid when the current
-container mechanics are replaced.
+container/cloud mechanics are replaced.

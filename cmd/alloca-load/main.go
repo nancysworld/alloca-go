@@ -125,6 +125,9 @@ func run(args []string) error {
 		deployment = fs.String("deployment", "",
 			"path to a deployment record written by test/scripts/record-deployment.sh; supplies "+
 				"the image identity a containerised run must name (measurement-contract §11)")
+		declaration = fs.String("declaration", "",
+			"path to an operator-written declaration supplying the environment and topology "+
+				"facts no endpoint reports; required for a run to reach `capacity`")
 		out     = fs.String("out", "", "write the JSON report here (default stdout)")
 		confirm = fs.Bool("confirm", false, "dispersed: drive reserve→confirm")
 		require = fs.String("require", string(loadgen.LevelLocal),
@@ -235,9 +238,41 @@ func run(args []string) error {
 		return derr
 	}
 
+	// Parsed here, beside the deployment record and for the same reason: it needs no network,
+	// so a malformed document fails before anything has been driven. What it cannot check
+	// locally — the units it describes — is reconciled below, once they have answered.
+	declared, declErr := preflightDeclaration(*declaration)
+	if declErr != nil {
+		return declErr
+	}
+
 	before, metaErr := loadgen.FetchTopologyMeta(ctx, targets, *timeout)
 	if metaErr != nil {
+		// A single-unit run continues: it can still describe what it measured, and a
+		// workstation run losing a minute is the cost of finding out afterwards.
+		//
+		// A multi-unit run does not. Its numbers are an aggregate over units, and one that
+		// cannot be read is one whose pool ceiling, telemetry mode and authority the report
+		// would be silent about while still summing its throughput — a run that certifies at
+		// no level, discovered after the load rather than before it. On metered infrastructure
+		// that difference is a rung nobody can quote.
+		//
+		// Not keyed on -require, deliberately: that flag sets the floor for the exit code, not
+		// a ceiling on what the report claims, so keying a gate to it disables the gate rather
+		// than the claim. That mistake reopened the deployment-record bypass in PR3b and was
+		// closed again in ce7cd66.
+		if len(targets) > 1 {
+			return fmt.Errorf("could not read /meta from every unit: %w\n"+
+				"a multi-authority run reports one aggregate over units it cannot describe, so "+
+				"this is refused before the load rather than at certification after it", metaErr)
+		}
 		fmt.Fprintln(os.Stderr, "alloca-load: could not read /meta from every unit:", metaErr)
+	}
+
+	if declared != nil {
+		if err := declared.ReconcileWith(before); err != nil {
+			return fmt.Errorf("declaration %s: %w", *declaration, err)
+		}
 	}
 
 	client := loadgen.NewRoutedClient(router, *timeout, *validate)
@@ -299,6 +334,17 @@ func run(args []string) error {
 		manifest.ContainerDeployment = true
 		manifest.ImageID = observed.ImageID
 		manifest.ImageTag = observed.ImageTag
+	}
+
+	// The operator states only what nothing can be asked. Replica count and aggregate pool
+	// capacity are read back from the units the run addressed, so the two fields most likely
+	// to be typed from memory are not typed at all — and the one deployment where the replica
+	// count stops being observable has to say so in the declaration itself.
+	if declared != nil {
+		manifest.Environment = declared.Environment
+		manifest.DeploymentTopology = declared.DeploymentTopology
+		manifest.ReplicaCount = declared.ReplicaCount(len(targets))
+		manifest.AggregatePoolSize = declared.AggregatePoolSize(before)
 	}
 
 	report := loadgen.Report{Manifest: manifest, Summary: summary}
@@ -403,6 +449,24 @@ func preflightDeployment(path string, targets []string) (*loadgen.Deployment, er
 		return nil, fmt.Errorf("deployment record %s: %w", path, err)
 	}
 	return &observed, nil
+}
+
+// preflightDeclaration loads the operator's declaration, or reports that there is none.
+//
+// Unlike the deployment record, an absent declaration is not an error at any topology. It
+// supplies the fields `capacity` is gated on, so a run without one is reported at `local` and
+// says so through the level it reaches — which is the honest outcome for a run nobody intends
+// to quote as a capacity result. Refusing it outright would make every smoke run carry a
+// document written for a claim it is not making.
+func preflightDeclaration(path string) (*loadgen.Declaration, error) {
+	if path == "" {
+		return nil, nil
+	}
+	declared, err := loadgen.LoadDeclaration(path)
+	if err != nil {
+		return nil, err
+	}
+	return &declared, nil
 }
 
 // buildRouter settles how the run reaches the service: one target, or one endpoint per

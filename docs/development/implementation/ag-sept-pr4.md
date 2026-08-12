@@ -155,13 +155,17 @@ artifact, and the weaker one would inherit the stronger one's credibility.
 
 `aggregate_pool_size` is currently gated by the arithmetic `replica_count × pool_size_per_replica`,
 where `pool_size_per_replica` is projected from **unit[0]'s** `/meta`. Every unit's `/meta` is
-already fetched into `TopologyMeta.Units`, so the aggregate can simply be **summed over the units
-that served the run**. That is less operator input, and it is also strictly more correct: the
-product form assumes every unit has the same pool, which `Disagreement()` does not check — it
-compares revision, routing version and schema, not pool capacity. A capacity unit whose pool
-differs from its peers is a `deployment-architecture.md` §13.3 like-for-like violation that is
-invisible today and that summing makes visible. Eliminating the redundant input and adding the
-discriminating check are the same change.
+already fetched into `TopologyMeta.Units`, so the aggregate is instead **summed over the units that
+served the run**: one fewer thing for an operator to state, and derived from the per-unit data
+rather than from an invariant restated as arithmetic.
+
+The invariant itself is already enforced — `runShapeMismatch` compares the pool ceiling across
+units and a mismatch blocks certification, so a heterogeneous deployment cannot quote a number
+today. What summing changes is only where the value comes from. **What does need to move is when
+that check fires:** it is evaluated at certification, after the run, which is the same
+fail-late problem the declared JSON is being preflighted to avoid. On metered infrastructure a
+like-for-like violation must cost nothing, so the units-describe-one-deployment check runs in the
+pre-load preflight as well (§2.7.1).
 
 `replica_count` equals `UnitCount` — `len(targets)` — **for this topology**, because PR4 runs one
 service replica per capacity unit and the generator addresses each unit directly. It is not
@@ -180,9 +184,10 @@ certification after the ladder has been driven. The checks split by what they ne
 
 - **parse, required fields, internal consistency** join `preflightDeployment` in the local,
   no-network preflight that already runs before anything is fetched;
-- **cross-checks against observed reality** — declared replica count against the unit set, pool
-  homogeneity across units — need `/meta`, so they run immediately after `FetchTopologyMeta` and
-  still before the runner is handed the workload. Nothing occupies that slot today.
+- **cross-checks against observed reality** — declared replica count against the unit set, and the
+  units-describe-one-deployment check that today only runs at certification — need `/meta`, so they
+  run immediately after `FetchTopologyMeta` and still before the runner is handed the workload.
+  Nothing occupies that slot today.
 
 **An existing behaviour has to change with it.** A failure to read `/meta` from every unit
 currently prints a warning to stderr and the run proceeds, failing later at certification. That is

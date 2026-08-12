@@ -149,8 +149,8 @@ Measured conclusions live in [`docs/measurements/`](docs/measurements/), next to
 artifacts from which each figure is re-derived. The first load-bearing AG-Sept result is the
 [single-instance frontier](docs/measurements/reports/ag-sept-pr2-single-instance-frontier.md): on
 the retained developer-workstation experiment the service reached roughly 4,300 booking req/s and
-**PostgreSQL, not the Go service, set the frontier**. The report's limitations matter: that is a
-workstation result against an untuned container, not a production capacity claim.
+**PostgreSQL, not the Go service, set the frontier**. Read that report's **§5.5 before quoting the
+number**: it is a workstation result against an untuned container, not a production capacity claim.
 
 Iteration B subsequently established that the shard-group/database-authority boundary composes
 correctly and contains authority failure, but deliberately made no throughput multiplier claim from

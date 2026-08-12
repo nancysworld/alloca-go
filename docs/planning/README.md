@@ -12,9 +12,10 @@ meaning ([`../development/engineering-process.md`](../development/engineering-pr
 - [`alloca-go-roadmap.md`](alloca-go-roadmap.md) — the **exploration roadmap**: areas and
   questions that may be worth exploring. Directional, non-normative, unscheduled, and upstream of
   Goal selection — it says where the project *might* go, never what it has committed to.
-- [`ag-sept-plan.md`](ag-sept-plan.md) — **the current AG-Sept plan**: 19.5 development days,
-  horizontal database authority first, no cloud path, and a 4.5-day envelope reserved for
-  Iteration C, whose Problem is selected but whose scope is not yet scheduled.
+- [`ag-sept-plan.md`](ag-sept-plan.md) — **the current AG-Sept plan**: 19.5 development days;
+  Iteration B closed; Iteration C fixed as a bounded 0.5-day planning PR followed by a 1.5-day AWS
+  EC2 capacity-environment PR and a 2.5-day 1/2/4-shard-group capacity-evidence PR. The AWS path is
+  deliberately minimal EC2 measurement infrastructure, not the withdrawn EKS/RDS plan.
 - [`ag-sept-plan-v0.4.md`](ag-sept-plan-v0.4.md) — archived v0.4 snapshot, superseded 5 August 2026. Retained because PR1 and PR2 were planned and reported under it and cite its section numbers.
 - [`ag-m1-implementation-plan.md`](ag-m1-implementation-plan.md) — AG-M1 PR split and correctness gates.
 - [`release-shaping-experiment.md`](release-shaping-experiment.md) — synthetic AG-M2/AG-M5 experiment plan comparing synchronized, rolling, clustered, and hot-slot release shapes.

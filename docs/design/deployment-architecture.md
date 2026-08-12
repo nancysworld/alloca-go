@@ -274,6 +274,12 @@ PostgreSQL version/configuration, service/database limits, pool policy, and plac
 contract. The 1-group baseline is measured on the same AWS design as the 2- and 4-group points; a
 local-workstation baseline is not mixed with AWS multi-group results.
 
+All three topologies also use the same **sharded placement path**. `G1` therefore uses an explicit
+versioned one-authority placement map assigning A/B/C/D to that authority rather than
+`domain.Unsharded`, and its retained provenance records that placement assignment even though only
+one authority participates. `G2` and `G4` use the corresponding versioned multi-authority maps.
+This keeps placement enforcement, routing identity, and provenance comparable across `G1/G2/G4`.
+
 The exact EC2 instance type, AWS region/AZ, operating-system image, ports, security-group rules, and
 host bootstrap commands are implementation/operations parameters. Once selected for a retained
 comparison they become fixed experiment inputs and provenance, not degrees of freedom between

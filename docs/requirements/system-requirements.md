@@ -75,6 +75,20 @@ must identify where serialization is intrinsic to the accepted correctness model
 **Design:** `horizontal-scaling.md` and
 [`../design/horizontal-database-authority.md`](../design/horizontal-database-authority.md).
 
+### REQ-SCALE-4 — Capacity composition adds controlled resource envelopes
+
+A claim that additional shard groups increase useful capacity must compare like-for-like capacity
+units in which adding a unit adds a controlled service-and-database resource envelope rather than
+merely redistributing one fixed shared allocation.
+
+Physical co-residency is not forbidden, but the evidence claim must remain limited to what the
+resource allocation and isolation can actually support. A topology that proves logical authority
+composition without independently growing resources must not be promoted into a horizontal
+capacity multiplier.
+
+**Design:** `horizontal-scaling.md` and
+[`../design/deployment-architecture.md`](../design/deployment-architecture.md).
+
 ## 4. Routing and failure requirements
 
 ### REQ-ROUTE-1 — Authoritative placement is enforced
@@ -126,7 +140,9 @@ Evidence must distinguish service-compute scaling, writable-database-authority c
 logical-authority serialization, connection/admission effects, generator limits, telemetry cost,
 and shared-environment contention where those distinctions affect interpretation.
 
-A single headline multiplier must not collapse incomparable mechanisms into one system claim.
+A single headline multiplier must not collapse incomparable mechanisms into one system claim. If
+shared-environment variation is material to a capacity comparison, it must be **explained,
+excluded, or conservatively bounded** before scale efficiency is promoted as a system result.
 
 **Design:** `horizontal-scaling.md`.  
 **Evidence definitions:** `measurement-contract.md`.

@@ -98,16 +98,24 @@ system-wide horizontal-scaling result.
 
 ### 3.2 Capacity-unit economics
 
-Each tested configuration reports: successful ops/s, successful ops/s per vCPU,
-cost/hour, cost per million successful ops, memory headroom, DB connections
-required, p50/p95/p99 latency, timeout and unknown-outcome rates, and
-failure-domain/deployment implications.
+Capacity/resource economics is a **selectable measurement dimension**, not a mandatory output of
+every capacity experiment. When a validation explicitly selects it, each tested configuration
+reports the relevant serving-capacity facts — for example successful ops/s, successful ops/s per
+vCPU, cost/hour, cost per million successful ops, memory headroom, DB connections required,
+p50/p95/p99 latency, timeout and unknown-outcome rates, and failure-domain/deployment implications.
 
-Cost figures are `[DERIVED]` from a **dated input block**, never timeless prices. The
-input block must state: pricing snapshot date and AWS region; on-demand / Savings
-Plan / Spot assumptions; ECS/Fargate task shape, count, and run duration; RDS engine,
-instance class, deployment mode, storage, and I/O assumptions; ALB, data-transfer,
-CloudWatch logs/metrics/trace costs; and currency/exchange-rate assumptions.
+Cost figures are `[DERIVED]` from a **dated input block** matching the actual measured topology,
+never timeless prices or assumptions inherited from an older deployment design. The input block
+states the pricing snapshot date and location/region; currency and exchange-rate assumptions where
+applicable; pricing mode; serving compute shape/count/duration; storage and I/O assumptions; and
+network, load-balancing, telemetry, or other charges when material to the selected economics
+question.
+
+Measurement infrastructure such as the load generator or verifier is **not part of serving-system
+cost** unless the selected economics question explicitly says otherwise. Its real experiment spend
+may still be estimated and bounded separately as an operational concern. Provider-specific inputs
+such as EC2, Fargate, RDS, another cloud, or bare-metal cost models belong to the experiment that
+selects them; this contract owns the derivation discipline rather than one provider's product list.
 
 ---
 
@@ -413,9 +421,10 @@ remains unproven:
    capacity and a conservative recommended operating cap, and shows that overload
    produces bounded explicit outcomes rather than uncontrolled timeout growth.
 6. **Scale-shape separation.** Stateless API capacity, dispersed independent
-   authorities, one hot authority, and fleet economics are reported as separate
-   experiment layers. A hot-authority serialization ceiling is never presented as a
-   system-wide scaling result.
+   authorities, and one hot authority are reported as separate experiment layers. A hot-authority
+   serialization ceiling is never presented as a system-wide scaling result. When capacity/resource
+   economics is selected by a validation, it is reported as a separate derived layer rather than
+   folded into the scaling result.
 7. **Production-shaped validation.** The relevant conclusions are repeated through the
    deployed network path with multiple API instances, PostgreSQL, load balancer,
    external load generation, migrations, and production-oriented telemetry.

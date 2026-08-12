@@ -16,7 +16,9 @@ This plan is governed by:
 - [`../../design/horizontal-scaling.md`](../../design/horizontal-scaling.md) — the complete
   service/database scaling model;
 - [`../../design/horizontal-database-authority.md`](../../design/horizontal-database-authority.md)
-  — database-authority placement and Phase 1 booking semantics.
+  — database-authority placement and Phase 1 booking semantics;
+- [`../workload-catalog.md`](../workload-catalog.md) — stable named workloads reused while topology
+  and implementation change.
 
 Commands, container startup, seeding, and run procedure belong in `docs/operations/`. Executed
 results belong in `docs/measurements/`.
@@ -62,16 +64,21 @@ Iteration B's A&R selected the next **Problem**: how aggregate mutation capacity
 independently provisioned shard groups are added for independent organisation workloads, what
 limits that scaling, and what workload and placement envelope each shard group should own.
 
-**Validation for Iteration C is not defined in this A&R PR.** The existing scaling validations
-below retain their established meanings, but none is automatically promoted into the new
-iteration merely because it already exists. Iteration C must proceed through Requirements,
-Design, and Validation plan before Schedule commits an experiment matrix.
+Requirements and Design now constrain the validation deliberately:
 
-One constraint is inherited rather than chosen: any capacity claim must **explain, exclude, or
-conservatively bound shared-environment variation**, because PR2's unexplained ~2× excursions
-otherwise leave linear and materially sub-linear composition indistinguishable (frontier report §6;
-`../../requirements/ag-sept.md` §2). That fixes what Iteration C's validation must achieve, not
-which instrument achieves it.
+- workload: `WL-MUT-DISP-4`, four equivalent independent organisations A/B/C/D;
+- shard-group axis: exactly **1, 2, and 4 groups**;
+- one service replica and one PostgreSQL authority per shard group, keeping service-replica count
+  per group constant;
+- one equivalent AWS EC2 capacity-unit host per group and a separate generator host;
+- outputs: measured `G1`, `G2`, `G4`, derived 2-group and 4-group scale efficiencies, and the
+  limiting-resource interpretation;
+- **no efficiency threshold**: obtaining and explaining the numeric result is the validation goal.
+
+Any capacity claim must also **explain, exclude, or conservatively bound shared-environment
+variation**. Iteration C does that by removing the workstation's fixed shared resource envelope
+from the comparison, retaining host/resource evidence for each capacity unit, and proving generator
+headroom separately.
 
 ## 2. Validation principles
 
@@ -94,6 +101,12 @@ Replica or authority scale efficiency is compared only between runs with the sam
 semantics and compatible SLO/evidence status. Deliberate policy refusals, injected failures, and
 healthy-capacity runs are separate evidence classes.
 
+For Iteration C, the capacity-unit equivalence contract is owned by
+[`../../design/deployment-architecture.md`](../../design/deployment-architecture.md) §13.3. This
+plan selects that design rather than restating its fields: `G1`, `G2`, and `G4` use equivalent
+shard-group capacity units and the one-group baseline is measured in the same AWS environment as
+the multi-group points.
+
 ### 2.4 Negative controls must be discriminating
 
 A negative control succeeds only when the intended gate demonstrably notices the deliberately
@@ -101,6 +114,11 @@ introduced defect or constraint. Reasonable-looking output is not evidence that 
 active.
 
 ## 3. Controlled workloads
+
+Stable workload definitions are now owned by [`../workload-catalog.md`](../workload-catalog.md).
+The descriptions below retain the validation vocabulary used by earlier AG-Sept evidence; new or
+reused workloads should cite a catalog identifier when their semantics need to remain stable across
+architectures.
 
 ### 3.1 Dispersed workload
 
@@ -113,6 +131,9 @@ Defining properties:
 - fixture/reset discipline prevents sold-out state from becoming the primary workload;
 - no single logical business authority should dominate the run;
 - exact counts, duration, concurrency, and rate are run parameters, not durable requirements.
+
+Iteration C uses the catalogued four-organisation form, `WL-MUT-DISP-4`, rather than redefining its
+population here.
 
 ### 3.2 Hot-slot workload
 
@@ -233,6 +254,71 @@ composed run shows the two axes together.
 Which of these are scheduled, in what order, and with what budget is owned by
 `docs/planning/ag-sept-plan.md`. A row here is a validation's meaning, not a commitment to run it
 in a particular milestone.
+
+### 4.6 Iteration C fixed capacity matrix
+
+Iteration C is deliberately more constrained than the generic families above. It runs exactly the
+following placement matrix for `WL-MUT-DISP-4`:
+
+| Capacity point | Shard groups | Organisation placement | Capacity-unit resources |
+|---|---:|---|---|
+| `G1` | 1 | `A B C D` | 1 equivalent shard-group EC2 host |
+| `G2` | 2 | `A B` / `C D` | 2 equivalent shard-group EC2 hosts |
+| `G4` | 4 | `A` / `B` / `C` / `D` | 4 equivalent shard-group EC2 hosts |
+
+Each group has **one service replica + one PostgreSQL authority**. The generator runs on separate
+EC2 compute and routes equal workload share for A/B/C/D according to the active placement map.
+`WL-MUT-DISP-4` keeps the request pair itself topology-independent: every user books a slot owned
+by the **same organisation** at `G1`, `G2`, and `G4`. The existing `multi-org-dispersed` workload,
+which deliberately includes colocated cross-organisation pairs, remains separate Iteration-B-style
+correctness coverage and must not be substituted into this capacity matrix.
+
+The shard-group capacity units remain like-for-like under `deployment-architecture.md` §13.3; the
+workload semantics, service image, pool policy, timeout policy, and PostgreSQL configuration stay
+fixed across `G1`, `G2`, and `G4`.
+
+#### Capacity-point selection rule
+
+A capacity point must be selected by the **same saturation rule** at all three topologies; it must
+not be the final rung merely because the sweep stopped there.
+
+For each topology:
+
+1. run a concurrency/load ladder far enough to establish the saturation region while preserving
+   the `measurement-contract.md` §3 capacity definition, §5 experiment/evidence gates, and §7
+   provisional SLO/outcome gates;
+2. select the highest gated rung whose sustained Goodput is followed by at least one higher rung
+   that either **does not produce higher sustained Goodput** or fails one of those gates — this is
+   the operational saturation-knee/plateau point for `G1`, `G2`, or `G4`;
+3. repeat that selected point once as a retained confirmation run;
+4. retain the complete ladder, the point-selection justification, reconciliation, and resource
+   evidence alongside the selected point and its repeat.
+
+PR2 report §5.6 and §6.3 are the reason this rule is explicit: with the current closed-loop harness,
+latency/deadline gates can remain comfortably non-binding while throughput has already saturated.
+Without a demonstrated higher rung, a sweep endpoint is not a capacity result and cannot enter
+`E2` or `E4`.
+
+If the two retained observations materially disagree, do not average the disagreement into a
+clean headline number: explain, exclude, or conservatively bound the variation before promoting a
+single capacity result.
+
+**Per-authority data volume is an intended co-varying factor of this sharding experiment.** `G1`
+places four organisation datasets on one authority while `G4` places one on each. Retain
+per-authority row/data-volume and, where practical, index/working-set evidence sufficient to make
+that change visible. A smaller per-authority working set may be part of what sharding buys; it must
+therefore be named when interpreting sub- or super-linear efficiency rather than silently treated
+as invariant.
+
+The experiment derives:
+
+```text
+E2 = G2 / (2 × G1)
+E4 = G4 / (4 × G1)
+```
+
+under `measurement-contract.md` §3.1. `E2` and `E4` are **results, not gates**; no percentage is
+required for Iteration C to be sufficiently resolved.
 
 ## 5. Correctness and policy validations
 
@@ -363,7 +449,7 @@ The candidate boundaries are:
 - one writable database authority;
 - telemetry overhead;
 - generator saturation;
-- shared-workstation contention.
+- shared-host or external-environment contention.
 
 The list is the differential diagnosis a result argues against, not a menu to pick from: a claim
 that one of these is limiting carries the evidence that distinguishes it from the others.
@@ -404,6 +490,21 @@ Optional after service-replica and database-authority behaviour are understood s
 representative replica count across multiple authorities to show that the two axes compose
 without changing routing or correctness semantics.
 
+### VAL-SCALE-5 — Independently provisioned shard-group capacity
+
+**Requirements:** REQ-COR-1, REQ-SCALE-1, REQ-SCALE-4, REQ-DEPLOY-1, REQ-EVID-1, REQ-EVID-2.
+
+Run the fixed matrix and saturation-selection rule in §4.6 and obtain admissible `G1`, `G2`, and
+`G4` for `WL-MUT-DISP-4`. The request-pair semantics remain same-organisation at every topology.
+Derive `E2` and `E4` under the measurement contract and identify or conservatively bound the
+limiting mechanism at each relevant frontier, explicitly accounting for the intended change in
+per-authority data/working-set volume as organisations are distributed across more authorities.
+
+The validation passes when the numbers are reproducible/admissible, correctness reconciles, the
+resource envelopes are comparable, generator/shared-environment effects cannot plausibly explain
+the result, the saturation point is established rather than assumed from sweep depth, and the
+limitations are stated. It does **not** require an efficiency percentage.
+
 ## 8. Measurement-system negative controls
 
 The repository-wide experiment template remains owned by `measurement-contract.md`. AG-Sept
@@ -419,6 +520,12 @@ rejects the response and invalidates the run.
 Deliberately constrain the load generator and demonstrate how the apparent frontier changes.
 Any stronger capacity interpretation then requires evidence that the selected generator has
 headroom.
+
+For Iteration C, PR4a must first preflight a generator configuration above the intended `G4` sweep
+range under `deployment-architecture.md` §13.2. PR4b still proves headroom at every quoted server
+point. The generator may be resized and requalified between topology points because it is
+measurement infrastructure rather than part of the shard-group capacity unit; its actual shape and
+headroom evidence remain part of each run's provenance/evidence.
 
 ### VAL-NEG-3 — Telemetry-overhead control
 
@@ -438,6 +545,18 @@ changes in the predicted direction. This is not a universal completion gate.
 
 The discriminating control is VAL-COR-5 and is mandatory for a multi-authority topology claim.
 
+### VAL-NEG-7 — Capacity-unit resource-envelope control
+
+**Requirements:** REQ-SCALE-4, REQ-EVID-2.
+
+Before interpreting `VAL-SCALE-5`, retain enough per-host CPU, memory, storage/I/O, network and
+service/database resource evidence to establish that each shard-group host had the intended
+equivalent envelope and that material host/environment variation is explained, excluded, or
+conservatively bounded.
+
+A run in which one capacity-unit host is materially constrained relative to its peers is evidence
+about that constraint, not a clean shard-group scale-efficiency point.
+
 ## 9. Current validation status
 
 | Validation area | Status | Authoritative evidence / next analysis |
@@ -450,8 +569,9 @@ The discriminating control is VAL-COR-5 and is mandatory for a multi-authority t
 | Phase 1 correctness and failure isolation | established for Iteration B | PR3c report and retained artifacts; VAL-COR-1..3, VAL-COR-5, VAL-COR-6 and VAL-FAIL-1 |
 | cross-authority refusal (VAL-COR-4) | established for Iteration B | all four §3.5 clauses now hold on the deployed topology: the refusal and the absence of partial mutation by the PR3c passes, and **same-key replay** by control 3b, retained in [`../../measurements/pr3c-phase1/controls-replay/`](../../measurements/pr3c-phase1/controls-replay/). The replay clause was the gap the Iteration B A&R found (PR3c report §7.4), and it was closed by adding the repost to the control rather than by re-running or reinterpreting the retained cells |
 | database-authority composition (VAL-SCALE-3) | established as architecture/correctness evidence | PR3c; explicitly **not** a capacity multiplier on the co-resident workstation |
-| Iteration C shard-group capacity | **Problem selected; validation not yet defined** | Requirements → Design → Validation plan must precede Schedule |
-| stateless replica scaling | unproven and not selected by this A&R | existing VAL-SCALE-1/2 remain candidate validation definitions, not committed Iteration C work |
+| Iteration C shard-group capacity (VAL-SCALE-5) | **defined; not yet executed** | fixed `WL-MUT-DISP-4` same-organisation request semantics at A/B/C/D across 1/2/4 shard groups; saturation-selected G1/G2/G4 and derived E2/E4 |
+| Iteration C resource-envelope control (VAL-NEG-7) | **defined; not yet executed** | retain per-host resource evidence and explain/exclude/bound material environment variation |
+| stateless replica scaling | unproven and not selected by Iteration C | existing VAL-SCALE-1/2 remain separate future validation definitions |
 | composed multi-authority + multi-replica topology | optional later validation | only after both axes are understood separately |
 
 The milestone schedule may change order, budget, or optional depth. A mandatory property does not

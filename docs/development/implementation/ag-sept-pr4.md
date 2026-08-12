@@ -264,6 +264,38 @@ This is a validation-contract refinement, not merely an implementation convenien
 two tiers before PR4b treats Tier 2 as sufficient evidence. This implementation record retains the
 decision now so AWS quota or generator limits cannot silently turn into an ad-hoc weakening of the
 experiment later.
+### 2.12 Capacity units are non-burstable, and the generator is larger than a unit
+
+The vCPU budget is the maintainer's; the shape within it is implementation
+(`deployment-architecture.md` §13.3). Against a 12-vCPU quota: four `c5.large` capacity units
+(2 vCPU each) and one `c5.xlarge` generator/monitoring host (4 vCPU).
+
+**No burstable instance may serve a measured run.** A `t3.medium` is the obvious 2-vCPU choice and
+is credit-based: its sustained baseline is 20% of two vCPUs once credits drain. A saturation ladder
+would burst early and throttle later, so the same rung measures different capacity depending on how
+long that host had been up — and `G1`, `G2` and `G4` run different numbers of hosts with different
+credit histories, so the throttling lands unevenly across exactly the comparison `E2` and `E4` are
+derived from. It would read as sub-linear scaling. `c5`, `c6i` and `m5` are not credit-based.
+
+The generator is deliberately **not** the same shape as a capacity unit. §13.2 exempts it from
+like-for-like precisely so it can be sized for its job, and it is the one host whose saturation
+would invalidate a point rather than describe one.
+
+**What 2-vCPU units mean for the result, recorded before the runs rather than after.** A service and
+a PostgreSQL authority sharing two vCPUs make **host CPU** the likely limiting mechanism, not
+PostgreSQL's own frontier. The Problem is still answered — the units are independently provisioned,
+`E2`/`E4` are still derived, and `VAL-SCALE-5` asks for the limit to be identified rather than for it
+to be any particular subsystem — but the result characterises composition of small capacity units,
+and its comparability with PR2's 10-vCPU workstation frontier is weak. Both belong in PR4b's
+limitations, and neither is a discovery.
+
+### 2.13 The bootstrap is proven on one `t2.micro` before the quota lands
+
+A 1-vCPU quota cannot measure anything and can still run one instance, which is enough to prove the
+whole bootstrap path: AMI, user data, Docker, image pull, the placement document, `node_exporter`,
+chrony, security groups, and a single-unit smoke run. Burst throttling is irrelevant where nothing
+is being measured. Doing this while the quota request is open makes the approval a launch rather
+than a debugging session.
 
 ## 3. Open items
 

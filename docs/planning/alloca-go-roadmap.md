@@ -2,13 +2,24 @@
 
 **Status:** Living — directional, non-normative, unscheduled.
 
-**Purpose:** map the areas, questions, capabilities, and hypotheses that may be worth exploring
-through Alloca-Go, without committing them to a particular milestone, implementation,
-architecture, or delivery date.
+## Purpose
 
-It answers one question:
+**Alloca-Go is an experimental project for exploring distributed and data-intensive systems.**
 
-> **Where might this project go, and what is worth learning or proving?**
+It uses a booking service with explicit correctness invariants, measurement contracts, and
+observability as a stable experimental system. Those foundations allow the architecture to change
+while correctness and evidence remain comparable throughout the exploration.
+
+The project is not intended to converge quickly on one final architecture. It uses implementation,
+experiments, measurement, and analysis to investigate how a stateful system behaves and evolves
+under concurrency, load, failure, and growth.
+
+This roadmap answers one question:
+
+> **Where might this project explore, and what is worth learning or proving?**
+
+Its role is deliberately broad. It describes areas of distributed-systems exploration rather than
+a sequence of features or technologies.
 
 ## What this document is not
 
@@ -17,8 +28,17 @@ requirements or invariants, accepted architecture, validation obligations, miles
 dates, budget, or implementation status. Every one of those has a better owner, listed in
 [`../README.md`](../README.md).
 
-Inclusion here means **"potentially valuable direction"**, never "committed scope". An item may
-sit here for a long time, be reframed by evidence, or be dropped without ceremony.
+Inclusion here means **“potentially valuable direction”**, never “committed scope”. An item may sit
+here for a long time, be reframed by evidence, or be dropped without ceremony.
+
+The project is application-led rather than technology-led. Microservices, sharding, caching, read
+replicas, queues, stream processing, Kubernetes, autoscaling, managed databases, multi-region
+deployment, and similar mechanisms are **possible techniques, not destinations**. They become
+worth building only when an observed problem and accepted requirements justify them.
+
+That matters because different applications expose different limiting boundaries. A technique that
+is central to one distributed system may add cost and failure modes without solving the problem in
+another.
 
 ## Where it sits in the engineering process
 
@@ -26,7 +46,7 @@ The roadmap is **outside the engineering iteration loop and upstream of Goal sel
 
 ```text
              EXPLORATION ROADMAP
-        possible areas / questions / directions
+       possible areas / questions / directions
                          |
               select a worthwhile outcome
                          v
@@ -48,191 +68,233 @@ The arrow runs the other way too. Analyse & Review may surface an interesting qu
 worth pursuing now; adding or reframing it here is the correct home for it, rather than
 prematurely turning it into a requirement or a scheduled PR.
 
-## The connected questions
+## The exploration areas
 
-The areas below elaborate four questions the project exists to explore:
+The areas below are related rather than independent checkboxes. An experiment may advance several
+at once, and the next worthwhile problem may come from any of them. They do not prescribe an order
+and none is ever permanently “finished”.
 
-1. How should scarce or conserved state be owned and mutated correctly under concurrency?
-2. What is the sustainable, SLO-compliant throughput of one capacity unit?
-3. How far can those units scale before a shared dependency or hot authority becomes limiting?
-4. How should the system degrade under overload, so users receive explicit bounded outcomes
-   instead of latency growth, timeouts, and generic errors?
+### 1. Correctness and consistency
 
-Workload scenarios referenced below — a synchronized booking release across many independent
-organisations, and contention for a shared inventory quantity or conserved balance — are
-**synthetic engineering models**. They are not descriptions of any organisation's architecture,
-scale, traffic, or implementation.
+**Core question:** how can scarce, shared, or conserved state be owned and mutated correctly under
+concurrency, distribution, and partial failure?
 
----
+Questions worth exploring include:
 
-## Transactional correctness and write authority
+- Which state genuinely needs one write authority, and which only appears to?
+- What must be serialized because of a domain invariant, regardless of available compute?
+- What can safely proceed independently?
+- Which guarantees can be delegated to the database, and which require an application protocol?
+- How should idempotency and replay preserve one logical mutation when outcomes are ambiguous?
+- What consistency can safely be weakened, and what cannot?
+- What changes when one operation spans more than one writable transaction domain?
 
-**Why it is worth exploring:** every other question in this project depends on this one being
-settled. A scaling result measured on a system that admits double-booking measures nothing.
+Alloca-Go begins here deliberately: a scalability experiment that admits double-booking or loses a
+mutation under ambiguity is not useful evidence about a scalable system.
 
-**Questions worth answering:**
+**Related durable owners:**
+[`../design/transaction-semantics.md`](../design/transaction-semantics.md) (`INV-*`),
+[`../decisions/0002-postgresql-transactional-authority.md`](../decisions/0002-postgresql-transactional-authority.md),
+[`../design/horizontal-database-authority.md`](../design/horizontal-database-authority.md).
 
-- Which state genuinely needs a single write authority, and which only appears to?
-- What is the cheapest mechanism that preserves an invariant under real concurrency?
-- Where does correctness require serialization that no amount of compute removes?
-- How much correctness can be pushed into the database's own guarantees rather than application
-  protocol?
+### 2. Load and performance
 
-**Related durable owners:** [`../design/transaction-semantics.md`](../design/transaction-semantics.md)
-(`INV-*`), [`../decisions/0002-postgresql-transactional-authority.md`](../decisions/0002-postgresql-transactional-authority.md).
+**Core question:** how does the system behave as a defined workload approaches and exceeds the
+capacity of its limiting resources?
 
-## Writable-state horizontal scaling
+A useful performance discussion starts by defining **load**, not merely quoting organisation,
+member, or data counts. Depending on the workload, load may include:
 
-**Why it is worth exploring:** adding stateless compute is well understood; partitioning writable
-transactional state without weakening correctness is where the interesting failures live.
+- request or mutation arrival rate;
+- concurrency;
+- workload mix;
+- contention and skew;
+- synchronized release waves, bursts, or other peaks;
+- active data set and working-set size.
 
-**Questions worth answering:**
+Performance under that load can then be described through:
 
-- When independent work is placed on independent writers, what actually composes and what does not?
-- What does a booking spanning two writable domains cost, and is that cost ever worth paying?
-- How should placement be owned, versioned, and enforced so a routing mistake is detected rather
-  than silently written?
-- What does rebalancing or online placement change require of the correctness model?
+- throughput and useful goodput;
+- response-time distributions rather than only averages;
+- queueing and admission delay;
+- connection and lock wait;
+- service and database execution time;
+- resource utilisation and saturation;
+- SLO-safe and recommended operating capacity.
 
-**Related durable owners:** [`../design/horizontal-scaling.md`](../design/horizontal-scaling.md),
+Throughput and response time are coupled around saturation: as a limiting resource approaches its
+capacity, additional load can accumulate as queueing and cause response time to grow much faster
+than useful work. An experiment should therefore ask both **how much work completed** and **where
+the time went**.
+
+For Alloca-Go, response time may contain network, service, connection-pool acquisition, database
+execution, lock/transaction wait, queueing, and response-path components. Which one matters is an
+experimental result, not something to assume from the aggregate latency number.
+
+**Related durable owners:**
+[`../design/measurement-contract.md`](../design/measurement-contract.md),
+[`../design/latency-timeouts-and-retries.md`](../design/latency-timeouts-and-retries.md),
+[`../test/validation-plan/`](../test/validation-plan/).
+
+### 3. Reliability and failure behaviour
+
+**Core question:** what does the system do when dependencies fail, outcomes become uncertain,
+resources are overloaded, or recovery is incomplete?
+
+Questions worth exploring include:
+
+- How far does one dependency failure propagate?
+- Can unaffected authority domains continue independently?
+- What happens to in-flight work when a database, network path, or service process disappears?
+- Which faults create genuinely ambiguous mutations?
+- How is an ambiguous mutation resolved without duplicating logical work?
+- What state survives restart, failover, or recovery?
+- Which recovery needs compensating work, and which can remain local?
+- How should overload degrade into explicit bounded outcomes rather than uncontrolled latency,
+  timeout cascades, or generic failures?
+- What fairness and backpressure properties matter under contention?
+
+Availability is therefore only one part of reliability. Correct failure classification,
+containment, replay safety, bounded degradation, and recoverability are equally important.
+
+**Related durable owners:**
+[`../design/transaction-semantics.md`](../design/transaction-semantics.md),
+[`../design/latency-timeouts-and-retries.md`](../design/latency-timeouts-and-retries.md),
+REQ-COR-2, REQ-FAIL-1.
+
+### 4. Scalability
+
+**Core question:** which parts of the system can operate largely independently, and how effectively
+can additional resources increase useful capacity without weakening correctness?
+
+The general principle is to find a boundary across which work can proceed independently. The
+interesting engineering problem is **where that boundary belongs for this application**.
+
+Alloca-Go already exposes several distinct scaling questions:
+
+- service compute within one database-authority shard group;
+- independently writable database authorities;
+- read serving and read-heavy workloads;
+- one hot slot, identity, organisation, or authority that cannot be averaged away by aggregate
+  throughput;
+- placement and workload skew across otherwise independent authorities;
+- eventually, geographical or other deployment boundaries if a problem justifies them.
+
+These axes should not be conflated. Adding stateless replicas to one saturated database writer is a
+different experiment from partitioning writable state onto independent writers. Likewise, a
+read-heavy workload can expose a service or query frontier that a mutation-heavy benchmark never
+sees.
+
+A useful scaling claim therefore names its **capacity unit**, workload, resource envelope, and
+scale efficiency rather than saying only that “more instances were faster”.
+
+**Related durable owners:**
+[`../design/horizontal-scaling.md`](../design/horizontal-scaling.md),
 [`../design/horizontal-database-authority.md`](../design/horizontal-database-authority.md),
-REQ-SCALE-1, REQ-ROUTE-1.
+REQ-SCALE-1..3.
 
-## Stateless service scaling
+### 5. Elasticity and resource adaptation
 
-**Why it is worth exploring:** the cheap axis, and therefore the one most likely to be
-over-credited with gains that came from somewhere else.
+**Core question:** once a system can use additional resources effectively, how safely and cheaply
+can its provisioned capacity and placement change as demand changes?
 
-**Questions worth answering:**
+Elasticity is broader than autoscaling. Autoscaling is one possible mechanism; the distributed
+systems question is which resources can be added or removed without violating ownership,
+correctness, or availability.
 
-- How much useful capacity does another replica add once the shared writer is the constraint?
-- How is added compute distinguished from changed pressure on the database admission boundary?
-- What does replica identity need to expose for a multi-replica result to be interpretable?
+For a shard-affine topology with `M` writable authorities and replica allocation
+`[x1, ..., xM]`, at least two different forms of elasticity exist:
 
-**Related durable owners:** `horizontal-scaling.md`, REQ-SCALE-2, REQ-SCALE-3.
+- **service-compute elasticity** — change an `x_i` by adding or removing stateless replicas within
+  an existing shard group. This can leave state placement unchanged and is comparatively cheap;
+- **state-placement elasticity** — change `M` or move an organisation between writable
+  authorities. This changes authoritative ownership and therefore requires safe state migration,
+  routing transition, draining, rollback/failure handling, and proof that writes are neither lost
+  nor duplicated.
 
-## Overload, admission, and fairness
+A third form may be **vertical elasticity**: resize the compute, memory, I/O, or connection
+resources of one logical database authority while leaving its ownership boundary unchanged.
 
-**Why it is worth exploring:** this is the founding unreproduced question. A predecessor prototype
-showed latency growing until timeouts became the visible failure mode, and this project has not yet
-reproduced that mechanism under controlled conditions
-([`../design/high-level-design.md`](../design/high-level-design.md) §1.1).
+Questions worth exploring include:
 
-**Questions worth answering:**
+- What is the minimum service footprint imposed by shard affinity?
+- When does vertical resizing beat repartitioning?
+- How can a new authority gain useful work rather than merely exist empty?
+- How can an authority be drained and removed when demand falls?
+- Can placement change while writes continue?
+- How should rebalancing react to skew and hot organisations?
+- What signal should trigger resource change, and how much headroom should be retained during the
+  transition?
 
-- Where does overload first accumulate — queue, pool, lock, or authority?
-- Can explicit bounded admission produce better user-visible behaviour than letting contention
-  accumulate into timeouts?
-- Which admission mechanisms preserve useful goodput rather than merely relocating the wait?
-- What fairness properties matter when many users contend for one scarce resource?
-- When is retry preferable to queuing, and what does retry guidance need to carry to be safe?
-- Does an open-loop arrival model expose behaviour a closed-loop harness structurally cannot?
+Stateful elasticity is intentionally a later problem than basic scalability: first establish that
+adding a resource unit helps, then ask how safely to add and remove those units as load changes.
 
-**Related durable owners:** [`../design/measurement-contract.md`](../design/measurement-contract.md)
-(outcome taxonomy, overload objective),
-[`../design/latency-timeouts-and-retries.md`](../design/latency-timeouts-and-retries.md).
+**Related durable owners:**
+[`../design/horizontal-scaling.md`](../design/horizontal-scaling.md),
+[`../design/horizontal-database-authority.md`](../design/horizontal-database-authority.md).
 
-## Failure, ambiguity, and recovery
+## Evidence and observability are the experimental foundation
 
-**Why it is worth exploring:** a distributed system's honesty is tested by what it does when it
-cannot know whether a mutation committed.
+Correctness, performance, reliability, scalability, and elasticity are only useful exploration
+areas if the project can distinguish observation from explanation.
 
-**Questions worth answering:**
+Observability and evidence therefore sit **under all five areas** rather than forming one more
+feature track. Useful mechanisms include:
 
-- Which faults produce genuinely ambiguous outcomes, and which only look ambiguous?
-- What is the smallest protocol that makes an ambiguous mutation safely resolvable?
-- How is failure contained to the dependency that failed rather than spreading through routing?
-- What recovery requires no compensating writes anywhere else, and what does not?
+- explicit measurement contracts and evidence labels;
+- deterministic correctness checks and reconciliation;
+- structured logs and bounded metrics;
+- response-time and resource attribution;
+- negative controls that prove a gate can fail;
+- deployment and binary provenance;
+- reproducible workload and environment descriptions;
+- retained artifacts from decisive experiments;
+- Analyse & Review that turns evidence into a durable problem/goal decision without rewriting the
+  evidence itself.
 
-**Related durable owners:** `transaction-semantics.md` (INV-21), REQ-COR-2, REQ-FAIL-1,
-[`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md).
+The aim is not maximum telemetry. It is enough discriminating evidence to answer **why** the
+system behaved as it did and to know what remains uncertain.
 
-## Distributed coordination beyond a single writable domain
-
-**Why it is worth exploring:** deliberately deferred rather than solved, and the deferral is only
-honest while the cost of lifting it is understood.
-
-**Questions worth answering:**
-
-- What correctness model would a cross-domain booking actually need?
-- Where would durable coordination state live, and what owns it?
-- What would recovery and replay mean across domains that fail independently?
-- Is the operational cost of coordination ever lower than the cost of avoiding it by placement?
-
-**Related durable owners:** `horizontal-database-authority.md` §4.2.
-
-## Operational deployment and observability
-
-**Why it is worth exploring:** an architecture that cannot be deployed, observed, or identified is
-not evidence of anything.
-
-**Questions worth answering:**
-
-- What must a deployment expose for a measured result to be reproducible a year later?
-- Which observability is diagnostic, and which is merely reassuring?
-- What does a managed or cloud environment change about timeout chains, network boundaries, and
-  failure modes that a workstation cannot show?
-- What is the smallest orchestration that preserves the architectural properties that matter?
-
-**Related durable owners:** [`../design/deployment-architecture.md`](../design/deployment-architecture.md),
+**Related durable owners:**
+[`../design/measurement-contract.md`](../design/measurement-contract.md),
 [`../design/observability.md`](../design/observability.md),
-[`../decisions/0003-deployed-artifact-identity.md`](../decisions/0003-deployed-artifact-identity.md).
+[`../design/deployment-architecture.md`](../design/deployment-architecture.md),
+[`../development/engineering-process.md`](../development/engineering-process.md).
 
-## Capacity economics
+## Candidate directions inside those areas
 
-**Why it is worth exploring:** throughput per unit cost is the question an operator actually asks,
-and it is not the same question as peak benchmark throughput.
+The broad areas above can generate many concrete questions. Current examples include:
 
-**Questions worth answering:**
+- capacity efficiency and safe operating envelope of independently provisioned writable shard
+  groups;
+- read-heavy and mixed-workload scaling once the mutation path is understood;
+- overload, admission control, fairness, backpressure, and open-loop arrival behaviour;
+- deliberate acknowledgement-loss fault injection and other targeted ambiguity/recovery faults;
+- cross-authority booking and the cost of durable distributed coordination;
+- online placement change, state migration, rebalancing, and scale-in/scale-out of writable
+  authorities;
+- managed/cloud infrastructure when network, failure, or independent-resource boundaries require
+  an environment a workstation cannot provide;
+- additional conserved-resource scenarios such as divisible inventory or balances when they expose
+  a meaningfully different serialization problem;
+- asynchronous event/reporting boundaries or service decomposition **only** when workload,
+  ownership, deployment, or failure evidence shows a real independent boundary.
 
-- What is sustainable, SLO-compliant, resilient throughput per unit of cost?
-- What does a recommended operating capacity reserve headroom *for*, and how is each component
-  measured rather than assumed?
-- How much does correctness machinery cost, and is that cost worth naming separately?
-- Which capacity unit preserves failure isolation, deployment safety, and N+1 headroom, rather
-  than maximising a single number?
+None is scheduled by being listed here. Some may never be worth doing in Alloca-Go.
 
-**Related durable owners:** `measurement-contract.md` §3, §3.1, §3.2.
+## Synthetic workload note
 
-## Additional conserved-resource scenarios
-
-**Why it is worth exploring:** the booking domain is one shape of scarce-resource contention.
-Others stress the model differently.
-
-**Questions worth answering:**
-
-- Does a divisible quantity or conserved balance behave like slot capacity, or expose a different
-  serialization frontier?
-- What changes when a reservation holds several units rather than one?
-- Does a synchronized release wave — many users converging on a small set of resources at a known
-  instant — produce behaviour the isolated controls do not?
-- Which of these scenarios is worth the fixture and harness cost, and which is a variation that
-  teaches nothing new?
-
-**Related durable owners:** validation plan §3 (controlled workloads).
-
-## Service and deployment boundaries, and asynchronous extensions
-
-**Why it is worth exploring:** the project starts as a modular monolith deliberately, and the
-interesting question is what evidence would justify changing that.
-
-**Questions worth answering:**
-
-- What boundary, if any, does the evidence justify extracting — and what would it buy?
-- Would an asynchronous event or reporting consumer fed by a transactional outbox demonstrate a
-  real consistency and failure boundary, or only add moving parts?
-- Which boundaries are genuinely independent failure and scaling domains, and which are
-  process-local optimisations wearing architectural language?
-
-**Related durable owners:** [`../decisions/0001-modular-monolith-first.md`](../decisions/0001-modular-monolith-first.md),
-`horizontal-scaling.md` §12.
-
----
+Workload scenarios used throughout the project — including synchronized booking releases across
+many independent organisations and contention for a shared inventory quantity or conserved balance
+— are **synthetic engineering models**. They are not descriptions of any organisation's
+architecture, scale, traffic, or implementation.
 
 ## Selecting from here
 
-Nothing above is scheduled. When one of these becomes worth doing, it is framed as a Goal or
-Problem under [`../requirements/`](../requirements/), and the milestone plan schedules the work.
-The current milestone's goal and open problem are in
-[`../requirements/ag-sept.md`](../requirements/ag-sept.md); what is actually being built now is in
+Nothing above is scheduled. When one of these directions becomes worth doing, it is framed as a
+Goal or Problem under [`../requirements/`](../requirements/), and only then proceeds through
+Requirements, Design, Validation plan, and Schedule.
+
+The current milestone's goal and engineering iterations are in
+[`../requirements/ag-sept.md`](../requirements/ag-sept.md); what is actually scheduled is in
 [`ag-sept-plan.md`](ag-sept-plan.md).

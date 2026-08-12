@@ -77,18 +77,22 @@ The development allocation is a planning constraint. **Half a day is the unit**,
 implementation records: nothing is estimated well enough to distinguish 0.3 from 0.4, and finer
 granularity is false precision that invites its own overrun (Nancy's call, 2026-08-05).
 
-| Workstream | Work unit | Allocated | Status |
-|---|---|---:|---|
-| Measurement harness and load generator | PR1 | 2.0 | spent 2.0 |
-| Single-instance frontier, with the diagnostic time-series minimum | PR2 | 2.5 | spent 2.5 |
-| Placement, booking policy, and confirm/cancel ownership | PR3a | 3.0 | **done in 1.0; 2.0 returned to contingency** |
-| Multi-authority harness | PR3b | 2.5 | spent 2.5 |
-| Multi-authority correctness and failure-isolation evidence | PR3c | 2.0 | **done in 1.5; 0.5 returned to contingency** |
-| Iteration C reserved scaling envelope | not yet scheduled | 4.5 | **reserved budget, uncommitted scope** |
-| Architecture conclusions and one justified boundary | PR5 | 1.5 | remaining |
-| **Allocated development budget** | | **15.5** | 9.5 spent, 6.0 remaining |
-| Contingency | | 4.0 | **1.0 drawn (§2.1.1), 3.0 remaining** |
-| **Total milestone budget** | | **19.5** | **10.5 spent, 9.0 remaining** |
+| Workstream | Work unit | Allocated | Spent | Left | Status |
+|---|---|---:|---:|---:|---|
+| Measurement harness and load generator | PR1 | 2.0 | 2.0 | 0.0 | merged |
+| Single-instance frontier, with the diagnostic time-series minimum | PR2 | 2.5 | 2.5 | 0.0 | merged |
+| Placement, booking policy, and confirm/cancel ownership | PR3a | 1.0 | 1.0 | 0.0 | merged; originally 3.0, with 2.0 returned to contingency |
+| Multi-authority harness | PR3b | 2.5 | 2.5 | 0.0 | merged |
+| Multi-authority correctness and failure-isolation evidence | PR3c | 1.5 | 1.5 | 0.0 | merged; originally 2.0, with 0.5 returned to contingency |
+| Iteration C reserved scaling envelope | not yet scheduled | 4.5 | 0.0 | 4.5 | reserved budget; scope uncommitted |
+| Architecture conclusions and one justified boundary | PR5 | 1.5 | 0.0 | 1.5 | not started |
+| **Allocated development budget** | | **15.5** | **9.5** | **6.0** | |
+| Contingency | | **4.0** | **1.0** | **3.0** | 1.0 drawn by §2.1.1 |
+| **Total milestone budget** | | **19.5** | **10.5** | **9.0** | |
+
+**The numeric columns are the accounting source of truth:** `Allocated = Spent + Left` on every
+row. Completed work that returned unused allocation is shown at its current allocation; **Status**
+keeps the historical context, not the accounting.
 
 **Allocated is not committed.** The 15.5 row is the development budget this milestone has
 apportioned after completed work returns unused allocation to contingency, not a statement that all

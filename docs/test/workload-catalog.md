@@ -38,7 +38,7 @@ Four synthetic organisations participate:
 - `org-c`
 - `org-d`
 
-The four organisations are logically equivalent for this workload. Each owns an independent seeded population of slots and users sufficient for the selected sweep point; no organisation depends on another organisation's slot or user state.
+The four organisations are logically equivalent for this workload. Each owns an independent seeded population of slots and users, and the **per-organisation population size is fixed for a comparison**. It is chosen once to be sufficient for the maximum intended `G4` run, then the same A/B/C/D populations are reused unchanged for `G1`, `G2`, and `G4`; topology-specific fixture resizing would change the workload and invalidate the scale-efficiency comparison. No organisation depends on another organisation's slot or user state.
 
 ### Demand shape
 
@@ -55,7 +55,7 @@ The same-organisation pairing is load-bearing for cross-topology comparison. The
 remains useful correctness coverage, but its request-pair mix changes when placement groups change.
 It is therefore **not** the implementation of `WL-MUT-DISP-4`.
 
-The intended comparison preserves the workload semantics and per-organisation demand model while topology and available resources change.
+The intended comparison preserves the workload semantics, fixed per-organisation fixture populations, and per-organisation demand model while topology and available resources change.
 
 ### Exclusions
 

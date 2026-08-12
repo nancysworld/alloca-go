@@ -259,7 +259,73 @@ composition but may not support a production capacity multiplier.
 The measurement contract determines how such evidence is labelled. This design requires the
 logical topology to be named accurately.
 
-## 12. What this design deliberately does not decide
+## 12. Shard-group capacity composition
+
+For a writable-authority capacity experiment, one **capacity unit** is one shard group together
+with a controlled resource envelope for the service and PostgreSQL authority it contains.
+
+Adding a capacity unit must add resources rather than merely split a fixed host allocation. The
+units used in one comparison must therefore be equivalent enough that a measured difference can be
+interpreted as composition of the architecture rather than as a change of instance class, CPU
+share, memory budget, storage class, database configuration, service build, or connection policy.
+
+For the selected workload, let:
+
+```text
+G1 = measured capacity with 1 shard group
+G2 = aggregate measured capacity with 2 shard groups
+G4 = aggregate measured capacity with 4 shard groups
+```
+
+and use the measurement contract's Layer-B scale-efficiency definition for the derived 2-group and
+4-group efficiencies.
+
+The design deliberately sets **no efficiency pass threshold**. Iteration C is characterising the
+capacity behaviour of the accepted boundary. A sub-linear result is useful evidence if the limiting
+mechanism is identified or conservatively bounded; changing the architecture merely to cross a
+preselected percentage would answer a different optimisation problem.
+
+### 12.1 Equivalent does not mean physically identical
+
+Equivalent capacity units need not be the same physical machine. They must expose the same
+intended service/database resource shape and configuration for the comparison, and the retained
+environment evidence must be sufficient to detect material differences.
+
+A resource provider, VM family, container runtime, or orchestration mechanism is therefore a
+replaceable means. The design requirement is controlled, independently growing envelopes.
+
+### 12.2 The generator is outside the capacity unit
+
+The load generator is measurement infrastructure, not part of shard-group capacity. It must not
+consume the service/database resource envelope whose scaling is being measured, and its own
+headroom must be established at the highest offered load used for a quoted point.
+
+This is stronger than merely running the generator as another process: if generator and shard
+groups compete for the same fixed CPU/network/storage resource, the result cannot distinguish
+server scaling from measurement-system contention.
+
+## 13. Workload and placement envelope
+
+Capacity is always conditional on a workload. A shard group's numeric result therefore names the
+workload and placement envelope it served rather than becoming an unqualified "Alloca capacity"
+number.
+
+Stable workload semantics are owned by
+[`../test/workload-catalog.md`](../test/workload-catalog.md). Validation owns how a selected workload
+is mapped to 1, 2, or more shard groups for a particular experiment.
+
+For the current dispersed mutation question, the important architectural property is that the
+participating organisations are independent: moving `org-a` to a different shard group from
+`org-b` must not introduce a new correctness dependency between them. The experiment may then vary
+placement while retaining the same workload semantics and compare whether independent writable
+resource envelopes add useful capacity.
+
+The resulting per-group envelope must state enough context to make the result reusable: workload
+identity, organisation distribution, service/database resource shape, connection budget, and the
+limiting resource observed at the frontier. Entity count alone is not the capacity model; peak
+request rate, concurrency/contention, and workload mix determine pressure on the group.
+
+## 14. What this design deliberately does not decide
 
 This document does not require:
 
@@ -276,17 +342,16 @@ This document does not require:
 Those may become separate designs when a later engineering iteration establishes the problem,
 requirements, and evidence that justify them.
 
-## 13. Validation
+## 15. Validation
 
 The concrete AG-Sept validations for this architecture are owned by
-[`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md),
-including:
+[`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md).
+For Iteration C that plan selects `WL-MUT-DISP-4` and fixes the 1/2/4-shard-group comparison needed
+to obtain `G1`, `G2`, `G4`, their derived efficiencies, and the limiting-resource evidence.
 
-- replica scaling within one database authority;
-- the connection-budget control;
-- multi-authority supported correctness;
-- misrouting and cross-authority refusal controls;
-- database-authority failure isolation;
-- a composed multi-authority/multi-replica run only if later analysis justifies it.
+Earlier validation meanings for service-replica scaling, connection-budget controls,
+multi-authority correctness, routing/refusal, and failure isolation remain valid where cited; they
+are not automatically part of the Iteration C capacity matrix unless the validation plan selects
+them.
 
 Measured conclusions remain in `docs/measurements/`, not here.

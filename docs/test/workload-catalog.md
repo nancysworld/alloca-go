@@ -45,9 +45,15 @@ The four organisations are logically equivalent for this workload. Each owns an 
 - mutation path only for the capacity population;
 - equal offered-load share per organisation;
 - same request semantics and generator policy for A, B, C, and D;
+- **same-organisation user/slot pairing for every request**: a user from `org-a` books an `org-a` slot, and likewise for B, C, and D, independent of how those organisations are placed onto database authorities;
 - fresh idempotency keys for fresh attempts;
 - enough independent slot/user identities to keep the dispersed workload from collapsing accidentally into a one-hot-slot or one-hot-identity serialization test;
 - offered load/concurrency is a **sweep parameter**, not baked into the workload identity.
+
+The same-organisation pairing is load-bearing for cross-topology comparison. The existing
+`multi-org-dispersed` generator deliberately exercises colocated cross-organisation booking and
+remains useful correctness coverage, but its request-pair mix changes when placement groups change.
+It is therefore **not** the implementation of `WL-MUT-DISP-4`.
 
 The intended comparison preserves the workload semantics and per-organisation demand model while topology and available resources change.
 
@@ -55,7 +61,7 @@ The intended comparison preserves the workload semantics and per-organisation de
 
 This workload does **not** include:
 
-- cross-authority reserve attempts;
+- cross-organisation reserve attempts, whether colocated or cross-authority;
 - deliberate hot-slot or hot-identity concentration;
 - read-heavy or mixed read/write traffic;
 - failure injection;

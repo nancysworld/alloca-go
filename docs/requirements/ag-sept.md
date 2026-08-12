@@ -284,52 +284,91 @@ proceed independently is given independently provisioned service and PostgreSQL 
 useful capacity compose, what limits it, and where does one shard group's safe operating boundary
 lie?
 
-The question is deliberately phrased as *how does it scale* rather than *is it additive*. What
-counts as an acceptable scaling result is a Requirements decision, and stating a target here would
-turn a measurement into a hypothesis the iteration is built to confirm.
+The question is deliberately phrased as *how does it scale* rather than *is it additive*. Iteration
+C therefore requires a **numeric scale-efficiency result**, not a preselected efficiency threshold.
+The result may be high, low, or materially sub-linear; the requirement is to measure it credibly and
+explain the limiting mechanism rather than optimise the milestone toward a pass number.
 
-This is a capacity question about the architecture already accepted. It does **not** preselect AWS,
-Kubernetes, a managed database, service-replica multiplication, or another deployment mechanism.
+### Requirements in scope
 
-### Why Iteration C starts mutation-heavy
+- **REQ-COR-1** — every measured capacity point preserves the accepted transaction semantics;
+- **REQ-SCALE-1** — independent organisation work must be able to use additional writable resources;
+- **REQ-SCALE-3** — any hot logical-authority ceiling remains explicit rather than being folded into
+  the dispersed-workload result;
+- **REQ-SCALE-4** — adding a shard group for the capacity comparison adds a controlled
+  service-and-database resource envelope rather than subdividing one fixed host allocation;
+- **REQ-DEPLOY-1** — every compared unit and topology remains identifiable and reproducible;
+- **REQ-EVID-1** — G1, G2, G4 and their derived efficiencies are quotable only at the evidence level
+  their retained provenance supports;
+- **REQ-EVID-2** — generator, database, service, connection, workload-skew and shared-environment
+  limits remain distinguishable explanations.
 
-Recorded because it is a decision, not an omission. Iteration C follows the causal chain the
-evidence actually produced: PR2 located the first frontier in PostgreSQL under a mutation-heavy
-workload, and Iteration B built and validated the writable-authority architecture that frontier
-implied. Testing that same frontier is what makes the next result comparable with the two before
-it.
+### Workload requirement
+
+Iteration C selects the reusable
+[`WL-MUT-DISP-4`](../test/workload-catalog.md#wl-mut-disp-4--four-organisation-dispersed-mutation-capacity)
+workload: four equivalent independent synthetic organisations, `org-a` through `org-d`, each with
+the same mutation semantics and equal demand share. The workload definition is stable; topology
+placement is not part of it.
+
+This separation is deliberate. Later experiments may apply the same workload to another database
+technology, placement model, service topology, or elasticity mechanism and compare evidence without
+also changing the demand. Different questions may select different named workloads from the same
+catalog.
 
 Read-heavy and realistic mixed read/write workloads remain important open questions — they can move
-the limiting resource toward service compute, query and cache pressure, or connection concurrency,
-and a mutation benchmark is not representative of a shard group's real envelope. They are held in
-[`../planning/alloca-go-roadmap.md`](../planning/alloca-go-roadmap.md) rather than folded in here,
-because including them now would change the problem instead of testing the frontier just exposed.
+the limiting resource toward service compute, query/cache pressure, or connection concurrency — but
+including them now would change the Problem instead of testing the mutation frontier exposed by PR2
+and Iteration B. They remain roadmap work rather than Iteration C acceptance criteria.
 
-### Environment and scope constraint — recorded, not resolved
+### Capacity-composition requirement
 
-Iteration C requires an environment capable of supporting a defensible capacity-composition claim.
-Two facts bear on whether one is available:
+The comparison must obtain capacity for the selected workload at **1, 2, and 4 shard groups** using
+like-for-like shard-group resource envelopes. The exact validation matrix and organisation placement
+are owned by the validation plan, but the meaning is fixed here:
 
-- **a scheduling fact, cited as such** — AG-Sept's agreed milestone scope currently excludes cloud
-  environments and cloud measurement
-  ([`../planning/ag-sept-plan.md`](../planning/ag-sept-plan.md) §5.4, and §6.3 for why the AWS path
-  was withdrawn). Nothing in this requirements record depends on that plan for normative meaning;
-  it is quoted because milestone scope is what the plan owns, and it can change;
-- **a measured environment fact** — the existing co-resident workstation shares one 10-vCPU
-  allocation across both services, both databases and the generator
-  ([`../measurements/environment.md`](../measurements/environment.md)), so adding a shard group
-  there redistributes a fixed allocation rather than providing an independent *growing* resource
-  envelope.
+- `G1` is the measured capacity of the one-group topology;
+- `G2` is the aggregate measured capacity of the two-group topology;
+- `G4` is the aggregate measured capacity of the four-group topology;
+- scale efficiency at 2 and 4 groups is derived from those measured capacities under the
+  measurement contract.
 
-Requirements and Design must resolve that conflict explicitly before Schedule. If no in-scope
-environment can support the claim, the maintainer makes an explicit scope decision — rather than
-weakening the claim to fit the environment, or scheduling cloud work by implication.
+No efficiency percentage is a pass/fail requirement for Iteration C. A materially sub-linear result
+is still a valid result if it is admissible and the limiting mechanism is identified or tightly
+bounded.
 
-**Iteration C starts here at Problem only.** Requirements, Design, Validation plan, and Schedule
-follow in dependency order; this A&R does not pre-commit their mechanism, experiment matrix, or
-budget.
+### Environment requirement
 
-> **This A&R accepts the Iteration C Problem. It does not establish that AG-Sept's current
-> environment or current scope can execute it.** Discovering that the selected Problem forces an
-> explicit scope or environment decision is a valid output of the next Requirements and Design
-> stages, not a defect in this closure.
+The environment must let the 1/2/4 comparison **grow resources with shard-group count**. The current
+co-resident workstation cannot satisfy that requirement for the intended capacity claim: its
+services, PostgreSQL authorities, generator, storage path and host scheduler share one 10-vCPU
+allocation, so adding groups redistributes a fixed host rather than adding equivalent capacity
+units.
+
+This requirement does not itself name a provider. Design must select the smallest reproducible
+environment that supplies equivalent independently controlled shard-group envelopes and keeps the
+load generator from becoming the shared resource that determines the result. The one-group baseline
+and the multi-group points must be measured in that same environment; a workstation G1 must not be
+compared with an externally provisioned G2 or G4.
+
+### Sufficiently resolved when
+
+Iteration C is sufficiently resolved for AG-Sept when retained evidence can state, for
+`WL-MUT-DISP-4`:
+
+- measured `G1`, `G2`, and `G4` under comparable independently provisioned resource envelopes;
+- derived scale efficiency at 2 and 4 groups, with **no preselected efficiency threshold**;
+- the limiting subsystem or resource at each relevant frontier, or a conservative bound where the
+  evidence cannot identify one uniquely;
+- a workload/resource envelope for one shard group that says what population/demand the measured
+  capacity result applies to rather than promoting it into an all-workloads claim;
+- correctness and reconciliation across every participating authority at every quoted capacity
+  point;
+- generator and shared-environment effects explained, excluded, or conservatively bounded strongly
+  enough that they cannot masquerade as shard-group scale efficiency;
+- explicit limitations, including that service-replica scaling, mixed/read-heavy workloads,
+  cross-authority booking, elasticity/rebalancing, and production representativeness remain
+  separate questions unless separately evidenced.
+
+The concrete topology, repetitions, controls, and run admissibility are owned by
+[`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md).

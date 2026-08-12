@@ -220,19 +220,28 @@ The trigger is the concrete one the report itself states: **neither reading may 
 timeout budget**, and the family is investigated if a decision comes to depend on the failure
 path's timing behaviour.
 
-Two items of **named validation debt** are carried, neither of which blocks the verdict or the
-scaling work:
+One item of **named validation debt** is carried, and it blocks neither the verdict nor the scaling
+work: INV-21's live “commit landed, acknowledgement lost” injection, tracked by the invariant
+register.
 
-- INV-21's live “commit landed, acknowledgement lost” injection, tracked by the invariant register;
-- **`VAL-COR-4`'s same-key replay clause is not exercised on the deployed topology.** The exit
-  criterion asks for “an explicit replayable policy result with no partial mutation”. The refusal
-  and the absence of partial mutation are established on the two-authority stack; *replayability*
-  is established a layer below it, by `TestCrossAuthorityRefusalIsReplayable` at the service layer
-  and `TestRefusalIsRecordedAndReplayed` on the PostgreSQL adapter. The retained control drives
-  2,000 distinct keys and reposts none of them (PR3c report §7.4). The property is proven and the
-  criterion is met in substance, but by composition rather than by one observation on the deployed
-  stack, and the closure records that rather than reading the 2,000 persisted records as a replay
-  demonstration.
+**A second item was found by this review and closed rather than carried.** `VAL-COR-4`'s exit
+criterion asks for “an explicit replayable policy result with no partial mutation”. The refusal and
+the absence of partial mutation were established on the two-authority stack, but *replayability*
+was established a layer below it, by `TestCrossAuthorityRefusalIsReplayable` at the service layer
+and `TestRefusalIsRecordedAndReplayed` on the PostgreSQL adapter, because the retained control
+drives 2,000 distinct keys and reposts none of them (PR3c report §7.4). The criterion was therefore
+met by composition rather than by one observation on the deployed stack.
+
+The fix was one repost rather than an experiment, so it was made here instead of deferred: the
+`controls` cell gained case 3b, which reposts the cross-authority refusal's own key and asserts
+both the recorded reason and `replay=true`. VAL-COR-4 is **established for Iteration B** on the
+evidence retained in
+[`../measurements/pr3c-phase1/controls-replay/`](../measurements/pr3c-phase1/controls-replay/).
+
+Two things this deliberately did **not** do. The retained PR3c cells were not re-run or
+reinterpreted — their measured numbers are unchanged, and 2,000 persisted records still do not
+evidence replay. The PR3c report was not amended either: its §7.4 describes the runs it describes
+and stays accurate about them, carrying a forward pointer rather than a correction.
 
 No accepted Phase 1 requirement or architecture needs revision.
 

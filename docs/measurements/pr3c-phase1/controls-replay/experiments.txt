@@ -1,0 +1,19 @@
+07:38:56Z  artifacts -> test/results/pr3c-20260812T073856Z
+07:38:56Z  generator   3a74bc244ace1b6a120e1d799838d939ba865bff (clean)
+07:38:56Z  verifier    3a74bc244ace1b6a120e1d799838d939ba865bff (clean)
+07:38:56Z  image       alloca-go:3a74bc2 sha256:0012abf74c9917cc14ce26729e9a6802ba6f3b421d9d5a2027930745b19a3210
+07:38:56Z  require     local
+07:38:56Z  seeding 1200 slots per organisation
+07:39:00Z  same-organisation booking: ok (200, admitted_success)
+07:39:00Z  colocated cross-organisation booking: ok (200, admitted_success)
+07:39:00Z  cross-authority refusal: ok (409, cross_authority_unsupported)
+07:39:00Z  cross-authority refusal replays the recorded reason: ok (409, cross_authority_unsupported)
+07:39:00Z  cross-authority refusal is marked as a replay: ok (409, "replay":true)
+07:39:00Z  misrouted request: ok (400, invalid_request)
+07:39:00Z  misroute counter: 0 -> 1
+07:39:00Z  reservation for the ownership control: ok (200, admitted_success)
+07:39:00Z  confirm with a wrong UserRef: ok (404, unknown_target)
+07:39:00Z  cancel with a wrong UserRef: ok (404, unknown_target)
+07:39:00Z  the owner can still confirm: ok (200, admitted_success)
+07:39:00Z  controls: all assertions passed
+07:39:00Z  done; artifacts in test/results/pr3c-20260812T073856Z

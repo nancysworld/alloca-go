@@ -393,7 +393,7 @@ the original had never committed. INV-21's outstanding half needs the opposite �
 a commit that landed while its acknowledgement did not. The invariant
 register still says so.
 
-### 7.4 The refusal's same-key replay is not exercised on this topology
+### 7.4 The refusal's same-key replay is not exercised by these runs
 
 [`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) §3.5 asks the
 refusal control to establish four things: the normative refusal, **same-key replay**, absence of
@@ -416,6 +416,15 @@ Replay is proven, but a layer below the deployed stack:
 Composing those two with the 2,000 records above is an argument, not an observation, and this report
 does not offer it as one. What is missing is one same-key repost through the deployed two-authority
 stack — a small addition to the control rather than a new experiment.
+
+> **Added after publication, and it amends nothing above.** The Iteration B Analyse & Review made
+> that addition: `controls` case 3b reposts the refusal's own key and asserts both the recorded
+> reason and `replay=true` on the deployed two-authority stack, retained in
+> [`../pr3c-phase1/controls-replay/`](../pr3c-phase1/controls-replay/). The runs this report
+> describes still drive distinct keys throughout and still report `replayed_mutations: 0`, so every
+> reading above stands as written. VAL-COR-4's current status is tracked by
+> [`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) §9, which
+> owns it — not here.
 
 ## 8. Reproducing this
 

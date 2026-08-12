@@ -218,7 +218,7 @@ The smallest set of runs that discharges the validations below. Replica and auth
 | Experiment | Topology | Workloads | Discharges |
 |---|---|---|---|
 | Phase 1 supported correctness | 2 authorities × 1 replica | multi-organisation dispersed; colocated cross-organisation booking; one-hot-organisation; wrong-`UserRef` confirm and cancel | VAL-COR-1..3 |
-| Cross-authority refusal control | 2 authorities × 1 replica | bounded cross-authority reserves, as their own evidence class | VAL-COR-4 |
+| Cross-authority refusal control | 2 authorities × 1 replica | bounded cross-authority reserves, as their own evidence class, **plus one same-key repost of a recorded refusal** — the cell's distinct keys cannot show replay | VAL-COR-4 |
 | Placement enforcement | 2 authorities × 1 replica | deliberate misroute | VAL-COR-5, VAL-NEG-6 |
 | Phase 1 failure isolation | 2 authorities × 1 replica | multi-organisation dispersed, one authority taken down, any ambiguity it produces resolved after restoration | VAL-COR-6, VAL-FAIL-1 |
 | Replica matrix | 1 authority × several replica counts | dispersed across all counts; hot-slot and hot-identity at the extremes | VAL-SCALE-1 |
@@ -262,6 +262,13 @@ organisations happen to be colocated. Placement must not accidentally change the
 **Requirements:** REQ-COR-1, REQ-ROUTE-1.
 
 Run the refusal control in §3.5 and prove that Phase 1 creates no partial booking state.
+
+**Two cells discharge it, not one.** The refusal cell drives distinct keys throughout, which is
+what makes it a clean evidence class and also what makes it structurally unable to show §3.5's
+same-key replay clause — a persisted record is a necessary condition for replay, not a
+demonstration of it. That clause is discharged by the `controls` cell's case 3b, which reposts the
+refusal's own key and asserts both the recorded reason and `replay=true`. A re-validation that
+runs only the refusal cell leaves the clause unexercised.
 
 ### VAL-COR-5 — Placement enforcement / misrouting
 
@@ -440,7 +447,7 @@ The discriminating control is VAL-COR-5 and is mandatory for a multi-authority t
 | Phase 1 placement and supported policy implementation | established for Iteration B | PR3a/PR3b implementation records plus PR3c controls/evidence |
 | multi-authority reconciliation | established for Iteration B | PR3b harness exercised and reconciled by PR3c retained runs |
 | Phase 1 correctness and failure isolation | established for Iteration B | PR3c report and retained artifacts; VAL-COR-1..3, VAL-COR-5, VAL-COR-6 and VAL-FAIL-1 |
-| cross-authority refusal (VAL-COR-4) | **partially discharged** | the refusal and the absence of partial mutation are established on the deployed topology; §3.5's **same-key replay** clause is proven only in deterministic service/adapter tests and is not exercised by the retained control (PR3c report §7.4) |
+| cross-authority refusal (VAL-COR-4) | established for Iteration B | all four §3.5 clauses now hold on the deployed topology: the refusal and the absence of partial mutation by the PR3c passes, and **same-key replay** by control 3b, retained in [`../../measurements/pr3c-phase1/controls-replay/`](../../measurements/pr3c-phase1/controls-replay/). The replay clause was the gap the Iteration B A&R found (PR3c report §7.4), and it was closed by adding the repost to the control rather than by re-running or reinterpreting the retained cells |
 | database-authority composition (VAL-SCALE-3) | established as architecture/correctness evidence | PR3c; explicitly **not** a capacity multiplier on the co-resident workstation |
 | Iteration C shard-group capacity | **Problem selected; validation not yet defined** | Requirements → Design → Validation plan must precede Schedule |
 | stateless replica scaling | unproven and not selected by this A&R | existing VAL-SCALE-1/2 remain candidate validation definitions, not committed Iteration C work |

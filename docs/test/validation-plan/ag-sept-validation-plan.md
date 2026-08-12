@@ -101,9 +101,11 @@ Replica or authority scale efficiency is compared only between runs with the sam
 semantics and compatible SLO/evidence status. Deliberate policy refusals, injected failures, and
 healthy-capacity runs are separate evidence classes.
 
-For Iteration C, like-for-like also means that every shard-group capacity unit uses the same
-selected EC2 shape and service/PostgreSQL configuration, and that the 1-group baseline is measured
-in the same AWS environment as the 2- and 4-group points.
+For Iteration C, the capacity-unit equivalence contract is owned by
+[`../../design/deployment-architecture.md`](../../design/deployment-architecture.md) §13.3. This
+plan selects that design rather than restating its fields: `G1`, `G2`, and `G4` use equivalent
+shard-group capacity units and the one-group baseline is measured in the same AWS environment as
+the multi-group points.
 
 ### 2.4 Negative controls must be discriminating
 
@@ -266,18 +268,47 @@ following placement matrix for `WL-MUT-DISP-4`:
 
 Each group has **one service replica + one PostgreSQL authority**. The generator runs on separate
 EC2 compute and routes equal workload share for A/B/C/D according to the active placement map.
-The service image, PostgreSQL version/configuration, pool policy, timeout policy, EC2 capacity-unit
-shape, and workload semantics stay fixed across `G1`, `G2`, and `G4`.
+`WL-MUT-DISP-4` keeps the request pair itself topology-independent: every user books a slot owned
+by the **same organisation** at `G1`, `G2`, and `G4`. The existing `multi-org-dispersed` workload,
+which deliberately includes colocated cross-organisation pairs, remains separate Iteration-B-style
+correctness coverage and must not be substituted into this capacity matrix.
+
+The shard-group capacity units remain like-for-like under `deployment-architecture.md` §13.3; the
+workload semantics, service image, pool policy, timeout policy, and PostgreSQL configuration stay
+fixed across `G1`, `G2`, and `G4`.
+
+#### Capacity-point selection rule
+
+A capacity point must be selected by the **same saturation rule** at all three topologies; it must
+not be the final rung merely because the sweep stopped there.
 
 For each topology:
 
-1. run the capacity sweep needed to locate the highest SLO-safe point for the selected workload;
-2. repeat the selected point once as a retained confirmation run;
-3. retain reconciliation and resource evidence for both the selected point and its repeat.
+1. run a concurrency/load ladder far enough to establish the saturation region while preserving
+   the `measurement-contract.md` §3 capacity definition, §5 experiment/evidence gates, and §7
+   provisional SLO/outcome gates;
+2. select the highest gated rung whose sustained Goodput is followed by at least one higher rung
+   that either **does not produce higher sustained Goodput** or fails one of those gates — this is
+   the operational saturation-knee/plateau point for `G1`, `G2`, or `G4`;
+3. repeat that selected point once as a retained confirmation run;
+4. retain the complete ladder, the point-selection justification, reconciliation, and resource
+   evidence alongside the selected point and its repeat.
+
+PR2 report §5.6 and §6.3 are the reason this rule is explicit: with the current closed-loop harness,
+latency/deadline gates can remain comfortably non-binding while throughput has already saturated.
+Without a demonstrated higher rung, a sweep endpoint is not a capacity result and cannot enter
+`E2` or `E4`.
 
 If the two retained observations materially disagree, do not average the disagreement into a
 clean headline number: explain, exclude, or conservatively bound the variation before promoting a
 single capacity result.
+
+**Per-authority data volume is an intended co-varying factor of this sharding experiment.** `G1`
+places four organisation datasets on one authority while `G4` places one on each. Retain
+per-authority row/data-volume and, where practical, index/working-set evidence sufficient to make
+that change visible. A smaller per-authority working set may be part of what sharding buys; it must
+therefore be named when interpreting sub- or super-linear efficiency rather than silently treated
+as invariant.
 
 The experiment derives:
 
@@ -463,13 +494,16 @@ without changing routing or correctness semantics.
 
 **Requirements:** REQ-COR-1, REQ-SCALE-1, REQ-SCALE-4, REQ-DEPLOY-1, REQ-EVID-1, REQ-EVID-2.
 
-Run the fixed matrix in §4.6 and obtain admissible `G1`, `G2`, and `G4` for `WL-MUT-DISP-4`.
+Run the fixed matrix and saturation-selection rule in §4.6 and obtain admissible `G1`, `G2`, and
+`G4` for `WL-MUT-DISP-4`. The request-pair semantics remain same-organisation at every topology.
 Derive `E2` and `E4` under the measurement contract and identify or conservatively bound the
-limiting mechanism at each relevant frontier.
+limiting mechanism at each relevant frontier, explicitly accounting for the intended change in
+per-authority data/working-set volume as organisations are distributed across more authorities.
 
 The validation passes when the numbers are reproducible/admissible, correctness reconciles, the
 resource envelopes are comparable, generator/shared-environment effects cannot plausibly explain
-the result, and the limitations are stated. It does **not** require an efficiency percentage.
+the result, the saturation point is established rather than assumed from sweep depth, and the
+limitations are stated. It does **not** require an efficiency percentage.
 
 ## 8. Measurement-system negative controls
 
@@ -487,8 +521,11 @@ Deliberately constrain the load generator and demonstrate how the apparent front
 Any stronger capacity interpretation then requires evidence that the selected generator has
 headroom.
 
-For Iteration C, the selected generator configuration must additionally show headroom on its
-separate EC2 host at the `G4` candidate frontier.
+For Iteration C, PR4a must first preflight a generator configuration above the intended `G4` sweep
+range under `deployment-architecture.md` §13.2. PR4b still proves headroom at every quoted server
+point. The generator may be resized and requalified between topology points because it is
+measurement infrastructure rather than part of the shard-group capacity unit; its actual shape and
+headroom evidence remain part of each run's provenance/evidence.
 
 ### VAL-NEG-3 — Telemetry-overhead control
 
@@ -532,7 +569,7 @@ about that constraint, not a clean shard-group scale-efficiency point.
 | Phase 1 correctness and failure isolation | established for Iteration B | PR3c report and retained artifacts; VAL-COR-1..3, VAL-COR-5, VAL-COR-6 and VAL-FAIL-1 |
 | cross-authority refusal (VAL-COR-4) | established for Iteration B | all four §3.5 clauses now hold on the deployed topology: the refusal and the absence of partial mutation by the PR3c passes, and **same-key replay** by control 3b, retained in [`../../measurements/pr3c-phase1/controls-replay/`](../../measurements/pr3c-phase1/controls-replay/). The replay clause was the gap the Iteration B A&R found (PR3c report §7.4), and it was closed by adding the repost to the control rather than by re-running or reinterpreting the retained cells |
 | database-authority composition (VAL-SCALE-3) | established as architecture/correctness evidence | PR3c; explicitly **not** a capacity multiplier on the co-resident workstation |
-| Iteration C shard-group capacity (VAL-SCALE-5) | **defined; not yet executed** | fixed `WL-MUT-DISP-4` A/B/C/D matrix at 1/2/4 shard groups on equivalent AWS EC2 capacity-unit hosts; separate generator; obtain G1/G2/G4 and E2/E4 |
+| Iteration C shard-group capacity (VAL-SCALE-5) | **defined; not yet executed** | fixed `WL-MUT-DISP-4` same-organisation request semantics at A/B/C/D across 1/2/4 shard groups; saturation-selected G1/G2/G4 and derived E2/E4 |
 | Iteration C resource-envelope control (VAL-NEG-7) | **defined; not yet executed** | retain per-host resource evidence and explain/exclude/bound material environment variation |
 | stateless replica scaling | unproven and not selected by Iteration C | existing VAL-SCALE-1/2 remain separate future validation definitions |
 | composed multi-authority + multi-replica topology | optional later validation | only after both axes are understood separately |

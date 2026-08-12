@@ -135,18 +135,65 @@ per-authority series and the aggregate.
 `TestDashboardMatchesCanonicalPanels` keeps the dashboard and the exporter reading the same source,
 so the change lands in `panels.json` and the dashboard is regenerated.
 
-### 2.7 Operator-supplied manifest fields arrive as a JSON document, not flags
+### 2.7 The manifest fields arrive as a JSON document, and two of the four stop being declared
 
 `Manifest` declares `replica_count`, `deployment_topology`, `environment` and `aggregate_pool_size`,
 and `Manifest.Validate` gates `capacity` on them — but nothing populates them, which is why no run
 in this repository has ever reached `capacity`. PR4a supplies them.
 
-They arrive as an operator-supplied JSON document alongside the existing `-deployment` record rather
-than as four CLI flags. Flags are typed per run; `aggregate_pool_size` must equal
-`replica_count × pool_size_per_replica` and the manifest checks it, so a mistyped value fails the
-run **after** it has been driven — the expensive moment on metered infrastructure. A version-
-controlled document per topology is written once per capacity point, reviewed once, and reused by
-every rung of that point's ladder.
+They arrive as an operator-declared JSON document rather than as four CLI flags: the fields describe
+one coherent run shape and should be parsed and validated atomically, and a version-controlled
+document per capacity point is written once and reused by every rung of that point's ladder instead
+of being retyped per run.
+
+**It is a separate file from `-deployment`, deliberately.** That record is *observed* — written by
+`record-deployment.sh` from the running containers, because a process cannot see which image wraps
+it (ADR-0003). This one is *declared*. Merging them would put two provenance classes in one
+artifact, and the weaker one would inherit the stronger one's credibility.
+
+**Two of the four fields should be derived rather than declared, and one of them buys a new check.**
+
+`aggregate_pool_size` is currently gated by the arithmetic `replica_count × pool_size_per_replica`,
+where `pool_size_per_replica` is projected from **unit[0]'s** `/meta`. Every unit's `/meta` is
+already fetched into `TopologyMeta.Units`, so the aggregate can simply be **summed over the units
+that served the run**. That is less operator input, and it is also strictly more correct: the
+product form assumes every unit has the same pool, which `Disagreement()` does not check — it
+compares revision, routing version and schema, not pool capacity. A capacity unit whose pool
+differs from its peers is a `deployment-architecture.md` §13.3 like-for-like violation that is
+invisible today and that summing makes visible. Eliminating the redundant input and adding the
+discriminating check are the same change.
+
+`replica_count` equals `UnitCount` — `len(targets)` — **for this topology**, because PR4 runs one
+service replica per capacity unit and the generator addresses each unit directly. It is not
+derivable in general: a load balancer in front of a unit makes targets and replicas differ, and no
+HTTP client can see that. So it is derived from the observed unit set by default and may be
+overridden only by an explicit fan-out declaration in the JSON. PR4 declares neither; a future
+balanced topology has to state the fact that would otherwise be silently wrong.
+
+What remains operator-declared is `environment` and `deployment_topology` — two strings with no
+observable source.
+
+### 2.7.1 The document is checked before any measured request, in two places
+
+A malformed or inconsistent capacity manifest must cost zero experiment time rather than fail
+certification after the ladder has been driven. The checks split by what they need:
+
+- **parse, required fields, internal consistency** join `preflightDeployment` in the local,
+  no-network preflight that already runs before anything is fetched;
+- **cross-checks against observed reality** — declared replica count against the unit set, pool
+  homogeneity across units — need `/meta`, so they run immediately after `FetchTopologyMeta` and
+  still before the runner is handed the workload. Nothing occupies that slot today.
+
+**An existing behaviour has to change with it.** A failure to read `/meta` from every unit
+currently prints a warning to stderr and the run proceeds, failing later at certification. That is
+the right trade on a workstation where the cost is a minute; it is the wrong one on metered
+infrastructure where the cost is a ladder rung. A multi-unit run whose units cannot all be read
+refuses before load.
+
+That refusal must **not** be keyed on `-require`. Keying a gate on the flag that sets the exit-code
+floor is exactly how the deployment-preflight bypass was reopened in PR3b and had to be closed again
+in `ce7cd66`: `-require none` then disables the check rather than the certification level, and the
+run it was protecting proceeds unprotected.
 
 ### 2.8 Clock synchronisation is a preflight check and retained environment evidence
 

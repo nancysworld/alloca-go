@@ -255,7 +255,17 @@ The load generator runs on separate EC2 compute from all shard-group capacity un
 stable workload according to the selected placement map and must retain enough headroom at the
 4-group frontier that generator saturation cannot explain the measured server result.
 
+Before the Iteration C capacity sweeps begin, the selected generator configuration must be
+**preflighted against the intended G4 test range**: its own capacity/headroom control must establish
+that it can drive beyond that range without becoming the limiting resource. If a later G4 sweep
+approaches the demonstrated generator ceiling, the generator is resized and requalified before the
+server point may be quoted.
+
 The generator host is measurement infrastructure and is not counted in `G1`, `G2`, or `G4`.
+Unlike the shard-group capacity units, it is **not** constrained by §13.3's like-for-like instance-
+shape rule: its EC2 shape may change between topology points when required to preserve measurement
+headroom. Every quoted point still records the generator shape/resources actually used and carries
+its own generator-headroom evidence under the measurement contract.
 
 ### 13.3 Like-for-like comparison
 

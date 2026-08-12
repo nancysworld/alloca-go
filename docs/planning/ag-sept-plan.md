@@ -64,7 +64,7 @@ Iteration B evidence -> Analyse & Review -> Iteration C Problem
 | Placement, booking policy, confirm/cancel ownership | PR3a | merged `aa1e3a5` |
 | Multi-authority harness — topology, routing, certification, verifier | PR3b | merged `57f501d` |
 | Multi-authority correctness and failure-isolation evidence | PR3c | merged #16 |
-| Iteration B Analyse & Review | review step, PR #17 | current; closes Iteration B and selects Iteration C Problem |
+| Iteration B Analyse & Review | review step, PR #17 | merged; Iteration B closed and Iteration C Problem selected |
 | Iteration C reserved scaling envelope | not yet scheduled | 4.5 days reserved; scope waits for Requirements → Design → Validation plan → Schedule |
 | Architecture conclusions and one justified boundary | PR5 | not started |
 
@@ -99,7 +99,10 @@ first determine the necessary shape (§3).
 A further **2–3 days** are reserved beyond the development budget for rerunning decisive
 experiments, validating negative controls, reviewing measurements and interpretations, correcting
 documentation, polishing diagrams, checking public-disclosure suitability, and preparing the
-repository for external readers.
+repository for external readers. **Iteration B's Analyse & Review (#17) spent 0.5 day from this
+reserve, leaving 1.5–2.5 days.** This does not change the 19.5-day development/contingency total or
+the 4.5-day Iteration C envelope: it makes the cost of Analyse & Review visible instead of treating
+the transition between iterations as free.
 
 The time budget is a constraint, not an estimate to be expanded whenever a tool introduces
 incidental complexity.
@@ -166,6 +169,14 @@ The accounting therefore moves contingency from 3.5 to **4.0 total**, with **1.0
 remaining**. The milestone total stays **19.5 days**; **10.5 are spent and 9.0 remain**.
 
 ### 2.2 Review depth is the throughput control
+
+**Review is not free. Nancy's decision, 2026-08-12:** Iteration B's Analyse & Review in PR #17 is
+charged at **0.5 day** against the separate 2–3 day review/rerun/interpretation reserve. That leaves
+**1.5–2.5 days** in that reserve. It does not consume PR3c's allocation, contingency, or Iteration
+C's reserved 4.5-day development envelope. The accounting matters because Analyse & Review is a
+real engineering stage: reading retained evidence, challenging closure criteria, correcting the
+decision record, and closing a validation gap all consume time even when they do not create a new
+implementation work unit.
 
 **It is Nancy's to set** (2026-08-05). The implementation side of this milestone is not the
 constraint; the review step is, and it can be traded for speed when momentum matters more than
@@ -291,9 +302,11 @@ no result claims a throughput multiplier from the shared workstation.
 governing Goal, then records the five-part closure in
 [`../requirements/ag-sept.md`](../requirements/ag-sept.md) (`engineering-process.md` §1.4.1).
 
-**Its time comes from the existing 2–3 day review/rerun/interpretation reserve** described in §2,
-not from a new development allocation and not from PR3c's allocation. Nothing in the budget table
-changes for it.
+**Actual: 0.5 day, charged to the separate 2–3 day review/rerun/interpretation reserve** described
+in §2. The A&R is not a zero-cost transition: it reviewed the retained evidence, refined the
+decision record, exposed VAL-COR-4's missing deployed same-key replay observation, and kept the
+iteration open until that gate was closed. The charge does **not** alter the development/contingency
+budget table, PR3c's allocation, or Iteration C's 4.5-day envelope.
 
 The A&R verdict is that Iteration B is sufficiently resolved and the Goal is not yet sufficiently
 achieved. It therefore selects Iteration C's Problem: independently provisioned shard-group

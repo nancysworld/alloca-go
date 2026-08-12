@@ -237,19 +237,36 @@ choices are not reopened merely because more alternatives exist.
 
 - one equivalent EC2 capacity-unit host per shard group, each running one Alloca-Go service and one
   PostgreSQL authority;
-- a separate EC2 generator host;
+- a separate EC2 generator host, preflighted under VAL-NEG-2 against the intended `G4` sweep range
+  before PR4b spends capacity-run time;
+- a bounded generator workload implementation for `WL-MUT-DISP-4` whose user/slot pairs remain
+  **same-organisation under all 1/2/4 placement maps**, with a discriminating test proving the
+  request semantics do not change with topology; the existing colocated-cross-organisation
+  `multi-org-dispersed` workload remains unchanged;
 - versioned bootstrap/deployment configuration sufficient to instantiate 1-, 2-, and 4-group
   topologies with the fixed placement maps;
 - per-authority migration and the existing provenance/certification contract;
+- manifest/topology/environment fields sufficient for a sound run to validate at the
+  `measurement-contract.md` §13 **`publishable` provenance level**;
 - bounded host/service/database resource evidence required by VAL-NEG-7;
 - smoke/correctness verification that all three topologies are runnable before capacity sweeps.
 
 **Not in PR4a:** EKS, RDS, Kubernetes, autoscaling, service-replica multiplication, capacity
 headline numbers, or a cloud-production architecture claim.
 
+**Cost/teardown guard:** before provisioning, PR4a records a dated estimate for the selected EC2
+shapes and an explicit maintainer-approved spend ceiling. It also provides and verifies the teardown
+procedure; experiment instances are stopped or terminated when they are not needed for active work.
+The ceiling is an operator decision, not a number invented by this plan.
+
 **Gate:** clean infrastructure can instantiate the 1/2/4 topology family with equivalent
-capacity-unit hosts and separate generator, all units pass provenance/readiness/placement checks,
-and the measurement system can retain the resource evidence required by VAL-SCALE-5/VAL-NEG-7.
+capacity-unit hosts and separate generator; the dedicated `WL-MUT-DISP-4` generator preserves the
+same request-pair semantics under every placement; the selected generator is preflighted above the
+intended G4 sweep range; all units pass provenance/readiness/placement checks; a sound run can reach
+`publishable` **provenance** under measurement-contract §13; the measurement system can retain the
+resource evidence required by VAL-SCALE-5/VAL-NEG-7; and the cost ceiling/teardown controls are in
+place. `Publishable` here is a provenance-readiness gate only — PR4b still has to satisfy §5's
+evidence gates before any external capacity claim is admissible.
 
 ### PR4b — 1/2/4 shard-group capacity evidence — 2.5 days
 
@@ -258,8 +275,11 @@ and the measurement system can retain the resource evidence required by VAL-SCAL
 - `G1`: A/B/C/D on one shard group;
 - `G2`: A/B and C/D on two shard groups;
 - `G4`: A, B, C, D on four shard groups;
-- one capacity sweep plus one retained confirmation of the selected point per topology;
+- one saturation-establishing capacity ladder plus one retained confirmation of the selected point
+  per topology, using the identical point-selection rule in validation-plan §4.6;
 - correctness/reconciliation and generator/resource controls at every quoted point;
+- per-authority data-volume/working-set evidence sufficient to expose the intended change as four
+  organisation datasets are distributed from one authority to four;
 - measured `G1/G2/G4`, derived `E2/E4`, limiting-resource analysis, workload/resource envelope,
   limitations, and retained report/artifacts.
 
@@ -267,7 +287,8 @@ There is **no efficiency pass threshold**. A sub-linear result is acceptable evi
 admissible and explained or conservatively bounded.
 
 **Gate:** VAL-SCALE-5 and VAL-NEG-7 are either discharged with retained evidence or explicitly
-reported as unproven; no number is promoted beyond its measurement-contract evidence level.
+reported as unproven; every selected capacity point is established by the common saturation rule
+rather than sweep depth; no number is promoted beyond its measurement-contract evidence level.
 
 Iteration C Analyse & Review follows PR4b using the separate review/rerun/interpretation reserve.
 It decides whether the Problem is sufficiently resolved and whether the AG-Sept Goal is achieved or
@@ -291,11 +312,16 @@ Reconciliation: PR1 established the single-authority self-check; PR3b extended i
 authorities; PR3c exercised it against deliberate failure; PR4b applies it to every quoted capacity
 point.
 
-**Quotability:** the earlier AG-Sept plan could not satisfy the measurement contract's separate-
-generator prerequisite for a published capacity claim. Iteration C now schedules separate EC2
-generator compute, so that specific blocker is removed. A PR4b result reaches only the evidence
-level for which **all** `measurement-contract.md` §13 requirements are actually satisfied; older
-PR1/PR2/PR3 evidence is not retroactively promoted.
+**Quotability target:** PR4a prepares the Iteration C topology so a sound run's manifest can validate
+at the measurement contract's **`publishable` provenance level** before PR4b begins the expensive
+capacity sweeps. That target is deliberately stronger than merely removing the old co-resident-
+generator blocker: the operator-supplied topology/environment/placement/image fields must be known
+before evidence is collected, not discovered missing afterwards.
+
+`Publishable` is still only the §13 provenance rung. PR4b must independently satisfy the §5
+response-validation, generator-headroom, negative-control, reconciliation, and other evidence gates
+before a project-level capacity claim is admissible. Older PR1/PR2/PR3 evidence is not retroactively
+promoted.
 
 ## 5. Priority and descope
 
@@ -303,14 +329,18 @@ PR1/PR2/PR3 evidence is not retroactively promoted.
 
 For Iteration C the non-descopable capacity path is now explicit:
 
-- `WL-MUT-DISP-4` workload semantics;
+- `WL-MUT-DISP-4` workload semantics, including topology-independent same-organisation request
+  pairs;
 - the `G1/G2/G4` 1/2/4-shard-group matrix;
 - one equivalent EC2 capacity-unit host per shard group;
-- separate generator compute and generator-headroom proof (VAL-NEG-2);
+- separate generator compute, preflight sizing, and per-point generator-headroom proof (VAL-NEG-2);
+- PR4a `publishable` provenance readiness under measurement-contract §13;
 - correctness/reconciliation for every quoted point (VAL-COR-1);
 - resource-envelope evidence sufficient for VAL-NEG-7;
+- the common saturation-point selection rule rather than arbitrary sweep endpoints;
 - measured `G1/G2/G4` and derived `E2/E4` with no preselected threshold;
-- limiting-resource interpretation and explicit workload/resource envelope;
+- limiting-resource interpretation, including the per-authority data-volume/working-set change, and
+  explicit workload/resource envelope;
 - retained evidence and report.
 
 The older service-replica VAL-SCALE-1/2 path is not Iteration C scope.
@@ -349,9 +379,11 @@ If time slips, remove work in this order:
    unless A&R needs it to resolve material variation;
 4. PR5 chart production beyond what the decisive findings require.
 
-**Do not descope:** the 1/2/4 matrix, separate generator, equivalent growing resource envelopes,
-response validation, reconciliation, resource-envelope evidence, retained provenance, or the
-limiting-resource interpretation. Those properties make the capacity result mean what it says.
+**Do not descope:** the 1/2/4 matrix, stable `WL-MUT-DISP-4` request semantics, separate generator,
+equivalent growing resource envelopes, response validation, reconciliation, resource-envelope
+evidence, publishable-provenance readiness, the common saturation-point rule, retained provenance,
+or the limiting-resource interpretation. Those properties make the capacity result mean what it
+says.
 
 Contingency is drawn before weakening any mandatory evidence gate.
 
@@ -431,13 +463,17 @@ explicitly recorded as unproven.
 
 Before Iteration C A&R can judge the Goal:
 
-- `WL-MUT-DISP-4` runs reproducibly from clean fixtures;
+- `WL-MUT-DISP-4` runs reproducibly from clean fixtures with topology-independent same-organisation
+  request pairs;
 - the AWS 1/2/4 topologies are reproducible with equivalent capacity-unit hosts and separate
   generator compute;
+- PR4a has demonstrated `publishable` provenance readiness before PR4b capacity evidence begins;
 - `G1/G2/G4` and `E2/E4` exist only at the evidence level their retained runs support;
+- each selected G point is established by the common saturation rule, not by the final tested rung;
 - response validation, generator headroom, and resource-envelope controls are demonstrated;
 - outcomes and persisted state reconcile on every participating authority;
-- limiting resources and material environment variation are explained or conservatively bounded;
+- limiting resources and material environment variation are explained or conservatively bounded,
+  including the intended per-authority data-volume/working-set change;
 - measured facts, calculations, interpretation, and limitations are separated;
 - architecture reflects evidence rather than desired presentation;
 - the repository remains suitable for public review under the disclosure policy.

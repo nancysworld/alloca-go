@@ -233,15 +233,17 @@ drives 2,000 distinct keys and reposts none of them (PR3c report §7.4). The cri
 met by composition rather than by one observation on the deployed stack.
 
 The fix was one repost rather than an experiment, so it was made here instead of deferred: the
-`controls` cell gained case 3b, which reposts the cross-authority refusal's own key and asserts
-both the recorded reason and `replay=true`. VAL-COR-4 is **established for Iteration B** on the
+`controls` cell gained case 3b, which reposts the cross-authority refusal's own key and asserts the
+recorded reason and `replay=true` against `replay=false` on the decision itself, so what the control
+shows is the transition rather than a flag. VAL-COR-4 is **established for Iteration B** on the
 evidence retained in
 [`../measurements/pr3c-phase1/controls-replay/`](../measurements/pr3c-phase1/controls-replay/).
 
 Two things this deliberately did **not** do. The retained PR3c cells were not re-run or
 reinterpreted — their measured numbers are unchanged, and 2,000 persisted records still do not
-evidence replay. The PR3c report was not amended either: its §7.4 describes the runs it describes
-and stays accurate about them, carrying a forward pointer rather than a correction.
+evidence replay. Nor were the PR3c report's findings revised: its §7.4 describes the runs it
+describes and stays accurate about them, so the section gained a narrower heading and a forward
+pointer rather than a correction.
 
 No accepted Phase 1 requirement or architecture needs revision.
 

@@ -417,9 +417,11 @@ Composing those two with the 2,000 records above is an argument, not an observat
 does not offer it as one. What is missing is one same-key repost through the deployed two-authority
 stack — a small addition to the control rather than a new experiment.
 
-> **Added after publication, and it amends nothing above.** The Iteration B Analyse & Review made
-> that addition: `controls` case 3b reposts the refusal's own key and asserts both the recorded
-> reason and `replay=true` on the deployed two-authority stack, retained in
+> **Added after publication. It revises no reading, verdict or conclusion above** — the only other
+> change to this section is its heading, narrowed from "on this topology" to "by these runs", which
+> is what it always meant. The Iteration B Analyse & Review made the addition: `controls` case 3b
+> reposts the refusal's own key and asserts the recorded reason and `replay=true`, against
+> `replay=false` on the first post, on the deployed two-authority stack — retained in
 > [`../pr3c-phase1/controls-replay/`](../pr3c-phase1/controls-replay/). The runs this report
 > describes still drive distinct keys throughout and still report `replayed_mutations: 0`, so every
 > reading above stands as written. VAL-COR-4's current status is tracked by

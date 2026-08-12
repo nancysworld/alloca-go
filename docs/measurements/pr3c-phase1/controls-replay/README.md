@@ -1,9 +1,10 @@
 # The controls run that exercises VAL-COR-4's same-key replay clause
 
-One run of the `controls` cell driven on 2026-08-12 at commit `3a74bc2` against image
-`alloca-go:3a74bc2`, retained for a single line in its transcript:
+One run of the `controls` cell driven on 2026-08-12 at commit `1ad5054` against image
+`alloca-go:1ad5054`, retained for two lines in its transcript:
 
 ```
+cross-authority refusal is decided, not replayed: ok (409, "replay":false)
 cross-authority refusal is marked as a replay: ok (409, "replay":true)
 ```
 
@@ -16,18 +17,22 @@ service layer and `TestRefusalIsRecordedAndReplayed` on the PostgreSQL adapter, 
 with the persisted records is an argument rather than an observation. Control 3b closes that: it
 reposts control 3's key through the deployed two-authority stack.
 
-**Two assertions, because either alone passes for the wrong reason.** The recorded reason without
-the replay flag is exactly what a *re-decision* of the policy would also return; the flag without
-the reason would accept a replay of some other recorded outcome.
+**Three assertions, because no two of them are enough.** The recorded reason without the replay
+flag is exactly what a *re-decision* of the policy would also return; the flag without the reason
+would accept a replay of some other recorded outcome; and both of those on the repost, without
+`replay=false` on the first post, would still pass in a build that labelled *every* cross-authority
+refusal a replay. The two flag readings are what make this a transition rather than a state.
 
 **It is a controls run, not a measured cell.** No load was driven, no scrape pair was taken, and
 nothing here enters a measured population — the directory holds the transcript alone, which is why
 it does not have the shape of [`../pass-1/`](../pass-1/). The measured numbers for VAL-COR-4 remain
 the two retained passes', unchanged and un-rerun. Nothing in this run was folded back into them.
 
-**It does not amend the PR3c report.** That report describes the runs it describes, and its §7.4
-statement — that no *retained run at the time* reposts an already-recorded cross-authority key —
-stays true of them. §7.4 carries a forward pointer here rather than a correction.
+**It revises nothing in the PR3c report.** That report describes the runs it describes, and its
+§7.4 statement — that no *retained run at the time* reposts an already-recorded cross-authority key
+— stays true of them. Its findings, readings and verdicts are untouched. The section was edited in
+two ways that carry no reinterpretation: its heading now scopes the statement to those runs rather
+than to the topology, and it carries a forward pointer here rather than a correction.
 
 ## Reproducing it
 
@@ -39,21 +44,25 @@ go build -o bin/alloca-verify ./cmd/alloca-verify
 test/scripts/pr3c-experiments.sh controls
 ```
 
-The assertion discriminates, and that is checkable by hand against the same running topology: post
-a *fresh* idempotency key to the same cross-authority path and the refusal returns
-`"replay":false`, so the check fails specifically when the repost is not a replay.
+## What the assertions detect
 
-```sh
-K="disc-$(date -u +%s)"
-for i in 1 2; do
-  curl -sS -X POST http://localhost:8081/v1/slots/org-b/slot-0/reservations \
-    -H 'Content-Type: application/json' -H "Idempotency-Key: $K" \
-    -d '{"user_organisation_id":"org-a","user_id":"disc"}'
-  echo
-done
-# {"outcome":"business_refusal","reason":"cross_authority_unsupported","replay":false}
-# {"outcome":"business_refusal","reason":"cross_authority_unsupported","replay":true}
+Demonstrated by mutation against this topology rather than argued, because the run above passes
+either way. Burning the refusal key *before* the response case 3 asserts on — one extra post of the
+same request — makes that response a replay, and the run fails at the assertion that names the
+property and at no other:
+
 ```
+cross-authority refusal: ok (409, cross_authority_unsupported)
+
+!! cross-authority refusal is decided, not replayed: got [409 {"outcome":"business_refusal",
+   "reason":"cross_authority_unsupported","replay":true}], wanted it to carry "replay":false
+```
+
+The reason assertion above it still passes on the mutated run. That is the point of the addition:
+the recorded reason cannot tell a decision from a replay, so on its own it would have accepted a
+service that answered every cross-authority post from a record.
+
+The mutation was reverted; nothing in this directory was produced by a mutated script.
 
 The status of the validation itself is in
 [`../../../test/validation-plan/ag-sept-validation-plan.md`](../../../test/validation-plan/ag-sept-validation-plan.md)

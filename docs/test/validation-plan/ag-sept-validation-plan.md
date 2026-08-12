@@ -267,8 +267,9 @@ Run the refusal control in §3.5 and prove that Phase 1 creates no partial booki
 what makes it a clean evidence class and also what makes it structurally unable to show §3.5's
 same-key replay clause — a persisted record is a necessary condition for replay, not a
 demonstration of it. That clause is discharged by the `controls` cell's case 3b, which reposts the
-refusal's own key and asserts both the recorded reason and `replay=true`. A re-validation that
-runs only the refusal cell leaves the clause unexercised.
+refusal's own key and asserts the recorded reason and `replay=true` against `replay=false` on the
+first post — the transition, rather than a flag that a service labelling every refusal a replay
+would also satisfy. A re-validation that runs only the refusal cell leaves the clause unexercised.
 
 ### VAL-COR-5 — Placement enforcement / misrouting
 

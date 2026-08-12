@@ -245,8 +245,9 @@ Iteration C exposes service compute as the limiting subsystem, that becomes evid
 service-replica question rather than a reason to vary both axes in the same experiment.
 
 The service and PostgreSQL authority may share the capacity-unit host because the unit being
-measured is the combined shard-group envelope. What must not be shared across units is the fixed
-compute/memory/storage allocation whose addition is the independent variable.
+measured is the combined shard-group envelope. The comparison must not repartition one fixed
+compute/memory/storage allocation among more shard groups; each added group receives its own
+controlled provisioned envelope. This does not require physically dedicated underlying hardware.
 
 ### 13.2 Separate generator host
 

@@ -67,7 +67,7 @@ Iteration B evidence -> Analyse & Review -> Iteration C Problem
 | Multi-authority harness — topology, routing, certification, verifier | PR3b | merged `57f501d` |
 | Multi-authority correctness and failure-isolation evidence | PR3c | merged #16 |
 | Iteration B Analyse & Review | review step, PR #17 | merged; Iteration B closed and Iteration C Problem selected |
-| Iteration C planning | PR #18 | in progress; docs-only Requirements → Design → Validation → Schedule |
+| Iteration C planning | PR #18 | complete in #18; closes Requirements → Design → Validation → Schedule |
 | Iteration C AWS capacity environment | PR4a | scheduled after #18 |
 | Iteration C 1/2/4 capacity evidence | PR4b | scheduled after PR4a |
 | Architecture conclusions and one justified boundary | PR5 | not started; remains downstream of Iteration C evidence/A&R |
@@ -87,13 +87,13 @@ granularity is false precision that invites its own overrun (Nancy's call, 2026-
 | Placement, booking policy, and confirm/cancel ownership | PR3a | 1.0 | 1.0 | 0.0 | merged; originally 3.0, with 2.0 returned to contingency |
 | Multi-authority harness | PR3b | 2.5 | 2.5 | 0.0 | merged |
 | Multi-authority correctness and failure-isolation evidence | PR3c | 1.5 | 1.5 | 0.0 | merged; originally 2.0, with 0.5 returned to contingency |
-| Iteration C planning | PR #18 | 0.5 | 0.0 | 0.5 | in progress; hard planning cap |
+| Iteration C planning | PR #18 | 0.5 | 0.5 | 0.0 | complete; hard planning cap met |
 | Iteration C AWS capacity environment | PR4a | 1.5 | 0.0 | 1.5 | scheduled |
 | Iteration C 1/2/4 capacity evidence | PR4b | 2.5 | 0.0 | 2.5 | scheduled |
 | Architecture conclusions and one justified boundary | PR5 | 1.5 | 0.0 | 1.5 | not started |
-| **Allocated development budget** | | **15.5** | **9.5** | **6.0** | |
+| **Allocated development budget** | | **15.5** | **10.0** | **5.5** | |
 | Contingency | | **4.0** | **1.0** | **3.0** | 1.0 drawn by §2.1.1 |
-| **Total milestone budget** | | **19.5** | **10.5** | **9.0** | |
+| **Total milestone budget** | | **19.5** | **11.0** | **8.5** | |
 
 **The numeric columns are the accounting source of truth:** `Allocated = Spent + Left` on every
 row. Completed work that returned unused allocation is shown at its current allocation; **Status**
@@ -157,7 +157,7 @@ verification; it does not make the correctness/evidence gates optional.
 
 ### 2.3 Iteration C planning is intentionally bounded, not a general precedent
 
-**Nancy's decision, 2026-08-12:** PR #18 has a **0.5-day hard cap** and should merge within that
+**Nancy's decision, 2026-08-12:** PR #18 has a **0.5-day hard cap** and closes within that
 active-work budget.
 
 That cap is justified by this iteration's state, not by a belief that Requirements/Design/
@@ -215,7 +215,8 @@ same-key replay evidence gap found during review, and selects the Iteration C Pr
 
 ### Iteration C planning — PR #18 — 0.5 day
 
-**Docs-only.** Requirements → Design → Validation plan → Schedule for the Problem selected by #17.
+**Actual 0.5 day. Docs-only.** Requirements → Design → Validation plan → Schedule for the Problem
+selected by #17.
 
 It records:
 
@@ -250,6 +251,8 @@ choices are not reopened merely because more alternatives exist.
 - per-authority migration and the existing provenance/certification contract;
 - manifest/topology/environment fields sufficient for a sound run to validate at the
   `measurement-contract.md` §13 **`publishable` provenance level**;
+- verifier connectivity to every authority's PostgreSQL endpoint, including the bounded DSN and
+  security-group path needed for cross-host `alloca-verify` reconciliation;
 - bounded host/service/database resource evidence required by VAL-NEG-7;
 - smoke/correctness verification that all three topologies are runnable before capacity sweeps.
 
@@ -266,7 +269,8 @@ economics as an Iteration C analysis output.
 capacity-unit hosts and separate generator; the dedicated `WL-MUT-DISP-4` generator preserves the
 same request-pair semantics and fixed per-organisation fixture populations under every placement;
 the selected generator is preflighted above the intended G4 sweep range; all units pass
-provenance/readiness/placement checks; a sound run can reach `publishable` **provenance** under
+provenance/readiness/placement checks; the verifier can reach every participating authority and
+complete the existing reconciliation path; a sound run can reach `publishable` **provenance** under
 measurement-contract §13; the measurement system can retain the resource evidence required by
 VAL-SCALE-5/VAL-NEG-7; and the cost ceiling/teardown controls are in place. `Publishable` here is a
 provenance-readiness gate only — PR4b still has to satisfy §5's evidence gates before any external

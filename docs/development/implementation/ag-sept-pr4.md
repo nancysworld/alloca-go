@@ -724,9 +724,67 @@ says plainly that an exhausted cell backs no capacity number. It reports rather 
 because §5 is an evidence gate and not a provenance one, and a run that hits the fixture ceiling
 is still a legitimate artifact of the experiment that produced it.
 
+### 3.11 The rehearsal's first valid operating point, and what it is not
+
+With `SLOTS=3200` the same G4 cell ran with useful demand throughout
+(`test/results/itc-g4-20260813T205034Z`, service and generator both `7e46f0f`, both unmodified,
+certified `capacity`):
+
+| | |
+|---|---|
+| Goodput | 110,172 mutations over 60.036 s — **1,835 mutations/s** |
+| Outcome mix | 100% `admitted_success`; no refusals, replays or invalid responses |
+| Fixture | 110,172 of 256,000 consumed — 43%, with headroom throughout |
+| Latency | p50 6.8 ms, p95 20.3 ms, p99 38.7 ms, max 69.1 ms |
+| Generator | 7.7% of one core per core, `GOMAXPROCS` 4 |
+
+**The strongest thing in the run is the agreement, not the number.** The bracketing scrapes give a
+server-side delta per unit of **27,543 admitted, identical across all four**, summing exactly to
+the client-reported 110,172. Two independent accountings agree, and the four capacity units are
+balanced to the request — which is what `WL-MUT-DISP-4`'s round-robin over four organisations,
+one homed per authority, must produce if placement and routing are correct.
+
+**This is not a capacity point, and no ladder rests on it yet.** It is a single operating point at
+concurrency 16. Nothing in it indicates saturation: every request was admitted, latency is well
+inside both §7 gates, and the generator was at 7.7%. A mutation-capacity claim requires a rung
+*above* the selected point that produced no more sustained Goodput, and no such rung has been run.
+
+**Concurrency 16 equals `aggregate_pool_size` 16**, which is worth stating before the ladder is
+designed rather than discovered inside it. Four connections per unit against sixteen closed-loop
+workers means every worker can hold a connection and the pool is exactly not a constraint at this
+rung; the next rung begins queueing. PR2 found the connection pool to be the frontier on a single
+instance, so a ladder that stops at or below this boundary would establish nothing about where
+this topology's frontier is.
+
+**Evidence class.** Rehearsal/diagnostic only (§2.14): all four groups share one workstation,
+kernel, storage path and page cache, so the partition bounds CPU and nothing else. It cannot
+discharge `VAL-SCALE-5`, cannot become a Tier-2 result, and is never mixed with AWS points to
+derive `E2` or `E4`. It is also a **single reading**, unreproduced — and the workstation's
+throughput moved by roughly 2× between PR2 runs, which is the variance any local number here
+inherits until reproduced.
+
+What it does establish is the thing PR4a exists for: the G1/G2/G4 machinery — placement, fixture,
+workload semantics, declaration, observed deployment, provenance, cpuset partition, generator
+confinement, scrape coverage and certification — runs end to end and produces an internally
+consistent artifact, before any metered AWS time is spent.
+
 ## 4. Open items
 
 - **Rung duration** stays open until §2.4's preflight derives it.
+- **The saturation ladder** has not been run. §3.11 is one operating point at concurrency 16, and
+  that rung sits exactly at `aggregate_pool_size`, so the ladder must deliberately cross it.
+- **Final `SLOTS`** is still to be derived from the deepest rung that ladder reaches, then held
+  identical across `G1`, `G2` and `G4` (§3.10). 3200 is an interim value sized to one c=16 cell.
+- **The generator-headroom control** is now runnable: §3.11 is the high-useful-demand `G4` point
+  it was waiting for (§3.10).
+- **Per-unit panel aggregation and the dashboard retitle** (§2.6) are not done. The units are
+  scraped and labelled by `authority`, but the committed dashboard is still PR2's
+  single-instance one.
+- **Generator currency is unchecked.** `itc-run.sh` verifies the generator binary exists, not that
+  it matches the tree, so a stale binary that still accepts its arguments would run and certify
+  while `generator_commit_sha` honestly records a revision that is not the one under test.
+  `sweep.sh` has the same shape. Whether a mismatch should refuse or warn is a measurement-contract
+  question.
 - **Whether monitoring splits onto its own host** stays open until §2.2's preflight says whether it
   needs to.
 - **`postgres_exporter`** is deferred with a trigger, not dropped (§2.1).

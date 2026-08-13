@@ -23,8 +23,13 @@
 #
 #   ITC_GROUPS=4 SLOTS=200 ./test/scripts/itc-seed.sh
 #
-# Run it after `make itc-up ITC_GROUPS=n` and before the sweep, from the host: the PostgreSQL ports
-# are published there.
+# Run it after `make itc-up ITC_GROUPS=n` and before the sweep. Locally that is the host, where
+# the container ports are published. On EC2 each authority is a different machine, so point the
+# script at them:
+#
+#   AUTHORITY_1_HOST=10.0.1.11 AUTHORITY_1_PGPORT=5432 \
+#   AUTHORITY_2_HOST=10.0.1.12 AUTHORITY_2_PGPORT=5432 \
+#   ... ITC_GROUPS=4 SLOTS=200 ./test/scripts/itc-seed.sh
 
 set -euo pipefail
 
@@ -41,14 +46,21 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 placement="$repo_root/deploy/topology/placement-itc-g${ITC_GROUPS}.json"
 [ -f "$placement" ] || { echo "no placement document at $placement" >&2; exit 1; }
 
-# The published host port of each authority's PostgreSQL, matching deploy/topology's defaults.
-pgport_for() {
+# Where each authority's PostgreSQL answers.
+#
+# Host as well as port, because the three environments this has to serve disagree about both.
+# Locally the authorities are containers publishing distinct ports on one host; inside the
+# Compose network they are distinct hostnames all on 5432; on EC2 they are four separate hosts.
+# Defaulting to localhost keeps the local recipe a single command while leaving the other two
+# expressible without editing the script — which matters because editing it per environment is
+# how the fixture and the routing start to disagree.
+pgendpoint_for() {
   case "$1" in
-    authority-1) echo "${AUTHORITY_1_PGPORT:-15433}" ;;
-    authority-2) echo "${AUTHORITY_2_PGPORT:-15434}" ;;
-    authority-3) echo "${AUTHORITY_3_PGPORT:-15435}" ;;
-    authority-4) echo "${AUTHORITY_4_PGPORT:-15436}" ;;
-    *) echo "unknown authority '$1'; deploy/topology publishes ports for authority-1..4 only" >&2
+    authority-1) echo "${AUTHORITY_1_HOST:-localhost}:${AUTHORITY_1_PGPORT:-15433}" ;;
+    authority-2) echo "${AUTHORITY_2_HOST:-localhost}:${AUTHORITY_2_PGPORT:-15434}" ;;
+    authority-3) echo "${AUTHORITY_3_HOST:-localhost}:${AUTHORITY_3_PGPORT:-15435}" ;;
+    authority-4) echo "${AUTHORITY_4_HOST:-localhost}:${AUTHORITY_4_PGPORT:-15436}" ;;
+    *) echo "unknown authority '$1'; deploy/topology defines authority-1..4 only" >&2
        return 1 ;;
   esac
 }
@@ -67,8 +79,8 @@ echo "seeding G${ITC_GROUPS} from $(basename "$placement"): ${SLOTS} slots per o
 current_authority=""
 while read -r authority org; do
   [ -n "$authority" ] || continue
-  port="$(pgport_for "$authority")"
-  dsn="postgres://alloca:alloca@localhost:${port}/alloca?sslmode=disable"
+  endpoint="$(pgendpoint_for "$authority")"
+  dsn="postgres://${PGUSER:-alloca}:${PGPASSWORD:-alloca}@${endpoint}/${PGDATABASE:-alloca}?sslmode=${PGSSLMODE:-disable}"
 
   reset=""
   if [ "$authority" != "$current_authority" ]; then
@@ -77,7 +89,7 @@ while read -r authority org; do
     current_authority="$authority"
   fi
 
-  echo "  ${org} -> ${authority} (localhost:${port})${reset:+ [reset]}"
+  echo "  ${org} -> ${authority} (${endpoint})${reset:+ [reset]}"
   ( cd "$repo_root" && go run ./cmd/alloca-seed \
       -database-url "$dsn" -org "$org" -slots "$SLOTS" -capacity "$CAPACITY" $reset )
 done <<< "$mapping"

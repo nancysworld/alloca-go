@@ -744,6 +744,49 @@ the client-reported 110,172. Two independent accountings agree, and the four cap
 balanced to the request — which is what `WL-MUT-DISP-4`'s round-robin over four organisations,
 one homed per authority, must produce if placement and routing are correct.
 
+**The window is not stationary, and 1,835/s is an average across a decay.** The scraped rate peaks
+near **3,200/s a few seconds in and falls monotonically to about 1,300/s** by the end of the 60 s
+window — roughly 2.5× within a single cell. Latency rises across the same span from the other
+side, with p50, p95 and p99 all climbing (p99 approximately 0.02 s to 0.045 s), and per-unit
+resident memory grows about 19 MB to 23 MB.
+
+The pool is not the cause at this rung: connections in use oscillate around 2–4 against a maximum
+of 4 per unit, and acquire-wait stays flat until after the load stops. The leading hypothesis is
+**cost per mutation rising with accumulated state** — the cell inserts 110,172 claims in 60 s, and
+every `reserve` performs an exclusion-constraint insert against the `btree_gist` index on
+`user_time_claims`, which is in the measured write path and grows with every row. That index is a
+known source of drift *between* runs; the finding here is that it is visible *within* one.
+
+This is read from the retained scrape series rather than queried into an artifact, and the
+mechanism is a hypothesis rather than a measured attribution. What is not in doubt is the shape:
+a single reported rate does not describe this window.
+
+### 3.11.1 A second rung, and why the pair cannot yet be compared
+
+`c=32`, same fixture and reseed (`test/results/itc-g4-20260813T211417Z`, certified `capacity`):
+
+| | `c=16` | `c=32` |
+|---|---|---|
+| Goodput | 1,835/s | 2,153/s (+17.4%) |
+| p50 | 6.8 ms | 5.8 ms |
+| p95 | 20.3 ms | 48.1 ms |
+| p99 | 38.7 ms | 60.3 ms |
+| Generator | 7.7%/core | 9.0%/core |
+
+Per-unit balance held exactly (32,323 / 32,323 / 32,322 / 32,322). Doubling concurrency bought
+17.4% more Goodput while the tail grew two to three times and p50 *fell* — the signature of
+queueing rather than of added capacity, and `c=32` is the first rung past `aggregate_pool_size`.
+
+**Both figures are averages over non-stationary windows, so the pair does not yet support a
+saturation argument.** Two rungs can differ by tens of percent while measuring the same service
+over different portions of the same decay curve, and a saturation argument selects an operating
+point precisely by claiming a higher rung produced no more sustained Goodput. "Sustained" is the
+word doing the work, and it is the property these windows have not been shown to have. The rungs
+are recorded as observations; no frontier is claimed from them.
+
+Characterising the decay is therefore a prerequisite for the ladder, not a refinement of it
+(§4).
+
 **This is not a capacity point, and no ladder rests on it yet.** It is a single operating point at
 concurrency 16. Nothing in it indicates saturation: every request was admitted, latency is well
 inside both §7 gates, and the generator was at 7.7%. A mutation-capacity claim requires a rung
@@ -771,8 +814,19 @@ consistent artifact, before any metered AWS time is spent.
 ## 4. Open items
 
 - **Rung duration** stays open until §2.4's preflight derives it.
-- **The saturation ladder** has not been run. §3.11 is one operating point at concurrency 16, and
-  that rung sits exactly at `aggregate_pool_size`, so the ladder must deliberately cross it.
+- **Within-window decay must be characterised before any ladder** (§3.11). Goodput falls ~2.5×
+  inside a single 60 s cell, so a rung's reported average depends on how long it ran, and two
+  rungs are not comparable until that dependence is quantified or removed. The next step is the
+  same cell at 30 s, 60 s and 120 s: a rate that falls with window length is a function of
+  accumulated state rather than of the service, and the ladder then needs either a defined
+  steady-state slice or a bounded fixture-state budget per rung.
+- **The rate series is not retained per cell.** `itc-run.sh` keeps bracketing scrapes, which give
+  a delta but no shape — the decay above is visible only in Grafana and would be lost with the
+  retention window. A report cannot quote what is not retained, so a decay-aware result needs the
+  per-cell CSV export or TSDB snapshot the PR2 sweep runner already performs.
+- **The saturation ladder** has not been run, and cannot be until the two items above are settled.
+  Concurrency 16 sits exactly at `aggregate_pool_size`, so the ladder must deliberately cross it;
+  `c=32` (§3.11.1) is the first rung past it and is recorded as an observation, not a rung.
 - **Final `SLOTS`** is still to be derived from the deepest rung that ladder reaches, then held
   identical across `G1`, `G2` and `G4` (§3.10). 3200 is an interim value sized to one c=16 cell.
 - **The generator-headroom control** is now runnable: §3.11 is the high-useful-demand `G4` point

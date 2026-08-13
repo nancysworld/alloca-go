@@ -444,35 +444,33 @@ all-refusal run may back a capacity *claim* is `measurement-contract.md` §5's q
 evidence, not that document's §13 about provenance, and PR4b answers it per capacity point rather
 than here.
 
-### 3.6 Untracked files in the repository root currently block certification
+### 3.6 One uncommitted file anywhere in the tree makes every run uncertifiable
 
-Ten untracked files sit in the repository root — `.bashrc`, `.gitconfig`, `.mcp.json`, `.profile`,
-`.zshrc` and similar. They are personal shell and editor artifacts rather than project files, and
-nothing in `.gitignore` covers them.
+`go build` decides `vcs.modified` by running `git status --porcelain`, which lists **untracked**
+files as well as modified ones. A single new file that has not been committed — a scratch script, a
+config being drafted, a result written into a path `.gitignore` does not cover — therefore stamps
+the service and generator binaries `vcs.modified=true`.
 
-`go build` decides `vcs.modified` by running `git status --porcelain`, which lists untracked files.
-So the tree reads dirty even though every tracked file is committed, and the service binary is
-stamped `vcs.modified=true`. `Manifest.Validate` refuses `service_source_modified` at `local` — the
-floor of the ladder — so **no run against an image built from this tree can certify above `none`**,
-and PR4a's `publishable` provenance readiness gate cannot be met while they are there.
+`Manifest.Validate` refuses `service_source_modified` at `local`, the floor of the ladder, so the
+consequence is not a downgrade: **the run certifies at `none` and backs nothing at all**, however
+sound the measurement was. This is the state PR4a's `publishable` provenance gate has to avoid, and
+it is reachable by forgetting one `git add`.
 
-Measured rather than reasoned, because an earlier reading in this repository reported
-`vcs.modified=false` under what appeared to be the same conditions and was quoted as evidence that
-untracked files were harmless. That reading has not been reproducible since. The rule was therefore
-settled in a synthetic repository instead: a clean tree stamps `false`, and adding a single
-untracked file to it stamps `true`. The same tree here stamps `true` on the host and inside the
-image, while `git status --porcelain --untracked-files=no` is empty.
+Measured, not reasoned: in a synthetic repository a clean tree stamps `false` and adding one
+untracked file stamps `true`. Observed here as a G2 run that certified at `none` with both
+`service_source_modified` and `generator_source_modified` true, while every *tracked* file was
+committed — the cause was an uncommitted overlay file added earlier in the same session.
 
-The `.dockerignore` and `Makefile` comments both describe this mechanism correctly. What neither
-anticipated is untracked files arriving in the root, where they are invisible to
-`make build-context-check` — that gate asserts `.dockerignore` excludes no *tracked* file, which is
-a different property and still holds.
+The existing controls each cover a different property and none covers this one.
+`make build-context-check` asserts `.dockerignore` excludes no *tracked* file. The `.dockerignore`
+and `Makefile` comments describe the mechanism correctly but are about excluded tracked paths.
+What does answer it, in one step, is **`make image-provenance`**: it builds the image, extracts the
+binary, and fails when a clean checkout produces `modified=true`.
 
-**Not fixed here: the files belong to the maintainer's environment.** Either move them out of the
-repository or add them to `.gitignore`; the first is the better fit for a repository intended for
-public release, since the second records personal shell configuration in a project's ignore list.
-Whichever is chosen must land before any AWS evidence run, and the `-dirty` image tag is the
-symptom to watch for.
+**Operational consequence for PR4b.** Run `git status --porcelain` and `make image-provenance`
+before any metered evidence run, not after. The cheap symptom to watch for is the `-dirty` suffix
+on the image tag, which `ALLOCA_IMAGE_TAG` derives from the same `git status --porcelain`; a run
+whose image tag carries it will not certify, and finding that out on AWS costs the rung.
 
 ## 4. Open items
 
@@ -483,8 +481,8 @@ symptom to watch for.
 - **Whether an all-refusal run may back a capacity claim** (§3.5) is left to PR4b, per quoted
   point. The provenance ladder certifies it and should; the evidence question is
   `measurement-contract.md` §5's.
-- **The untracked repository-root files** (§3.6) block certification at every level and must be
-  moved or ignored before an evidence run. Maintainer's environment, so not fixed here.
+- **`make image-provenance` before every metered run** (§3.6), because an uncommitted file makes
+  the run certify at `none` and the cost of learning that on AWS is the rung.
 - **AWS quota** remains an external dependency for PR4b's independently provisioned capacity
   evidence. If it does not permit the complete G4 environment within the AG-Sept timebox, record
   the blocker and leave `VAL-SCALE-5` explicitly unproven rather than delaying PR5 or promoting the

@@ -291,6 +291,18 @@ Tear down every unit whichever profile raised it:
 make itc-down
 ```
 
+**Before a run whose numbers you intend to keep, prove the build is certifiable:**
+
+```sh
+git status --porcelain     # expect empty
+make image-provenance      # fails if a clean checkout stamped modified=true
+```
+
+`go build` derives `vcs.modified` from `git status --porcelain`, which lists untracked files, so one
+uncommitted scratch file stamps the binaries modified. `Manifest.Validate` refuses that at `local`
+— the floor of the ladder — so the run certifies at `none` and backs nothing, however sound the
+measurement was. The visible symptom is a `-dirty` suffix on the image tag.
+
 ### Changing ports — optional
 
 Only needed if a default port is already taken on your machine. Every port has an environment

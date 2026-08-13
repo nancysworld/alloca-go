@@ -46,11 +46,20 @@ expected="$(printf "%b" "$expected" | sort)"
 # Long-running containers only: the migration containers run to completion and exit, and a
 # finished migration is not a unit consuming anything.
 #
+# **Scoped to this Compose project, not to the `alloca-` name prefix.** The prefix matched every
+# container the project has ever named — `alloca-prometheus` and `alloca-grafana` from the
+# observability stack, and `alloca-pg` from `make db-up` — so once Iteration C started raising
+# monitoring alongside the topology (which it must), this check refused a correct G4 and told the
+# operator to tear the topology down. The equality property is about the *topology*: exactly the
+# units the selected rung raises, and no leftovers from a larger one. Companions belong to the
+# separate check below.
+#
 # A failed `docker ps` must not be swallowed. Treating it as "nothing is running" would report
 # every expected unit as missing and send the reader to the topology when the fault is the daemon
 # — the same misdirection record-deployment.sh gives when the socket is unreadable and it says
 # the container does not exist.
-if ! running="$(docker ps --filter 'name=alloca-' --format '{{.Names}}')"; then
+if ! running="$(docker ps --filter 'label=com.docker.compose.project=alloca-topology' \
+                          --format '{{.Names}}')"; then
   echo "itc-topology-check: could not list containers; the Docker daemon is unreachable or the" >&2
   echo "  socket is not readable by this user. This is not a statement about the topology." >&2
   exit 1
@@ -74,6 +83,30 @@ else
     echo "  expected but NOT running:" >&2
     printf '%s\n' "$missing" | sed 's/^/    /' >&2
   }
+  exit 1
+fi
+
+# Scoping the check above to the topology's project removed something worth keeping: it used to
+# catch *anything* named `alloca-` sharing the machine. That was the wrong mechanism — it refused
+# the monitoring the rehearsal now requires — but the concern was real, because a container the
+# rehearsal did not raise still consumes the envelope the topology is measured in.
+#
+# So companions are enumerated rather than ignored. Prometheus and Grafana are expected: they are
+# the monitoring half of the generator/monitor set, and whether they are *pinned* there is
+# itc-cpuset-check.sh's question, not this one. Anything else — `alloca-pg` from `make db-up` is
+# the likely one — is a container nobody accounted for, running unpinned on the capacity units'
+# CPUs.
+if ! others="$(docker ps --filter 'name=alloca-' --format '{{.Names}}' \
+               | grep -vxF "$(printf '%s\n' "$running")" || true)"; then
+  others=""
+fi
+unexpected="$(printf '%s\n' "$others" | grep -vxE 'alloca-prometheus|alloca-grafana' | grep . || true)"
+if [ -n "$unexpected" ]; then
+  echo "itc-topology-check: containers are running that the rehearsal did not raise:" >&2
+  printf '%s\n' "$unexpected" | sed 's/^/    /' >&2
+  echo "  Each consumes the envelope this topology is measured in, and none of them is pinned" >&2
+  echo "  by the rehearsal partition. Stop them, or the numbers carry contention no artifact" >&2
+  echo "  records. ('make db-down' stops alloca-pg.)" >&2
   exit 1
 fi
 

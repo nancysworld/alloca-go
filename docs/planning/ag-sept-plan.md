@@ -73,7 +73,7 @@ Iteration B evidence -> Analyse & Review -> Iteration C Problem
 | Iteration C planning | PR #18 | complete in #18; closes Requirements → Design → Validation → Schedule |
 | Iteration C AWS capacity environment | PR4a | scheduled after #18 |
 | Iteration C 1/2/4 capacity evidence | PR4b | scheduled after PR4a |
-| Architecture conclusions and one justified boundary | PR5 | not started; remains downstream of Iteration C evidence/A&R |
+| Iteration C A&R and AG-Sept conclusion | PR5 | not started; follows PR4b and closes the milestone engineering loop |
 
 Validation status is owned by the validation plan's own status table, not duplicated here.
 
@@ -93,7 +93,7 @@ granularity is false precision that invites its own overrun (Nancy's call, 2026-
 | Iteration C planning | PR #18 | 0.5 | 0.5 | 0.0 | complete; hard planning cap met |
 | Iteration C AWS capacity environment | PR4a | 1.5 | 0.0 | 1.5 | scheduled |
 | Iteration C 1/2/4 capacity evidence | PR4b | 2.5 | 0.0 | 2.5 | scheduled |
-| Architecture conclusions and one justified boundary | PR5 | 1.5 | 0.0 | 1.5 | not started |
+| Iteration C A&R and AG-Sept conclusion | PR5 | 1.5 | 0.0 | 1.5 | not started |
 | **Allocated development budget** | | **15.5** | **10.0** | **5.5** | |
 | Contingency | | **4.0** | **1.0** | **3.0** | 1.0 drawn by §2.1.1 |
 | **Total milestone budget** | | **19.5** | **11.0** | **8.5** | |
@@ -111,6 +111,10 @@ experiments, validating negative controls, reviewing measurements and interpreta
 documentation, polishing diagrams, checking public-disclosure suitability, and preparing the
 repository for external readers. **Iteration B's Analyse & Review (#17) spent 0.5 day from this
 reserve, leaving 1.5–2.5 days.**
+
+PR5's Iteration C A&R and milestone-conclusion work is funded by PR5's existing **1.5 development
+days**, not as another draw on that reserve. The remaining reserve stays available for decisive
+reruns, review depth beyond the scheduled closeout work, and the final pre-publication pass.
 
 The time budget is a constraint, not an estimate to be expanded whenever a tool introduces
 incidental complexity.
@@ -154,6 +158,12 @@ The milestone total stays **19.5 days**; the return changes allocation, not the 
 **Review is not free. Nancy's decision, 2026-08-12:** Iteration B's Analyse & Review in PR #17 is
 charged at **0.5 day** against the separate 2–3 day review/rerun/interpretation reserve. That leaves
 **1.5–2.5 days** in that reserve.
+
+For the final Iteration C, A&R is deliberately combined with PR5 rather than scheduled as a separate
+review work unit. This is a milestone-closeout exception, not a change to the normal engineering
+loop: PR5 still produces the Analyse & Review outcome required by
+[`../development/engineering-process.md`](../development/engineering-process.md) §1.4.1, but also
+uses that outcome to make the AG-Sept goal and architecture conclusion in the same work unit.
 
 Review depth is Nancy's to set. Less detailed review moves more responsibility onto implementation
 verification; it does not make the correctness/evidence gates optional.
@@ -310,8 +320,8 @@ future exploration dimension, but Iteration C does **not** select it. PR4b must 
 cost-per-million, cloud-price comparison, instance-shopping, or economic-optimisation analysis from
 the fact that EC2 is being used. PR4a's dated estimate and spend ceiling exist only to control the
 cash cost of running the experiment. If the retained capacity evidence makes economics worth
-pursuing, Iteration C Analyse & Review may select or refine that later Problem through the normal
-engineering loop.
+pursuing, PR5 may record it as a deferred candidate direction; AG-Sept does not select or schedule a
+next Problem from it.
 
 **Gate:** VAL-SCALE-5 and VAL-NEG-7 are either discharged with retained evidence or explicitly
 reported as unproven. Tier-1 capacity points, when claimed, are established by the common
@@ -319,17 +329,53 @@ saturation rule rather than sweep depth; a Tier-2 result is selected only by §4
 `L` rule after the measurement-system limit is evidenced. No number is promoted beyond its
 measurement-contract evidence level.
 
-Iteration C Analyse & Review follows PR4b using the separate review/rerun/interpretation reserve.
-It decides whether the Problem is sufficiently resolved and whether the AG-Sept Goal is achieved or
-another Problem is worth pursuing. PR5 does not bypass that gate.
+PR5 follows PR4b and combines Iteration C Analyse & Review with the AG-Sept milestone conclusion.
+There is no separate Iteration C A&R work unit: the A&R remains required, but here it closes the
+milestone rather than feeding another scheduled AG-Sept iteration.
 
-### PR5 — Architecture conclusion and boundary decision
+### PR5 — Iteration C Analyse & Review + AG-Sept conclusion
 
-**Budget:** 1.5 development days, downstream of Iteration C A&R.
+**Budget:** 1.5 development days, following PR4b.
 
-It assembles the evidence-backed architecture conclusion, comparison tables/diagrams, service-
-boundary decision, limitations, reproduction entry points, and public-release polish. It must not
-invent a new implementation stage if A&R concludes the milestone should end.
+PR5 consumes the retained Iteration C evidence and closes both the final iteration and the AG-Sept
+milestone. It records the Analyse & Review outcome required by `engineering-process.md` §1.4.1 in
+the governing Goal/Problem record, then assembles the evidence-backed architecture conclusion.
+
+It delivers:
+
+- the **Iteration C Problem verdict** — sufficiently resolved, unresolved, or refined — with the
+  retained evidence that supports it;
+- the **durable learning** propagated into requirements, design, validation, ADRs, or explicitly
+  recorded as requiring no change;
+- the **AG-Sept Goal progress/verdict**, stating what the milestone established and what remains
+  unproven or deferred;
+- an evidence-backed architecture conclusion, comparison tables/diagrams, service-boundary
+  decision, limitations, and reproduction entry points;
+- explicit deferred-work and roadmap candidates where useful, without silently promoting them into
+  requirements or scheduled work;
+- the loop decision **`END` for AG-Sept**, either because the Goal is sufficiently achieved for the
+  agreed scope or because the maintainer makes an explicit milestone goal/scope closure decision
+  under `engineering-process.md` §1.4.
+
+Because this work closes AG-Sept, **PR5 does not choose or schedule the next Alloca Problem.** If
+Alloca continues after the milestone, a separate kickoff starts from current evidence, the roadmap,
+and current priorities to choose the next Goal and Problem before beginning a new engineering
+iteration.
+
+**Gate:** the Iteration C A&R outcome is durable, the AG-Sept goal/scope verdict is explicit, every
+architecture claim is traceable to retained evidence, limitations and unproven areas are named, no
+new implementation stage is invented, and the AG-Sept engineering loop is closed before
+publication work begins.
+
+The closeout sequence is:
+
+```mermaid
+flowchart LR
+    A[PR4b evidence] --> B[PR5: Iteration C A&R + AG-Sept conclusion]
+    B --> C[Pre-publication documentation pass]
+    C --> D[Public release]
+    D --> E[AG-Sept closed]
+```
 
 ## 4. Manifest and reconciliation staging
 
@@ -386,7 +432,7 @@ Only after the P0 Iteration C result is secure: a deliberately constrained resou
 the minimum needed to communicate the result; extra diagnostic reruns requested by A&R.
 
 Capacity/resource economics is **not** P1 for Iteration C; it remains an unscheduled roadmap
-direction unless A&R later selects it as a Problem.
+direction unless a future post-AG-Sept kickoff selects it as part of a new Goal or Problem.
 
 ### 5.3 P2 — only after decisive evidence
 
@@ -414,7 +460,7 @@ If time slips, remove work in this order:
 2. chart/dashboard polish beyond the diagnostic minimum;
 3. extra confirmation/rerun work beyond the retained confirmation required by the selected evidence
    path, unless A&R needs it to resolve material variation;
-4. PR5 chart production beyond what the decisive findings require.
+4. PR5 presentation/chart polish beyond what the milestone conclusion requires.
 
 **Do not descope:** the 1/2/4 matrix, stable `WL-MUT-DISP-4` request semantics and fixed fixture
 populations, separate generator, equivalent growing resource envelopes, response validation,
@@ -492,7 +538,9 @@ The public-ready milestone should leave:
 8. current and intended architecture diagrams;
 9. authority and bottleneck analysis across the scaling axes actually measured, with unmeasured
    axes named explicitly;
-10. a service-boundary decision and recorded Phase-2/deferred-work conclusion;
+10. the PR5 **Iteration C A&R + AG-Sept conclusion**, including the Problem verdict, Goal verdict,
+    evidence-backed architecture conclusion, service-boundary decision, limitations, and deferred
+    work;
 11. a concise public repository summary;
 12. explicit limitations, evidence labels, and negative-control results;
 13. a bounded **pre-publication documentation pass** across `docs/`, reviewed from an external
@@ -507,7 +555,7 @@ The public-ready milestone should leave:
 AG-Sept's schedule is complete when the deliverables of §7 exist and every P0 item is validated or
 explicitly recorded as unproven.
 
-Before Iteration C A&R can judge the Goal:
+Before PR5 can close Iteration C and judge the AG-Sept Goal:
 
 - `WL-MUT-DISP-4` runs reproducibly from clean fixtures with topology-independent same-organisation
   request pairs and fixed per-organisation populations reused across the 1/2/4 topology family;
@@ -528,11 +576,20 @@ Before Iteration C A&R can judge the Goal:
 - architecture reflects evidence rather than desired presentation;
 - the repository remains suitable for public review under the disclosure policy.
 
-**Before the repository is made public**, complete §7's pre-publication documentation pass. This is
-a public-readiness gate, not a new technical iteration: it improves how the established work is
-understood without changing requirements, evidence, or semantic ownership. The pass is complete
-when the durable docs are navigable and internally consistent for an external reader, diagrams have
-been added where they materially improve first-read comprehension under `docs/README.md`, and stale
-or unnecessarily dense prose has been cleaned without rewriting the historical or evidential record.
+PR5 then records the required Analyse & Review outcome and closes the **AG-Sept** engineering loop.
+It does not start the next Alloca iteration. Any continuation after AG-Sept begins with a separate
+kickoff that chooses the next Goal and Problem from the evidence, roadmap, and priorities current at
+that time.
 
-A finished schedule is an input to Analyse & Review, not a substitute for it.
+**After PR5 and before the repository is made public**, complete §7's pre-publication documentation
+pass. This is a public-readiness gate, not a new technical iteration: it improves how the settled
+AG-Sept work is understood without changing requirements, evidence, or semantic ownership. Some
+improvements may land naturally during PR5, especially architecture conclusions and diagrams, but
+the repo-wide external-reader pass happens after PR5 so it polishes the final technical story once.
+The pass is complete when the durable docs are navigable and internally consistent for an external
+reader, diagrams have been added where they materially improve first-read comprehension under
+`docs/README.md`, and stale or unnecessarily dense prose has been cleaned without rewriting the
+historical or evidential record.
+
+A finished schedule is an input to Analyse & Review, not a substitute for it; in this final
+iteration, PR5 is the work unit that performs that Analyse & Review and closes the milestone.

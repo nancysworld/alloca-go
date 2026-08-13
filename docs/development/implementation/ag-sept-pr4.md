@@ -677,6 +677,53 @@ service panels to `job="alloca-go"` and reserves a second job for the host expor
 host-run target is therefore a fifth member of the same job during a rehearsal, permanently down;
 `itc-obs-targets.sh` refuses rather than deleting it, since `obs-target.sh` owns that file.
 
+### 3.10 The first complete G4 rehearsal certified correctly and consumed its entire fixture
+
+The first full G4 cell — clean provenance, all four units pinned, generator confined, declaration
+and deployment reconciled — certified at `capacity`, blocked from `publishable` only by the
+co-resident generator. It also admitted **exactly 16,000 mutations against a 16,000-unit fixture**
+(4 organisations × 200 slots × 20 capacity) and then refused **184,693** requests with
+`no_capacity`:
+
+```text
+reserve  admitted_success               16,000
+reserve  business_refusal/no_capacity  184,693
+```
+
+At the 3,345 req/s the cell sustained, the fixture was spent in roughly the first five seconds.
+The remaining ~55 seconds measured how fast the service can decline, which is a correct answer
+and a sound measurement, and is not throughput the service could have delivered.
+
+**This is the useful-demand gate demonstrated on a workstation instead of on metered
+infrastructure**, which is what §2.14 says the rehearsal is for. Everything behaved exactly as
+`measurement-contract.md` §5 specifies: the run described itself honestly, its outcome mix is in
+its totals, and it certified at whatever its manifest earned — because what it lacks is useful
+demand rather than self-description. Nothing was broken. The point is that **nothing external
+would have told us either**, and the same cell on four `c5.large` hosts would have cost the rung.
+
+**Decisions taken (maintainer, 2026-08-13):**
+
+- **The same-cell rerun uses `SLOTS=3200`, `CAPACITY=20`** — 256,000 fresh mutations against the
+  200,693 requests this cell completed, which holds even under the conservative assumption that
+  every request admits.
+- **3200 is explicitly not the PR4b fixture size.** The final value is derived from the deepest
+  rung the intended ladder reaches and then kept identical across `G1`, `G2` and `G4`. Sizing to
+  the selected point is unsafe in a way that is easy to miss: an exhausted rung *above* the point
+  invalidates the point itself, because the saturation argument rests on that higher rung having
+  been short of service rather than short of fixture.
+- **Reset and reseed are explicit before every measured rung and every confirmation run**, so no
+  ladder point inherits depleted state. `itc-run.sh` owns the reseed rather than leaving it to the
+  operator — "reseed between rungs" is exactly the step a twelve-cell ladder drops once, silently,
+  after which every later point is wrong.
+- **The generator-headroom control is deferred** until there is a high-useful-demand `G4` point to
+  run it against. Against this cell it would have proved nothing: the generator sat at 12.5% of
+  one core per core, so widening its CPU set could not have moved anything.
+
+`itc-run.sh` now also reports the discriminator after each cell — admitted against supply — and
+says plainly that an exhausted cell backs no capacity number. It reports rather than refuses,
+because §5 is an evidence gate and not a provenance one, and a run that hits the fixture ceiling
+is still a legitimate artifact of the experiment that produced it.
+
 ## 4. Open items
 
 - **Rung duration** stays open until §2.4's preflight derives it.

@@ -20,7 +20,7 @@ GOLANGCI_LINT_STAMP   := $(TOOLBIN)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 .PHONY: all ci fmt fmt-check vet lint build test test-race test-integration \
         db-up db-down migrate run dev dev-measured smoke obs-up obs-target obs-down tidy tools clean \
         image topo-up topo-down topo-ps itc-up itc-down itc-deployment \
-        itc-layout itc-layout-check itc-rehearse obs-rehearse
+        itc-layout itc-layout-check itc-topology-check-test itc-rehearse obs-rehearse
 
 # Integration tests need a real PostgreSQL: the properties they prove (capacity safety
 # under concurrent transactions, post-lock decision time, the scoped-key race) do not
@@ -125,7 +125,7 @@ ITC_CPUS_GENERATOR ?= 8-11
 all: ci
 
 ## ci: run the full local gate, identical to CI (fmt, vet, lint, build, test, race)
-ci: fmt-check vet lint build test test-race build-context-check itc-layout-check
+ci: fmt-check vet lint build test test-race build-context-check itc-layout-check itc-topology-check-test
 
 ## fmt: format all Go files
 fmt:
@@ -325,6 +325,15 @@ build-context-check:
 # about whether it still enforces anything.
 itc-layout-check:
 	@./test/scripts/itc-cpu-layout-test.sh
+
+## itc-topology-check-test: prove the topology check still classifies containers correctly
+#
+# In `ci` for the same reasons as the two checks above, and it stubs `docker` rather than calling
+# it: the property is set arithmetic over container names, which needs no daemon. It exists
+# because the check misclassified the observability stack as topology units and refused a correct
+# G4 (ag-sept-pr4.md §3).
+itc-topology-check-test:
+	@./test/scripts/itc-topology-check-test.sh
 
 ## image: build the production-shaped service image, tagged with the current commit
 #

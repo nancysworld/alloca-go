@@ -71,6 +71,13 @@ jobs:
       - name: iteration C cpu layout check
         run: ./test/scripts/itc-cpu-layout-test.sh
 
+      # Guards itc-topology-check.sh's container-set logic, which decides whether the topology
+      # about to be measured is the one selected. It stubs `docker`, so it needs no daemon: the
+      # property is set arithmetic over container names. It exists because that check counted the
+      # observability stack as topology units and refused a correct G4 (ag-sept-pr4.md §3).
+      - name: iteration C topology check logic
+        run: ./test/scripts/itc-topology-check-test.sh
+
   integration:
     name: postgres integration
     runs-on: ubuntu-latest

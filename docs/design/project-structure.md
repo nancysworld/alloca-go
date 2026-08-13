@@ -37,9 +37,9 @@ The name invites two wrong assumptions, so both are answered here.
 looking for a package's tests will look first. Nothing under `test/` is compiled, and no Go
 tooling treats the name specially — only `testdata/` is special to the toolchain.
 
-**Two things under it run in CI, deliberately.** The gates are otherwise Go-only: `gofmt`,
+**Three things under it run in CI, deliberately.** The gates are otherwise Go-only: `gofmt`,
 `go vet`, `go build`, `go test ./...`, the race pass, the `-tags=integration` suite against a
-PostgreSQL service, and `golangci-lint`. Beside them `.github/workflows/ci.yml` runs two shell
+PostgreSQL service, and `golangci-lint`. Beside them `.github/workflows/ci.yml` runs three shell
 checks:
 
 - `test/scripts/check-build-context.sh` asserts that `.dockerignore` excludes no tracked file —
@@ -51,6 +51,10 @@ checks:
   validated, it is bash, and its comments once described four properties its code did not
   enforce (AG-Sept PR4a). It controls the machine's apparent CPU count with `taskset`, so it
   needs no override inside the script under test.
+- `test/scripts/itc-topology-check-test.sh` asserts that `itc-topology-check.sh` still classifies
+  running containers correctly — the units this rung raises, leftovers from a larger one, and
+  containers belonging to another Compose project entirely. It stubs `docker`, because the
+  property is set arithmetic over names rather than anything a daemon decides (AG-Sept PR4a).
 
 Both qualify as gates for the same reason: they need nothing an operator would have to provide —
 no daemon, no database, no judgement.

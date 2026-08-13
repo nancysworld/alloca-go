@@ -55,8 +55,22 @@ ITC_CPUS_GENERATOR="${ITC_CPUS_GENERATOR:-8-11}"
 WORKLOAD="${WORKLOAD:-wl-mut-disp-4}"
 CONCURRENCY="${CONCURRENCY:-16}"
 WINDOW="${WINDOW:-60s}"
-WARMUP="${WARMUP:-20s}"
-SLOTS="${SLOTS:-200}"
+# No WARMUP. `-warm-up` is refused outright at every level (measurement-contract §12): it drops
+# responses from the client totals while their rows stay in the database, which persisted-state
+# reconciliation cannot square. Warming is a separate invocation followed by a reseed, the shape
+# sweep.sh uses; it is not a flag on the measured run, and re-adding one here would refuse every
+# cell at `none`.
+
+# **Interim, not the PR4b fixture size** (maintainer decision, 2026-08-13). 3200 x 20 x 4
+# organisations is 256,000 fresh mutations against the 200,693 requests the first G4 cell
+# completed, so it holds even under the conservative assumption that every request admits.
+#
+# The final value must be derived from the *deepest rung the ladder will reach* and then kept
+# identical across G1, G2 and G4 — a fixture sized for the selected point can be exhausted by the
+# rung above it, and an exhausted higher rung invalidates the point below it (§3.10). The default
+# is not 200 any more because that value is now known to exhaust in about five seconds.
+SLOTS="${SLOTS:-3200}"
+CAPACITY="${CAPACITY:-20}"
 PLACEMENT="${PLACEMENT:-deploy/topology/placement-itc-g${ITC_GROUPS}.json}"
 DEPLOYMENT="${DEPLOYMENT:-test/results/deployment.json}"
 # One declaration per capacity point, not one per rehearsal: G1, G2 and G4 are different
@@ -217,9 +231,58 @@ ITC_CPUS_GENERATOR=$ITC_CPUS_GENERATOR
 nproc=$(nproc)
 EOF
 
+cat > "$OUT/fixture.txt" <<EOF
+SLOTS=$SLOTS
+CAPACITY=$CAPACITY
+organisations=4
+fresh_mutation_supply=$((SLOTS * CAPACITY * 4))
+EOF
+
 log "G$ITC_GROUPS cell -> $OUT"
+
+# **Reseed immediately before the measured window, every time** (maintainer decision, 2026-08-13).
+#
+# A ladder point that inherits the previous point's depleted fixture measures the fixture, not the
+# service — and it does so while looking entirely healthy, because refusing a booking for a full
+# slot is a correct answer that certifies. The first G4 rehearsal cell consumed its whole 16,000
+# unit supply in roughly the first five seconds and spent the remaining ~55s measuring refusal
+# throughput (§3.10).
+#
+# Owned by this script rather than left to the operator because "reseed between rungs" is exactly
+# the step a ladder of a dozen cells drops once, silently, and every point after it is wrong.
+# `alloca-seed -reset` also asserts a clean start, so this is where a contaminated fixture is
+# caught rather than inferred later from an odd outcome mix.
+log "  reseeding: $SLOTS slots x $CAPACITY capacity per organisation ($((SLOTS * CAPACITY * 4)) fresh mutations)"
+ITC_GROUPS="$ITC_GROUPS" SLOTS="$SLOTS" CAPACITY="$CAPACITY" \
+  ./test/scripts/itc-seed.sh > "$OUT/seed.log" 2>&1 \
+  || fail "reseeding failed; see $OUT/seed.log"
+
+# Bracketing scrapes. The service counters are cumulative and the units are deliberately left
+# running between cells, so only the delta across the measured window describes this cell —
+# a single scrape describes everything the process has ever done.
+scrape() {
+  local when="$1" n port
+  for n in $(seq 1 "$ITC_GROUPS"); do
+    case $n in
+      1) port="${SERVICE_1_METRICS_PORT:-9081}" ;;
+      2) port="${SERVICE_2_METRICS_PORT:-9082}" ;;
+      3) port="${SERVICE_3_METRICS_PORT:-9083}" ;;
+      4) port="${SERVICE_4_METRICS_PORT:-9084}" ;;
+    esac
+    curl -sS -m 10 "http://localhost:${port}/metrics" > "$OUT/s${n}-${when}.prom" \
+      || fail "could not scrape unit $n on ${port} (${when}); the cell would have no counter
+  delta for that unit, which is the evidence a report reads per authority"
+  done
+}
+
+scrape baseline
+
 log "  generator confined to CPUs $ITC_CPUS_GENERATOR ($WORKLOAD c=$CONCURRENCY window=$WINDOW require=$REQUIRE)"
 
+# No `-warm-up`. The flag discards responses from the client totals while their rows stay in the
+# database, which persisted-state reconciliation cannot reconcile, so it refuses the run at
+# `none` (measurement-contract §12). Warming is a *separate* invocation followed by a reseed —
+# the shape sweep.sh uses — and the reseed above is what makes that safe to add here later.
 taskset -c "$ITC_CPUS_GENERATOR" "$LOAD" \
   -placement "$PLACEMENT" \
   "${endpoints[@]}" \
@@ -228,7 +291,6 @@ taskset -c "$ITC_CPUS_GENERATOR" "$LOAD" \
   -workload "$WORKLOAD" \
   -concurrency "$CONCURRENCY" \
   -duration "$WINDOW" \
-  -warm-up "$WARMUP" \
   -slots "$SLOTS" \
   -require "$REQUIRE" \
   -out "$OUT/run.json" 2>&1 | tee "$OUT/generator-output.txt"
@@ -238,4 +300,29 @@ taskset -c "$ITC_CPUS_GENERATOR" "$LOAD" \
 status="${PIPESTATUS[0]}"
 [ "$status" -eq 0 ] || fail "the run failed or was refused below $REQUIRE; see $OUT/generator-output.txt"
 
-log "cell complete -> $OUT/run.json"
+# After the run has exited, not before: alloca-load replays ambiguous mutations in a post-run
+# pass, and a scrape taken while that is still in flight misses requests the report counts.
+scrape after
+
+# The useful-demand discriminator, reported rather than gated (measurement-contract §5). A cell
+# that admitted its whole supply measured the fixture's headroom, not the service — and it stays
+# `measurement_sound` and certifies at whatever its manifest earns, so nothing else will say so.
+admitted="$(python3 -c '
+import json, sys
+try:
+    totals = json.load(open(sys.argv[1]))["summary"]["totals"]
+    print(sum(t["count"] for t in totals if t.get("outcome") == "admitted_success"
+              and not t.get("replay")))
+except Exception:
+    print(-1)' "$OUT/run.json" 2>/dev/null)" || admitted=-1
+
+supply=$((SLOTS * CAPACITY * 4))
+if [ "${admitted:-0}" -ge "$supply" ] && [ "$supply" -gt 0 ]; then
+  echo >&2
+  echo "!! this cell exhausted its fixture: ${admitted} admitted against a supply of ${supply}." >&2
+  echo "   It certifies, and it backs no capacity number — what it measured after exhaustion is" >&2
+  echo "   refusal throughput (measurement-contract §5). Raise SLOTS and re-run before quoting" >&2
+  echo "   anything, and remember an exhausted rung also invalidates the rung below it." >&2
+fi
+
+log "cell complete -> $OUT/run.json  (${admitted:-?} admitted of ${supply} supplied)"

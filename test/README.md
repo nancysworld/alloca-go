@@ -8,13 +8,14 @@ checks a person runs by hand against a service they started themselves.
 | `scripts/smoke.sh` | end-to-end checks over a real socket against a running service | `make smoke`, with `make dev` in another terminal |
 | `scripts/check-build-context.sh` | asserts `.dockerignore` excludes no tracked file | CI, and `make ci` |
 | `scripts/itc-cpu-layout-test.sh` | asserts the Iteration C layout check still refuses a bad CPU partition | CI, and `make ci` |
+| `scripts/itc-topology-check-test.sh` | asserts the topology check still classifies containers correctly | CI, and `make ci` |
 | `scripts/itc-cpu-layout.sh` | checks the rehearsal's CPU partition against this machine | `make itc-layout`, and by `itc-rehearse` before it raises anything |
 | `scripts/itc-cpuset-check.sh` | asserts every running container is pinned where the partition says | by `itc-run.sh` in preflight; also by hand |
 | `scripts/itc-obs-targets.sh` | writes the Prometheus file_sd target list for the units a rung raises | by `make obs-rehearse`; also by hand |
 | `scripts/itc-run.sh` | drives one rehearsal cell with the generator confined to its own CPUs | by hand, after `make itc-rehearse` and `make obs-rehearse` |
 | `results/` | load-harness output (git-ignored scratch) | written by `alloca-load` and `alloca-verify` |
 
-The two CI entries are the deliberate exceptions, and the rule for adding another is owned by
+The three CI entries are the deliberate exceptions, and the rule for adding another is owned by
 [`../docs/design/project-structure.md`](../docs/design/project-structure.md) §1: a check earns a
 merge gate when it needs nothing an operator would have to provide.
 

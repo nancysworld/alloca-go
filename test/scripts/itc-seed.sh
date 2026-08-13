@@ -21,7 +21,13 @@
 # sized once for the largest intended G4 run and reused unchanged; topology-specific resizing
 # changes the workload and invalidates the comparison.
 #
-#   ITC_GROUPS=4 SLOTS=200 ./test/scripts/itc-seed.sh
+# **The default is interim, not the PR4b size** (ag-sept-pr4.md §3.10). 200 was exhausted about
+# five seconds into the first measured G4 cell, which then spent the rest of its window measuring
+# refusal throughput; 3200 clears the demand that cell actually produced. The value PR4b quotes
+# against must be derived from the deepest rung its ladder reaches, because a fixture that runs
+# out at a higher rung invalidates the point below it as well.
+#
+#   ITC_GROUPS=4 SLOTS=3200 ./test/scripts/itc-seed.sh
 #
 # Run it after `make itc-up ITC_GROUPS=n` and before the sweep. Locally that is the host, where
 # the container ports are published. On EC2 each authority is a different machine, so point the
@@ -29,12 +35,12 @@
 #
 #   AUTHORITY_1_HOST=10.0.1.11 AUTHORITY_1_PGPORT=5432 \
 #   AUTHORITY_2_HOST=10.0.1.12 AUTHORITY_2_PGPORT=5432 \
-#   ... ITC_GROUPS=4 SLOTS=200 ./test/scripts/itc-seed.sh
+#   ... ITC_GROUPS=4 SLOTS=3200 ./test/scripts/itc-seed.sh
 
 set -euo pipefail
 
 ITC_GROUPS="${ITC_GROUPS:-4}"
-SLOTS="${SLOTS:-200}"
+SLOTS="${SLOTS:-3200}"
 CAPACITY="${CAPACITY:-20}"
 
 case "$ITC_GROUPS" in

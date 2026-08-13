@@ -36,13 +36,43 @@ type Workload interface {
 	// unique across the run, so a workload can derive distinct identities and idempotency
 	// keys from it without coordinating with other workers.
 	Do(ctx context.Context, c *Client, seq int) []Response
+	// IntendsReplays reports whether replays are part of what this workload exists to drive.
+	//
+	// Only the disposition control answers true. Every other workload mints one key per
+	// logical request, and with run-scoped keys those keys are unique across runs too — so a
+	// replay in one of them is not a workload behaviour at all, it is a fixture carried over
+	// from an earlier run, and the goodput it reports is wrong by exactly the replayed
+	// population. Certify refuses that at LevelCapacity.
+	//
+	// It is a method on the interface rather than a type switch in the runner or a check on
+	// the workload's name, because it is a property of the workload and a new one must answer
+	// it deliberately. A string comparison would silently exempt a future workload that
+	// happened to be called "replay-something", and a type switch would put the list of
+	// replay-driving workloads somewhere other than the workloads.
+	IntendsReplays() bool
 }
 
 // key builds an idempotency key that is unique per logical request. Uniqueness per
 // *logical* request is the contract: a retry of the same logical request must reuse the
-// key, and PR1's workloads do not retry, so one key per (workload, seq, step) is correct.
-func key(workload string, seq int, step string) string {
-	return workload + "-" + strconv.Itoa(seq) + "-" + step
+// key, and the workloads here do not retry, so one key per (workload, seq, step) is correct.
+//
+// **It is scoped to the run, not only to the request.** (workload, seq, step) alone repeats
+// exactly on the next run of the same workload, so a second run against a fixture the first
+// one already mutated is served entirely from idempotency records: it commits nothing,
+// reconciles cleanly, breaks no invariant, and reports zero goodput — or, when the fixture is
+// only partly carried over, a plausible depressed number. `alloca-seed` asserts against that
+// contamination at seed time, but a procedural guard cannot be the only one for evidence a
+// capacity comparison rests on, so run identity is structural here (ag-sept-pr4.md §3.5).
+//
+// The client owns the run scope rather than each workload, because one run is one client and
+// making it a workload field would let two workloads in a run disagree about which run they
+// are in. An empty RunID reproduces the historical unscoped key, which keeps existing tests
+// and single-run tooling meaningful.
+func (c *Client) key(workload string, seq int, step string) string {
+	if c.runID == "" {
+		return workload + "-" + strconv.Itoa(seq) + "-" + step
+	}
+	return workload + "-" + c.runID + "-" + strconv.Itoa(seq) + "-" + step
 }
 
 // Dispersed spreads requests across many slots and many users so contention on any one
@@ -58,18 +88,19 @@ type Dispersed struct {
 	Confirm bool
 }
 
-func (Dispersed) Name() string { return "dispersed" }
+func (Dispersed) Name() string         { return "dispersed" }
+func (Dispersed) IntendsReplays() bool { return false }
 
 func (d Dispersed) Do(ctx context.Context, c *Client, seq int) []Response {
 	slot := d.Slots[seq%len(d.Slots)]
 	user := User{OrganisationID: d.Org, UserID: domain.UserID(fmt.Sprintf("u-%d", seq))}
 
-	res := c.Reserve(ctx, user, slot, key(d.Name(), seq, "reserve"))
+	res := c.Reserve(ctx, user, slot, c.key(d.Name(), seq, "reserve"))
 	out := []Response{res}
 	if !d.Confirm || res.ReservationID == "" {
 		return out
 	}
-	return append(out, c.Confirm(ctx, user, res.ReservationID, key(d.Name(), seq, "confirm")))
+	return append(out, c.Confirm(ctx, user, res.ReservationID, c.key(d.Name(), seq, "confirm")))
 }
 
 // HotSlot points many distinct users at one slot (§5.2). It exposes the serialization
@@ -83,11 +114,12 @@ type HotSlot struct {
 	Slot Slot
 }
 
-func (HotSlot) Name() string { return "hot_slot" }
+func (HotSlot) Name() string         { return "hot_slot" }
+func (HotSlot) IntendsReplays() bool { return false }
 
 func (h HotSlot) Do(ctx context.Context, c *Client, seq int) []Response {
 	user := User{OrganisationID: h.Org, UserID: domain.UserID(fmt.Sprintf("u-%d", seq))}
-	return []Response{c.Reserve(ctx, user, h.Slot, key(h.Name(), seq, "reserve"))}
+	return []Response{c.Reserve(ctx, user, h.Slot, c.key(h.Name(), seq, "reserve"))}
 }
 
 // HotIdentity points one identity at many overlapping slots (§5.3). It measures the cost
@@ -104,11 +136,12 @@ type HotIdentity struct {
 	Slots []Slot
 }
 
-func (HotIdentity) Name() string { return "hot_identity" }
+func (HotIdentity) Name() string         { return "hot_identity" }
+func (HotIdentity) IntendsReplays() bool { return false }
 
 func (h HotIdentity) Do(ctx context.Context, c *Client, seq int) []Response {
 	slot := h.Slots[seq%len(h.Slots)]
-	return []Response{c.Reserve(ctx, h.User, slot, key(h.Name(), seq, "reserve"))}
+	return []Response{c.Reserve(ctx, h.User, slot, c.key(h.Name(), seq, "reserve"))}
 }
 
 // Replay is the control for the disposition dimension: it issues each reserve twice under
@@ -137,10 +170,14 @@ type Replay struct {
 
 func (Replay) Name() string { return "replay" }
 
+// True, and this is the only workload for which it is: driving the disposition path *is*
+// what it exists for, so its replays are the measurement rather than contamination of one.
+func (Replay) IntendsReplays() bool { return true }
+
 func (r Replay) Do(ctx context.Context, c *Client, seq int) []Response {
 	slot := r.Slots[seq%len(r.Slots)]
 	user := User{OrganisationID: r.Org, UserID: domain.UserID(fmt.Sprintf("u-%d", seq))}
-	k := key(r.Name(), seq, "reserve")
+	k := c.key(r.Name(), seq, "reserve")
 
 	first := c.Reserve(ctx, user, slot, k)
 	second := c.Reserve(ctx, user, slot, k)

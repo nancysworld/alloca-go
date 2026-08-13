@@ -275,7 +275,19 @@ func run(args []string) error {
 		}
 	}
 
-	client := loadgen.NewRoutedClient(router, *timeout, *validate)
+	// The run's own identity, minted here and used for nothing but scoping idempotency keys.
+	//
+	// It is generated rather than derived from the clock or the workload so two runs started in
+	// the same second, or resumed after a crash, cannot collide. Without it a rerun replays the
+	// previous run's records instead of committing: the run reconciles cleanly, breaks no
+	// invariant, and reports a goodput short by the replayed population — which at a capacity
+	// point reads as scale efficiency (ag-sept-pr4.md §3.5).
+	runID, err := loadgen.NewRunID()
+	if err != nil {
+		return fmt.Errorf("minting a run id: %w", err)
+	}
+
+	client := loadgen.NewRoutedClient(router, *timeout, *validate).WithRunID(runID)
 	summary := loadgen.NewRunner(client, opts).Run(ctx, workload)
 
 	// Read /meta again and compare. A pre-run read establishes only "the service behind the

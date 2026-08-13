@@ -23,6 +23,8 @@ package loadgen
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -81,6 +83,43 @@ type Client struct {
 	// ambiguous collects mutations whose outcome the client could not settle, so they
 	// can be replayed under their own keys once the authority is back (ambiguous.go).
 	ambiguous ambiguityRegister
+	// runID scopes every idempotency key this client mints to one run, so a rerun cannot be
+	// served from the previous run's records. See Client.key. Empty means unscoped, which is
+	// the historical behaviour and what a test that asserts on literal keys expects.
+	runID string
+}
+
+// NewRunID mints an identity for one run, used only to scope its idempotency keys.
+//
+// Random rather than a timestamp or a counter: two runs started inside the same clock tick, or
+// a rerun after a crash, must not be able to mint the same keys. It is short because it is a
+// discriminator, not a secret — nothing authenticates on it, and a key that already carries
+// workload, sequence and step needs only enough entropy that two runs do not collide.
+//
+// It is deliberately *not* derived from the manifest or the commit: reruns of the same
+// experiment at the same revision are exactly the case that must produce different keys.
+func NewRunID() (string, error) {
+	var b [runIDBytes]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("loadgen: reading randomness for a run id: %w", err)
+	}
+	return hex.EncodeToString(b[:]), nil
+}
+
+// runIDBytes is 8 bytes = 64 bits. Across the tens of runs a sweep produces, collision
+// probability is negligible, and the key stays short enough to read in a log line.
+const runIDBytes = 8
+
+// WithRunID returns the client scoped to a run, so its idempotency keys cannot collide with
+// another run's.
+//
+// It mutates and returns the receiver rather than copying: a Client owns an http.Client and an
+// ambiguity register, and a copy would leave the ambiguous mutations of one run being resolved
+// against the other. Callers hold one client per run, which is the shape the runner already
+// assumes.
+func (c *Client) WithRunID(id string) *Client {
+	c.runID = id
+	return c
 }
 
 // NewClient builds a Client routing everything to one base URL — the unsharded case, and

@@ -124,7 +124,7 @@ func (r *Runner) Run(ctx context.Context, w Workload) Summary {
 	elapsed := time.Since(started)
 
 	measured, discarded := applyWarmUp(collected, started, r.opts.WarmUp)
-	return summarise(w.Name(), measured, elapsed, cpuDelta(startCPU), r.opts, r.client.validate,
+	return summarise(w.Name(), w.IntendsReplays(), measured, elapsed, cpuDelta(startCPU), r.opts, r.client.validate,
 		runFacts{
 			completedUnits:      int(finished.Load()),
 			interrupted:         ctx.Err() != nil,
@@ -184,9 +184,13 @@ func (f runFacts) truncationReason(s Summary) string {
 // Summary is the machine-readable run result: the totals a capacity claim is built from,
 // and the evidence that the claim is admissible at all.
 type Summary struct {
-	Workload    string `json:"workload"`
-	Concurrency int    `json:"concurrency"`
-	Iterations  int    `json:"iterations"`
+	Workload string `json:"workload"`
+	// ReplaysIntended records whether this workload drives replays deliberately, so a reader
+	// — and Certify — can tell a measured disposition control from a run served out of a
+	// previous run's idempotency records. Both report replays; only one of them meant to.
+	ReplaysIntended bool `json:"replays_intended"`
+	Concurrency     int  `json:"concurrency"`
+	Iterations      int  `json:"iterations"`
 	// DurationRequestedSeconds is the window a duration-bounded run was asked for, zero when
 	// the run was bounded by Iterations instead. Reported so a reader can tell which bound
 	// applied without inferring it: `iterations: 100` on a duration run is the flag default,
@@ -529,11 +533,12 @@ type GeneratorStats struct {
 
 // summarise folds responses into the reported totals.
 func summarise(
-	workload string, responses []Response, elapsed time.Duration,
+	workload string, replaysIntended bool, responses []Response, elapsed time.Duration,
 	cpuSeconds float64, opts Options, validated bool, facts runFacts,
 ) Summary {
 	s := Summary{
 		Workload:                 workload,
+		ReplaysIntended:          replaysIntended,
 		Concurrency:              opts.Concurrency,
 		Iterations:               opts.Iterations,
 		CompletedIterations:      facts.completedUnits,

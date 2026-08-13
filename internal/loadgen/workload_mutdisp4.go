@@ -99,7 +99,8 @@ type MutDisp4 struct {
 	Confirm bool
 }
 
-func (MutDisp4) Name() string { return "wl-mut-disp-4" }
+func (MutDisp4) Name() string         { return "wl-mut-disp-4" }
+func (MutDisp4) IntendsReplays() bool { return false }
 
 func (m MutDisp4) Do(ctx context.Context, c *Client, seq int) []Response {
 	// Round-robin over the organisations gives each an equal share. With an -n that is not a
@@ -124,12 +125,12 @@ func (m MutDisp4) Do(ctx context.Context, c *Client, seq int) []Response {
 	// control's serialization on a single user row.
 	user := User{OrganisationID: population.Org, UserID: domain.UserID(fmt.Sprintf("u-%d", seq))}
 
-	reserved := c.Reserve(ctx, user, slot, key(m.Name(), seq, "reserve"))
+	reserved := c.Reserve(ctx, user, slot, c.key(m.Name(), seq, "reserve"))
 	out := []Response{reserved}
 	if !m.Confirm || reserved.ReservationID == "" {
 		return out
 	}
-	return append(out, c.Confirm(ctx, user, reserved.ReservationID, key(m.Name(), seq, "confirm")))
+	return append(out, c.Confirm(ctx, user, reserved.ReservationID, c.key(m.Name(), seq, "confirm")))
 }
 
 var _ Workload = MutDisp4{}

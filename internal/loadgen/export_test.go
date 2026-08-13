@@ -8,8 +8,17 @@ import "time"
 // timing.
 func SummariseForTest(responses []Response) Summary {
 	opts := Options{Iterations: len(responses)}
-	return summarise("test", responses, time.Second, 0, opts, true,
+	return summarise("test", false, responses, time.Second, 0, opts, true,
 		runFacts{completedUnits: opts.Iterations})
+}
+
+// ClientWithRunIDForTest builds a client whose keys are scoped to id, so the key scoping can
+// be asserted directly rather than inferred from two runs against a live service.
+func ClientWithRunIDForTest(id string) *Client { return (&Client{}).WithRunID(id) }
+
+// KeyForTest exposes the idempotency key a client would mint.
+func KeyForTest(c *Client, workload string, seq int, step string) string {
+	return c.key(workload, seq, step)
 }
 
 // PercentilesForTest exposes the quantile calculation, so the rank it selects can be

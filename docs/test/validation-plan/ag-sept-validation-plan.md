@@ -302,6 +302,26 @@ latency/deadline gates can remain comfortably non-binding while throughput has a
 Without a demonstrated higher rung, a sweep endpoint is not a capacity result and cannot enter
 `E2` or `E4`.
 
+**Fixture headroom is part of the selection, not a precondition of it.** Step 2 turns on a higher
+rung failing to produce more Goodput, and `WL-MUT-DISP-4` consumes the state it books: every
+admitted reserve takes capacity from a seeded slot, so a long enough ladder against a fixed
+population runs out of bookable state before it runs out of service. When that happens the higher
+rung is short of *fresh mutations*, not short of *service* — it demonstrates an exhausted fixture,
+says nothing about where the server's frontier is, and therefore cannot establish that the rung
+beneath it was the frontier. The selected point is invalidated along with the rung that was
+supposed to exceed it (`measurement-contract.md` §5, useful-demand / fixture-headroom gate).
+
+So the selected point, its confirmation run, **and the higher rung its selection rests on** must
+each retain enough clean fixture state to offer fresh mutations throughout their measured window.
+An unexpected population of `business_refusal` attributable to spent fixture state — rather than to
+the slot contention `WL-MUT-DISP-4` is designed to create — invalidates the point rather than
+describing it, and the ladder is re-run from a re-seeded fixture with a population sized for its
+depth.
+
+An all-refusal run is the limiting case and is treated the same way: it may be sound and may
+certify at whatever provenance level its manifest earns, but it carries no useful demand and backs
+no capacity number. Provenance is not what it lacks.
+
 If the two retained observations materially disagree, do not average the disagreement into a
 clean headline number: explain, exclude, or conservatively bound the variation before promoting a
 single capacity result.
@@ -549,8 +569,9 @@ per-authority data/working-set volume as organisations are distributed across mo
 
 The validation passes when the numbers are reproducible/admissible, correctness reconciles, the
 resource envelopes are comparable, generator/shared-environment effects cannot plausibly explain
-the result, the saturation point is established rather than assumed from sweep depth, and the
-limitations are stated. It does **not** require an efficiency percentage.
+the result, the saturation point is established rather than assumed from sweep depth, the selected
+point and the rung above it retained fixture headroom to offer fresh mutations throughout (§4.6),
+and the limitations are stated. It does **not** require an efficiency percentage.
 
 If the complete environment exists but a proven measurement-system limit forces §4.6's Tier-2 path
 instead, retain that operating-point horizontal-scale result, but report `VAL-SCALE-5` as

@@ -213,6 +213,35 @@ generator CPU/memory/connection/network telemetry, a generator-capacity sweep, t
 under-provisioned negative control, and evidence that the selected generator
 configuration has headroom at the reported server operating point.
 
+**Useful-demand / fixture-headroom gate:** a **mutation-capacity** claim additionally requires
+evidence that the fixture still had work left to give. A mutation the domain refuses because the
+seeded state is spent — every slot full, every claimable row claimed — is a correct answer and a
+sound measurement, but it is not throughput the service could have delivered. The run measured the
+fixture's remaining headroom, not the system's capacity.
+
+The gate has two parts, and the second is the one that is easy to miss:
+
+- **An all-refusal run cannot back a mutation-capacity claim.** It may remain `measurement_sound`
+  and reach any provenance level its manifest supports — the run described itself honestly and the
+  outcome mix is in its totals. Provenance is not the question. It simply has no useful demand
+  behind it, so there is no capacity in it to quote.
+- **Partial exhaustion invalidates a mutation-capacity point too, and it invalidates the *rung
+  below* it.** A saturation argument selects an operating point by showing that a *higher* rung
+  produced no more sustained Goodput. If that higher rung was short of fresh mutations rather than
+  short of service, it demonstrates an exhausted fixture and says nothing about where the server's
+  frontier is — so the point beneath it was never established as the frontier at all. A capacity
+  point is only as good as the evidence of the rung that was supposed to exceed it.
+
+So a report quoting a mutation-capacity point must show that the selected point **and the rungs its
+selection rests on** retained enough clean fixture state to offer fresh mutations throughout. The
+cheap discriminator is the outcome mix: an unexpected population of `business_refusal` attributable
+to spent fixture state, rather than to the contention the workload is designed to create,
+invalidates the point rather than describing it.
+
+This is an **evidence** gate, not a provenance one. §13's ladder is unchanged: such a run still
+certifies at whatever level its manifest earns, because what it lacks is useful demand rather than
+self-description.
+
 ---
 
 ## 6. Required service-level indicators

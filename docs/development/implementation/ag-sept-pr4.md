@@ -437,12 +437,30 @@ scenario it never fires, because there are no replays left to refuse. It covers 
 where run identity fails to vary — a reused id, or a future change that drops the scoping — which
 is exactly the case that would otherwise reintroduce the original defect silently.
 
-**Still open, and deliberately so:** a run of 200 refusals against an exhausted fixture certifies
-at `capacity` with zero goodput. Nothing in the provenance ladder refuses it, and nothing should —
-the run describes itself honestly and the outcome mix is right there in the totals. Whether an
-all-refusal run may back a capacity *claim* is `measurement-contract.md` §5's question about
-evidence, not that document's §13 about provenance, and PR4b answers it per capacity point rather
-than here.
+**Resolved by maintainer decision, and generalised past the case that prompted it.** The run of 200
+refusals against an exhausted fixture certifies at `capacity` with zero goodput, and that stays
+correct: the provenance ladder describes how well a run accounts for itself, and this one accounts
+for itself honestly with the outcome mix in its totals. What it lacks is useful demand, which is an
+evidence question. So `Certify` and `measurement-contract.md` §13's ladder are unchanged, and the
+rule lands in the two documents that own evidence:
+
+- `measurement-contract.md` §5 now carries a **useful-demand / fixture-headroom gate**: an
+  all-refusal run may be sound and may reach any provenance level, but cannot back a
+  mutation-capacity claim;
+- [`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) §4.6 applies
+  it to `WL-MUT-DISP-4`'s selected points and confirmation runs.
+
+The generalisation is the part worth carrying forward, because the zero-goodput case is the one
+nobody would have quoted anyway. **Partial exhaustion invalidates a capacity point too, and it
+invalidates the rung *below* it.** The saturation rule selects a point by showing that a higher
+rung produced no more Goodput; if that higher rung was short of fresh mutations rather than short
+of service, it demonstrates a spent fixture and establishes nothing about the frontier — so the
+point beneath it was never established either. A capacity point is only as good as the evidence of
+the rung meant to exceed it.
+
+That has a direct consequence for PR4a rather than only PR4b: the per-organisation population must
+be sized for the *deepest* rung the ladder will reach, not for the selected point, and `-slots` is
+the knob that has to be justified before the sweep rather than after it.
 
 ### 3.6 One uncommitted file anywhere in the tree makes every run uncertifiable
 
@@ -478,9 +496,9 @@ whose image tag carries it will not certify, and finding that out on AWS costs t
 - **Whether monitoring splits onto its own host** stays open until §2.2's preflight says whether it
   needs to.
 - **`postgres_exporter`** is deferred with a trigger, not dropped (§2.1).
-- **Whether an all-refusal run may back a capacity claim** (§3.5) is left to PR4b, per quoted
-  point. The provenance ladder certifies it and should; the evidence question is
-  `measurement-contract.md` §5's.
+- **Per-organisation fixture size for the sweep** (§3.5) must be justified against the deepest rung
+  the ladder will reach, not the selected point, now that fixture exhaustion at a higher rung
+  invalidates the point below it. Derived during PR4a preflight alongside the rung duration (§2.4).
 - **`make image-provenance` before every metered run** (§3.6), because an uncommitted file makes
   the run certify at `none` and the cost of learning that on AWS is the rung.
 - **AWS quota** remains an external dependency for PR4b's independently provisioned capacity

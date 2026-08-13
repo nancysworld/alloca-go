@@ -494,7 +494,13 @@ The public-ready milestone should leave:
    axes named explicitly;
 10. a service-boundary decision and recorded Phase-2/deferred-work conclusion;
 11. a concise public repository summary;
-12. explicit limitations, evidence labels, and negative-control results.
+12. explicit limitations, evidence labels, and negative-control results;
+13. a bounded **pre-publication documentation pass** across `docs/`, reviewed from an external
+    reader's perspective and applying the diagram convention in [`../README.md`](../README.md):
+    improve first-read comprehension where diagrams materially help; reduce unnecessary density or
+    duplication without weakening precision; verify navigation, semantic ownership, terminology,
+    and document status; and remove stale planning or implementation language where it obscures the
+    public story.
 
 ## 8. Completion gate
 
@@ -521,5 +527,12 @@ Before Iteration C A&R can judge the Goal:
 - measured facts, calculations, interpretation, and limitations are separated;
 - architecture reflects evidence rather than desired presentation;
 - the repository remains suitable for public review under the disclosure policy.
+
+**Before the repository is made public**, complete §7's pre-publication documentation pass. This is
+a public-readiness gate, not a new technical iteration: it improves how the established work is
+understood without changing requirements, evidence, or semantic ownership. The pass is complete
+when the durable docs are navigable and internally consistent for an external reader, diagrams have
+been added where they materially improve first-read comprehension under `docs/README.md`, and stale
+or unnecessarily dense prose has been cleaned without rewriting the historical or evidential record.
 
 A finished schedule is an input to Analyse & Review, not a substitute for it.

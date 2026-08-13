@@ -55,8 +55,8 @@ seed 15434 org-d
 go build -o bin/alloca-load ./cmd/alloca-load
 mkdir -p test/results
 make topo-deployment > test/results/deployment.json
-curl -sS http://localhost:9091/metrics > test/results/s1-baseline.prom
-curl -sS http://localhost:9092/metrics > test/results/s2-baseline.prom
+curl -sS http://localhost:9081/metrics > test/results/s1-baseline.prom
+curl -sS http://localhost:9082/metrics > test/results/s2-baseline.prom
 ./bin/alloca-load \
   -placement deploy/topology/placement.json \
   -endpoint authority-1=http://$S1 -endpoint authority-2=http://$S2 \
@@ -66,8 +66,8 @@ curl -sS http://localhost:9092/metrics > test/results/s2-baseline.prom
   -out test/results/topo-run.json
 
 # 7. reconcile it against both authorities — after the run has exited       (§6.1)
-curl -sS http://localhost:9091/metrics > test/results/s1-after.prom
-curl -sS http://localhost:9092/metrics > test/results/s2-after.prom
+curl -sS http://localhost:9081/metrics > test/results/s1-after.prom
+curl -sS http://localhost:9082/metrics > test/results/s2-after.prom
 go build -o bin/alloca-verify ./cmd/alloca-verify
 ./bin/alloca-verify \
   -run test/results/topo-run.json \
@@ -119,8 +119,8 @@ service addresses it actually published.
 | `alloca-authority-2-db` | PostgreSQL, authority 2 | `localhost:15434` |
 | `alloca-authority-1-migrate` | one-shot schema migration, must exit 0 first | — |
 | `alloca-authority-2-migrate` | one-shot schema migration, must exit 0 first | — |
-| `alloca-service-1` | service unit bound to authority 1 | `localhost:8081`, metrics `9091` |
-| `alloca-service-2` | service unit bound to authority 2 | `localhost:8082`, metrics `9092` |
+| `alloca-service-1` | service unit bound to authority 1 | `localhost:8081`, metrics `9081` |
+| `alloca-service-2` | service unit bound to authority 2 | `localhost:8082`, metrics `9082` |
 
 The placement document ([`../../deploy/topology/placement.json`](../../deploy/topology/placement.json))
 is routing version `pr3b-v1`:

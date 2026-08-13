@@ -594,6 +594,46 @@ sized to four CPUs and the generator boundary to two, so the rules stay gated on
 provides. Each check was then removed in turn and the case that claims to gate it required to
 fail — seven controlled mutations, all detected.
 
+### 3.8 The topology and the observability stack could never have run together
+
+`make obs-rehearse` after `make itc-rehearse` failed outright:
+
+```text
+Bind for 0.0.0.0:9091 failed: port is already allocated
+```
+
+`alloca-service-1` published its metrics on host `9091`, and Prometheus publishes `9091`. Units
+2–4 collided the same way with `9092`–`9094`, which Prometheus does not use but which left no
+room to move it.
+
+**It had been latent since PR3b, because the two stacks had never been raised together.** PR2
+measured a service running on the host, with metrics on `9090` and Prometheus on `9091` — no
+overlap. PR3b containerised the topology and gave each unit a published metrics port starting at
+`9091`, and PR3c scraped those ports *directly* (`pr3c-experiments.sh` reads `M1`/`M2`) without
+ever starting Prometheus. Iteration C is the first configuration that needs both, so it is the
+first that could fail.
+
+The clearest symptom that this was a real ambiguity rather than a coincidence: **`9091` already
+meant two different things in two different documents.** `container-topology.md` §4 used
+`curl http://localhost:9091/metrics` for service-1's metrics while `sweep.sh` and
+`export-panels.sh` used `http://localhost:9091` for Prometheus.
+
+**Resolved by moving the topology's metrics ports to `9081`–`9084`**, mirroring the HTTP ports
+`8081`–`8084` so unit *n* serves on `808n` and publishes metrics on `908n`. Prometheus keeps
+`9091`, which is the address every operator-facing reference already uses and the one a person
+types into a browser. Updated with it: `pr3c-experiments.sh`'s `M1`/`M2` defaults, and
+`container-topology.md`'s recipe and container table.
+
+This is a **breaking change to a documented address**, and it is reversible: the ports are
+`SERVICE_n_METRICS_PORT` overrides, so an existing recipe can be pinned to the old values rather
+than edited. Anything holding the old numbers — a saved dashboard, a shell history, a note —
+needs updating, which is why the numbers were moved to a pattern rather than to arbitrary free
+ports.
+
+Not guarded by a check, deliberately: Docker refuses a duplicate binding loudly and names the
+port, so this failure cannot be mistaken for anything else or silently produce a bad result. The
+guard would only convert a clear runtime failure into a slightly earlier one.
+
 ## 4. Open items
 
 - **Rung duration** stays open until §2.4's preflight derives it.

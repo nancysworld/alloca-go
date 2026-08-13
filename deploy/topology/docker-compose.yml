@@ -142,7 +142,15 @@ services:
     container_name: alloca-service-1
     ports:
       - "${SERVICE_1_PORT:-8081}:8080"
-      - "${SERVICE_1_METRICS_PORT:-9091}:9090"
+      # Metrics mirror the HTTP ports: unit n serves on 808n and publishes metrics on 908n.
+      #
+      # **Not 9091-9094.** Those collided head-on with Prometheus, which publishes 9091 and is
+      # referenced as Prometheus by sweep.sh, export-panels.sh and the Grafana datasource. The
+      # two stacks never ran together before Iteration C — PR2 measured a host-run service and
+      # PR3b/PR3c scraped the topology directly without Prometheus — so `make obs-up` after
+      # `make itc-up` failed with "Bind for 0.0.0.0:9091 failed: port is already allocated",
+      # and `9091` already meant two different things in two different documents.
+      - "${SERVICE_1_METRICS_PORT:-9081}:9090"
     environment:
       ALLOCA_PLACEMENT_FILE: /etc/alloca/placement.json
       ALLOCA_LISTEN_ADDR: ":8080"
@@ -159,7 +167,7 @@ services:
     container_name: alloca-service-2
     ports:
       - "${SERVICE_2_PORT:-8082}:8080"
-      - "${SERVICE_2_METRICS_PORT:-9092}:9090"
+      - "${SERVICE_2_METRICS_PORT:-9082}:9090"
     environment:
       ALLOCA_PLACEMENT_FILE: /etc/alloca/placement.json
       ALLOCA_LISTEN_ADDR: ":8080"
@@ -177,7 +185,7 @@ services:
     container_name: alloca-service-3
     ports:
       - "${SERVICE_3_PORT:-8083}:8080"
-      - "${SERVICE_3_METRICS_PORT:-9093}:9090"
+      - "${SERVICE_3_METRICS_PORT:-9083}:9090"
     environment:
       ALLOCA_PLACEMENT_FILE: /etc/alloca/placement.json
       ALLOCA_LISTEN_ADDR: ":8080"
@@ -195,7 +203,7 @@ services:
     container_name: alloca-service-4
     ports:
       - "${SERVICE_4_PORT:-8084}:8080"
-      - "${SERVICE_4_METRICS_PORT:-9094}:9090"
+      - "${SERVICE_4_METRICS_PORT:-9084}:9090"
     environment:
       ALLOCA_PLACEMENT_FILE: /etc/alloca/placement.json
       ALLOCA_LISTEN_ADDR: ":8080"

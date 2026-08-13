@@ -47,8 +47,11 @@ AG-Sept's governing goal, its iteration history, and the currently open problem 
 - **Iteration C — independently provisioned shard-group capacity.** Requirements, Design, and
   Validation now fix the bounded experiment: reusable `WL-MUT-DISP-4`, organisations A/B/C/D,
   1/2/4 shard groups, one service + one PostgreSQL authority per group, equivalent AWS EC2
-  capacity-unit hosts, and a separate generator host. The result is numeric `G1/G2/G4` and derived
-  `E2/E4`; no efficiency threshold is a pass criterion.
+  capacity-unit hosts, and a separate generator host. The **Tier 1 target** is numeric
+  saturation-selected `G1/G2/G4` and derived `E2/E4`. If a proven measurement-system limit prevents
+  Tier 1, validation-plan §4.6 permits the bounded **Tier 2** operating-point comparison at a common
+  per-unit `L`; that result does not resolve aggregate capacity scaling or discharge `VAL-SCALE-5`.
+  No efficiency threshold is a pass criterion in either case.
 
 The decision order has now reached Schedule:
 
@@ -278,21 +281,29 @@ capacity claim is admissible.
 
 ### PR4b — 1/2/4 shard-group capacity evidence — 2.5 days
 
-**Delivers:** the fixed `WL-MUT-DISP-4` matrix from validation-plan §4.6:
+**Delivers:** the fixed `WL-MUT-DISP-4` 1/2/4 matrix and two-tier result model from validation-plan
+§4.6:
 
-- `G1`: A/B/C/D on one shard group;
-- `G2`: A/B and C/D on two shard groups;
-- `G4`: A, B, C, D on four shard groups;
-- one saturation-establishing capacity ladder plus one retained confirmation of the selected point
-  per topology, using the identical point-selection rule in validation-plan §4.6;
-- correctness/reconciliation and generator/resource controls at every quoted point;
+- one-group topology: A/B/C/D on one shard group;
+- two-group topology: A/B and C/D on two shard groups;
+- four-group topology: A, B, C, D on four shard groups;
+- **Tier 1 first:** run saturation-establishing capacity ladders and retain one confirmation of the
+  selected `G1`, `G2`, and `G4` point per topology, using validation-plan §4.6's **Tier-1
+  capacity-point selection rule**; derive `E2/E4` when all three admissible capacity points exist;
+- **Tier 2 fallback only when measurement-limited:** if a proven generator, AWS-quota, or other
+  measurement-system limit prevents Tier 1, select the highest useful common per-unit workload
+  intensity `L` under validation-plan §4.6 and retain `g1(L)`, `g2(L)`, `g4(L)` plus derived
+  `E2(L)/E4(L)`; report aggregate capacity scaling and `VAL-SCALE-5` as explicitly unproven;
+- correctness/reconciliation and generator/resource controls at every quoted Tier-1 or Tier-2
+  point;
 - per-authority data-volume/working-set evidence sufficient to expose the intended change as four
   fixed organisation datasets are distributed from one authority to four;
-- measured `G1/G2/G4`, derived `E2/E4`, limiting-resource analysis, workload/resource envelope,
-  limitations, and retained report/artifacts.
+- limiting-resource analysis, workload/resource envelope, limitations, and retained
+  report/artifacts at the strongest evidence tier actually achieved.
 
 There is **no efficiency pass threshold**. A sub-linear result is acceptable evidence if it is
-admissible and explained or conservatively bounded.
+admissible and explained or conservatively bounded. Tier 2 is not a relaxed capacity threshold: it
+is a different, explicitly weaker result used only when the measurement system itself blocks Tier 1.
 
 **Explicit non-goal — capacity/resource economics.** The roadmap now records this as a worthwhile
 future exploration dimension, but Iteration C does **not** select it. PR4b must not grow cost/hour,
@@ -303,8 +314,10 @@ pursuing, Iteration C Analyse & Review may select or refine that later Problem t
 engineering loop.
 
 **Gate:** VAL-SCALE-5 and VAL-NEG-7 are either discharged with retained evidence or explicitly
-reported as unproven; every selected capacity point is established by the common saturation rule
-rather than sweep depth; no number is promoted beyond its measurement-contract evidence level.
+reported as unproven. Tier-1 capacity points, when claimed, are established by the common
+saturation rule rather than sweep depth; a Tier-2 result is selected only by §4.6's common-per-unit
+`L` rule after the measurement-system limit is evidenced. No number is promoted beyond its
+measurement-contract evidence level.
 
 Iteration C Analyse & Review follows PR4b using the separate review/rerun/interpretation reserve.
 It decides whether the Problem is sufficiently resolved and whether the AG-Sept Goal is achieved or
@@ -325,8 +338,8 @@ identity; PR4a extends environment/topology capture to the independent EC2 capac
 PR4b records the exact 1/2/4 placement and resource envelope for each capacity run.
 
 Reconciliation: PR1 established the single-authority self-check; PR3b extended it to multiple
-authorities; PR3c exercised it against deliberate failure; PR4b applies it to every quoted capacity
-point.
+authorities; PR3c exercised it against deliberate failure; PR4b applies it to every quoted Tier-1
+or Tier-2 point.
 
 **Quotability target:** PR4a prepares the Iteration C topology so a sound run's manifest can validate
 at the measurement contract's **`publishable` provenance level** before PR4b begins the expensive
@@ -343,18 +356,23 @@ promoted.
 
 ### 5.1 P0 — required
 
-For Iteration C the non-descopable capacity path is now explicit:
+For Iteration C the non-descopable scaling-evidence path is now explicit. **Tier 1 remains the P0
+target; Tier 2 is the bounded P0 fallback when a proven measurement-system limit makes that target
+unmeasurable, not a discretionary descope of the capacity experiment.**
 
 - `WL-MUT-DISP-4` workload semantics, including topology-independent same-organisation request
-  pairs and fixed per-organisation fixture populations across `G1/G2/G4`;
-- the `G1/G2/G4` 1/2/4-shard-group matrix;
+  pairs and fixed per-organisation fixture populations across the 1/2/4 topology family;
+- the 1/2/4-shard-group matrix;
 - one equivalent EC2 capacity-unit host per shard group;
 - separate generator compute, preflight sizing, and per-point generator-headroom proof (VAL-NEG-2);
 - PR4a `publishable` provenance readiness under measurement-contract §13;
 - correctness/reconciliation for every quoted point (VAL-COR-1);
 - resource-envelope evidence sufficient for VAL-NEG-7;
-- the common saturation-point selection rule rather than arbitrary sweep endpoints;
-- measured `G1/G2/G4` and derived `E2/E4` with no preselected threshold;
+- **Tier 1 when measurable:** the common saturation-point selection rule, admissible `G1/G2/G4`,
+  and derived `E2/E4` with no preselected threshold;
+- **Tier 2 only when Tier 1 is measurement-limited:** evidence of that measurement-system limit,
+  the highest useful common per-unit `L`, `g1(L)/g2(L)/g4(L)`, and derived `E2(L)/E4(L)`, with
+  `VAL-SCALE-5` and aggregate capacity scaling explicitly unproven;
 - limiting-resource interpretation, including the per-authority data-volume/working-set change, and
   explicit workload/resource envelope;
 - retained evidence and report.
@@ -394,15 +412,17 @@ If time slips, remove work in this order:
 
 1. optional resource-limit control beyond the evidence already needed for VAL-NEG-7;
 2. chart/dashboard polish beyond the diagnostic minimum;
-3. extra confirmation/rerun work beyond the one required retained confirmation per topology,
-   unless A&R needs it to resolve material variation;
+3. extra confirmation/rerun work beyond the retained confirmation required by the selected evidence
+   path, unless A&R needs it to resolve material variation;
 4. PR5 chart production beyond what the decisive findings require.
 
 **Do not descope:** the 1/2/4 matrix, stable `WL-MUT-DISP-4` request semantics and fixed fixture
 populations, separate generator, equivalent growing resource envelopes, response validation,
-reconciliation, resource-envelope evidence, publishable-provenance readiness, the common
-saturation-point rule, retained provenance, or the limiting-resource interpretation. Those
-properties make the capacity result mean what it says.
+reconciliation, resource-envelope evidence, publishable-provenance readiness, retained provenance,
+or the limiting-resource interpretation. When Tier 1 is measurable, its common saturation-point
+rule is also non-descopable. When a **proven measurement-system limit** blocks Tier 1, the Tier-2
+common-`L` rule and the explicit `VAL-SCALE-5`-unproven conclusion replace it; choosing Tier 2 for
+convenience is not a permitted descope.
 
 Contingency is drawn before weakening any mandatory evidence gate.
 
@@ -467,7 +487,8 @@ The public-ready milestone should leave:
 4. aggregated service/runtime/resource evidence sufficient for the claims made;
 5. the single-instance frontier report;
 6. the multi-authority correctness/failure-isolation report;
-7. the Iteration C 1/2/4 shard-group capacity/scale-efficiency report;
+7. the Iteration C 1/2/4 shard-group scaling report, carrying Tier-1 capacity efficiency when
+   established or the bounded Tier-2 operating-point result when capacity remains unproven;
 8. current and intended architecture diagrams;
 9. authority and bottleneck analysis across the scaling axes actually measured, with unmeasured
    axes named explicitly;
@@ -483,12 +504,16 @@ explicitly recorded as unproven.
 Before Iteration C A&R can judge the Goal:
 
 - `WL-MUT-DISP-4` runs reproducibly from clean fixtures with topology-independent same-organisation
-  request pairs and fixed per-organisation populations reused across `G1/G2/G4`;
+  request pairs and fixed per-organisation populations reused across the 1/2/4 topology family;
 - the AWS 1/2/4 topologies are reproducible with equivalent capacity-unit hosts and separate
   generator compute;
 - PR4a has demonstrated `publishable` provenance readiness before PR4b capacity evidence begins;
-- `G1/G2/G4` and `E2/E4` exist only at the evidence level their retained runs support;
-- each selected G point is established by the common saturation rule, not by the final tested rung;
+- if Tier 1 is achieved, `G1/G2/G4` and `E2/E4` exist only at the evidence level their retained runs
+  support and every selected G point is established by the common saturation rule, not by the final
+  tested rung;
+- if a proven measurement-system limit prevents Tier 1, the retained Tier-2 `g1(L)/g2(L)/g4(L)`
+  and `E2(L)/E4(L)` follow validation-plan §4.6's common-per-unit rule, and `VAL-SCALE-5` plus
+  aggregate capacity scaling are explicitly recorded as unproven;
 - response validation, generator headroom, and resource-envelope controls are demonstrated;
 - outcomes and persisted state reconcile on every participating authority;
 - limiting resources and material environment variation are explained or conservatively bounded,

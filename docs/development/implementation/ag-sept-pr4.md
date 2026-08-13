@@ -1,10 +1,12 @@
 # AG-Sept PR4 — Independently provisioned shard-group capacity
 
 **Type:** Implementation record, spanning PR4a/PR4b
-**Status:** PR4a not started. This record opens with the decisions taken before implementation so
-they are reviewable against the design that motivates them rather than discovered inside a diff.
+**Status:** PR4a in progress. The local multi-group topology and workload machinery are being
+exercised before any metered AWS capacity attempt; AWS capacity evidence remains conditional on
+sufficient quota within the milestone timebox.
 **Budget:** 4.0 development days ([AG-Sept plan](../../planning/ag-sept-plan.md) §2, a scheduling
-fact) — 1.5 for PR4a's capacity environment, 2.5 for PR4b's evidence and report.
+fact) — 1.5 for PR4a's capacity-environment rehearsal/bootstrap work, up to 2.5 for PR4b's AWS
+evidence and report when quota permits.
 **Owner docs:** [`deployment-architecture.md`](../../design/deployment-architecture.md) §13 owns
 the capacity environment; [`horizontal-scaling.md`](../../design/horizontal-scaling.md) §12–§13
 owns the capacity-unit model; `REQ-SCALE-4` and `REQ-EVID-2`
@@ -18,16 +20,21 @@ way. Where it disagrees with an owning document, the owning document wins.
 
 ## 1. Exit gates
 
-Both gates are owned by [`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §3 and are not restated
-here. In short: PR4a must be able to instantiate the 1/2/4 topology family with equivalent
-capacity-unit hosts and a preflighted separate generator, reach `publishable` **provenance**
-readiness, and retain the resource evidence `VAL-NEG-7` requires. PR4b attempts the validation
-plan's Tier 1 capacity result first; if a proven measurement-system limit prevents that result, it
-may retain the Tier 2 operating-point comparison without promoting it into capacity evidence, while
-`VAL-SCALE-5` remains explicitly unproven.
+The gates are owned by [`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §3 and are not restated
+here. In short: PR4a first proves the 1/2/4 experiment machinery in the bounded local partitioned
+rehearsal and fixes or explicitly bounds what that rehearsal finds. An AWS bootstrap may follow when
+it buys useful confidence while quota is pending. PR4b runs the independently provisioned AWS
+capacity experiment only when sufficient quota exists to instantiate the complete environment.
 
-`publishable` here is the §13 provenance rung only. It is not a claim, and PR4b still has to pass
-`measurement-contract.md` §5's evidence gates before anything leaves the project.
+When that complete environment exists, PR4b attempts the validation plan's Tier 1 capacity result
+first; if a proven measurement-system limit prevents that result, it may retain the Tier 2
+operating-point comparison without promoting it into capacity evidence, while `VAL-SCALE-5` remains
+explicitly unproven. If quota prevents the complete G4 environment from existing within the
+milestone timebox, neither local rehearsal numbers nor an incomplete AWS topology substitute for
+the missing result: the quota blocker and `VAL-SCALE-5`-unproven outcome flow to PR5.
+
+`publishable` remains the §13 provenance rung only. It is not a claim, and every quoted AWS result
+still has to pass `measurement-contract.md` §5's evidence gates before anything leaves the project.
 
 ## 2. Decisions taken before implementation
 
@@ -232,16 +239,20 @@ a capacity point that cannot be reconciled is not a capacity point.
 
 The two-tier decision first recorded here now belongs normatively to
 [`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) §4.6. PR4b
-attempts Tier 1 first. Only when the complete measurement environment is itself proven to prevent
-establishing the saturation-selected capacity result may PR4b retain the Tier 2 operating-point
+attempts Tier 1 first **after the complete independently provisioned G4 measurement environment
+exists**. Only when that complete environment is itself proven unable to drive the topology family
+far enough for the saturation-selected capacity result may PR4b retain the Tier 2 operating-point
 comparison defined there.
 
+A quota or provisioning limit that prevents the complete G4 environment from existing is therefore
+not a Tier-2 trigger. It produces no comparable common-`L` topology family; PR4 records the external
+limitation and leaves aggregate capacity scaling and `VAL-SCALE-5` unproven.
+
 This implementation record deliberately carries no duplicate formulas, threshold, or alternate
-selection rule. PR4a's responsibility is to retain enough generator and per-host resource evidence
-to distinguish a server frontier from a measurement-system frontier. PR4b's responsibility is to
-apply the owning validation rule and, if Tier 2 is all the environment can support, keep its
-conclusion bounded: horizontal scaling at the selected common per-unit `L`, with aggregate capacity
-scaling and `VAL-SCALE-5` still unproven.
+selection rule. PR4a's responsibility is to rehearse the measurement machinery and retain enough
+generator and resource evidence to distinguish a server frontier from a measurement-system
+frontier once AWS can run. PR4b's responsibility is to apply the owning validation rule and keep
+its conclusion bounded to the strongest evidence actually established.
 
 ### 2.12 Capacity units are non-burstable, and the generator is larger than a unit
 
@@ -262,19 +273,68 @@ would invalidate a point rather than describe one.
 
 **What 2-vCPU units mean for the result, recorded before the runs rather than after.** A service and
 a PostgreSQL authority sharing two vCPUs make **host CPU** the likely limiting mechanism, not
-PostgreSQL's own frontier. The Problem is still answered — the units are independently provisioned,
-`E2`/`E4` are still derived, and `VAL-SCALE-5` asks for the limit to be identified rather than for it
-to be any particular subsystem — but the result characterises composition of small capacity units,
-and its comparability with PR2's 10-vCPU workstation frontier is weak. Both belong in PR4b's
-limitations, and neither is a discovery.
+PostgreSQL's own frontier. The Problem is still answered if those units can be measured — the units
+are independently provisioned, `E2`/`E4` are still derived, and `VAL-SCALE-5` asks for the limit to
+be identified rather than for it to be any particular subsystem — but the result characterises
+composition of small capacity units, and its comparability with PR2's 10-vCPU workstation frontier
+is weak. Both belong in PR4b's limitations, and neither is a discovery.
 
-### 2.13 The bootstrap is proven on one `t2.micro` before the quota lands
+### 2.13 A `t2.micro` bootstrap is optional while quota is pending
 
-A 1-vCPU quota cannot measure anything and can still run one instance, which is enough to prove the
-whole bootstrap path: AMI, user data, Docker, image pull, the placement document, `node_exporter`,
-chrony, security groups, and a single-unit smoke run. Burst throttling is irrelevant where nothing
-is being measured. Doing this while the quota request is open makes the approval a launch rather
-than a debugging session.
+A 1-vCPU quota cannot measure capacity and can still run one instance, which is enough to prove the
+AWS-specific bootstrap path: AMI, user data, Docker, image pull, the placement document,
+`node_exporter`, chrony, security groups, and a single-unit smoke run. Burst throttling is irrelevant
+where nothing is being measured.
+
+This is now **conditional rather than mandatory**. The local rehearsal comes first (§2.14). If the
+quota request is still pending afterwards and a one-instance AWS proof would remove useful
+uncertainty, use one `t2.micro`; if sufficient non-burstable quota has already arrived, skip it and
+move directly to the `c5` environment. A `t2.micro` result is never capacity evidence.
+
+### 2.14 PR4a rehearses the 12-vCPU shape locally before any AWS capacity attempt
+
+**Maintainer decision, 2026-08-13:** use the workstation's larger resource envelope to prove the
+Iteration C machinery before spending AWS time. WSL/Docker exposes **12 logical CPUs** for the
+rehearsal and partitions them into non-overlapping scheduler-visible CPU sets:
+
+```text
+capacity unit A    CPUs 0-1    service A + PostgreSQL A
+capacity unit B    CPUs 2-3    service B + PostgreSQL B
+capacity unit C    CPUs 4-5    service C + PostgreSQL C
+capacity unit D    CPUs 6-7    service D + PostgreSQL D
+generator/monitor  CPUs 8-11   load generator + monitoring
+```
+
+`G1` uses unit A only, `G2` uses A+B, and `G4` uses A+B+C+D. Unused capacity-unit CPU sets stay idle;
+the active groups do not borrow them. Docker **cpusets**, not only CPU-time quotas, are the relevant
+mechanism because the rehearsal is meant to stop shard groups from sharing scheduler-visible CPUs.
+Service and PostgreSQL within one group intentionally share the same two-CPU set, matching the
+planned EC2 capacity-unit contention shape.
+
+This gives PR4a a cheap, repeatable place to exercise `G1/G2/G4`, placement, fixtures, workload
+semantics, declaration/provenance, reconciliation, observability, generator isolation and the
+operator-facing Make targets. It also gives us an early diagnostic signal about whether the planned
+AWS experiment is likely to behave sensibly.
+
+It does **not** create independent hosts. All groups still share the workstation, WSL VM/kernel,
+storage path, caches and physical machine. Therefore local Goodput or apparent scale efficiency is
+rehearsal/diagnostic evidence only: it cannot discharge `VAL-SCALE-5`, cannot become formal Tier 2,
+and is never mixed with AWS points to derive `E2` or `E4`.
+
+The execution sequence is now:
+
+```text
+local 12-vCPU partitioned rehearsal
+    -> fix anything the rehearsal discovers
+    -> optional t2.micro AWS bootstrap if quota is still pending and the proof is useful
+    -> c5 AWS capacity experiment if sufficient quota is available
+    -> otherwise retain the quota limitation and explicit VAL-SCALE-5-unproven result
+    -> PR5 closeout
+```
+
+The last branch is deliberate: successful AWS capacity measurement is a stronger desired result,
+not an Iteration C exit gate. An external quota decision must not force AG-Sept either to wait
+indefinitely or to promote shared-workstation evidence beyond what it proves.
 
 ## 3. Discovered during implementation
 
@@ -392,3 +452,7 @@ evidence, not §13's about provenance, and PR4b answers it per capacity point ra
 - **Whether an all-refusal run may back a capacity claim** (§3.5) is left to PR4b, per quoted
   point. The provenance ladder certifies it and should; the evidence question is
   `measurement-contract.md` §5's.
+- **AWS quota** remains an external dependency for PR4b's independently provisioned capacity
+  evidence. If it does not permit the complete G4 environment within the AG-Sept timebox, record
+  the blocker and leave `VAL-SCALE-5` explicitly unproven rather than delaying PR5 or promoting the
+  local rehearsal.

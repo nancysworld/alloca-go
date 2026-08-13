@@ -333,9 +333,39 @@ Recorded because it is a naming hazard rather than a bug that stays fixed: the n
 shell-facing knob that wants an obvious short name can hit the same class of collision, and
 `shellcheck` is what caught it.
 
+### 3.5 A fully replayed run certifies at `capacity` with zero goodput — needs a decision
+
+Two runs of `wl-mut-disp-4` against the live four-group topology, identical in every respect
+except whether the fixture had been re-seeded between them:
+
+| fixture | goodput | replays | `measurement_sound` | quotability level |
+|---|---:|---:|---|---|
+| clean | 400 | 0 | `true` | `capacity` |
+| carried over from the previous run | **0** | **400** | `true` | `capacity` |
+
+The second run committed nothing. Every mutation was served from an idempotency record written
+by the run before it, because the workloads derive keys from workload name and sequence number
+with no per-run nonce. `alloca-seed` documents this trap and asserts against it **at seed time**;
+nothing asserts against it at **run** time, so the contaminated run reconciles cleanly, breaks no
+invariant, reports `measurement_sound: true`, and reaches the same rung as the honest one.
+
+Zero goodput is obvious enough to catch by eye. The shape that matters for PR4b is the partial
+case: a fixture reset on some capacity points and not others yields a *plausible* depressed
+number at the contaminated rung, and `E2`/`E4` would carry it as scale efficiency. `G1` is the
+most exposed point, since it is the one most likely to be re-run while debugging.
+
+**This is a gate question, not an implementation detail, so it is recorded rather than decided.**
+The options are at least: refuse a run whose replay fraction exceeds a threshold; require a
+per-run nonce in the idempotency key; or make re-seeding part of the sweep rather than a separate
+operator step. The first changes what the harness refuses, the second changes what the replay
+control means, and the third changes the experiment procedure — different owners.
+
 ## 4. Open items
 
 - **Rung duration** stays open until §2.4's preflight derives it.
 - **Whether monitoring splits onto its own host** stays open until §2.2's preflight says whether it
   needs to.
 - **`postgres_exporter`** is deferred with a trigger, not dropped (§2.1).
+- **The replay-saturation gate** (§3.5) needs a maintainer decision before PR4b quotes a
+  capacity point, because the contaminated case is indistinguishable from a real result at the
+  rung it certifies to.

@@ -634,6 +634,49 @@ Not guarded by a check, deliberately: Docker refuses a duplicate binding loudly 
 port, so this failure cannot be mistaken for anything else or silently produce a bad result. The
 guard would only convert a clear runtime failure into a slightly earlier one.
 
+### 3.9 The first driven cell was not observed, and nothing said so
+
+The first G4 rehearsal cell ran to completion, reconciled, and certified at `capacity`. Grafana
+was empty, and Prometheus reported no error at any point.
+
+Prometheus was healthy and scraping a target written on 2026-08-04: `172.21.44.28:9090`, the WSL
+`eth0` address of a **host-run** service from PR2's single-instance path. Nothing serves that
+address now — the service under test is four containers — and the address had almost certainly
+been reassigned by the WSL reconfiguration besides. The scrape config's own comment predicted
+exactly this: the discovered address "is reassigned whenever WSL restarts."
+
+**Nothing downstream could report it.** A query against a job whose targets are all down returns
+an empty result and no error, so every panel renders empty, every CSV exports with headers and no
+rows, and the run's own artifacts are unaffected — `run.json` carries the totals, and
+`alloca-verify` reads direct scrapes rather than Prometheus. The cell was sound and quotable at
+its provenance level while retaining no time series whatsoever. `sweep.sh` records this shape as
+the worst there is, because nothing anywhere reports an error.
+
+**Resolved by making the scrape path structural rather than discovered.** Prometheus joins the
+topology's Compose network and scrapes the units by their service names (`service-1:9090`); the
+addresses stop being a property of this machine's networking, so a WSL restart cannot invalidate
+them. Grafana is deliberately *not* attached — it talks to Prometheus, and putting a dashboard on
+the measured topology's network buys nothing.
+
+`file_sd` remains the abstraction rather than static targets in `prometheus.yml`
+(**maintainer decision, 2026-08-13**): the scrape configuration stays version-controlled and
+deployment-agnostic, and only the generated file changes between environments. Locally
+`test/scripts/itc-obs-targets.sh` writes Compose service names; on EC2 the same script writes the
+units' private addresses from `UNIT_n_ADDR`, with no other change. Each target carries an
+`authority` label, which is the stable per-unit identity — the address is not, so a panel keyed on
+`instance` would not survive the move to the environment the experiment exists for (§2.6).
+
+**The gate is a count, not a probe.** `itc-run.sh` now refuses a cell unless exactly `ITC_GROUPS`
+targets report `up == 1`. "Prometheus is scraping something" passes while three of four units are
+missing, and a G4 point measured with one unit unobserved is not a G4 point — it is the rung
+below it wearing the wrong label. A rehearsal may still run unmonitored, but only by saying so
+(`PROM_URL=`), never by Prometheus being quietly absent.
+
+The units join the existing `alloca-go` job rather than one of their own, because §2.6 scopes the
+service panels to `job="alloca-go"` and reserves a second job for the host exporter. The PR2
+host-run target is therefore a fifth member of the same job during a rehearsal, permanently down;
+`itc-obs-targets.sh` refuses rather than deleting it, since `obs-target.sh` owns that file.
+
 ## 4. Open items
 
 - **Rung duration** stays open until §2.4's preflight derives it.

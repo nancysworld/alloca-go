@@ -10,6 +10,7 @@ checks a person runs by hand against a service they started themselves.
 | `scripts/itc-cpu-layout-test.sh` | asserts the Iteration C layout check still refuses a bad CPU partition | CI, and `make ci` |
 | `scripts/itc-cpu-layout.sh` | checks the rehearsal's CPU partition against this machine | `make itc-layout`, and by `itc-rehearse` before it raises anything |
 | `scripts/itc-cpuset-check.sh` | asserts every running container is pinned where the partition says | by `itc-run.sh` in preflight; also by hand |
+| `scripts/itc-obs-targets.sh` | writes the Prometheus file_sd target list for the units a rung raises | by `make obs-rehearse`; also by hand |
 | `scripts/itc-run.sh` | drives one rehearsal cell with the generator confined to its own CPUs | by hand, after `make itc-rehearse` and `make obs-rehearse` |
 | `results/` | load-harness output (git-ignored scratch) | written by `alloca-load` and `alloca-verify` |
 

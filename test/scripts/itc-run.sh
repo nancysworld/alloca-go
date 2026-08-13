@@ -77,6 +77,12 @@ OUT="${OUT:-test/results/itc-g${ITC_GROUPS}-$(date -u +%Y%m%dT%H%M%SZ)}"
 # every rehearsal run for a reason the rehearsal cannot fix.
 REQUIRE="${REQUIRE:-capacity}"
 
+# Where the scrape gate looks. Settable to empty to drive a cell with no monitoring at all, which
+# is a legitimate thing to do while shaking out the harness — but it has to be said out loud
+# rather than being what happens when Prometheus is quietly absent.
+PROM_URL="${PROM_URL-http://localhost:9091}"
+PROM_JOB="${PROM_JOB:-alloca-go}"
+
 LOAD=bin/alloca-load
 
 log()  { printf '%s  %s\n' "$(date -u +%H:%M:%S)" "$*"; }
@@ -133,6 +139,47 @@ ITC_CPUS_GENERATOR="$ITC_CPUS_GENERATOR" \
 [ "${PIPESTATUS[0]}" -eq 0 ] \
   || fail "the containers are not pinned where the partition says; raise them with
   'make itc-rehearse' and 'make obs-rehearse' rather than 'make itc-up' and 'make obs-up'"
+
+# Exactly the units this rung raises must be scraped, and be up.
+#
+# "Prometheus is running" is not the property. A successful query against a job with no targets
+# returns an empty result and no error, so every panel renders, every CSV exports with headers,
+# and the whole cell completes having retained no time series at all — the failure shape sweep.sh
+# records as the worst there is, because nothing anywhere reports it. That is exactly what the
+# first driven G4 cell hit: Prometheus was healthy and scraping a stale host address.
+#
+# Counting is what makes it a gate rather than a smoke test. `up == 1` for *some* target passes
+# while three of four units are missing, and a G4 point measured with one unit unobserved is not
+# a G4 point — it is the rung below it, wearing the wrong label.
+#
+# Skipped, loudly, when no Prometheus is reachable: a rehearsal is allowed to run without one, and
+# the run's own totals do not depend on it. What must never happen is a run that believes it was
+# observed when it was not.
+if curl -sf -m 5 "$PROM_URL/-/ready" >/dev/null 2>&1; then
+  scraped="$(curl -sfG -m 10 "$PROM_URL/api/v1/query" \
+      --data-urlencode "query=count(up{job=\"$PROM_JOB\"} == 1)" 2>/dev/null \
+    | python3 -c 'import json,sys
+try:
+    r = json.load(sys.stdin)["data"]["result"]
+    print(int(float(r[0]["value"][1])) if r else 0)
+except Exception:
+    print(0)' 2>/dev/null)" || scraped=0
+
+  if [ "${scraped:-0}" -ne "$ITC_GROUPS" ]; then
+    fail "prometheus is up but ${scraped:-0} of $ITC_GROUPS units are being scraped.
+  A successful query against an unscraped job returns nothing and reports no error, so the cell
+  would complete and retain no series. Regenerate the target list and give Prometheus its
+  refresh interval to pick it up:
+
+      ITC_GROUPS=$ITC_GROUPS ./test/scripts/itc-obs-targets.sh
+      curl -s $PROM_URL/api/v1/targets | grep -o '\"health\":\"[a-z]*\"'
+
+  Set PROM_URL= to drive a cell deliberately without monitoring."
+  fi
+  log "prometheus scraping $scraped/$ITC_GROUPS units"
+elif [ -n "$PROM_URL" ]; then
+  fail "prometheus is not reachable at $PROM_URL (set PROM_URL= to run without monitoring)"
+fi
 
 mkdir -p "$OUT"
 

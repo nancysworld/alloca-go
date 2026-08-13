@@ -267,10 +267,17 @@ obs-up:
 # scrape stack are deliberately independent — a topology can be raised and torn down without
 # disturbing whatever is scraping it. Raising them together would make a torn-down topology
 # take the evidence path with it.
+#
+# The target list is generated first, from ITC_GROUPS, so the scrape set and the topology cannot
+# disagree about how many units the run has. Doing it here rather than leaving it to the operator
+# is the difference between a missing unit being caught by the run's scrape gate and being
+# discovered when a report has a hole in it.
 obs-rehearse:
+	@ITC_GROUPS=$(ITC_GROUPS) ./test/scripts/itc-obs-targets.sh
 	@$(MAKE) --no-print-directory obs-up \
 	  OBS_COMPOSE="-f $(OBSCOMPOSE) -f $(OBSREHEARSALCOMPOSE)"
 	@echo "  monitoring confined to CPUs $(ITC_CPUS_GENERATOR)"
+	@echo "  scraping $(ITC_GROUPS) unit(s) as service-N:9090 on the topology network"
 
 ## obs-target: re-probe the scrape address (after a WSL restart, or a late service start)
 obs-target:

@@ -24,9 +24,33 @@
 # query load lands on Prometheus anyway; splitting them would spend a capacity unit's CPU on a
 # dashboard.
 
+# **Prometheus joins the topology's network; Grafana does not.** Prometheus is the only container
+# that has to reach the units, and it reaches them by their Compose service names on that network
+# (`service-1:9090`), which is stable across WSL restarts in a way a discovered host address is
+# not — the PR2 path rediscovers an eth0 address that WSL reassigns, and that address had already
+# gone stale here. Grafana talks to Prometheus over the observability network and has no reason to
+# see the units; attaching it too would put a dashboard on the measured topology's network for
+# nothing.
+#
+# The network is external because the topology owns it. Compose creates `alloca-topology_default`
+# when `make itc-rehearse` raises the units, so this file must attach to it rather than declare
+# it — declaring it would create a second, empty network with a mangled name and every scrape
+# would fail with a DNS error that looks like the units being down.
+#
+# **This does not put Prometheus inside a capacity unit.** A container network is not a CPU set:
+# Prometheus stays pinned to ITC_CPUS_GENERATOR, and joining the topology's bridge changes only
+# which names it can resolve.
 services:
   prometheus:
     cpuset: "${ITC_CPUS_GENERATOR:-8-11}"
+    networks:
+      - default
+      - topology
 
   grafana:
     cpuset: "${ITC_CPUS_GENERATOR:-8-11}"
+
+networks:
+  topology:
+    external: true
+    name: alloca-topology_default

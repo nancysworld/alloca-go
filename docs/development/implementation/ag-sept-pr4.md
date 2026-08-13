@@ -751,15 +751,16 @@ side, with p50, p95 and p99 all climbing (p99 approximately 0.02 s to 0.045 s), 
 resident memory grows about 19 MB to 23 MB.
 
 The pool is not the cause at this rung: connections in use oscillate around 2–4 against a maximum
-of 4 per unit, and acquire-wait stays flat until after the load stops. The leading hypothesis is
-**cost per mutation rising with accumulated state** — the cell inserts 110,172 claims in 60 s, and
-every `reserve` performs an exclusion-constraint insert against the `btree_gist` index on
-`user_time_claims`, which is in the measured write path and grows with every row. That index is a
-known source of drift *between* runs; the finding here is that it is visible *within* one.
+of 4 per unit, and acquire-wait stays flat until after the load stops.
 
-This is read from the retained scrape series rather than queried into an artifact, and the
-mechanism is a hypothesis rather than a measured attribution. What is not in doubt is the shape:
-a single reported rate does not describe this window.
+> **Hypothesis withdrawn.** This section originally proposed that cost per mutation rises with
+> accumulated state — the `btree_gist` exclusion index on `user_time_claims` growing under
+> 110,172 inserts, in the measured write path. **§3.12 refutes it**: a 30 s cell reached *more*
+> rows (92,125) than a 60 s cell (83,794) while still accelerating, so row count does not explain
+> the rate. The withdrawal is kept visible rather than edited away, because the reasoning was
+> plausible, the mechanism is real, and it is the explanation someone will reach for again.
+
+What is not in doubt is the shape: a single reported rate does not describe this window.
 
 ### 3.11.1 A second rung, and why the pair cannot yet be compared
 
@@ -811,6 +812,54 @@ workload semantics, declaration, observed deployment, provenance, cpuset partiti
 confinement, scrape coverage and certification — runs end to end and produces an internally
 consistent artifact, before any metered AWS time is spent.
 
+### 3.12 The window experiment answered a different question, and reproduced PR2's open anomaly
+
+Three cells at `c=16`, `SLOTS=3200`, identical but for window length, each reseeded from the same
+state. The intent was to test whether reported Goodput depends on how long a rung runs (§3.11).
+
+**The 120 s cell is invalid and is excluded.** It admitted **exactly 256,000 of 256,000** — its
+whole supply — so its rate of 2,133/s is precisely `supply ÷ duration` and describes the fixture
+rather than the service. The exhaustion reporter added in §3.10 fired, which is the first time
+that check has caught a live cell.
+
+**The remaining two were not the same experiment.** Read from the per-cell panel exports:
+
+| | 30 s cell | 60 s cell |
+|---|---|---|
+| Goodput | 2,874 → **3,208/s**, rising | 2,194 → **927/s**, falling |
+| Process CPU | 1.68 → **2.11 cores**, rising | 1.46 → **0.70 cores**, falling |
+| Pool acquire wait | 2.72 → **1.51**, falling | 3.95 → **7.12**, rising |
+| Pool connections in use | 15, 15, 13, **16** of 16 | 10, 9, … **7** of 16 |
+| Admitted | 92,125 | 83,794 |
+
+One run accelerated throughout; the other degraded from its first exported sample and **admitted
+9% fewer mutations in twice the time**. Window length is therefore confounded with which regime a
+run lands in, and the original question is unanswered: no rung comparison — and so no ladder — is
+possible until the two are separable.
+
+**Throughput and CPU fall together**, 2.4× against 2.1×. That is this repository's recorded
+signature for a stall *downstream* of the service rather than a limit *in* it, and it is why the
+degraded cell must not be treated as an outlier and dropped.
+
+**The pool series is the sharpest evidence, and it is new.** In the degraded cell, connections in
+use falls to **7 of 16 while acquire-wait nearly doubles**: sixteen closed-loop workers, roughly
+nine of them waiting for connections that are *not in use*. Connections exist and are not being
+handed out. A service merely saturating its database would pin in-use at the ceiling, which is
+exactly what the healthy cell does at 13–16 of 16 with acquire-wait falling. Whatever the cause,
+it is between the pool and the database rather than in the service's own work.
+
+**This is PR2's open throughput anomaly, reproduced here.** Intermittent, roughly 3×,
+throughput-down-with-CPU-down, with autovacuum, checkpoints and configuration already excluded
+during PR2. Two things are new: it is **not specific to the single-instance deployment** — it
+appears across four independently pinned units, each with its own PostgreSQL — and the retained
+pool series gives a more specific signature than PR2 had to work with.
+
+**Consequences.** `node_exporter` (§2.1) stops being deferrable: it is the host-level sensor this
+diagnosis needs, and the same evidence arguably fires the `postgres_exporter` deferral trigger,
+since the fault now localises to the pool/database boundary where this deployment has no
+visibility at all. One run per point cannot separate a regime from a trend, so each window needs
+repeating. And the 120 s point needs a fixture that cannot bound it.
+
 ## 4. Open items
 
 - **Rung duration** stays open until §2.4's preflight derives it.
@@ -841,7 +890,18 @@ consistent artifact, before any metered AWS time is spent.
   question.
 - **Whether monitoring splits onto its own host** stays open until §2.2's preflight says whether it
   needs to.
-- **`postgres_exporter`** is deferred with a trigger, not dropped (§2.1).
+- **`node_exporter` is no longer deferrable** (§2.1, §3.12). It is the host sensor the degraded-
+  regime diagnosis needs, and nothing else can say whether the stall is PostgreSQL, the disk or
+  the WSL VM.
+- **`postgres_exporter`'s deferral trigger has arguably fired** (§2.1, §3.12). The fault localises
+  to the pool/database boundary, which is precisely where this deployment has no visibility.
+  Maintainer decision needed on whether to fund it inside PR4a.
+- **The degraded regime must be characterised before any ladder** (§3.12). Repeat each window
+  several times to establish how often it occurs, and re-run the 120 s point at a fixture that
+  cannot bound it (`SLOTS=8000` gives 640,000).
+- **Pool underutilisation is undetected.** Connections in use falling well below the ceiling
+  *while* acquire-wait rises is a specific, diagnosable fault, and no check reports it — the
+  degraded cell certified `capacity` like any other.
 - **Per-organisation fixture size for the sweep** (§3.5) must be justified against the deepest rung
   the ladder will reach, not the selected point, now that fixture exhaustion at a higher rung
   invalidates the point below it. Derived during PR4a preflight alongside the rung duration (§2.4).

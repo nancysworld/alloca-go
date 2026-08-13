@@ -45,13 +45,15 @@ AG-Sept's governing goal, its iteration history, and the currently open problem 
   Review in PR #17. The Phase 1 authority model is established as a correctness/composition result,
   not a capacity multiplier.
 - **Iteration C — independently provisioned shard-group capacity.** Requirements, Design, and
-  Validation now fix the bounded experiment: reusable `WL-MUT-DISP-4`, organisations A/B/C/D,
+  Validation fix the target experiment: reusable `WL-MUT-DISP-4`, organisations A/B/C/D,
   1/2/4 shard groups, one service + one PostgreSQL authority per group, equivalent AWS EC2
   capacity-unit hosts, and a separate generator host. The **Tier 1 target** is numeric
-  saturation-selected `G1/G2/G4` and derived `E2/E4`. If a proven measurement-system limit prevents
-  Tier 1, validation-plan §4.6 permits the bounded **Tier 2** operating-point comparison at a common
-  per-unit `L`; that result does not resolve aggregate capacity scaling or discharge `VAL-SCALE-5`.
-  No efficiency threshold is a pass criterion in either case.
+  saturation-selected `G1/G2/G4` and derived `E2/E4`; Tier 2 remains the bounded operating-point
+  fallback only when the complete measurement environment exists but a proven measurement-system
+  limit prevents Tier 1. **AWS quota is an external provisioning dependency, not an Iteration C
+  exit gate:** if it prevents the complete G4 environment from existing within the milestone
+  timebox, `VAL-SCALE-5` and aggregate capacity scaling are reported explicitly unproven and PR5
+  closes the milestone without inventing substitute capacity evidence.
 
 The decision order has now reached Schedule:
 
@@ -71,9 +73,9 @@ Iteration B evidence -> Analyse & Review -> Iteration C Problem
 | Multi-authority correctness and failure-isolation evidence | PR3c | merged #16 |
 | Iteration B Analyse & Review | review step, PR #17 | merged; Iteration B closed and Iteration C Problem selected |
 | Iteration C planning | PR #18 | complete in #18; closes Requirements → Design → Validation → Schedule |
-| Iteration C AWS capacity environment | PR4a | scheduled after #18 |
-| Iteration C 1/2/4 capacity evidence | PR4b | scheduled after PR4a |
-| Iteration C A&R and AG-Sept conclusion | PR5 | not started; follows PR4b and closes the milestone engineering loop |
+| Iteration C local rehearsal + conditional AWS bootstrap | PR4a | in progress |
+| Iteration C AWS 1/2/4 capacity evidence | PR4b | conditional on sufficient AWS quota within the milestone timebox |
+| Iteration C A&R and AG-Sept conclusion | PR5 | not started; follows the strongest PR4 evidence actually achieved |
 
 Validation status is owned by the validation plan's own status table, not duplicated here.
 
@@ -91,8 +93,8 @@ granularity is false precision that invites its own overrun (Nancy's call, 2026-
 | Multi-authority harness | PR3b | 2.5 | 2.5 | 0.0 | merged |
 | Multi-authority correctness and failure-isolation evidence | PR3c | 1.5 | 1.5 | 0.0 | merged; originally 2.0, with 0.5 returned to contingency |
 | Iteration C planning | PR #18 | 0.5 | 0.5 | 0.0 | complete; hard planning cap met |
-| Iteration C AWS capacity environment | PR4a | 1.5 | 0.0 | 1.5 | scheduled |
-| Iteration C 1/2/4 capacity evidence | PR4b | 2.5 | 0.0 | 2.5 | scheduled |
+| Iteration C local rehearsal + conditional AWS bootstrap | PR4a | 1.5 | 0.0 | 1.5 | in progress |
+| Iteration C AWS 1/2/4 capacity evidence | PR4b | 2.5 | 0.0 | 2.5 | conditional on sufficient AWS quota |
 | Iteration C A&R and AG-Sept conclusion | PR5 | 1.5 | 0.0 | 1.5 | not started |
 | **Allocated development budget** | | **15.5** | **10.0** | **5.5** | |
 | Contingency | | **4.0** | **1.0** | **3.0** | 1.0 drawn by §2.1.1 |
@@ -102,9 +104,12 @@ granularity is false precision that invites its own overrun (Nancy's call, 2026-
 row. Completed work that returned unused allocation is shown at its current allocation; **Status**
 keeps the historical context, not the accounting.
 
-The former 4.5-day uncommitted Iteration C envelope is now scheduled as **0.5 planning + 1.5
-capacity environment + 2.5 evidence/report**. It has not grown because AWS returned to the plan;
-the infrastructure choice must fit the envelope the Problem already had.
+The former 4.5-day uncommitted Iteration C envelope remains scheduled as **0.5 planning + 1.5
+capacity-environment work + up to 2.5 AWS evidence/report**. PR4b's allocation is a ceiling, not a
+reason to wait indefinitely for an external quota decision. If quota blocks the complete AWS
+measurement environment within the milestone timebox, the unexecuted capacity work is not replaced
+by a weaker local capacity claim; PR5 records the strongest established evidence and the explicit
+unproven result.
 
 A further **2–3 days** are reserved beyond the development budget for rerunning decisive
 experiments, validating negative controls, reviewing measurements and interpretations, correcting
@@ -245,97 +250,76 @@ It records:
 measurements, or capacity results. Review fixes only material contradictions/gaps; settled design
 choices are not reopened merely because more alternatives exist.
 
-### PR4a — AWS capacity environment — 1.5 days
+### PR4a — Local capacity-environment rehearsal + conditional AWS bootstrap — 1.5 days
 
-**Delivers:** the smallest reproducible AWS implementation of `deployment-architecture.md` §13:
+PR4a now begins with a **mandatory local rehearsal** before any AWS capacity attempt. The workstation
+exposes a 12-vCPU Docker/WSL envelope that mirrors the planned quota shape: four non-overlapping
+2-vCPU shard-group CPU sets plus a separate 4-vCPU generator/monitoring CPU set. `G1`, `G2`, and
+`G4` use the same placement/workload/fixture semantics as the AWS experiment; unused shard-group CPU
+sets stay idle rather than being borrowed by smaller topologies.
 
-- one equivalent EC2 capacity-unit host per shard group, each running one Alloca-Go service and one
-  PostgreSQL authority;
-- a separate EC2 generator host, preflighted under VAL-NEG-2 against the intended `G4` sweep range
-  before PR4b spends capacity-run time;
-- a bounded generator workload implementation for `WL-MUT-DISP-4` whose user/slot pairs remain
-  **same-organisation under all 1/2/4 placement maps**, with a discriminating test proving the
-  request semantics do not change with topology; the existing colocated-cross-organisation
-  `multi-org-dispersed` workload remains unchanged;
-- one fixed per-organisation A/B/C/D fixture population sized once for the maximum intended `G4`
-  run and reused unchanged for `G1`, `G2`, and `G4`, with no topology-specific fixture resizing;
-- versioned bootstrap/deployment configuration sufficient to instantiate 1-, 2-, and 4-group
-  topologies with the fixed placement maps;
-- per-authority migration and the existing provenance/certification contract;
-- manifest/topology/environment fields sufficient for a sound run to validate at the
-  `measurement-contract.md` §13 **`publishable` provenance level**;
-- verifier connectivity to every authority's PostgreSQL endpoint, including the bounded DSN and
-  security-group path needed for cross-host `alloca-verify` reconciliation;
-- bounded host/service/database resource evidence required by VAL-NEG-7;
-- smoke/correctness verification that all three topologies are runnable before capacity sweeps.
+The rehearsal proves the experiment machinery and exposes defects cheaply: topology selection,
+placement, fixed fixtures, workload semantics, manifest/deployment provenance, reconciliation,
+resource capture, generator isolation, and the operator-facing Makefile path. It is **diagnostic and
+rehearsal evidence, not independently provisioned capacity evidence**: the groups still share one
+physical workstation, WSL VM/kernel, storage path, and other host resources, so local `G1/G2/G4`
+numbers cannot discharge `VAL-SCALE-5` or be substituted into AWS `E2/E4`.
 
-**Not in PR4a:** EKS, RDS, Kubernetes, autoscaling, service-replica multiplication, capacity
-headline numbers, or a cloud-production architecture claim.
+After local findings are fixed:
 
-**Cost/teardown guard:** before provisioning, PR4a records a dated estimate for the selected EC2
-shapes and an explicit maintainer-approved spend ceiling. It also provides and verifies the teardown
-procedure; experiment instances are stopped or terminated when they are not needed for active work.
-The estimate and ceiling bound **experiment spend** only; they do not select capacity/resource
-economics as an Iteration C analysis output.
+- if the AWS quota request is still pending and an AWS-specific bootstrap proof would buy useful
+  confidence, one `t2.micro` may exercise AMI/user-data/Docker/image/placement/monitoring/chrony/
+  security-group/smoke mechanics; it is burstable, 1-vCPU **bootstrap-only** infrastructure and
+  never a measured capacity unit;
+- if sufficient non-burstable quota is already available, skip that optional bootstrap and move
+  directly to the planned `c5` environment;
+- PR4a retains the dated cost estimate, spend ceiling, teardown path, and enough deployment support
+  that the complete AWS G4 environment can be launched when quota permits.
 
-**Gate:** clean infrastructure can instantiate the 1/2/4 topology family with equivalent
-capacity-unit hosts and separate generator; the dedicated `WL-MUT-DISP-4` generator preserves the
-same request-pair semantics and fixed per-organisation fixture populations under every placement;
-the selected generator is preflighted above the intended G4 sweep range; all units pass
-provenance/readiness/placement checks; the verifier can reach every participating authority and
-complete the existing reconciliation path; a sound run can reach `publishable` **provenance** under
-measurement-contract §13; the measurement system can retain the resource evidence required by
-VAL-SCALE-5/VAL-NEG-7; and the cost ceiling/teardown controls are in place. `Publishable` here is a
-provenance-readiness gate only — PR4b still has to satisfy §5's evidence gates before any external
-capacity claim is admissible.
+**Gate:** the local 1/2/4 rehearsal is runnable and its discovered defects are fixed or explicitly
+bounded; the dedicated `WL-MUT-DISP-4` generator preserves the same request-pair semantics and fixed
+per-organisation fixture populations under every placement; provenance/reconciliation/resource
+capture work is exercised far enough locally to make AWS a deployment step rather than first-use
+debugging. AWS bootstrap is conditional and AWS capacity readiness is **not** required to close
+PR4a when quota is the blocker.
 
-### PR4b — 1/2/4 shard-group capacity evidence — 2.5 days
+### PR4b — AWS 1/2/4 shard-group capacity evidence — up to 2.5 days, quota-conditional
 
-**Delivers:** the fixed `WL-MUT-DISP-4` 1/2/4 matrix and two-tier result model from validation-plan
-§4.6:
+PR4b runs only if sufficient AWS quota is available within the AG-Sept timebox to provision the
+complete independently provisioned environment required by validation-plan §4.6: equivalent
+non-burstable capacity-unit hosts plus separate generator compute for the G1/G2/G4 family.
 
-- one-group topology: A/B/C/D on one shard group;
-- two-group topology: A/B and C/D on two shard groups;
-- four-group topology: A, B, C, D on four shard groups;
-- **Tier 1 first:** run saturation-establishing capacity ladders and retain one confirmation of the
-  selected `G1`, `G2`, and `G4` point per topology, using validation-plan §4.6's **Tier-1
-  capacity-point selection rule**; derive `E2/E4` when all three admissible capacity points exist;
-- **Tier 2 fallback only when measurement-limited:** if a proven generator, AWS-quota, or other
-  measurement-system limit prevents Tier 1, select the highest useful common per-unit workload
-  intensity `L` under validation-plan §4.6 and retain `g1(L)`, `g2(L)`, `g4(L)` plus derived
-  `E2(L)/E4(L)`; report aggregate capacity scaling and `VAL-SCALE-5` as explicitly unproven;
-- correctness/reconciliation and generator/resource controls at every quoted Tier-1 or Tier-2
-  point;
-- per-authority data-volume/working-set evidence sufficient to expose the intended change as four
-  fixed organisation datasets are distributed from one authority to four;
-- limiting-resource analysis, workload/resource envelope, limitations, and retained
-  report/artifacts at the strongest evidence tier actually achieved.
+When that environment exists, PR4b attempts **Tier 1 first**: saturation-establishing ladders,
+selected and repeated `G1/G2/G4` points, and derived `E2/E4`. If the complete environment exists but
+a proven generator or other measurement-system limit prevents Tier 1, the validation plan's Tier 2
+common-`L` result may be retained, with aggregate capacity and `VAL-SCALE-5` explicitly unproven.
 
-There is **no efficiency pass threshold**. A sub-linear result is acceptable evidence if it is
-admissible and explained or conservatively bounded. Tier 2 is not a relaxed capacity threshold: it
-is a different, explicitly weaker result used only when the measurement system itself blocks Tier 1.
+If quota prevents the complete G4 environment from being provisioned within the milestone timebox,
+**do not manufacture Tier 2 from the local rehearsal or an incomplete AWS topology.** Record the
+quota/provisioning limitation, report `VAL-SCALE-5` and aggregate capacity scaling as unproven, and
+proceed to PR5. Successful AWS capacity measurement is therefore a stronger desired Iteration C
+result, **not an exit gate for Iteration C**.
 
-**Explicit non-goal — capacity/resource economics.** The roadmap now records this as a worthwhile
-future exploration dimension, but Iteration C does **not** select it. PR4b must not grow cost/hour,
-cost-per-million, cloud-price comparison, instance-shopping, or economic-optimisation analysis from
-the fact that EC2 is being used. PR4a's dated estimate and spend ceiling exist only to control the
-cash cost of running the experiment. If the retained capacity evidence makes economics worth
-pursuing, PR5 may record it as a deferred candidate direction; AG-Sept does not select or schedule a
-next Problem from it.
+Every quoted AWS point still requires correctness/reconciliation, generator/resource controls,
+per-authority data-volume/working-set evidence, limiting-resource analysis, workload/resource
+envelope, and measurement-contract provenance. There is no efficiency pass threshold.
 
-**Gate:** VAL-SCALE-5 and VAL-NEG-7 are either discharged with retained evidence or explicitly
-reported as unproven. Tier-1 capacity points, when claimed, are established by the common
-saturation rule rather than sweep depth; a Tier-2 result is selected only by §4.6's common-per-unit
-`L` rule after the measurement-system limit is evidenced. No number is promoted beyond its
-measurement-contract evidence level.
+**Explicit non-goal — capacity/resource economics.** The roadmap records this as a worthwhile
+future exploration dimension, but Iteration C does **not** select it. Experiment-cost controls bound
+cash spend only; PR4b does not grow cost/hour, cost-per-million, instance-shopping, or economic
+optimisation analysis.
 
-PR5 follows PR4b and combines Iteration C Analyse & Review with the AG-Sept milestone conclusion.
-There is no separate Iteration C A&R work unit: the A&R remains required, but here it closes the
-milestone rather than feeding another scheduled AG-Sept iteration.
+**Gate:** either (a) the strongest admissible AWS Tier-1/Tier-2 evidence permitted by the complete
+measurement environment is retained under validation-plan §4.6, or (b) the external quota blocker
+is retained and the capacity validation is explicitly unproven. In both cases the result is bounded
+to what was actually established and PR5 can perform the Iteration C A&R.
+
+PR5 follows the strongest PR4 evidence actually achieved and combines Iteration C Analyse & Review
+with the AG-Sept milestone conclusion. There is no separate Iteration C A&R work unit.
 
 ### PR5 — Iteration C Analyse & Review + AG-Sept conclusion
 
-**Budget:** 1.5 development days, following PR4b.
+**Budget:** 1.5 development days, following PR4.
 
 PR5 consumes the retained Iteration C evidence and closes both the final iteration and the AG-Sept
 milestone. It records the Analyse & Review outcome required by `engineering-process.md` §1.4.1 in
@@ -367,61 +351,60 @@ architecture claim is traceable to retained evidence, limitations and unproven a
 new implementation stage is invented, and the AG-Sept engineering loop is closed before
 publication work begins.
 
-The closeout sequence is:
+The Iteration C closeout path is:
 
 ```mermaid
-flowchart LR
-    A[PR4b evidence] --> B[PR5: Iteration C A&R + AG-Sept conclusion]
-    B --> C[Pre-publication documentation pass]
-    C --> D[Public release]
-    D --> E[AG-Sept closed]
+flowchart TD
+    A[Local 12-vCPU partitioned rehearsal] --> B[Fix rehearsal findings]
+    B --> C{Sufficient AWS quota in time?}
+    C -->|Yes| D[c5 AWS capacity experiment]
+    C -->|Pending; bootstrap useful| E[t2.micro bootstrap proof]
+    E --> C
+    C -->|No within AG-Sept timebox| F[Record capacity unproven]
+    D --> G[PR5: Iteration C A&R + AG-Sept conclusion]
+    F --> G
+    G --> H[Pre-publication documentation pass]
+    H --> I[Public release]
+    I --> J[AG-Sept closed]
 ```
 
 ## 4. Manifest and reconciliation staging
 
 The rules are `measurement-contract.md` §11–§13. PR3b established multi-authority topology/image
-identity; PR4a extends environment/topology capture to the independent EC2 capacity-unit design;
-PR4b records the exact 1/2/4 placement and resource envelope for each capacity run.
+identity; PR4a rehearses the same declaration/provenance/reconciliation machinery locally before
+AWS and prepares the AWS deployment path; PR4b, when quota permits it, records the exact AWS 1/2/4
+placement and resource envelope for each capacity run.
 
 Reconciliation: PR1 established the single-authority self-check; PR3b extended it to multiple
-authorities; PR3c exercised it against deliberate failure; PR4b applies it to every quoted Tier-1
-or Tier-2 point.
+authorities; PR3c exercised it against deliberate failure; PR4a rehearses it across the local 1/2/4
+topology family; PR4b applies it to every quoted AWS Tier-1 or Tier-2 point when that experiment can
+run.
 
-**Quotability target:** PR4a prepares the Iteration C topology so a sound run's manifest can validate
-at the measurement contract's **`publishable` provenance level** before PR4b begins the expensive
-capacity sweeps. That target is deliberately stronger than merely removing the old co-resident-
-generator blocker: the operator-supplied topology/environment/placement/image fields must be known
-before evidence is collected, not discovered missing afterwards.
-
-`Publishable` is still only the §13 provenance rung. PR4b must independently satisfy the §5
-response-validation, generator-headroom, negative-control, reconciliation, and other evidence gates
-before a project-level capacity claim is admissible. Older PR1/PR2/PR3 evidence is not retroactively
-promoted.
+**Quotability target:** local rehearsal can exercise the provenance machinery but cannot promote
+shared-workstation scale numbers into independently provisioned capacity evidence. A sound AWS run
+must still validate at the measurement contract's `publishable` provenance level and independently
+satisfy §5 response-validation, generator-headroom, negative-control, reconciliation, and other
+evidence gates before a project-level capacity claim is admissible.
 
 ## 5. Priority and descope
 
 ### 5.1 P0 — required
 
-For Iteration C the non-descopable scaling-evidence path is now explicit. **Tier 1 remains the P0
-target; Tier 2 is the bounded P0 fallback when a proven measurement-system limit makes that target
-unmeasurable, not a discretionary descope of the capacity experiment.**
+For Iteration C the non-descopable path is now conditional on the external environment rather than
+on a successful quota request:
 
-- `WL-MUT-DISP-4` workload semantics, including topology-independent same-organisation request
-  pairs and fixed per-organisation fixture populations across the 1/2/4 topology family;
-- the 1/2/4-shard-group matrix;
-- one equivalent EC2 capacity-unit host per shard group;
-- separate generator compute, preflight sizing, and per-point generator-headroom proof (VAL-NEG-2);
-- PR4a `publishable` provenance readiness under measurement-contract §13;
-- correctness/reconciliation for every quoted point (VAL-COR-1);
-- resource-envelope evidence sufficient for VAL-NEG-7;
-- **Tier 1 when measurable:** the common saturation-point selection rule, admissible `G1/G2/G4`,
-  and derived `E2/E4` with no preselected threshold;
-- **Tier 2 only when Tier 1 is measurement-limited:** evidence of that measurement-system limit,
-  the highest useful common per-unit `L`, `g1(L)/g2(L)/g4(L)`, and derived `E2(L)/E4(L)`, with
-  `VAL-SCALE-5` and aggregate capacity scaling explicitly unproven;
-- limiting-resource interpretation, including the per-authority data-volume/working-set change, and
-  explicit workload/resource envelope;
-- retained evidence and report.
+- `WL-MUT-DISP-4` topology-independent request semantics and fixed per-organisation fixtures;
+- the **local 12-vCPU 1/2/4 rehearsal**, using non-overlapping shard-group CPU sets and separate
+  generator/monitoring CPUs, with findings fixed or explicitly bounded;
+- correctness/reconciliation and the provenance/resource-capture machinery needed for a later AWS
+  run;
+- **when sufficient AWS quota is available within the milestone timebox:** the complete equivalent
+  non-burstable G1/G2/G4 environment, Tier 1 first, and Tier 2 only under validation-plan §4.6 after
+  that complete environment exists;
+- **when sufficient quota is not available:** retain the provisioning limitation and explicitly
+  report `VAL-SCALE-5` and aggregate capacity scaling unproven; do not substitute local or partial
+  AWS evidence;
+- limiting-resource interpretation and retained evidence at the strongest level actually achieved.
 
 The older service-replica VAL-SCALE-1/2 path is not Iteration C scope.
 
@@ -448,27 +431,26 @@ EKS; RDS; Kubernetes; a service mesh; autoscaling; a broker solely to claim even
 architecture; complete production authentication/authorization; eliminating hot-authority
 serialization; and reproducing a full commercial workload.
 
-**Narrow AWS exception:** EC2 is in scope only as the bounded Iteration C measurement mechanism in
-`deployment-architecture.md` §13 — equivalent capacity-unit hosts plus separate generator compute.
-This is not a reopening of the former EKS/RDS production-shaped AWS plan.
+**Narrow AWS exception:** EC2 remains the bounded Iteration C mechanism for independently
+provisioned capacity evidence when quota permits it. The local rehearsal is an implementation and
+diagnostic step, not a replacement environment for the design claim.
 
 ### 5.5 Descope order
 
 If time slips, remove work in this order:
 
-1. optional resource-limit control beyond the evidence already needed for VAL-NEG-7;
+1. optional resource-limit control beyond the evidence already needed for diagnosis;
 2. chart/dashboard polish beyond the diagnostic minimum;
 3. extra confirmation/rerun work beyond the retained confirmation required by the selected evidence
    path, unless A&R needs it to resolve material variation;
 4. PR5 presentation/chart polish beyond what the milestone conclusion requires.
 
-**Do not descope:** the 1/2/4 matrix, stable `WL-MUT-DISP-4` request semantics and fixed fixture
-populations, separate generator, equivalent growing resource envelopes, response validation,
-reconciliation, resource-envelope evidence, publishable-provenance readiness, retained provenance,
-or the limiting-resource interpretation. When Tier 1 is measurable, its common saturation-point
-rule is also non-descopable. When a **proven measurement-system limit** blocks Tier 1, the Tier-2
-common-`L` rule and the explicit `VAL-SCALE-5`-unproven conclusion replace it; choosing Tier 2 for
-convenience is not a permitted descope.
+**Do not descope:** stable `WL-MUT-DISP-4` semantics and fixtures, the local 1/2/4 rehearsal,
+response validation, reconciliation, provenance/resource-capture checks, or honest evidence
+labelling. When the complete AWS environment exists, do not descope the selected Tier-1/Tier-2 rule.
+When quota prevents that environment from existing, the required outcome is the explicit
+`VAL-SCALE-5`-unproven conclusion rather than waiting indefinitely or substituting an incomparable
+measurement.
 
 Contingency is drawn before weakening any mandatory evidence gate.
 
@@ -489,39 +471,42 @@ conditional AWS deployment. PR2's measured result changed the order:
 2. the original AWS path was withdrawn and its budget moved to the authority work;
 3. Iteration B established the authority architecture and PR #17 selected capacity composition as
    the next Problem;
-4. Iteration C Requirements/Design then derived that the current fixed workstation cannot prove
-   the selected capacity claim, which justified a **new, much smaller AWS EC2 path**;
-5. the 4.5-day Iteration C envelope did not increase when that mechanism was selected.
+4. Iteration C Requirements/Design then derived that the fixed workstation cannot prove the
+   selected independently provisioned capacity claim, which justified a much smaller AWS EC2 path;
+5. PR4a later added a bounded local resource-partitioned rehearsal so the complete topology and
+   measurement machinery can be debugged before metered AWS work;
+6. AWS capacity evidence remains the stronger target but is conditional on the external quota
+   needed to instantiate the complete environment; quota failure is recorded as an unproven result,
+   not made into an Iteration C exit blocker.
 
 ### 6.3 The original AWS path remains withdrawn; Iteration C adds only minimal EC2
 
 The v0.4 AWS plan — ECR/EKS/RDS/load-balancing path plus separate EC2 generator and its larger
 matrix — remains withdrawn. Iteration C does **not** restore it.
 
-The new derivation is narrower:
+The intended evidence path remains:
 
 ```text
 REQ-SCALE-4 independent growing envelopes
-        -> fixed workstation cannot supply them
-        -> external independent compute is required
-        -> AWS EC2 is the available bounded mechanism
+        -> shared workstation cannot prove them
+        -> local partitioning rehearses the machinery only
+        -> AWS EC2 supplies independent compute when quota permits
         -> one host per shard group + one separate generator host
 ```
 
 No EKS, RDS, managed-database, service-mesh, or cloud-production conclusion follows from this
-choice. The capacity baseline and scale-out points are all re-measured in the same EC2 environment;
-workstation `G1` is never mixed with AWS `G2/G4`.
+choice. If AWS capacity points are measured, their baseline and scale-out points all come from the
+same AWS environment; workstation `G1` is never mixed with AWS `G2/G4`.
 
 ### 6.4 The PR2 deferral register
 
 - **Overload question:** remains outside AG-Sept; it deserves its own future Problem rather than
   being absorbed into Iteration C.
 - **Instrumentation:** the old PostgreSQL/node-exporter choices are no longer schedule owners. The
-  durable obligation is VAL-NEG-7: retain enough host/service/database evidence to explain,
-  exclude, or conservatively bound material environment variation. PR4a selects the smallest
-  mechanism that satisfies it.
-- **Evidence hygiene:** per-run retained evidence required by PR4b is in scope; unrelated PR2
-  re-runs/histogram work remains deferred.
+  durable obligation is VAL-NEG-7 for any claimed independently provisioned capacity result; PR4a
+  also exercises enough resource capture locally to make missing evidence visible before AWS.
+- **Evidence hygiene:** per-run retained evidence required by the strongest executed PR4 path is in
+  scope; unrelated PR2 re-runs/histogram work remains deferred.
 
 ## 7. Final deliverables
 
@@ -533,8 +518,9 @@ The public-ready milestone should leave:
 4. aggregated service/runtime/resource evidence sufficient for the claims made;
 5. the single-instance frontier report;
 6. the multi-authority correctness/failure-isolation report;
-7. the Iteration C 1/2/4 shard-group scaling report, carrying Tier-1 capacity efficiency when
-   established or the bounded Tier-2 operating-point result when capacity remains unproven;
+7. the Iteration C local 1/2/4 rehearsal record and, when quota permits, the AWS shard-group scaling
+   report carrying Tier-1 capacity efficiency or the bounded Tier-2 operating-point result; when
+   quota does not permit the complete AWS environment, an explicit `VAL-SCALE-5`-unproven result;
 8. current and intended architecture diagrams;
 9. authority and bottleneck analysis across the scaling axes actually measured, with unmeasured
    axes named explicitly;
@@ -558,23 +544,27 @@ explicitly recorded as unproven.
 Before PR5 can close Iteration C and judge the AG-Sept Goal:
 
 - `WL-MUT-DISP-4` runs reproducibly from clean fixtures with topology-independent same-organisation
-  request pairs and fixed per-organisation populations reused across the 1/2/4 topology family;
-- the AWS 1/2/4 topologies are reproducible with equivalent capacity-unit hosts and separate
-  generator compute;
-- PR4a has demonstrated `publishable` provenance readiness before PR4b capacity evidence begins;
-- if Tier 1 is achieved, `G1/G2/G4` and `E2/E4` exist only at the evidence level their retained runs
-  support and every selected G point is established by the common saturation rule, not by the final
-  tested rung;
-- if a proven measurement-system limit prevents Tier 1, the retained Tier-2 `g1(L)/g2(L)/g4(L)`
-  and `E2(L)/E4(L)` follow validation-plan §4.6's common-per-unit rule, and `VAL-SCALE-5` plus
-  aggregate capacity scaling are explicitly recorded as unproven;
-- response validation, generator headroom, and resource-envelope controls are demonstrated;
-- outcomes and persisted state reconcile on every participating authority;
-- limiting resources and material environment variation are explained or conservatively bounded,
-  including the intended per-authority data-volume/working-set change;
+  request pairs and fixed per-organisation populations reused across the local 1/2/4 topology family;
+- the local 12-vCPU partitioned rehearsal has exercised the G1/G2/G4 machinery with non-overlapping
+  shard-group CPU sets and a separately isolated generator/monitoring CPU set, and its material
+  findings are fixed or explicitly bounded;
+- if sufficient AWS quota becomes available within the milestone timebox, the complete AWS 1/2/4
+  environment is reproducible with equivalent non-burstable capacity-unit hosts and separate
+  generator compute, and the strongest Tier-1/Tier-2 evidence the environment supports is retained;
+- if quota prevents that complete environment from existing, the external limitation is retained,
+  no local or partial-AWS result is promoted into the missing capacity evidence, and
+  `VAL-SCALE-5` plus aggregate capacity scaling are explicitly recorded as unproven;
+- response validation, reconciliation, provenance and applicable resource controls are demonstrated
+  for every result actually quoted;
+- outcomes and persisted state reconcile on every participating authority for quoted runs;
 - measured facts, calculations, interpretation, and limitations are separated;
 - architecture reflects evidence rather than desired presentation;
 - the repository remains suitable for public review under the disclosure policy.
+
+**Successful AWS capacity measurement is not an Iteration C exit gate.** The exit gate is an honest,
+reviewable outcome at the strongest evidence level the available environment permits: AWS Tier 1 or
+Tier 2 when the complete environment exists, or an explicit unproven capacity result when the
+external quota prevents that environment from being provisioned.
 
 PR5 then records the required Analyse & Review outcome and closes the **AG-Sept** engineering loop.
 It does not start the next Alloca iteration. Any continuation after AG-Sept begins with a separate

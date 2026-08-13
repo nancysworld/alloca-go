@@ -103,7 +103,7 @@ func run(args []string) error {
 				"single-authority and everything goes to -target")
 		workloadName = fs.String("workload", "dispersed",
 			"dispersed | hot-slot | hot-identity | replay | multi-org-dispersed | "+
-				"hot-organisation | cross-authority-control")
+				"hot-organisation | cross-authority-control | wl-mut-disp-4")
 		concurrency = fs.Int("concurrency", 10, "concurrent workers (closed loop)")
 		iterations  = fs.Int("n", 100, "logical units of work (mutually exclusive with -duration)")
 		duration    = fs.Duration("duration", 0,
@@ -582,10 +582,52 @@ func buildWorkload(name string, spec workloadSpec) (loadgen.Workload, int, error
 		}
 		return loadgen.CrossAuthorityControl{Groups: groups}, size, nil
 
+	case "wl-mut-disp-4":
+		populations, size, err := orgPopulations(spec)
+		if err != nil {
+			return nil, 0, err
+		}
+		return loadgen.MutDisp4{Orgs: populations, Confirm: spec.Confirm}, size, nil
+
 	default:
 		return nil, 0, fmt.Errorf("unknown workload %q: want dispersed, hot-slot, hot-identity, "+
-			"replay, multi-org-dispersed, hot-organisation or cross-authority-control", name)
+			"replay, multi-org-dispersed, hot-organisation, cross-authority-control or "+
+			"wl-mut-disp-4", name)
 	}
+}
+
+// orgPopulations derives WL-MUT-DISP-4's per-organisation datasets, seeding the same number of
+// slots for every organisation the routing places.
+//
+// It reads the *set* of organisations from the placement and nothing else. That set is fixed
+// across the Iteration C matrix — A, B, C and D participate at G1, G2 and G4 alike — while the
+// homes that map them onto authorities are exactly what the experiment varies, so taking the
+// set from the map is topology-independent in the way the assignment would not be.
+//
+// A single-target run is refused rather than degraded. WL-MUT-DISP-4 is defined over four
+// organisations, and an unsharded run has no map to name them from; reporting the catalog
+// workload against whatever -org happened to be set would name a shape the run never drove.
+func orgPopulations(spec workloadSpec) ([]loadgen.OrgPopulation, int, error) {
+	placement := spec.Router.Placement()
+	if placement.IsZero() {
+		return nil, 0, fmt.Errorf("wl-mut-disp-4 needs -placement: the workload is defined over four " +
+			"named organisations, and a single-target run has no map to name them from")
+	}
+
+	slotsByOrg := map[domain.OrganisationID][]loadgen.Slot{}
+	dataset := 0
+	for _, authority := range placement.Authorities() {
+		for _, org := range placement.Organisations(authority) {
+			slotsByOrg[org] = slotsFor(org, spec.Slots)
+			dataset += spec.Slots
+		}
+	}
+
+	populations, err := loadgen.NewOrgPopulations(slotsByOrg)
+	if err != nil {
+		return nil, 0, err
+	}
+	return populations, dataset, nil
 }
 
 // orgGroups derives the per-authority groups the §5.6 shapes draw from, seeding the same

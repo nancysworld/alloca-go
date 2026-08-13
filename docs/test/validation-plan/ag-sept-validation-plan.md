@@ -72,9 +72,10 @@ Requirements and Design now constrain the validation deliberately:
   per group constant;
 - one equivalent AWS EC2 capacity-unit host per group and a separate generator host;
 - Tier 1 target: measured saturation-selected `G1`, `G2`, `G4`, derived 2-group and 4-group capacity
-  efficiencies, and the limiting-resource interpretation; if the measurement environment cannot
-  establish that target with proven headroom, §4.6 permits a bounded Tier 2 operating-point result
-  without promoting it to a capacity claim;
+  efficiencies, and the limiting-resource interpretation; if that environment exists but cannot be
+  driven far enough to establish the target with proven headroom, §4.6 permits a bounded Tier 2
+  operating-point result without promoting it to a capacity claim. If the environment cannot be
+  provisioned at all, §4.6 gives neither tier and `VAL-SCALE-5` is reported unproven;
 - **no efficiency threshold**: obtaining and explaining the numeric result is the validation goal.
 
 Any capacity claim must also **explain, exclude, or conservatively bound shared-environment
@@ -325,10 +326,24 @@ required for Iteration C to be sufficiently resolved.
 #### Tier 2 — operating-point horizontal scale when capacity is measurement-limited
 
 Tier 1 is the stronger Iteration C result and the only tier that supports a claim about aggregate
-mutation **capacity** scaling. If AWS quota, generator headroom, or another proven measurement-system
-resource limit prevents the complete `G4` environment from driving all three topologies far enough
-to establish Tier 1, Iteration C may retain a weaker operating-point comparison rather than turning
-the measurement limit into an arbitrary capacity endpoint.
+mutation **capacity** scaling.
+
+**Tier 2 presupposes that the complete `G4` environment exists.** It is the fallback for an
+environment that has been provisioned and then proves unable to *drive* the topology family far
+enough — generator headroom, a resource limit, or another demonstrated measurement-system frontier.
+Only then may Iteration C retain a weaker operating-point comparison rather than turning the
+measurement limit into an arbitrary capacity endpoint.
+
+**A provisioning limit is not a Tier-2 trigger.** If AWS quota, or anything else external, prevents
+the complete equivalent `G4` environment from being instantiated at all, there is no common per-unit
+`L` to select and no comparable topology family to apply it across — the thing Tier 2 measures does
+not exist. The outcome is then neither Tier 1 nor Tier 2: Iteration C records the external
+limitation and reports `VAL-SCALE-5` and aggregate capacity scaling as **explicitly unproven**.
+Neither a partial AWS topology nor a shared-workstation rehearsal substitutes for the missing
+environment, and no local number may be promoted to fill the gap.
+
+The distinction is between an environment that cannot be *built* and one that cannot be *driven*.
+Only the second produces evidence at all.
 
 Select the **highest useful common per-unit workload intensity** `L` that the complete `G4`
 measurement environment can drive without becoming the plausible limiter. Apply that same per-unit
@@ -537,9 +552,15 @@ resource envelopes are comparable, generator/shared-environment effects cannot p
 the result, the saturation point is established rather than assumed from sweep depth, and the
 limitations are stated. It does **not** require an efficiency percentage.
 
-If a proven measurement-system limit forces §4.6's Tier-2 path instead, retain that operating-point
-horizontal-scale result, but report `VAL-SCALE-5` as **unproven**. Tier 2 cannot be promoted into a
-capacity result merely because it is the strongest result the available environment could drive.
+If the complete environment exists but a proven measurement-system limit forces §4.6's Tier-2 path
+instead, retain that operating-point horizontal-scale result, but report `VAL-SCALE-5` as
+**unproven**. Tier 2 cannot be promoted into a capacity result merely because it is the strongest
+result the available environment could drive.
+
+If the complete equivalent environment cannot be provisioned at all, neither tier applies. Record
+the external limitation and report `VAL-SCALE-5` as **unproven** with no substitute result: this
+validation is defined over independently provisioned capacity units, and a topology that was never
+instantiated produces no evidence about them at any tier.
 
 ## 8. Measurement-system negative controls
 
@@ -605,7 +626,7 @@ about that constraint, not a clean shard-group scale-efficiency point.
 | Phase 1 correctness and failure isolation | established for Iteration B | PR3c report and retained artifacts; VAL-COR-1..3, VAL-COR-5, VAL-COR-6 and VAL-FAIL-1 |
 | cross-authority refusal (VAL-COR-4) | established for Iteration B | all four §3.5 clauses now hold on the deployed topology: the refusal and the absence of partial mutation by the PR3c passes, and **same-key replay** by control 3b, retained in [`../../measurements/pr3c-phase1/controls-replay/`](../../measurements/pr3c-phase1/controls-replay/). The replay clause was the gap the Iteration B A&R found (PR3c report §7.4), and it was closed by adding the repost to the control rather than by re-running or reinterpreting the retained cells |
 | database-authority composition (VAL-SCALE-3) | established as architecture/correctness evidence | PR3c; explicitly **not** a capacity multiplier on the co-resident workstation |
-| Iteration C shard-group capacity (VAL-SCALE-5) | **defined; not yet executed** | Tier 1 is the fixed `WL-MUT-DISP-4` A/B/C/D 1/2/4 matrix with saturation-selected `G1/G2/G4` and derived `E2/E4`; if a proven measurement-system limit prevents Tier 1, §4.6 Tier 2 may establish horizontal scaling at a common per-unit `L`, while capacity remains explicitly unproven |
+| Iteration C shard-group capacity (VAL-SCALE-5) | **defined; not yet executed** | Tier 1 is the fixed `WL-MUT-DISP-4` A/B/C/D 1/2/4 matrix with saturation-selected `G1/G2/G4` and derived `E2/E4`. Where the complete environment exists but a proven measurement-system limit prevents Tier 1, §4.6 Tier 2 may establish horizontal scaling at a common per-unit `L`, with capacity explicitly unproven. Where that environment cannot be provisioned at all, neither tier applies and `VAL-SCALE-5` is unproven with no substitute result |
 | Iteration C resource-envelope control (VAL-NEG-7) | **defined; not yet executed** | retain per-host resource evidence and explain/exclude/bound material environment variation |
 | stateless replica scaling | unproven and not selected by Iteration C | existing VAL-SCALE-1/2 remain separate future validation definitions |
 | composed multi-authority + multi-replica topology | optional later validation | only after both axes are understood separately |

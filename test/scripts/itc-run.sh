@@ -279,6 +279,12 @@ scrape baseline
 
 log "  generator confined to CPUs $ITC_CPUS_GENERATOR ($WORKLOAD c=$CONCURRENCY window=$WINDOW require=$REQUIRE)"
 
+# Bracket the measured phase for the panel export. A cell's headline scalars come from run.json,
+# but a scalar cannot show a *shape* — and this workload's rate is not flat within a window
+# (§3.11), so the average alone actively misdescribes what happened. The series lives in
+# Prometheus, whose retention will drop it, so a report can only quote it if the cell retained it.
+measured_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
 # No `-warm-up`. The flag discards responses from the client totals while their rows stay in the
 # database, which persisted-state reconciliation cannot reconcile, so it refuses the run at
 # `none` (measurement-contract §12). Warming is a *separate* invocation followed by a reseed —
@@ -300,9 +306,26 @@ taskset -c "$ITC_CPUS_GENERATOR" "$LOAD" \
 status="${PIPESTATUS[0]}"
 [ "$status" -eq 0 ] || fail "the run failed or was refused below $REQUIRE; see $OUT/generator-output.txt"
 
+measured_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
 # After the run has exited, not before: alloca-load replays ambiguous mutations in a post-run
 # pass, and a scrape taken while that is still in flight misses requests the report counts.
 scrape after
+
+# Retain the shape, not just the endpoints. export-panels.sh writes every canonical panel as a
+# CSV over the measured phase and takes a TSDB snapshot beside them, which is what keeps the
+# series checkable after Prometheus's retention window has dropped it.
+#
+# **Not tolerated on failure.** An export that only logged its failure is a defect this
+# repository has already met: the cell completes, the run looks finished, and the evidence the
+# report was going to quote silently does not exist. Skipped only when the cell was deliberately
+# driven without monitoring.
+if [ -n "$PROM_URL" ]; then
+  PROM_URL="$PROM_URL" ./test/scripts/export-panels.sh "$OUT" "$measured_start" "$measured_end" \
+    || fail "panel export failed; the cell has its scalars but no retained series, and the
+  rate within this window is not flat (ag-sept-pr4.md §3.11) so the average alone does not
+  describe it. Artifacts are in $OUT"
+fi
 
 # The useful-demand discriminator, reported rather than gated (measurement-contract §5). A cell
 # that admitted its whole supply measured the fixture's headroom, not the service — and it stays

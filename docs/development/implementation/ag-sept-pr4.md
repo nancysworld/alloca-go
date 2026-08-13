@@ -848,11 +848,31 @@ handed out. A service merely saturating its database would pin in-use at the cei
 exactly what the healthy cell does at 13–16 of 16 with acquire-wait falling. Whatever the cause,
 it is between the pool and the database rather than in the service's own work.
 
-**This is PR2's open throughput anomaly, reproduced here.** Intermittent, roughly 3×,
-throughput-down-with-CPU-down, with autovacuum, checkpoints and configuration already excluded
-during PR2. Two things are new: it is **not specific to the single-instance deployment** — it
-appears across four independently pinned units, each with its own PostgreSQL — and the retained
-pool series gives a more specific signature than PR2 had to work with.
+**It matches PR2's open throughput anomaly on three of its four signature elements, and
+contradicts the fourth.**
+
+| PR2's signature | this cell |
+|---|---|
+| throughput falls to 0.25–0.54 of the healthy rate | 0.45 — matches |
+| service process CPU roughly halves | 1.46 → 0.70 cores, 0.48 — matches |
+| **the generator's CPU halves too** | 0.1146 → 0.0588 per core, 0.51 — matches |
+| pool acquire-wait is *unchanged* | 3.95 → 7.12, nearly doubled — **contradicts** |
+
+The match is close enough, on a marker as distinctive as the generator slowing in sympathy, that
+treating this as a different fault would be the less likely reading. But the pool divergence is
+real and unexplained, and this record does not assert the two are the same fault.
+
+**What the rehearsal adds that PR2 could not.** In PR2 the generator and the service shared one
+unpartitioned host, so "both slowed together" was compatible with them simply contending for the
+same CPUs. Here the generator is confined to CPUs 8–11 and every unit to 0–7, disjoint sets that
+`itc-cpuset-check.sh` verified for this run — **and both still halved**. Shared-CPU contention is
+therefore excluded by construction, which strengthens PR2's "everything on the host slows at
+once" framing into something much harder to explain any other way: a VM- or host-level effect
+(WSL2 CPU steal, Docker Desktop storage-path latency, Windows-side contention) reaching processes
+that share no cores. Those were exactly the candidates PR2 named and could not test.
+
+It also shows the anomaly is **not specific to the single-instance deployment** — it appears
+across four independently pinned units, each with its own PostgreSQL.
 
 **Consequences.** `node_exporter` (§2.1) stops being deferrable: it is the host-level sensor this
 diagnosis needs, and the same evidence arguably fires the `postgres_exporter` deferral trigger,

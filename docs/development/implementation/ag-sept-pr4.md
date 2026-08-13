@@ -354,11 +354,34 @@ case: a fixture reset on some capacity points and not others yields a *plausible
 number at the contaminated rung, and `E2`/`E4` would carry it as scale efficiency. `G1` is the
 most exposed point, since it is the one most likely to be re-run while debugging.
 
-**This is a gate question, not an implementation detail, so it is recorded rather than decided.**
-The options are at least: refuse a run whose replay fraction exceeds a threshold; require a
-per-run nonce in the idempotency key; or make re-seeding part of the sweep rather than a separate
-operator step. The first changes what the harness refuses, the second changes what the replay
-control means, and the third changes the experiment procedure — different owners.
+**Resolved by maintainer decision: fresh-run identity is structural, not procedural.** Idempotency
+keys are scoped to a run id minted per invocation, and capacity certification refuses a run
+reporting replays its workload did not intend. Reset/reseed remains required fixture preparation
+but is no longer the only thing standing between a rerun and a wrong number. The disposition
+control is exempt by its own declaration, because replays are what it measures.
+
+**The fix works, and not by the route the table above suggests.** Re-running the same experiment
+without re-seeding now produces *no replays at all* — the second run mints entirely different keys,
+so nothing can be served from the first run's records. What it produces instead is 200
+`business_refusal` / `schedule_conflict`: the requests were genuinely attempted and genuinely
+refused, because the fixture's capacity was already consumed.
+
+That is the substantive improvement, and it is one of legibility rather than of arithmetic. Both
+the old and new contaminated runs report zero goodput; the difference is what the totals say
+happened. Before, they read `admitted_success, replay: true` — a run that looks like 200
+successful bookings until someone notices goodput excludes replays. After, they read
+`schedule_conflict`, which is what actually happened and is visible at a glance.
+
+The certification gate is therefore a backstop rather than the primary defence: in the motivating
+scenario it never fires, because there are no replays left to refuse. It covers the narrower case
+where run identity fails to vary — a reused id, or a future change that drops the scoping — which
+is exactly the case that would otherwise reintroduce the original defect silently.
+
+**Still open, and deliberately so:** a run of 200 refusals against an exhausted fixture certifies
+at `capacity` with zero goodput. Nothing in the provenance ladder refuses it, and nothing should —
+the run describes itself honestly and the outcome mix is right there in the totals. Whether an
+all-refusal run may back a capacity *claim* is `measurement-contract.md` §5's question about
+evidence, not §13's about provenance, and PR4b answers it per capacity point rather than here.
 
 ## 4. Open items
 
@@ -366,6 +389,6 @@ control means, and the third changes the experiment procedure — different owne
 - **Whether monitoring splits onto its own host** stays open until §2.2's preflight says whether it
   needs to.
 - **`postgres_exporter`** is deferred with a trigger, not dropped (§2.1).
-- **The replay-saturation gate** (§3.5) needs a maintainer decision before PR4b quotes a
-  capacity point, because the contaminated case is indistinguishable from a real result at the
-  rung it certifies to.
+- **Whether an all-refusal run may back a capacity claim** (§3.5) is left to PR4b, per quoted
+  point. The provenance ladder certifies it and should; the evidence question is
+  `measurement-contract.md` §5's.

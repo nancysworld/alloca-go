@@ -248,6 +248,49 @@ exited:
 make topo-ps
 ```
 
+### The Iteration C topologies — 1, 2 or 4 shard groups
+
+`make topo-up` raises the two-authority PR3b topology and its `pr3b-v1` map, which is what
+every earlier report reproduces against. Iteration C compares the *same* workload at one, two
+and four shard groups ([`ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md)
+§4.6), so it has its own target:
+
+```sh
+make itc-up ITC_GROUPS=4      # 1, 2 or 4
+```
+
+That selects the Compose profile and the matching `deploy/topology/placement-itc-g<n>.json`
+together. **Do not mount a placement document by hand.** Only one direction of that mistake is
+safe: four units under a two-authority map refuse to boot, because units 3 and 4 are assigned
+no organisations. The other direction boots happily — one unit under the four-authority map
+serves `org-a` and routes `org-b`, `org-c` and `org-d` to authorities that are not running, so
+the run looks alive while measuring a quarter of its workload.
+
+The variable is `ITC_GROUPS`, not `GROUPS`. `GROUPS` is a bash built-in array of your group
+IDs and bash discards an assignment to it in silence, so the seeding script would receive your
+GID instead of the group count.
+
+Then seed the fixture. It is a separate step because the population is fixed for a comparison:
+sized once for the largest intended `G4` run and reused unchanged at every capacity point, since
+topology-specific resizing changes the workload rather than the topology.
+
+```sh
+ITC_GROUPS=4 SLOTS=200 ./test/scripts/itc-seed.sh
+```
+
+The script reads the same placement document and seeds each organisation into its own home
+authority. It resets **once per authority, not once per organisation** — `alloca-seed -reset`
+truncates `slots`, so resetting before each organisation would leave only the last one's fixture
+standing. That loss is silent and asymmetric: at `G4` each organisation has its own database and
+nothing is lost, while at `G1` all four share one and three of the four datasets vanish, which
+depresses `G1` in the same direction as a genuine super-linear result.
+
+Tear down every unit whichever profile raised it:
+
+```sh
+make itc-down
+```
+
 ### Changing ports — optional
 
 Only needed if a default port is already taken on your machine. Every port has an environment
@@ -528,13 +571,24 @@ report cannot say which harness produced it.
 `-placement` and `-target` are mutually exclusive — the first routes each organisation to
 its own authority's endpoint, the second sends everything to one service.
 
-The three multi-organisation workloads:
+The four multi-organisation workloads:
 
 | `-workload` | What it drives |
 |---|---|
 | `multi-org-dispersed` | supported traffic across both authorities, mixing same-organisation and colocated cross-organisation bookings |
 | `hot-organisation` | one organisation carries the whole load, so one authority is busy and its peers are not — the shape the failure-isolation experiment needs |
 | `cross-authority-control` | the Phase 1 refusal, reported as its own evidence class and never mixed into the supported workload |
+| `wl-mut-disp-4` | the Iteration C capacity workload: four organisations, equal share, every user paired only with its **own** organisation's slots |
+
+**`wl-mut-disp-4` and `multi-org-dispersed` are not interchangeable, and the difference is the
+point.** `multi-org-dispersed` deliberately mixes colocated cross-organisation bookings in, so
+how many of its requests are same-organisation depends on how many organisations share an
+authority. Comparing `G1` against `G4` with it would change the workload and the topology at
+once, and the scale-efficiency figure would carry both. `wl-mut-disp-4` derives its pairs from
+the organisation's own population and never consults the placement map, so the same sequence
+number produces an identical request at every topology — which is what makes `E2` and `E4` a
+measurement of the architecture. Use `multi-org-dispersed` for Phase 1 correctness coverage and
+`wl-mut-disp-4` for anything compared across topologies.
 
 The report records what the run actually reached: `authority_count`, `routing_version`,
 `placement_assignment`, `placement_digest`, and `topology_disagreement` — empty when the

@@ -276,7 +276,64 @@ chrony, security groups, and a single-unit smoke run. Burst throttling is irrele
 is being measured. Doing this while the quota request is open makes the approval a launch rather
 than a debugging session.
 
-## 3. Open items
+## 3. Discovered during implementation
+
+These are findings, not decisions taken in advance. Each changed something that had already
+been designed, and each was invisible to review — all three were found by running something.
+
+### 3.1 The workload's demand ordering has to be the workload's own property
+
+`WL-MUT-DISP-4` assigns demand round-robin over the four organisations, so the order of that
+list decides which organisation each request addresses. Deriving the list the obvious way —
+walking the placement's authorities and flattening the organisations each owns — makes the
+order a function of the topology whenever an authority does not own an alphabetically
+contiguous run of them. `G1` would then be compared against a `G2` that had quietly permuted
+the demand mapping, and the difference would present as scale efficiency.
+
+The shipped PR3b map is exactly that shape (`org-a`/`org-c` on one authority, `org-b`/`org-d`
+on the other), so this was not a hypothetical arrangement. The ordering is now sorted by
+organisation identifier and the topology-invariance test uses a deliberately non-alphabetical
+`G2`; an alphabetical one passes whether or not the property holds.
+
+**Consequence for PR4b:** the request-pair invariance is a property of the generator that is
+now tested, so a Tier 1 or Tier 2 comparison does not additionally need to argue it.
+
+### 3.2 A discriminating test can be defeated by the arithmetic of its own fixture
+
+The assertion that each organisation walks its whole seeded dataset passed against a
+deliberately broken workload. Indexing slots by the global sequence number rather than the
+organisation's own counter strides four at a time through the population, and whether that
+loses coverage depends on `gcd(4, slots)`: at the five-slot fixture the assertion was written
+with, the stride still visited all five. At eight it reaches a quarter of them.
+
+The gate was real and the fixture made it inert. It is recorded because the failure mode
+generalises past this test: a coverage assertion over a cyclic index is only as strong as the
+relationship between the cycle lengths, and nothing about reading the test reveals which case
+it is in. The four mutations run against this workload are the reason it was found at all.
+
+### 3.3 `-reset` truncates slots, so the clean start is per authority and not per organisation
+
+`Repo.Truncate` includes `slots`, not only booking and idempotency state. Seeding four
+organisations each with `-reset` therefore leaves only the last one's fixture standing.
+
+The consequence is asymmetric across the matrix, which is what makes it dangerous rather than
+merely wrong: at `G4` every organisation has its own authority and nothing is lost, while at
+`G1` all four share one database and three of the four datasets disappear. A `G1` measured that
+way would be depressed relative to `G4` by an artifact of the fixture, in the same direction
+and of the same rough shape as a genuine super-linear scaling result.
+
+### 3.4 `GROUPS` cannot be a shell variable name
+
+`GROUPS` is a bash built-in array holding the caller's group IDs, and bash discards an
+assignment to it without error: the value arrives in the script as the caller's GID. Make
+expands `$(GROUPS)` itself and is unaffected, so the Makefile would have worked while the
+script it documents silently did not. The variable is `ITC_GROUPS` throughout.
+
+Recorded because it is a naming hazard rather than a bug that stays fixed: the next
+shell-facing knob that wants an obvious short name can hit the same class of collision, and
+`shellcheck` is what caught it.
+
+## 4. Open items
 
 - **Rung duration** stays open until §2.4's preflight derives it.
 - **Whether monitoring splits onto its own host** stays open until §2.2's preflight says whether it

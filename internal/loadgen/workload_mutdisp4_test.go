@@ -312,6 +312,29 @@ func TestNewOrgPopulationsRefusesAPopulationItCannotDrive(t *testing.T) {
 			mention: "organisations",
 		},
 		{
+			// The case a count check cannot see. Four organisations, correctly seeded, every
+			// slot owned by its own organisation — and not this workload. `Name()` would still
+			// report `wl-mut-disp-4`, and nothing downstream re-derives the population from the
+			// artifact, so this run would be compared against a real one as an equal.
+			name: "four organisations, but not the catalog's four",
+			corrupt: func(m map[domain.OrganisationID][]loadgen.Slot) {
+				delete(m, "org-d")
+				m["org-e"] = []loadgen.Slot{{OrganisationID: "org-e", SlotID: "e-1"}}
+			},
+			// Asserted on the phrase unique to the participant-set branch. "org-d" alone also
+			// appears in the empty-population message, so it would pass on a build that had
+			// stopped checking the set and merely tripped over a nil slice.
+			mention: "nothing was seeded for",
+		},
+		{
+			name: "the right count with one participant renamed",
+			corrupt: func(m map[domain.OrganisationID][]loadgen.Slot) {
+				delete(m, "org-a")
+				m["org-z"] = []loadgen.Slot{{OrganisationID: "org-z", SlotID: "z-1"}}
+			},
+			mention: "nothing was seeded for",
+		},
+		{
 			name:    "an organisation seeded no slots",
 			corrupt: func(m map[domain.OrganisationID][]loadgen.Slot) { m["org-c"] = nil },
 			mention: "no slots",

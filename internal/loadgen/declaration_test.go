@@ -146,3 +146,57 @@ func topologyWithPools(ceilings ...int) loadgen.TopologyMeta {
 	}
 	return t
 }
+
+// The fan-out's pool arithmetic must be refused in preflight, not at certification.
+//
+// It is the only inconsistency a declaration can introduce: without a fan-out both the replica
+// count and the aggregate pool are derived from the units and agree by construction, so a
+// declared fan-out is the one way the three numbers can disagree. The manifest already refuses
+// the same disagreement, but that runs after the ladder has been driven — and this document was
+// made a file rather than four flags precisely so a mistyped number would not cost a rung.
+//
+// The passing cases are here too: a fan-out whose arithmetic holds, and a run with no fan-out at
+// all, must not be refused by a rule that only exists for the declared case.
+func TestFanOutPoolArithmeticIsRefusedBeforeTheRunNotAfterIt(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		fanOut   *loadgen.ReplicaFanOut
+		topology loadgen.TopologyMeta
+		wantErr  string
+	}{
+		{
+			name: "declared aggregate disagrees with count times ceiling",
+			fanOut: &loadgen.ReplicaFanOut{
+				ReplicaCount: 8, AggregatePoolSize: 70, Because: "an ALB in front of each unit"},
+			topology: topologyWithPools(10, 10, 10, 10),
+			wantErr:  "typed from memory",
+		},
+		{
+			name: "consistent fan-out is accepted",
+			fanOut: &loadgen.ReplicaFanOut{
+				ReplicaCount: 8, AggregatePoolSize: 80, Because: "an ALB in front of each unit"},
+			topology: topologyWithPools(10, 10, 10, 10),
+		},
+		{
+			name:     "no fan-out declared, nothing to check",
+			topology: topologyWithPools(10, 10, 10, 10),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := loadgen.Declaration{ReplicaFanOut: tc.fanOut}.ReconcileWith(tc.topology)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("ReconcileWith refused a consistent declaration: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("ReconcileWith accepted a declaration the manifest would later refuse, " +
+					"so the run would be driven before anyone found out")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error %q does not mention %q", err, tc.wantErr)
+			}
+		})
+	}
+}

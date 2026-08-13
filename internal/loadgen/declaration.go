@@ -137,11 +137,42 @@ func (d Declaration) ReconcileWith(topology TopologyMeta) error {
 	if disagreement := topology.Disagreement(); disagreement != "" {
 		return fmt.Errorf("the units do not describe one deployment: %s", disagreement)
 	}
-	if f := d.ReplicaFanOut; f != nil && f.ReplicaCount < len(topology.Units) {
+	f := d.ReplicaFanOut
+	if f == nil {
+		return nil
+	}
+	if f.ReplicaCount < len(topology.Units) {
 		return fmt.Errorf("the declaration says %d replicas serve this run (%s) but it "+
 			"addressed %d units: a fan-out adds replicas behind an endpoint, so it cannot "+
 			"describe fewer of them than the run reached",
 			f.ReplicaCount, f.Because, len(topology.Units))
+	}
+
+	// The aggregate pool must agree with the replica count and the per-replica ceiling, and this
+	// is the only place a disagreement can arise: without a fan-out both numbers are derived from
+	// the units and agree by construction, so only a declared fan-out can put them out of step.
+	//
+	// Checked here rather than left to certification, which is where the same rule already lives
+	// as the artifact-level backstop. Certification runs after the ladder has been driven, and
+	// discovering a mistyped pool ceiling at that point costs the rung — the exact failure mode
+	// this document exists to avoid, since it was made a file rather than four flags so a wrong
+	// number would be caught before it cost experiment time. Both checks stay: this one fails
+	// fast, the manifest's still refuses an artifact assembled some other way.
+	//
+	// Per-replica ceilings are read from the units, and Disagreement above has already refused a
+	// topology whose units disagree about theirs, so the first unit speaks for all of them.
+	if len(topology.Units) == 0 {
+		return nil
+	}
+	perReplica := topology.Units[0].Meta.Database.PoolMaxConns
+	if perReplica <= 0 {
+		return nil
+	}
+	if want := f.ReplicaCount * perReplica; f.AggregatePoolSize != want {
+		return fmt.Errorf("the declaration says %d replicas with an aggregate pool of %d (%s), "+
+			"but each unit reports a pool ceiling of %d, so %d replicas hold %d: one of the three "+
+			"was typed from memory and none of them can be trusted after that",
+			f.ReplicaCount, f.AggregatePoolSize, f.Because, perReplica, f.ReplicaCount, want)
 	}
 	return nil
 }

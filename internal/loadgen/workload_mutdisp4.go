@@ -3,17 +3,22 @@ package loadgen
 import (
 	"context"
 	"fmt"
-	"sort"
 
 	"github.com/nancysworld/alloca-go/internal/domain"
 )
 
-// mutDisp4Organisations is the participant count `WL-MUT-DISP-4` is named for.
+// mutDisp4Participants is the exact organisation set `WL-MUT-DISP-4` is defined over
+// (workload-catalog.md, "WL-MUT-DISP-4 — Population").
 //
-// It is a constant rather than a parameter because the count is part of the workload's
-// identity, not a knob: Name() goes into the manifest, and a run reporting the catalog
-// workload while driving three organisations would name a shape it never drove.
-const mutDisp4Organisations = 4
+// **The named set, not a count of four.** Name() goes into the manifest as the workload's
+// identity, and a comparison across topologies is only meaningful between runs that drove the
+// same participants. Checking the count alone would let a run over `org-w` through `org-z`, or
+// over A/B/C/D with one renamed, report itself as the catalog workload — and nothing downstream
+// re-derives the population from the artifact, so two such runs would be compared as though they
+// were the same experiment.
+//
+// It is sorted, and NewOrgPopulations relies on that: this is the order demand is assigned in.
+var mutDisp4Participants = []domain.OrganisationID{"org-a", "org-b", "org-c", "org-d"}
 
 // OrgPopulation is one organisation's independent seeded population.
 //
@@ -31,15 +36,19 @@ type OrgPopulation struct {
 // NewOrgPopulations builds `WL-MUT-DISP-4`'s populations from the slots seeded per
 // organisation.
 //
-// **The order is the organisation identifiers', never the placement's.** This is the whole
-// reason the constructor exists. Demand is assigned round-robin over this slice, so the
-// slice order decides which organisation each seq addresses — and if it were derived by
-// walking authorities and flattening their organisations, that order would change with the
-// topology whenever an authority does not own an alphabetically contiguous run of them.
-// `G1` would then compare against a `G2` that had shuffled the demand-to-organisation
-// mapping, and the difference would appear as scale efficiency. Sorting by organisation
-// makes the mapping a property of the workload, which is what
-// `workload-catalog.md` "WL-MUT-DISP-4 — Demand shape" requires it to be.
+// **The order is the catalog's, never the placement's.** This is the whole reason the
+// constructor exists. Demand is assigned round-robin over this slice, so the slice order decides
+// which organisation each seq addresses — and if it were derived by walking authorities and
+// flattening their organisations, that order would change with the topology whenever an authority
+// does not own an alphabetically contiguous run of them. `G1` would then compare against a `G2`
+// that had shuffled the demand-to-organisation mapping, and the difference would appear as scale
+// efficiency. Walking mutDisp4Participants makes the mapping a property of the workload, which is
+// what `workload-catalog.md` "WL-MUT-DISP-4 — Demand shape" requires it to be.
+//
+// It also refuses a population that is not this workload's. Four organisations of any name are
+// not `WL-MUT-DISP-4`, and the identity matters beyond pedantry: `Name()` is what the manifest
+// records, nothing downstream re-derives the participants from the artifact, and two runs over
+// different populations would therefore be compared as though they were the same experiment.
 //
 // It refuses a population whose slots belong to another organisation. Same-organisation
 // pairing is the workload's load-bearing property, and a mis-seeded map would produce
@@ -47,14 +56,25 @@ type OrgPopulation struct {
 // pair is *supported* behaviour when the two organisations happen to be colocated, so
 // nothing downstream would report it.
 func NewOrgPopulations(slotsByOrg map[domain.OrganisationID][]Slot) ([]OrgPopulation, error) {
-	if len(slotsByOrg) != mutDisp4Organisations {
-		return nil, fmt.Errorf("loadgen: wl-mut-disp-4 is defined over %d organisations, but %d were seeded; "+
-			"a run reporting this workload with a different population is naming a catalog shape it did not drive",
-			mutDisp4Organisations, len(slotsByOrg))
+	if len(slotsByOrg) != len(mutDisp4Participants) {
+		return nil, fmt.Errorf("loadgen: wl-mut-disp-4 is defined over %v, but %d organisations were "+
+			"seeded; a run reporting this workload with a different population is naming a catalog "+
+			"shape it did not drive", mutDisp4Participants, len(slotsByOrg))
 	}
 
-	populations := make([]OrgPopulation, 0, len(slotsByOrg))
-	for org, slots := range slotsByOrg {
+	// Built by walking the named participants rather than the supplied map, so the result is in
+	// the catalog's order by construction and a wrong name cannot be sorted into a plausible
+	// position. The count check above is what makes a *missing* participant reportable as such
+	// rather than as a surplus one.
+	populations := make([]OrgPopulation, 0, len(mutDisp4Participants))
+	for _, org := range mutDisp4Participants {
+		slots, seeded := slotsByOrg[org]
+		if !seeded {
+			return nil, fmt.Errorf("loadgen: wl-mut-disp-4 is defined over %v and nothing was seeded "+
+				"for %q; four organisations of any name are not this workload, and two runs over "+
+				"different participants cannot be compared under one identity",
+				mutDisp4Participants, org)
+		}
 		if len(slots) == 0 {
 			return nil, fmt.Errorf("loadgen: organisation %q was seeded no slots; the run would divide by zero "+
 				"at the first request that addressed it", org)
@@ -69,7 +89,6 @@ func NewOrgPopulations(slotsByOrg map[domain.OrganisationID][]Slot) ([]OrgPopula
 		populations = append(populations, OrgPopulation{Org: org, Slots: slots})
 	}
 
-	sort.Slice(populations, func(i, j int) bool { return populations[i].Org < populations[j].Org })
 	return populations, nil
 }
 

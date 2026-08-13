@@ -19,7 +19,7 @@ GOLANGCI_LINT_STAMP   := $(TOOLBIN)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 
 .PHONY: all ci fmt fmt-check vet lint build test test-race test-integration \
         db-up db-down migrate run dev dev-measured smoke obs-up obs-target obs-down tidy tools clean \
-        image topo-up topo-down topo-ps itc-up itc-down
+        image topo-up topo-down topo-ps itc-up itc-down itc-deployment
 
 # Integration tests need a real PostgreSQL: the properties they prove (capacity safety
 # under concurrent transactions, post-lock decision time, the scoped-key race) do not
@@ -341,6 +341,16 @@ itc-up: image
 	  4) profile="--profile g4" ;; \
 	  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept-validation-plan.md §4.6); got '$(ITC_GROUPS)'"; exit 1 ;; \
 	esac; \
+	stale=""; \
+	for n in 1 2 3 4; do \
+	  if [ $$n -gt $(ITC_GROUPS) ]; then \
+	    stale="$$stale service-$$n authority-$$n-db authority-$$n-migrate"; \
+	  fi; \
+	done; \
+	if [ -n "$$stale" ]; then \
+	  echo "removing units outside G$(ITC_GROUPS):$$stale"; \
+	  docker compose -f $(TOPOCOMPOSE) --profile g2 --profile g4 rm -sfv $$stale >/dev/null; \
+	fi; \
 	echo "raising the $(ITC_GROUPS)-group topology with deploy/topology/placement-itc-g$(ITC_GROUPS).json"; \
 	ALLOCA_IMAGE_TAG=$(ALLOCA_IMAGE_TAG) \
 	ALLOCA_PLACEMENT_DOC=./placement-itc-g$(ITC_GROUPS).json \
@@ -365,6 +375,23 @@ itc-up: image
 	  fi; \
 	done; \
 	echo "$(ITC_GROUPS)-group topology up on:$$ports"
+	@ITC_GROUPS=$(ITC_GROUPS) ./test/scripts/itc-topology-check.sh
+
+## itc-deployment: record the deployment of exactly the selected Iteration C topology
+#
+# record-deployment.sh defaults to the PR3b pair, which is wrong in both directions here: at G1 it
+# looks for a unit that is not running and fails, and at G4 it records two units for a four-unit
+# run. The second is the dangerous one — alloca-load compares the record against the units it
+# addresses, so an under-recorded G4 is caught, but only after the operator has spent the time to
+# find out. Deriving CONTAINERS from ITC_GROUPS removes the choice.
+itc-deployment:
+	@case "$(ITC_GROUPS)" in \
+	  1|2|4) ;; \
+	  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept-validation-plan.md §4.6); got '$(ITC_GROUPS)'" >&2; exit 1 ;; \
+	esac; \
+	units=""; \
+	for n in $$(seq 1 $(ITC_GROUPS)); do units="$$units alloca-service-$$n"; done; \
+	CONTAINERS="$$units" ./test/scripts/record-deployment.sh
 
 ## itc-down: stop every Iteration C unit, whichever profile raised it, and remove its volumes
 #

@@ -19,7 +19,7 @@ GOLANGCI_LINT_STAMP   := $(TOOLBIN)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 
 .PHONY: all ci fmt fmt-check vet lint build test test-race test-integration \
         db-up db-down migrate run dev dev-measured smoke obs-up obs-target obs-down tidy tools clean \
-        image topo-up topo-down topo-ps
+        image topo-up topo-down topo-ps itc-up itc-down
 
 # Integration tests need a real PostgreSQL: the properties they prove (capacity safety
 # under concurrent transactions, post-lock decision time, the scoped-key race) do not
@@ -77,6 +77,18 @@ TOPOCOMPOSE  ?= deploy/topology/docker-compose.yml
 ALLOCA_IMAGE_TAG ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell test -z "$$(git status --porcelain 2>/dev/null)" || echo -dirty)
 SERVICE_1_PORT   ?= 8081
 SERVICE_2_PORT   ?= 8082
+SERVICE_3_PORT   ?= 8083
+SERVICE_4_PORT   ?= 8084
+# Iteration C's shard-group count: 1, 2 or 4 (ag-sept-validation-plan.md §4.6). It selects the
+# Compose profile and the placement document together, which is the pairing itc-up exists to
+# make impossible to get wrong.
+#
+# **Not `GROUPS`.** That is a bash built-in array holding the caller's group IDs, and bash
+# discards an assignment to it *silently* — `GROUPS=4 ./test/scripts/itc-seed.sh` arrives in the
+# script as `1000`. Make expands `$(GROUPS)` itself and would have been unaffected, which is
+# exactly what makes the trap worth avoiding by name: the Makefile would have worked while the
+# script it documents did not.
+ITC_GROUPS   ?= 4
 
 all: ci
 
@@ -279,7 +291,7 @@ image-provenance:
 # would put a second definition of "ready" inside the thing being measured. The ports are
 # published anyway, so the honest check is the one a client would make.
 topo-up: image
-	ALLOCA_IMAGE_TAG=$(ALLOCA_IMAGE_TAG) docker compose -f $(TOPOCOMPOSE) up -d
+	ALLOCA_IMAGE_TAG=$(ALLOCA_IMAGE_TAG) docker compose -f $(TOPOCOMPOSE) --profile g2 up -d
 	@echo "waiting for both service units to report ready..."
 	@for port in $(SERVICE_1_PORT) $(SERVICE_2_PORT); do \
 		ok=0; \
@@ -311,13 +323,63 @@ topo-up: image
 topo-deployment:
 	@./test/scripts/record-deployment.sh
 
+## itc-up: raise the Iteration C topology at ITC_GROUPS=1|2|4 with its matching placement map
+#
+# One target rather than three recipes, because the group count and the placement document are
+# the pair a hand-run command gets wrong. A four-unit topology under a two-authority map refuses
+# to boot — units 3 and 4 are assigned nothing — which is the *safe* failure. The dangerous one
+# is the other direction: a one-unit topology under the four-authority map boots, serves org-a,
+# and routes org-b/c/d at authorities that are not running. That is a run which looks alive and
+# is measuring a quarter of the workload.
+#
+# ITC_GROUPS also picks the profile, so the two cannot drift apart. Ports are published for
+# every unit the profile raises and no others.
+itc-up: image
+	@case "$(ITC_GROUPS)" in \
+	  1) profile="" ;; \
+	  2) profile="--profile g2" ;; \
+	  4) profile="--profile g4" ;; \
+	  *) echo "GROUPS must be 1, 2 or 4 (ag-sept-validation-plan.md §4.6); got '$(ITC_GROUPS)'"; exit 1 ;; \
+	esac; \
+	echo "raising the $(ITC_GROUPS)-group topology with deploy/topology/placement-itc-g$(ITC_GROUPS).json"; \
+	ALLOCA_IMAGE_TAG=$(ALLOCA_IMAGE_TAG) \
+	ALLOCA_PLACEMENT_DOC=./placement-itc-g$(ITC_GROUPS).json \
+	docker compose -f $(TOPOCOMPOSE) $$profile up -d
+	@ports=""; \
+	for n in $$(seq 1 $(ITC_GROUPS)); do \
+	  case $$n in 1) p=$(SERVICE_1_PORT) ;; 2) p=$(SERVICE_2_PORT) ;; \
+	              3) p=$(SERVICE_3_PORT) ;; 4) p=$(SERVICE_4_PORT) ;; esac; \
+	  ports="$$ports $$p"; \
+	done; \
+	for port in $$ports; do \
+	  ok=0; \
+	  for i in $$(seq 1 60); do \
+	    if curl -fsS -m 2 "http://localhost:$$port/readyz" >/dev/null 2>&1; then \
+	      echo "  service on $$port ready"; ok=1; break; \
+	    fi; \
+	    sleep 1; \
+	  done; \
+	  if [ $$ok -ne 1 ]; then \
+	    echo "  service on $$port never became ready; check: docker compose -f $(TOPOCOMPOSE) logs"; \
+	    exit 1; \
+	  fi; \
+	done; \
+	echo "$(ITC_GROUPS)-group topology up on:$$ports"
+
+## itc-down: stop every Iteration C unit, whichever profile raised it, and remove its volumes
+#
+# --profile g4 unconditionally: `down` must remove containers the *current* invocation might not
+# have raised, and a profile-less down would leave units 2-4 running while reporting success.
+itc-down:
+	docker compose -f $(TOPOCOMPOSE) --profile g2 --profile g4 down -v --remove-orphans
+
 ## topo-down: stop the topology and remove its volumes
 #
 # -v because each run starts from a known fixture. A topology that kept its data between runs
 # would make the first run of a session differ from the rest, which is the kind of difference
 # that gets discovered halfway through interpreting a result.
 topo-down:
-	docker compose -f $(TOPOCOMPOSE) down -v --remove-orphans
+	docker compose -f $(TOPOCOMPOSE) --profile g2 --profile g4 down -v --remove-orphans
 
 ## topo-ps: what the topology is doing, including the exited migration steps
 topo-ps:

@@ -1,0 +1,9 @@
+{
+  "version": "itc-g1",
+  "homes": {
+    "org-a": "authority-1",
+    "org-b": "authority-1",
+    "org-c": "authority-1",
+    "org-d": "authority-1"
+  }
+}

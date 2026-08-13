@@ -37,14 +37,23 @@ The name invites two wrong assumptions, so both are answered here.
 looking for a package's tests will look first. Nothing under `test/` is compiled, and no Go
 tooling treats the name specially — only `testdata/` is special to the toolchain.
 
-**One thing under it runs in CI, deliberately.** The gates are otherwise Go-only: `gofmt`,
+**Two things under it run in CI, deliberately.** The gates are otherwise Go-only: `gofmt`,
 `go vet`, `go build`, `go test ./...`, the race pass, the `-tags=integration` suite against a
-PostgreSQL service, and `golangci-lint`. Beside them `.github/workflows/ci.yml` runs
-`test/scripts/check-build-context.sh`, which asserts that `.dockerignore` excludes no tracked
-file — the property whose absence stamps every containerised run `vcs.modified=true` and makes
-it uncertifiable at any level (AG-Sept PR3b). It qualifies as a gate because it needs nothing
-an operator would have to provide: no daemon, no database, no judgement. Its end-to-end
-counterpart, `check-image-provenance.sh`, needs Docker and so stays a `make` target.
+PostgreSQL service, and `golangci-lint`. Beside them `.github/workflows/ci.yml` runs two shell
+checks:
+
+- `test/scripts/check-build-context.sh` asserts that `.dockerignore` excludes no tracked file —
+  the property whose absence stamps every containerised run `vcs.modified=true` and makes it
+  uncertifiable at any level (AG-Sept PR3b). Its end-to-end counterpart,
+  `check-image-provenance.sh`, needs Docker and so stays a `make` target.
+- `test/scripts/itc-cpu-layout-test.sh` asserts that `itc-cpu-layout.sh` still refuses a bad
+  Iteration C CPU partition. That check is what stops a rehearsal running on a partition nothing
+  validated, it is bash, and its comments once described four properties its code did not
+  enforce (AG-Sept PR4a). It controls the machine's apparent CPU count with `taskset`, so it
+  needs no override inside the script under test.
+
+Both qualify as gates for the same reason: they need nothing an operator would have to provide —
+no daemon, no database, no judgement.
 
 The split is by *what a check needs*, not by how much it is worth. A merge gate has to
 reproduce on a clean runner with no operator present. Most of what lives in `test/` needs a

@@ -253,10 +253,13 @@ choices are not reopened merely because more alternatives exist.
 ### PR4a — Local capacity-environment rehearsal + conditional AWS bootstrap — 1.5 days
 
 PR4a now begins with a **mandatory local rehearsal** before any AWS capacity attempt. The workstation
-exposes a 12-vCPU Docker/WSL envelope that mirrors the planned quota shape: four non-overlapping
-2-vCPU shard-group CPU sets plus a separate 4-vCPU generator/monitoring CPU set. `G1`, `G2`, and
-`G4` use the same placement/workload/fixture semantics as the AWS experiment; unused shard-group CPU
-sets stay idle rather than being borrowed by smaller topologies.
+exposes a **16-vCPU Docker/WSL allocation**, within which the rehearsal runs a **12-vCPU active
+partition** that mirrors the planned quota shape: four non-overlapping 2-vCPU shard-group CPU sets
+(A–D on CPUs 0–7) plus a separate 4-vCPU generator/monitoring CPU set (CPUs 8–11). The remaining
+**CPUs 12–15 are reserved for the generator-headroom control**, which reruns a cell with the
+generator/monitoring set widened to 8–15 to show whether the apparent frontier was the harness's.
+`G1`, `G2`, and `G4` use the same placement/workload/fixture semantics as the AWS experiment; unused
+shard-group CPU sets stay idle rather than being borrowed by smaller topologies.
 
 The rehearsal proves the experiment machinery and exposes defects cheaply: topology selection,
 placement, fixed fixtures, workload semantics, manifest/deployment provenance, reconciliation,
@@ -355,7 +358,7 @@ The Iteration C closeout path is:
 
 ```mermaid
 flowchart TD
-    A[Local 12-vCPU partitioned rehearsal] --> B[Fix rehearsal findings]
+    A[Local 12-vCPU partitioned rehearsal<br/>16-vCPU WSL allocation] --> B[Fix rehearsal findings]
     B --> C{Sufficient AWS quota in time?}
     C -->|Yes| D[c5 AWS capacity experiment]
     C -->|Pending; bootstrap useful| E[t2.micro bootstrap proof]
@@ -394,8 +397,9 @@ For Iteration C the non-descopable path is now conditional on the external envir
 on a successful quota request:
 
 - `WL-MUT-DISP-4` topology-independent request semantics and fixed per-organisation fixtures;
-- the **local 12-vCPU 1/2/4 rehearsal**, using non-overlapping shard-group CPU sets and separate
-  generator/monitoring CPUs, with findings fixed or explicitly bounded;
+- the **local 1/2/4 rehearsal on a 12-vCPU active partition** (within a 16-vCPU WSL allocation),
+  using non-overlapping shard-group CPU sets and separate generator/monitoring CPUs, with findings
+  fixed or explicitly bounded;
 - correctness/reconciliation and the provenance/resource-capture machinery needed for a later AWS
   run;
 - **when sufficient AWS quota is available within the milestone timebox:** the complete equivalent
@@ -545,9 +549,10 @@ Before PR5 can close Iteration C and judge the AG-Sept Goal:
 
 - `WL-MUT-DISP-4` runs reproducibly from clean fixtures with topology-independent same-organisation
   request pairs and fixed per-organisation populations reused across the local 1/2/4 topology family;
-- the local 12-vCPU partitioned rehearsal has exercised the G1/G2/G4 machinery with non-overlapping
-  shard-group CPU sets and a separately isolated generator/monitoring CPU set, and its material
-  findings are fixed or explicitly bounded;
+- the local partitioned rehearsal — a 12-vCPU active partition within the workstation's 16-vCPU WSL
+  allocation — has exercised the G1/G2/G4 machinery with non-overlapping shard-group CPU sets and a
+  separately isolated generator/monitoring CPU set, and its material findings are fixed or
+  explicitly bounded;
 - if sufficient AWS quota becomes available within the milestone timebox, the complete AWS 1/2/4
   environment is reproducible with equivalent non-burstable capacity-unit hosts and separate
   generator compute, and the strongest Tier-1/Tier-2 evidence the environment supports is retained;

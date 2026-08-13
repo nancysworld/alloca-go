@@ -19,7 +19,8 @@ GOLANGCI_LINT_STAMP   := $(TOOLBIN)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 
 .PHONY: all ci fmt fmt-check vet lint build test test-race test-integration \
         db-up db-down migrate run dev dev-measured smoke obs-up obs-target obs-down tidy tools clean \
-        image topo-up topo-down topo-ps itc-up itc-down itc-deployment
+        image topo-up topo-down topo-ps itc-up itc-down itc-deployment \
+        itc-layout itc-layout-check itc-rehearse obs-rehearse
 
 # Integration tests need a real PostgreSQL: the properties they prove (capacity safety
 # under concurrent transactions, post-lock decision time, the scoped-key race) do not
@@ -43,10 +44,28 @@ PGPORT       ?= 15432
 # The PR2 observability stack. Separate from the service so `make dev-measured` and a
 # measured run stay independent of whether anything is scraping.
 OBSCOMPOSE   ?= deploy/observability/docker-compose.yml
+# The rehearsal overlay for the observability stack: Prometheus and Grafana confined to the
+# generator/monitor CPU set. Monitoring is part of the measuring side, not part of the
+# environment — an unpinned Prometheus scrapes every unit from inside the units' own CPUs, and
+# does it harder at G4 than at G1 (ag-sept-pr4.md §2.14).
+OBSREHEARSALCOMPOSE ?= deploy/observability/docker-compose.rehearsal.yml
+# The Compose files `obs-up` raises. `obs-rehearse` re-invokes obs-up with the overlay appended,
+# for the same reason itc-rehearse does: one recipe raises the stack, and only the file list
+# changes.
+OBS_COMPOSE  ?= -f $(OBSCOMPOSE)
 # The PR3b two-authority topology: two PostgreSQL authorities, two shard-affine service
 # units, one placement document. Separate from the observability stack so a topology can be
 # raised and torn down without disturbing whatever is scraping it.
 TOPOCOMPOSE  ?= deploy/topology/docker-compose.yml
+# The local partitioned rehearsal overlay: cpusets confining each shard group to its own CPUs
+# (ag-sept-pr4.md §2.14). Applied by `itc-rehearse` and by nothing else — `itc-up` deliberately
+# raises the same topology unpartitioned, because a cpuset that silently applied to every local
+# run would make "the topology" mean two different things depending on the machine it was on.
+REHEARSALCOMPOSE ?= deploy/topology/docker-compose.rehearsal.yml
+# The Compose files `itc-up` raises. `itc-rehearse` re-invokes itc-up with the overlay appended,
+# so the recipe that actually calls `compose up` stays in one place and does not need to know the
+# rehearsal exists.
+ITC_COMPOSE  ?= -f $(TOPOCOMPOSE)
 # Immutable experiment tagging (§9.1). Defaults to the working tree's commit so a run's
 # artifacts name the revision the image was built from; `-dirty` when the tree has uncommitted
 # changes, which is a warning that no commit describes what went into it.
@@ -89,11 +108,24 @@ SERVICE_4_PORT   ?= 8084
 # exactly what makes the trap worth avoiding by name: the Makefile would have worked while the
 # script it documents did not.
 ITC_GROUPS   ?= 4
+# The rehearsal's CPU partition (ag-sept-pr4.md §2.14). These defaults are the same ones the
+# overlay falls back to; they are named here as well so that one invocation validates and raises
+# the same partition. Passing them explicitly is what stops the layout check from approving
+# 0-1/2-3/4-5/6-7 while Compose pins something else.
+#
+# On this workstation CPUs 12-15 are deliberately outside the partition: they are the headroom
+# the generator control widens into (ITC_CPUS_GENERATOR=8-15), and holding them idle otherwise
+# keeps unpinned host work off the generator's own set.
+ITC_CPUS_A   ?= 0-1
+ITC_CPUS_B   ?= 2-3
+ITC_CPUS_C   ?= 4-5
+ITC_CPUS_D   ?= 6-7
+ITC_CPUS_GENERATOR ?= 8-11
 
 all: ci
 
 ## ci: run the full local gate, identical to CI (fmt, vet, lint, build, test, race)
-ci: fmt-check vet lint build test test-race build-context-check
+ci: fmt-check vet lint build test test-race build-context-check itc-layout-check
 
 ## fmt: format all Go files
 fmt:
@@ -217,13 +249,28 @@ dev-measured:
 # datasource exist on first start. It is the diagnostic view only — the evidence a report
 # quotes is the CSVs and TSDB snapshot the sweep runner retains.
 obs-up:
-	docker compose -f $(OBSCOMPOSE) up -d
+	ITC_CPUS_GENERATOR=$(ITC_CPUS_GENERATOR) docker compose $(OBS_COMPOSE) up -d
 	@# Probe for an address that actually reaches the service, rather than assuming one.
 	@# Tolerated on failure: the stack is still useful with the service down, and the script
 	@# prints what to do. Re-run `make obs-target` once the service is up.
 	@./test/scripts/obs-target.sh || true
 	@echo "prometheus  http://localhost:9091"
 	@echo "grafana     http://localhost:3000/d/alloca-frontier"
+
+## obs-rehearse: raise Prometheus and Grafana confined to the generator/monitor CPUs
+#
+# The monitoring half of the rehearsal partition. `make obs-up` raises the same stack unpinned,
+# which is correct for ordinary local work and wrong during a rehearsal: an unconfined
+# Prometheus scrapes the capacity units from inside their own CPUs.
+#
+# Kept separate from itc-rehearse rather than folded into it, because the topology and the
+# scrape stack are deliberately independent — a topology can be raised and torn down without
+# disturbing whatever is scraping it. Raising them together would make a torn-down topology
+# take the evidence path with it.
+obs-rehearse:
+	@$(MAKE) --no-print-directory obs-up \
+	  OBS_COMPOSE="-f $(OBSCOMPOSE) -f $(OBSREHEARSALCOMPOSE)"
+	@echo "  monitoring confined to CPUs $(ITC_CPUS_GENERATOR)"
 
 ## obs-target: re-probe the scrape address (after a WSL restart, or a late service start)
 obs-target:
@@ -259,6 +306,18 @@ clean:
 # manifest refuses for reasons that look like a harness bug. Needs no Docker daemon.
 build-context-check:
 	@./test/scripts/check-build-context.sh
+
+## itc-layout-check: prove the rehearsal's CPU layout check still refuses a bad partition
+#
+# In `ci` for the same reason build-context-check is: the check it guards is a shell script
+# anyone can edit without raising a topology, and the defect only shows up later — as a
+# rehearsal that ran on a partition nothing had actually validated. Needs bash, taskset and a
+# few CPUs; no daemon, no database, no judgement (docs/design/project-structure.md §1).
+#
+# It is not covered by `go test ./...`: the layout check is bash, and the Go suite says nothing
+# about whether it still enforces anything.
+itc-layout-check:
+	@./test/scripts/itc-cpu-layout-test.sh
 
 ## image: build the production-shaped service image, tagged with the current commit
 #
@@ -354,7 +413,9 @@ itc-up: image
 	echo "raising the $(ITC_GROUPS)-group topology with deploy/topology/placement-itc-g$(ITC_GROUPS).json"; \
 	ALLOCA_IMAGE_TAG=$(ALLOCA_IMAGE_TAG) \
 	ALLOCA_PLACEMENT_DOC=./placement-itc-g$(ITC_GROUPS).json \
-	docker compose -f $(TOPOCOMPOSE) $$profile up -d
+	ITC_CPUS_A=$(ITC_CPUS_A) ITC_CPUS_B=$(ITC_CPUS_B) \
+	ITC_CPUS_C=$(ITC_CPUS_C) ITC_CPUS_D=$(ITC_CPUS_D) \
+	docker compose $(ITC_COMPOSE) $$profile up -d
 	@ports=""; \
 	for n in $$(seq 1 $(ITC_GROUPS)); do \
 	  case $$n in 1) p=$(SERVICE_1_PORT) ;; 2) p=$(SERVICE_2_PORT) ;; \
@@ -376,6 +437,53 @@ itc-up: image
 	done; \
 	echo "$(ITC_GROUPS)-group topology up on:$$ports"
 	@ITC_GROUPS=$(ITC_GROUPS) ./test/scripts/itc-topology-check.sh
+
+## itc-rehearse: raise the Iteration C topology with each shard group pinned to its own CPUs
+#
+# `itc-up` plus the cpuset overlay (ag-sept-pr4.md §2.14), and the layout check in front of both.
+#
+# **The check runs before the image build, not after it.** Docker refuses an out-of-range cpuset
+# on its own, but only once it has built an image and started four database containers, and its
+# message names neither the partition nor the file that sets the machine's CPU count. Ordering
+# the check first is most of what the target is for.
+#
+# **Recursive $(MAKE) rather than prerequisites, so the order holds under `make -j`.** Checking
+# the layout after the image has been built and the containers started would forfeit the reason
+# the check exists, and parallel prerequisites are free to do exactly that.
+#
+# itc-up is re-invoked with the overlay appended rather than duplicated here, so the recipe that
+# raises the topology stays in one place. `make itc-up` on its own still raises it unpartitioned.
+#
+# Pinning the units is only half of the partition: the generator is a host process and the
+# scheduler will put it on the units' CPUs unless told not to. test/scripts/itc-run.sh confines
+# it with taskset, which is why the generator's set is printed here rather than assumed.
+itc-rehearse:
+	@$(MAKE) --no-print-directory itc-layout
+	@$(MAKE) --no-print-directory itc-up \
+	  ITC_COMPOSE="-f $(TOPOCOMPOSE) -f $(REHEARSALCOMPOSE)"
+	@echo
+	@echo "partitioned rehearsal up at G$(ITC_GROUPS). The generator is NOT confined by this"
+	@echo "target — it is a host process, and an unconfined one dissolves the partition:"
+	@echo
+	@echo "    make obs-rehearse ITC_CPUS_GENERATOR=$(ITC_CPUS_GENERATOR)"
+	@echo "    ITC_GROUPS=$(ITC_GROUPS) ./test/scripts/itc-seed.sh"
+	@echo "    make itc-deployment ITC_GROUPS=$(ITC_GROUPS) > test/results/deployment.json"
+	@echo "    ITC_GROUPS=$(ITC_GROUPS) ITC_CPUS_GENERATOR=$(ITC_CPUS_GENERATOR) ./test/scripts/itc-run.sh"
+	@echo
+	@echo "  generator/monitor CPUs: $(ITC_CPUS_GENERATOR)  (alloca-load, Prometheus, Grafana)"
+	@echo "  headroom control:       rerun obs-rehearse AND itc-run.sh with a wider"
+	@echo "                          ITC_CPUS_GENERATOR, so the whole measuring side moves"
+
+## itc-layout: check the rehearsal's CPU partition against this machine, and print it
+#
+# Separate from itc-rehearse so the partition can be checked without raising anything — the
+# useful thing to run first on a machine whose CPU count has just changed.
+itc-layout:
+	@ITC_GROUPS=$(ITC_GROUPS) \
+	 ITC_CPUS_A=$(ITC_CPUS_A) ITC_CPUS_B=$(ITC_CPUS_B) \
+	 ITC_CPUS_C=$(ITC_CPUS_C) ITC_CPUS_D=$(ITC_CPUS_D) \
+	 ITC_CPUS_GENERATOR=$(ITC_CPUS_GENERATOR) \
+	 ./test/scripts/itc-cpu-layout.sh
 
 ## itc-deployment: record the deployment of exactly the selected Iteration C topology
 #

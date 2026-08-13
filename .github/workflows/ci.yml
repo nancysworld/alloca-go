@@ -62,6 +62,15 @@ jobs:
       - name: build context (docker provenance gate)
         run: ./test/scripts/check-build-context.sh
 
+      # Guards the Iteration C rehearsal's CPU layout check, which is what refuses a bad
+      # partition before an image build and four database containers. It is bash, so the Go
+      # suite says nothing about it, and its comments once described four properties its code
+      # did not enforce (ag-sept-pr4.md §3.7). Needs bash, taskset and a few CPUs; the cases
+      # that assert the full 12-CPU partition skip on a smaller runner, the negative cases fit
+      # in four and run here.
+      - name: iteration C cpu layout check
+        run: ./test/scripts/itc-cpu-layout-test.sh
+
   integration:
     name: postgres integration
     runs-on: ubuntu-latest

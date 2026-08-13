@@ -1,0 +1,32 @@
+# The local partitioned rehearsal overlay for the observability stack (ag-sept-pr4.md §2.14).
+#
+# Applied on top of docker-compose.yml to confine Prometheus and Grafana to the generator and
+# monitoring CPU set, so the whole measuring side of the rehearsal sits outside the capacity
+# units' CPUs.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.rehearsal.yml ...
+#
+# **Monitoring is part of the generator side, not part of the environment.** §2.14 partitions the
+# machine into capacity units and one generator/monitor set; that set is named for both. A
+# Prometheus left unpinned lands wherever the scheduler likes, and it is not idle — it scrapes
+# every unit on a short interval, compacts its TSDB, and answers the queries an operator runs
+# while a cell is in flight. That work landing on CPUs 0-7 is contention inside a capacity unit
+# that no artifact records, and it grows with the number of units, so it biases G4 harder than
+# G1 — against exactly the comparison E2 and E4 are derived from.
+#
+# **The default is 8-11, and the control widens it to 8-15.** ITC_CPUS_GENERATOR is one value for
+# the whole measuring side: alloca-load is confined to it by test/scripts/itc-run.sh, and these
+# two containers by this file. Widening it for the generator-headroom control has to widen it
+# here too, or the control would change the generator's share while monitoring kept its old one
+# and the comparison would carry a second difference.
+#
+# Grafana shares Prometheus's set deliberately. It is browsed by a human during a run and its
+# query load lands on Prometheus anyway; splitting them would spend a capacity unit's CPU on a
+# dashboard.
+
+services:
+  prometheus:
+    cpuset: "${ITC_CPUS_GENERATOR:-8-11}"
+
+  grafana:
+    cpuset: "${ITC_CPUS_GENERATOR:-8-11}"

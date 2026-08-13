@@ -294,16 +294,38 @@ move directly to the `c5` environment. A `t2.micro` result is never capacity evi
 ### 2.14 PR4a rehearses the 12-vCPU shape locally before any AWS capacity attempt
 
 **Maintainer decision, 2026-08-13:** use the workstation's larger resource envelope to prove the
-Iteration C machinery before spending AWS time. WSL/Docker exposes **12 logical CPUs** for the
-rehearsal and partitions them into non-overlapping scheduler-visible CPU sets:
+Iteration C machinery before spending AWS time. The rehearsal partitions **12 CPUs** into
+non-overlapping scheduler-visible CPU sets:
 
 ```text
-capacity unit A    CPUs 0-1    service A + PostgreSQL A
-capacity unit B    CPUs 2-3    service B + PostgreSQL B
-capacity unit C    CPUs 4-5    service C + PostgreSQL C
-capacity unit D    CPUs 6-7    service D + PostgreSQL D
-generator/monitor  CPUs 8-11   load generator + monitoring
+capacity unit A    CPUs 0-1     service A + PostgreSQL A
+capacity unit B    CPUs 2-3     service B + PostgreSQL B
+capacity unit C    CPUs 4-5     service C + PostgreSQL C
+capacity unit D    CPUs 6-7     service D + PostgreSQL D
+generator/monitor  CPUs 8-11    load generator + monitoring
+(headroom)         CPUs 12-15   held idle; the generator control's only spare capacity
 ```
+
+**The machine is 16 logical CPUs and the partition is 12.** WSL was reconfigured to 16 on
+2026-08-13; the rehearsal's shape was deliberately *not* widened with it. Four CPUs stay outside
+the partition for two reasons. Unpinned host work — the Docker daemon, WSL kernel threads,
+anything the operator runs — has somewhere to go that is not a capacity unit's set or the
+generator's. And they are the headroom the **generator-headroom control** widens into: the same
+cell rerun with `ITC_CPUS_GENERATOR=8-15`, which is the cpuset analogue of `VAL-NEG-2`'s
+`GOMAXPROCS` control. If Goodput does not move when the generator gets twice the CPUs, the
+generator was not the binding constraint at that operating point; if it tracks the generator's
+size, the cell was measuring the harness. A closed-loop harness cannot answer that from its own
+numbers, and on a partitioned machine placement is the variable a single-host sweep does not
+have.
+
+**The envelope change is not free, and it lands on comparability rather than on this rehearsal.**
+The workstation every earlier local measurement was taken in no longer exists: PR2's frontier was
+measured against a 10-vCPU envelope (§2.12), and this machine is now 16. Rehearsal numbers were
+never comparable with PR2's — they are diagnostic and confined to two-CPU units — so nothing
+already recorded changes. What does change is that **any future local re-measurement is a
+different environment from PR2's**, and a re-run of a PR2 cell on this workstation would not
+refute or confirm the PR2 result. Treat the two as separate environments, not as a before and
+after.
 
 `G1` uses unit A only, `G2` uses A+B, and `G4` uses A+B+C+D. Unused capacity-unit CPU sets stay idle;
 the active groups do not borrow them. Docker **cpusets**, not only CPU-time quotas, are the relevant
@@ -320,6 +342,39 @@ It does **not** create independent hosts. All groups still share the workstation
 storage path, caches and physical machine. Therefore local Goodput or apparent scale efficiency is
 rehearsal/diagnostic evidence only: it cannot discharge `VAL-SCALE-5`, cannot become formal Tier 2,
 and is never mixed with AWS points to derive `E2` or `E4`.
+
+**Pinning the units is only half of the partition, and the measuring side is more than the
+generator.** `ITC_CPUS_GENERATOR` names the set for everything that measures: `alloca-load`,
+Prometheus and Grafana. Three separate mechanisms put them there, and each was a way to lose the
+partition silently:
+
+- **The generator is a host process**, so the scheduler places it on the units' CPUs unless told
+  not to. `test/scripts/itc-run.sh` confines it with `taskset`, which also fixes its
+  `GOMAXPROCS` because Go reads the affinity mask at startup.
+- **Monitoring is a separate Compose stack.** `make obs-up` raises Prometheus and Grafana with no
+  cpuset at all — correct for ordinary local work, wrong during a rehearsal. Prometheus is not
+  idle: it scrapes every unit on a short interval and compacts its TSDB, and unpinned it does
+  that from inside the capacity units' own CPUs. That load grows with the number of units, so it
+  biases `G4` harder than `G1` — against exactly the comparison `E2` and `E4` are derived from.
+  `make obs-rehearse` applies `deploy/observability/docker-compose.rehearsal.yml`.
+- **The control has to move the whole measuring side.** Widening `ITC_CPUS_GENERATOR` to `8-15`
+  for the generator-headroom control widens monitoring with it. Moving only the generator would
+  change two things at once and the comparison would carry the second one.
+
+**A partition that is legal is not a partition that was applied**, and nothing downstream can
+tell the difference: an unpinned run addresses the right units, passes every routing check, and
+certifies cleanly while carrying contention no artifact records.
+`test/scripts/itc-cpuset-check.sh` therefore reads the cpuset off each running container and
+refuses a run whose pinning disagrees with the partition; `itc-run.sh` calls it in preflight and
+retains its output as `observed-cpusets.txt` beside the run. Monitoring is checked only when it
+is running, because a Prometheus that was never raised cannot contend with anything — but a
+container whose cpuset cannot be *read* is reported as unverified rather than as absent, since
+treating an unreadable answer as a skip would make the check the thing it exists to catch.
+
+**The declaration deliberately does not name the generator's CPUs.** `environment` is one string
+reused across `G1`, `G2` and `G4` and across both sides of the headroom control, so a static
+`8-11` in it would be false for half the runs it describes. The effective set is a per-run fact
+and is retained per run (`cpu-partition.txt`, `observed-cpusets.txt`).
 
 The execution sequence is now:
 
@@ -339,7 +394,7 @@ indefinitely or to promote shared-workstation evidence beyond what it proves.
 ## 3. Discovered during implementation
 
 These are findings, not decisions taken in advance. Each changed something that had already
-been designed, and each was invisible to review — all three were found by running something.
+been designed, and each was invisible to review — every one was found by running something.
 
 ### 3.1 The workload's demand ordering has to be the workload's own property
 
@@ -489,6 +544,55 @@ binary, and fails when a clean checkout produces `modified=true`.
 before any metered evidence run, not after. The cheap symptom to watch for is the `-dirty` suffix
 on the image tag, which `ALLOCA_IMAGE_TAG` derives from the same `git status --porcelain`; a run
 whose image tag carries it will not certify, and finding that out on AWS costs the rung.
+
+### 3.7 The layout check described more properties than it enforced
+
+`itc-cpu-layout.sh` was written to fail a bad CPU partition before an image build and four
+database containers. Its comments named the properties it existed to protect. Writing tests for
+it found that it checked two of them — that the sets do not overlap, and that the partition fits
+the machine — and that four other cases passed:
+
+- **A generator no larger than a capacity unit.** §2.12's rule appeared in the script's own
+  failure text — "keep the generator larger than one capacity unit … a generator that saturates
+  first measures itself" — and nothing evaluated it. `ITC_CPUS_GENERATOR=8` was accepted.
+- **Unequal capacity units.** `E2` and `E4` are ratios across units assumed identical, so a unit
+  with an extra CPU raises the aggregate and the efficiency figure carries the imbalance rather
+  than the architecture. A 2/3/2/2 partition was accepted.
+- **An unrecognised group count.** `ITC_GROUPS=3` checked a two-unit partition and printed "G3",
+  so the operator read a pass for a layout nothing had examined; `itc-topology-check.sh` and
+  `itc-seed.sh` already refused the same value. A non-numeric value reached `(( ))` and produced
+  bash's "unbound variable", naming neither the variable nor the fix.
+- **A malformed CPU spec exited zero.** This is the dangerous one. `expand` ran inside
+  `mapfile -t cpus < <(expand "$spec")`, and a process substitution's exit status is not the
+  enclosing command's, so an unparseable spec printed its complaint, yielded an empty set, and
+  let the script report the partition as valid.
+
+The common shape is worth more than the four bugs: **the script's prose was accurate and its code
+did not implement it.** Every one of these properties was written down, in the file, next to code
+that did not check it — which is the failure mode a comment cannot catch and a reader is least
+likely to, because the explanation reads as evidence that the check exists.
+
+All four are now enforced, and every violation is reported rather than only the first, so an
+operator rescaling the partition to a different machine gets the whole list.
+
+**How they are gated.** `test/scripts/itc-cpu-layout-test.sh` runs the real script and is wired
+into `.github/workflows/ci.yml` and `make ci`, which is the pattern `check-build-context.sh`
+already established for a shell check that needs nothing an operator must provide
+(`project-structure.md` §1 owns the rule and now records both). A Go test would have been the
+easier way to reach `make ci` and is prohibited under `test/` for a good reason — Go tests belong
+beside the code they exercise — so the gate follows the existing mechanism rather than an
+exception to it.
+
+The machine's apparent CPU count is controlled with `taskset` rather than an environment override
+inside the script, because `nproc` reports the CPUs available to the calling process and an
+affinity mask therefore presents a genuinely smaller machine. An `ITC_CPUS_AVAILABLE` seam would
+have been less work and is the wrong shape: it is a documented way to tell the script the machine
+is bigger than it is, and nothing else checks the partition against the machine.
+
+Cases asserting the shipped 12-CPU partition skip on a smaller runner; every negative case is
+sized to four CPUs and the generator boundary to two, so the rules stay gated on whatever CI
+provides. Each check was then removed in turn and the case that claims to gate it required to
+fail — seven controlled mutations, all detected.
 
 ## 4. Open items
 

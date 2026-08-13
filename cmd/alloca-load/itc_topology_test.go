@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nancysworld/alloca-go/internal/domain"
@@ -167,6 +168,88 @@ func TestEveryShippedTopologyCanBuildTheCapacityWorkload(t *testing.T) {
 					rung.groups, ordered, itcMatrix[0].groups, baseline)
 				break
 			}
+		}
+	}
+}
+
+// The shipped rehearsal declarations have to load, and there has to be one per capacity point.
+//
+// Every one of them is a document `itc-run.sh` selects by ITC_GROUPS and hands to a run that
+// requires `capacity`. A missing field or a misspelled key is refused by LoadDeclaration — which
+// runs *after* the topology is up and the fixture is seeded, so the cost of finding out is the
+// setup rather than the typo. JSON validity is not the gate; LoadDeclaration is.
+func TestShippedIterationCDeclarationsLoad(t *testing.T) {
+	environments := map[int]string{}
+
+	for _, rung := range itcMatrix {
+		t.Run(fmt.Sprintf("G%d", rung.groups), func(t *testing.T) {
+			path := filepath.Join("..", "..", "deploy", "topology",
+				fmt.Sprintf("declaration-itc-g%d.json", rung.groups))
+
+			declaration, err := loadgen.LoadDeclaration(path)
+			if err != nil {
+				t.Fatalf("%s is not a usable declaration: %v", path, err)
+			}
+			environments[rung.groups] = declaration.Environment
+
+			// The rehearsal is not independently provisioned capacity, and the declaration is
+			// the only place a later reader is told so — ag-sept-pr4.md §2.14 turns on that
+			// distinction, and an environment string that omitted it would describe these runs
+			// as something they cannot be.
+			if !strings.Contains(declaration.Environment, "not independently provisioned") {
+				t.Errorf("environment does not record that this is not independent capacity:\n  %q",
+					declaration.Environment)
+			}
+			if !strings.Contains(declaration.Environment, "shared host/kernel/storage") {
+				t.Errorf("environment does not record what the groups share:\n  %q",
+					declaration.Environment)
+			}
+
+			// The generator's CPUs are deliberately absent. The headroom control widens them
+			// from 8-11 to 8-15, so any static generator cpuset here would be false for half
+			// the runs the document describes; the effective set is retained per run by
+			// itc-run.sh instead (maintainer decision, 2026-08-13).
+			for _, cpus := range []string{"8-11", "8-15"} {
+				if strings.Contains(declaration.Environment, cpus) {
+					t.Errorf("environment names the generator cpuset %q; the headroom control "+
+						"changes it, so it belongs in the run's artifacts, not in a document "+
+						"reused across runs:\n  %q", cpus, declaration.Environment)
+				}
+			}
+
+			// The shape is what a later run is compared against, so each point must state its
+			// own group count rather than inherit a neighbour's.
+			if want := fmt.Sprintf("%d shard group", rung.groups); !strings.HasPrefix(
+				declaration.DeploymentTopology, want) {
+				t.Errorf("deployment_topology is %q, which does not begin %q; the capacity "+
+					"points would not be distinguishable from their declarations",
+					declaration.DeploymentTopology, want)
+			}
+
+			// Nothing hides replicas from the generator in this topology: it addresses each
+			// service directly, so the count is observed rather than declared (§2.7). A fan-out
+			// here would override an observable fact with a typed one.
+			if declaration.ReplicaFanOut != nil {
+				t.Error("declares a replica fan-out; the rehearsal addresses every unit " +
+					"directly, so the replica count must stay derived from the units")
+			}
+		})
+	}
+
+	// One environment across every rung, by maintainer decision (2026-08-13). G1, G2 and G4 are
+	// measured on the same machine under the same partition scheme, and the environment is what
+	// makes their numbers comparable at all — a rung whose environment drifted would be
+	// compared against the others as though it had not.
+	//
+	// Only the topology may differ, and that is asserted per rung above.
+	baseline, ok := environments[itcMatrix[0].groups]
+	if !ok {
+		t.Fatal("G1's declaration did not load, so the environments cannot be compared")
+	}
+	for groups, environment := range environments {
+		if environment != baseline {
+			t.Errorf("G%d declares a different environment from G%d:\n  G%d: %q\n  G%d: %q",
+				groups, itcMatrix[0].groups, groups, environment, itcMatrix[0].groups, baseline)
 		}
 	}
 }

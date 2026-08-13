@@ -11,22 +11,44 @@
 # not what stops a bad partition from running. What it adds is the *reason*: it names the file to
 # change, and it fails before an image build and four database containers have been started.
 #
-# It also enforces the property the partition exists for — that no two sets overlap — which
-# Docker cannot check, because Docker sees each container's set and never the arrangement.
+# It also enforces the three properties the partition exists for, none of which Docker can check
+# because Docker sees each container's set and never the arrangement:
+#
+#   * no two sets overlap, or the groups are not independent;
+#   * the capacity units this rung raises are the same size, or E2/E4 carry the imbalance;
+#   * the generator is strictly larger than a capacity unit (§2.12), or it saturates first.
+#
+# Every violation is reported, not just the first: an operator rescaling a partition to a new
+# machine should see the whole list rather than rediscover it one run at a time.
 #
 #   ./test/scripts/itc-cpu-layout.sh          # check and print
 #   ITC_GROUPS=2 ./test/scripts/itc-cpu-layout.sh
 #
-# Exits non-zero with an explanation when the partition does not fit or overlaps.
+# The generator-headroom control (ag-sept-pr4.md §2.14) is this script plus itc-run.sh with a
+# wider generator set — the same cell rerun at ITC_CPUS_GENERATOR=8-15 to show whether the
+# apparent frontier moves when the generator stops being the scarce thing.
+#
+# Exits non-zero with an explanation when the partition does not fit, overlaps, or violates a
+# size rule.
 
 set -euo pipefail
 
 ITC_GROUPS="${ITC_GROUPS:-4}"
 
+# Validated before any arithmetic, for two reasons. `(( ITC_GROUPS >= 2 ))` under `set -u` reports
+# a non-numeric value as "unbound variable", naming neither the variable nor the fix. And an
+# unrecognised *numeric* count is worse than unclear: G3 would silently check a two-unit partition
+# while printing "G3", so the operator would read a pass for a layout that was never examined.
+# itc-topology-check.sh and itc-seed.sh admit the same three rungs; all three must agree.
+case "$ITC_GROUPS" in
+  1|2|4) ;;
+  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept-validation-plan.md §4.6); got '$ITC_GROUPS'" >&2
+     exit 1 ;;
+esac
+
 # The default partition is ag-sept-pr4.md §2.14's. Every set is overridable so the layout can be
-# rescaled to a
-# machine without editing a committed file — the shape of the rehearsal is a decision, but which
-# CPUs it lands on is not.
+# rescaled to a machine without editing a committed file — the shape of the rehearsal is a
+# decision, but which CPUs it lands on is not.
 ITC_CPUS_A="${ITC_CPUS_A:-0-1}"
 ITC_CPUS_B="${ITC_CPUS_B:-2-3}"
 ITC_CPUS_C="${ITC_CPUS_C:-4-5}"
@@ -64,14 +86,29 @@ sets=("capacity unit A:$ITC_CPUS_A")
 sets+=("generator/monitor:$ITC_CPUS_GENERATOR")
 
 declare -A owner=()
+declare -A unit_size=()
+generator_size=0
 highest=-1
 fail=0
 
 echo "rehearsal CPU partition for G${ITC_GROUPS} (machine has ${available} CPUs: 0-$((available - 1)))"
 for entry in "${sets[@]}"; do
   name="${entry%%:*}"; spec="${entry##*:}"
-  mapfile -t cpus < <(expand "$spec")
+  # Command substitution, not `mapfile < <(expand ...)`: a process substitution's exit status is
+  # not the enclosing command's, so an unparseable spec used to print its error, yield an empty
+  # set, and let the script exit 0 — reporting a partition it had rejected as valid.
+  if ! expanded="$(expand "$spec")"; then
+    echo "  ERROR: '$name' was given '$spec', which does not name a set of CPUs." >&2
+    fail=1
+    continue
+  fi
+  mapfile -t cpus <<< "$expanded"
   printf '  %-18s %-8s (%d CPU%s)\n' "$name" "$spec" "${#cpus[@]}" "$([ "${#cpus[@]}" -eq 1 ] || echo s)"
+  if [[ "$name" == "generator/monitor" ]]; then
+    generator_size=${#cpus[@]}
+  else
+    unit_size["$name"]=${#cpus[@]}
+  fi
   for cpu in "${cpus[@]}"; do
     (( cpu > highest )) && highest=$cpu
     if [[ -n "${owner[$cpu]:-}" ]]; then
@@ -82,6 +119,41 @@ for entry in "${sets[@]}"; do
     owner[$cpu]="$name"
   done
 done
+
+# Both size rules are stated relative to a capacity unit, so both need unit A to have expanded.
+# When it did not, the run has already failed on that spec; comparing against the missing value
+# would replace that specific, actionable error with bash's "unbound variable".
+if [[ -n "${unit_size["capacity unit A"]:-}" ]]; then
+  unit_cpus=${unit_size["capacity unit A"]}
+
+# Capacity units must be like-for-like, and only the ones this rung raises are compared: refusing
+# a G1 layout because unit C is sized differently would reject a partition G1 never touches.
+#
+# An uneven unit is not a smaller measurement, it is an uninterpretable one. E2 and E4 are ratios
+# taken across units assumed identical, so a unit with an extra CPU raises the aggregate and the
+# efficiency figure silently carries the imbalance instead of the architecture — which is the one
+# thing those numbers exist to isolate.
+  for name in "${!unit_size[@]}"; do
+    if (( unit_size["$name"] != unit_cpus )); then
+      echo "  ERROR: '$name' has ${unit_size[$name]} CPUs but 'capacity unit A' has ${unit_cpus};" >&2
+      echo "         capacity units must be like-for-like (ag-sept-pr4.md §2.14), or E2/E4 carry" >&2
+      echo "         the imbalance rather than the architecture." >&2
+      fail=1
+    fi
+  done
+
+# §2.12's rule, enforced rather than only described. The generator is the one host whose
+# saturation would invalidate a point rather than describe one, so it must be strictly larger
+# than the unit it drives — a generator sized like a capacity unit reaches its own limit first
+# and the ladder then measures the harness. The error text below already told operators this;
+# nothing checked it, so `ITC_CPUS_GENERATOR=8` passed.
+  if (( generator_size <= unit_cpus )); then
+    echo "  ERROR: the generator/monitor set has ${generator_size} CPU(s) and a capacity unit" >&2
+    echo "         has ${unit_cpus}; the generator must be strictly larger (ag-sept-pr4.md" >&2
+    echo "         §2.12), or a generator that saturates first measures itself." >&2
+    fail=1
+  fi
+fi
 
 if (( highest >= available )); then
   echo >&2

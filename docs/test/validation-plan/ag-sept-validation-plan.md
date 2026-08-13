@@ -71,8 +71,10 @@ Requirements and Design now constrain the validation deliberately:
 - one service replica and one PostgreSQL authority per shard group, keeping service-replica count
   per group constant;
 - one equivalent AWS EC2 capacity-unit host per group and a separate generator host;
-- outputs: measured `G1`, `G2`, `G4`, derived 2-group and 4-group scale efficiencies, and the
-  limiting-resource interpretation;
+- Tier 1 target: measured saturation-selected `G1`, `G2`, `G4`, derived 2-group and 4-group capacity
+  efficiencies, and the limiting-resource interpretation; if the measurement environment cannot
+  establish that target with proven headroom, §4.6 permits a bounded Tier 2 operating-point result
+  without promoting it to a capacity claim;
 - **no efficiency threshold**: obtaining and explaining the numeric result is the validation goal.
 
 Any capacity claim must also **explain, exclude, or conservatively bound shared-environment
@@ -277,7 +279,7 @@ The shard-group capacity units remain like-for-like under `deployment-architectu
 workload semantics, service image, pool policy, timeout policy, and PostgreSQL configuration stay
 fixed across `G1`, `G2`, and `G4`.
 
-#### Capacity-point selection rule
+#### Tier 1 — capacity-point selection rule
 
 A capacity point must be selected by the **same saturation rule** at all three topologies; it must
 not be the final rung merely because the sweep stopped there.
@@ -310,7 +312,7 @@ that change visible. A smaller per-authority working set may be part of what sha
 therefore be named when interpreting sub- or super-linear efficiency rather than silently treated
 as invariant.
 
-The experiment derives:
+Tier 1 derives:
 
 ```text
 E2 = G2 / (2 × G1)
@@ -319,6 +321,36 @@ E4 = G4 / (4 × G1)
 
 under `measurement-contract.md` §3.1. `E2` and `E4` are **results, not gates**; no percentage is
 required for Iteration C to be sufficiently resolved.
+
+#### Tier 2 — operating-point horizontal scale when capacity is measurement-limited
+
+Tier 1 is the stronger Iteration C result and the only tier that supports a claim about aggregate
+mutation **capacity** scaling. If AWS quota, generator headroom, or another proven measurement-system
+resource limit prevents the complete `G4` environment from driving all three topologies far enough
+to establish Tier 1, Iteration C may retain a weaker operating-point comparison rather than turning
+the measurement limit into an arbitrary capacity endpoint.
+
+Select the **highest useful common per-unit workload intensity** `L` that the complete `G4`
+measurement environment can drive without becoming the plausible limiter. Apply that same per-unit
+intensity across the topology family — with the current closed-loop harness this means approximately
+`c`, `2c`, and `4c` concurrency for the 1-, 2-, and 4-group topologies while A/B/C/D keep equal
+workload share — and retain the resulting goodputs `g1(L)`, `g2(L)`, and `g4(L)`. Derive:
+
+```text
+E2(L) = g2(L) / (2 × g1(L))
+E4(L) = g4(L) / (4 × g1(L))
+```
+
+`L` must not be chosen merely because it is easy to drive. Its selection must be justified as a
+substantial operating point within the proven generator/resource envelope, and the same correctness,
+reconciliation, SLO/evidence, like-for-like capacity-unit, and `VAL-NEG-7` controls still apply.
+
+If only Tier 2 is achieved, the conclusion is deliberately bounded: **horizontal scaling is
+established at `L`; aggregate capacity scaling remains unresolved.** A Tier-2 point cannot be
+promoted into a capacity result, cannot satisfy the Tier-1 saturation-selection rule by implication,
+and cannot be used to claim that the 2- or 4-group topology reached maximum useful Goodput.
+Accordingly, Tier 2 does **not** discharge `VAL-SCALE-5`; that capacity validation remains explicitly
+unproven while the operating-point horizontal-scale result is retained as valid evidence at `L`.
 
 ## 5. Correctness and policy validations
 
@@ -494,8 +526,8 @@ without changing routing or correctness semantics.
 
 **Requirements:** REQ-COR-1, REQ-SCALE-1, REQ-SCALE-4, REQ-DEPLOY-1, REQ-EVID-1, REQ-EVID-2.
 
-Run the fixed matrix and saturation-selection rule in §4.6 and obtain admissible `G1`, `G2`, and
-`G4` for `WL-MUT-DISP-4`. The request-pair semantics remain same-organisation at every topology.
+Run the fixed matrix and Tier-1 saturation-selection rule in §4.6 and obtain admissible `G1`, `G2`,
+and `G4` for `WL-MUT-DISP-4`. The request-pair semantics remain same-organisation at every topology.
 Derive `E2` and `E4` under the measurement contract and identify or conservatively bound the
 limiting mechanism at each relevant frontier, explicitly accounting for the intended change in
 per-authority data/working-set volume as organisations are distributed across more authorities.
@@ -504,6 +536,10 @@ The validation passes when the numbers are reproducible/admissible, correctness 
 resource envelopes are comparable, generator/shared-environment effects cannot plausibly explain
 the result, the saturation point is established rather than assumed from sweep depth, and the
 limitations are stated. It does **not** require an efficiency percentage.
+
+If a proven measurement-system limit forces §4.6's Tier-2 path instead, retain that operating-point
+horizontal-scale result, but report `VAL-SCALE-5` as **unproven**. Tier 2 cannot be promoted into a
+capacity result merely because it is the strongest result the available environment could drive.
 
 ## 8. Measurement-system negative controls
 
@@ -569,7 +605,7 @@ about that constraint, not a clean shard-group scale-efficiency point.
 | Phase 1 correctness and failure isolation | established for Iteration B | PR3c report and retained artifacts; VAL-COR-1..3, VAL-COR-5, VAL-COR-6 and VAL-FAIL-1 |
 | cross-authority refusal (VAL-COR-4) | established for Iteration B | all four §3.5 clauses now hold on the deployed topology: the refusal and the absence of partial mutation by the PR3c passes, and **same-key replay** by control 3b, retained in [`../../measurements/pr3c-phase1/controls-replay/`](../../measurements/pr3c-phase1/controls-replay/). The replay clause was the gap the Iteration B A&R found (PR3c report §7.4), and it was closed by adding the repost to the control rather than by re-running or reinterpreting the retained cells |
 | database-authority composition (VAL-SCALE-3) | established as architecture/correctness evidence | PR3c; explicitly **not** a capacity multiplier on the co-resident workstation |
-| Iteration C shard-group capacity (VAL-SCALE-5) | **defined; not yet executed** | fixed `WL-MUT-DISP-4` same-organisation request semantics at A/B/C/D across 1/2/4 shard groups; saturation-selected G1/G2/G4 and derived E2/E4 |
+| Iteration C shard-group capacity (VAL-SCALE-5) | **defined; not yet executed** | Tier 1 is the fixed `WL-MUT-DISP-4` A/B/C/D 1/2/4 matrix with saturation-selected `G1/G2/G4` and derived `E2/E4`; if a proven measurement-system limit prevents Tier 1, §4.6 Tier 2 may establish horizontal scaling at a common per-unit `L`, while capacity remains explicitly unproven |
 | Iteration C resource-envelope control (VAL-NEG-7) | **defined; not yet executed** | retain per-host resource evidence and explain/exclude/bound material environment variation |
 | stateless replica scaling | unproven and not selected by Iteration C | existing VAL-SCALE-1/2 remain separate future validation definitions |
 | composed multi-authority + multi-replica topology | optional later validation | only after both axes are understood separately |

@@ -11,7 +11,7 @@ owns the capacity-unit model; `REQ-SCALE-4` and `REQ-EVID-2`
 ([`system-requirements.md`](../../requirements/system-requirements.md)) own what must be true;
 [`workload-catalog.md`](../../test/workload-catalog.md) owns `WL-MUT-DISP-4`;
 [`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) §4.6 owns the
-matrix, the capacity-point selection rule, `VAL-SCALE-5` and `VAL-NEG-7`; and
+matrix, the Tier 1/Tier 2 result model, `VAL-SCALE-5` and `VAL-NEG-7`; and
 [`measurement-contract.md`](../../design/measurement-contract.md) §11–§13 owns provenance and the
 quotability ladder. This record covers only how PR4 discharges them and the choices made along the
 way. Where it disagrees with an owning document, the owning document wins.
@@ -21,8 +21,10 @@ way. Where it disagrees with an owning document, the owning document wins.
 Both gates are owned by [`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §3 and are not restated
 here. In short: PR4a must be able to instantiate the 1/2/4 topology family with equivalent
 capacity-unit hosts and a preflighted separate generator, reach `publishable` **provenance**
-readiness, and retain the resource evidence `VAL-NEG-7` requires; PR4b must obtain `G1/G2/G4` by
-the common saturation rule and derive `E2/E4` without promoting any number past its evidence level.
+readiness, and retain the resource evidence `VAL-NEG-7` requires. PR4b attempts the validation
+plan's Tier 1 capacity result first; if a proven measurement-system limit prevents that result, it
+may retain the Tier 2 operating-point comparison without promoting it into capacity evidence, while
+`VAL-SCALE-5` remains explicitly unproven.
 
 `publishable` here is the §13 provenance rung only. It is not a claim, and PR4b still has to pass
 `measurement-contract.md` §5's evidence gates before anything leaves the project.
@@ -226,49 +228,21 @@ remote endpoints on EC2, so security-group rules, DSN handling and the verifier'
 are PR4a's work rather than PR4b's discovery. Reconciliation is required at every quoted point, and
 a capacity point that cannot be reconciled is not a capacity point.
 
-### 2.11 Iteration C keeps a two-tier horizontal-scale result when capacity is measurement-limited
+### 2.11 PR4 implements the validation plan's two-tier result model
 
-The capacity form of horizontal scale efficiency is the strongest Iteration C result, but it is not
-the only valid horizontal-scale measurement. AWS quota or generator headroom may prevent the
-measurement system from driving the four-group topology to its saturation frontier even when the
-four equivalent shard groups themselves are healthy. That is a limit of the available measurement
-environment, not evidence that horizontal scaling cannot be measured.
+The two-tier decision first recorded here now belongs normatively to
+[`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) §4.6. PR4b
+attempts Tier 1 first. Only when the complete measurement environment is itself proven to prevent
+establishing the saturation-selected capacity result may PR4b retain the Tier 2 operating-point
+comparison defined there.
 
-The accepted validation refinement is therefore two-tiered:
+This implementation record deliberately carries no duplicate formulas, threshold, or alternate
+selection rule. PR4a's responsibility is to retain enough generator and per-host resource evidence
+to distinguish a server frontier from a measurement-system frontier. PR4b's responsibility is to
+apply the owning validation rule and, if Tier 2 is all the environment can support, keep its
+conclusion bounded: horizontal scaling at the selected common per-unit `L`, with aggregate capacity
+scaling and `VAL-SCALE-5` still unproven.
 
-**Tier 1 — capacity-scale efficiency.** Establish admissible saturation-selected capacity results
-at `G1`, `G2`, and `G4` under the common capacity-point rule, then derive the two- and four-group
-capacity efficiencies. This remains the stronger result and the only tier that supports a claim
-about aggregate mutation **capacity** scaling.
-
-**Tier 2 — operating-point horizontal scale efficiency.** If the generator/resource envelope
-cannot establish Tier 1 at all topology points with proven headroom, select the **highest useful
-common per-unit workload intensity** `L` that the complete `G4` measurement environment can drive
-without becoming the plausible limiter. Apply the same per-unit intensity across the topology
-family — with the current closed-loop harness this means approximately `c`, `2c`, and `4c`
-concurrency for `G1`, `G2`, and `G4`, while A/B/C/D keep equal workload share — and retain the
-resulting goodputs `g1(L)`, `g2(L)`, and `g4(L)`. Derive:
-
-```text
-E2(L) = g2(L) / (2 × g1(L))
-E4(L) = g4(L) / (4 × g1(L))
-```
-
-`L` must not be chosen merely because it is easy to drive. Its selection must be justified as a
-substantial operating point within the proven generator/resource envelope, and the usual
-correctness, reconciliation, SLO/evidence, like-for-like capacity-unit, and `VAL-NEG-7` controls
-still apply.
-
-If only Tier 2 is achieved, the conclusion is deliberately bounded: **horizontal scaling is
-established at `L`; aggregate capacity scaling remains unresolved.** A Tier-2 point cannot be
-promoted into a capacity result, cannot satisfy the capacity-point selection rule by implication,
-and cannot be used to claim that `G2` or `G4` has reached its maximum useful goodput.
-
-This is a validation-contract refinement, not merely an implementation convenience. The owning
-[`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) must encode the
-two tiers before PR4b treats Tier 2 as sufficient evidence. This implementation record retains the
-decision now so AWS quota or generator limits cannot silently turn into an ad-hoc weakening of the
-experiment later.
 ### 2.12 Capacity units are non-burstable, and the generator is larger than a unit
 
 The vCPU budget is the maintainer's; the shape within it is implementation
@@ -308,5 +282,3 @@ than a debugging session.
 - **Whether monitoring splits onto its own host** stays open until §2.2's preflight says whether it
   needs to.
 - **`postgres_exporter`** is deferred with a trigger, not dropped (§2.1).
-- **Two-tier scale validation** is accepted in §2.11; the owning validation plan must be revised
-  before PR4b can use Tier 2 as an Iteration C completion path.

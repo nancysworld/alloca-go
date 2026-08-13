@@ -441,7 +441,8 @@ is exactly the case that would otherwise reintroduce the original defect silentl
 at `capacity` with zero goodput. Nothing in the provenance ladder refuses it, and nothing should —
 the run describes itself honestly and the outcome mix is right there in the totals. Whether an
 all-refusal run may back a capacity *claim* is `measurement-contract.md` §5's question about
-evidence, not §13's about provenance, and PR4b answers it per capacity point rather than here.
+evidence, not that document's §13 about provenance, and PR4b answers it per capacity point rather
+than here.
 
 ## 4. Open items
 

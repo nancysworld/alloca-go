@@ -339,7 +339,7 @@ itc-up: image
 	  1) profile="" ;; \
 	  2) profile="--profile g2" ;; \
 	  4) profile="--profile g4" ;; \
-	  *) echo "GROUPS must be 1, 2 or 4 (ag-sept-validation-plan.md §4.6); got '$(ITC_GROUPS)'"; exit 1 ;; \
+	  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept-validation-plan.md §4.6); got '$(ITC_GROUPS)'"; exit 1 ;; \
 	esac; \
 	echo "raising the $(ITC_GROUPS)-group topology with deploy/topology/placement-itc-g$(ITC_GROUPS).json"; \
 	ALLOCA_IMAGE_TAG=$(ALLOCA_IMAGE_TAG) \

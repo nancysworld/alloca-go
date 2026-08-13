@@ -60,7 +60,8 @@ func TestShippedIterationCPlacementsDescribeTheFixedMatrix(t *testing.T) {
 					"capacity points apart", placement.Version(), want.version)
 			}
 
-			// §2.9: G1 is a sharded one-authority placement, never Unsharded. Unsharded makes
+			// ag-sept-pr4.md §2.9: G1 is a sharded one-authority placement, never Unsharded.
+			// Unsharded makes
 			// placement enforcement inert and reports routing_version "unsharded", so a G1 built
 			// that way would run a different code path from G2 and G4 and carry provenance that
 			// cannot be compared with theirs.

@@ -57,3 +57,34 @@ scrape_configs:
     relabel_configs:
       - target_label: milestone
         replacement: ag-sept
+
+  # VAL-NEG-7's host sensor (ag-sept-pr4.md §2.1, §2.3). A separate job, not a second target on
+  # the one above, for two reasons that both bite silently if merged.
+  #
+  # **Cadence.** `alloca-go` is scraped at the 1s global interval because a sweep cell runs for
+  # tens of seconds and a coarser interval would alias the pool-pressure signal. That reasoning is
+  # about the service and does not transfer: node_exporter carries far more series per scrape, and
+  # 1s would multiply the retained snapshot for no diagnostic gain. 5s here, overriding the global.
+  #
+  # **Identity.** `process_*` and `go_*` are exported by every Prometheus-instrumented Go process,
+  # node_exporter included. Folded into `alloca-go`, its own runtime metrics would land under the
+  # service's job name and quietly widen every generic panel — which is exactly why those panels
+  # constrain `job=` (TestGenericMetricFamiliesAreScopedToTheirJob).
+  - job_name: node
+    scrape_interval: 5s
+    scrape_timeout: 4s
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          # Names the machine rather than the container. On the local rehearsal there is exactly
+          # one host and all four shard groups share it — which is the fact that makes these runs
+          # rehearsal evidence and not capacity evidence, so the label says so rather than
+          # implying a per-unit host that does not exist here.
+          host: rehearsal-workstation
+          # On the target, never in a relabel. Same rule as the service job, and stated the same
+          # way on purpose: a job-wide topology relabel is what stamped every Iteration C sample
+          # as the PR2 experiment, and the rule only holds if it holds everywhere.
+          topology: rehearsal-host
+    relabel_configs:
+      - target_label: milestone
+        replacement: ag-sept

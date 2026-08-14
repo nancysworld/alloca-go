@@ -1106,6 +1106,48 @@ regime, not after. The regime is rare, and a cell that captures pool evidence wi
 evidence would leave the same ambiguity standing one run later — the point is for a single
 degraded cell to carry both.
 
+### 3.14 `node_exporter` is in, and the local host cannot serve the instrument §2.3 named
+
+Built as §2.1 specified: `node_exporter` beside Prometheus, a restricted collector set, its own
+scrape job at 5 s (§2.3), host panels, and a per-cell gate that refuses a run which retained no
+host samples (§2.5). Verified live against the running G4 rehearsal — both jobs healthy, all four
+host panels returning points over a range query.
+
+**One exporter, because the local rehearsal has one host.** §2.1 asks for it on every
+capacity-unit host and on the generator/monitor host. On this workstation all four shard groups
+and the generator share a single WSL VM, so one exporter observes all of them and a second would
+report the same kernel twice. That the set is singular *is* the rehearsal's limitation, stated
+plainly rather than papered over: it is why these runs are rehearsal evidence and not capacity
+evidence, and the label says so — the host job carries `topology=rehearsal-host`.
+
+**PSI is not available on this kernel, and PSI was the instrument the diagnosis wanted.** §2.3
+named `pressure` among the collectors, and it is the most direct answer to the §3.12 question,
+because it reports *contention* rather than consumption — a host can be far from saturated and
+still be stalling. The WSL2 kernel has no `/proc/pressure`: the collector loads and reports
+`node_scrape_collector_success{collector="pressure"} 0`, every other collector reporting 1.
+
+This is exactly the kind of thing PR4a exists to find before AWS time is spent. Two consequences:
+
+- The collector stays enabled. It costs one series, it reports its own failure, and the AWS
+  hosts' kernels are expected to carry PSI — so nothing needs changing there.
+- **`node_load1` is the substitute** while PSI is missing, panelled as *Host run queue*. Run-queue
+  depth against CPU count is the classic oversubscription signal and, unlike utilisation, it rises
+  when work is *waiting* rather than when work is being done. It is coarser than PSI: a one-minute
+  average cannot resolve a stall inside a 30 s cell, so it bounds the question rather than
+  answering it. A pressure panel supersedes it the moment a host serves one.
+
+**The collector set is deliberately wider than the panel set.** `diskstats`, `netdev` and
+`filesystem` are scraped and not plotted. Collect broadly, panel narrowly: the snapshot retains
+everything scraped, and §3.13.1 is the worked example of recovering a series nobody thought to
+export — the pool population question was answered from a retained snapshot without re-running a
+cell.
+
+**What this does not do.** It does not diagnose §3.12. The degraded regime has not recurred since
+the sensor was added, and one host sensor on a shared-kernel workstation cannot separate a
+Windows-side effect from a WSL-side one anyway. What it does is make the next degraded cell carry
+both pool and host evidence, which is the §3.13 sequencing requirement and the reason it went in
+before the next reproduction attempt rather than after.
+
 ## 4. Open items
 
 - **Rung duration** stays open until §2.4's preflight derives it.
@@ -1142,8 +1184,11 @@ degraded cell to carry both.
   question.
 - **Whether monitoring splits onto its own host** stays open until §2.2's preflight says whether it
   needs to.
-- **`node_exporter` is no longer deferrable** (§2.1, §3.12–§3.13). It is the host sensor the
-  degraded-regime diagnosis now needs before PR4b.
+- ~~**`node_exporter` is no longer deferrable**~~ **Done** (§3.14). Built with a restricted
+  collector set, its own 5 s job, host panels and a per-cell gate that refuses a run retaining no
+  host samples. **PSI is unavailable on the WSL2 kernel** and `node_load1` is its coarser stand-in,
+  which bounds the stall question rather than answering it — a pressure panel supersedes it on any
+  host whose kernel serves `/proc/pressure`.
 - **Fuller pgxpool state is required for the local diagnosis.** The existing acquired/max/wait
   series cannot distinguish “connections exist but are unavailable” from a pool whose actual
   population has fallen or is constructing/reconnecting. Retain enough total/idle/constructing and

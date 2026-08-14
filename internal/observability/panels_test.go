@@ -20,6 +20,9 @@ import (
 const (
 	panelsPath    = "../../deploy/observability/panels.json"
 	dashboardPath = "../../deploy/observability/grafana/dashboards/alloca-frontier.json"
+	// The sweep runner names required panel keys in its own source; this package is where that
+	// naming can be checked against the panels that actually exist.
+	sweepPath = "../../test/scripts/sweep.sh"
 )
 
 type canonicalPanels struct {
@@ -178,16 +181,28 @@ func TestDashboardIsDeliberatelySmall(t *testing.T) {
 		}
 	}
 
-	// 9 since AG-Sept PR4a, raised from 8 by maintainer decision on 2026-08-14. Iteration C made
-	// the pool the object of study rather than a background indicator: occupancy, lifecycle,
-	// acquire duration and *mean* acquire duration are four separate questions, and §3.13.1's
-	// finding is legible only in the last of them — a per-acquire cost that rose 16x while the
-	// aggregate rate it shares an axis with would have hidden it three orders of magnitude down.
+	// 13 since AG-Sept PR4a, from 8, in two recorded steps on 2026-08-14.
+	//
+	// 8 -> 9: Iteration C made the pool the object of study rather than a background indicator.
+	// Occupancy, lifecycle, acquire duration and *mean* acquire duration are four separate
+	// questions, and §3.13.1's finding is legible only in the last — a per-acquire cost that rose
+	// 16x, three orders of magnitude below the aggregate rate it would otherwise share an axis
+	// with.
+	//
+	// 9 -> 13: node_exporter arrives as VAL-NEG-7's host sensor (§2.1), and the host quantities
+	// that answer §3.12 are small next to the ones that do not. CPU steal against total busy is a
+	// rounding error on a shared axis, and steal is the series that would say whether the host was
+	// descheduled — the candidate PR2 named and could not test. Memory is bytes and may not share
+	// an axis at all.
+	//
+	// The panel set stays narrower than the collector set on purpose: diskstats, netdev and
+	// filesystem are scraped and not plotted, because the snapshot retains everything scraped and
+	// §3.13.1 is the worked example of recovering a series nobody thought to plot.
 	//
 	// The bound stays a bound. It exists so that adding a panel is a decision someone makes and
 	// records, which is what this comment is.
 	dash := loadJSON[dashboard](t, dashboardPath)
-	if n := len(dash.Panels); n > 9 {
+	if n := len(dash.Panels); n > 13 {
 		t.Errorf("dashboard has %d panels; the diagnostic view is meant to stay compact. "+
 			"Adding one is a scope decision, not a tidy-up", n)
 	}
@@ -358,6 +373,49 @@ func TestPerAuthorityPanelsExposeAuthority(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Error("no dashboard panel is declared per_authority, so this test proved nothing")
+	}
+}
+
+// TestPopulatedSeriesGateNamesPanelsThatExist closes a coupling that fails silently in the wrong
+// direction.
+//
+// sweep.sh refuses a cell whose required panels retained no samples, and it names those panels by
+// key in its own source. The lookup is `points.get(key, 0)`, so a key panels.json no longer
+// defines reads as zero points and refuses **every** cell — a gate that looks like it is working
+// while actually being unsatisfiable. PR4a hit exactly that: `pool_max` was named there and then
+// dropped from panels.json.
+//
+// Failing closed is the right direction for a live run, and useless as a signal, because the
+// refusal names a missing measurement rather than a missing panel definition.
+func TestPopulatedSeriesGateNamesPanelsThatExist(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Clean(sweepPath))
+	if err != nil {
+		t.Fatalf("reading %s: %v", sweepPath, err)
+	}
+
+	// The single line in sweep.sh that lists the required keys.
+	m := regexp.MustCompile(`empty = \[k for k in \(([^)]*)\)`).FindSubmatch(raw)
+	if m == nil {
+		t.Fatal("sweep.sh no longer contains the populated-series key list this test guards; " +
+			"find it and update the pattern rather than deleting the test")
+	}
+
+	canonical := loadJSON[canonicalPanels](t, panelsPath)
+	defined := map[string]bool{}
+	for _, p := range canonical.Panels {
+		defined[p.Key] = true
+	}
+
+	keys := regexp.MustCompile(`"([a-z_]+)"`).FindAllStringSubmatch(string(m[1]), -1)
+	if len(keys) == 0 {
+		t.Fatal("parsed no panel keys out of sweep.sh's populated-series gate")
+	}
+	for _, k := range keys {
+		if !defined[k[1]] {
+			t.Errorf("sweep.sh requires panel %q to be populated, but panels.json does not define "+
+				"it: every cell would be refused for retaining no samples of a panel that was "+
+				"never exported", k[1])
+		}
 	}
 }
 

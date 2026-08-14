@@ -160,6 +160,35 @@
       "expr": "rate(alloca_db_pool_acquire_wait_seconds_total[$RANGE]) / rate(alloca_db_pool_acquires_total[$RANGE])"
     },
     {
+      "key": "host_cpu_busy",
+      "title": "Host CPU busy",
+      "unit": "cores",
+      "_note": "VAL-NEG-7's primary host indicator (ag-sept-pr4.md §2.1). Non-idle CPU across the whole machine, which is what distinguishes 'the service stopped being given CPU' from 'the service stopped asking for it' — the two the §3.12 degraded cell could not tell apart. JOB-SCOPED to `node` for the same reason the process panels are scoped to `alloca-go`.",
+      "expr": "sum(rate(node_cpu_seconds_total{job=\"node\",mode!=\"idle\"}[$RANGE]))"
+    },
+    {
+      "key": "host_cpu_steal",
+      "title": "Host CPU steal and iowait",
+      "unit": "cores",
+      "_note": "The two modes that mean the host was not running because something outside it decided so. `steal` is the hypervisor taking the CPU — the WSL2 candidate §3.12 named and could not test; `iowait` is blocking on storage, the Docker Desktop storage-path candidate. Separated from host_cpu_busy because both are small next to total busy and would be invisible on a shared axis.",
+      "expr": "sum by (mode) (rate(node_cpu_seconds_total{job=\"node\",mode=~\"steal|iowait\"}[$RANGE]))",
+      "legend": "{{mode}}"
+    },
+    {
+      "key": "host_runqueue",
+      "title": "Host run queue (load average)",
+      "unit": "tasks",
+      "_note": "Runnable-plus-blocked tasks against this host's CPU count. It answers the §3.12 question from the contention side rather than the consumption side: a host can be far from CPU-saturated and still have work waiting. This is the substitute for kernel PSI, which is the more direct instrument and is NOT available on the WSL2 kernel the rehearsal runs on — /proc/pressure does not exist there and the pressure collector reports success 0 (§3.14). The AWS hosts are expected to carry PSI, at which point a pressure panel supersedes this one.",
+      "expr": "node_load1{job=\"node\"}"
+    },
+    {
+      "key": "host_memory_available",
+      "title": "Host memory available",
+      "unit": "bytes",
+      "_note": "Available rather than free: free excludes reclaimable page cache and reads as exhaustion on a healthy machine. Retained because per-unit RSS grew across the §3.11 window and nothing said whether the host had room.",
+      "expr": "sum(node_memory_MemAvailable_bytes{job=\"node\"})"
+    },
+    {
       "key": "process_cpu",
       "title": "Process CPU",
       "unit": "cores",

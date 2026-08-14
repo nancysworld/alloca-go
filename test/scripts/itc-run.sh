@@ -402,6 +402,32 @@ if [ -n "$PROM_URL" ]; then
     || fail "panel export failed; the cell has its scalars but no retained series, and the
   rate within this window is not flat (ag-sept-pr4.md §3.11) so the average alone does not
   describe it. Artifacts are in $OUT"
+
+  # The populated-series gate, extended to the host panels (§2.5). A file existing is not evidence
+  # existing: when a job is configured but not scraped every query succeeds and returns nothing,
+  # and the exporter writes a header and no rows — which passes an existence check while retaining
+  # no series at all.
+  #
+  # Host panels are named explicitly rather than "every panel", because some are legitimately
+  # empty: `replay_rate` has no samples outside the replay control. VAL-NEG-7's host evidence is
+  # not in that category — a cell that lost it has lost the thing the sensor was added for, and
+  # §3.12 is the worked example of a diagnosis that could not be made without it.
+  host_empty="$(python3 -c '
+import json, sys
+idx = json.load(open(sys.argv[1]))
+points = {p["key"]: p["points"] for p in idx["panels"]}
+required = ("host_cpu_busy", "host_cpu_steal", "host_runqueue", "host_memory_available")
+print(",".join(k for k in required if points.get(k, 0) == 0))' "$OUT/panels/index.json" 2>/dev/null)" \
+    || host_empty="index unreadable"
+
+  [ -z "$host_empty" ] || fail "the cell retained no host samples for: $host_empty
+  node_exporter is VAL-NEG-7's host sensor and the instrument the degraded-regime diagnosis needs
+  (ag-sept-pr4.md §2.1, §3.12). A cell without it cannot separate a stall in the service from one
+  in the machine under it, which is the whole question. Check the host job is scraping:
+
+      curl -s $PROM_URL/api/v1/targets | grep -A2 '\"job\":\"node\"'
+
+  Raise the stack with 'make obs-rehearse', which starts node-exporter beside Prometheus."
 fi
 
 # The useful-demand discriminator, reported rather than gated (measurement-contract §5). A cell

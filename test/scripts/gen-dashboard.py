@@ -49,6 +49,19 @@ LAYOUT = [
     ("Database pool mean acquire duration", ["pool_acquire_mean"]),
     ("Process CPU and Go runtime", ["process_cpu", "go_goroutines", "go_gc_pause"]),
     ("Process resident memory", ["process_memory"]),
+    # VAL-NEG-7's host view (ag-sept-pr4.md §2.1, §2.5). Four graphs rather than one because the
+    # quantities that answer §3.12 are small next to the ones that do not: CPU steal against total
+    # busy is a rounding error on a shared axis, and it is the series that would say whether the
+    # host was descheduled.
+    #
+    # The collector set is deliberately wider than these panels (diskstats, netdev, filesystem are
+    # collected and not plotted). Collect broadly, panel narrowly: the snapshot retains everything
+    # scraped, so a series nobody thought to plot is still recoverable — which is exactly how the
+    # pool population question was answered without re-running a cell (§3.13.1).
+    ("Host CPU", ["host_cpu_busy"]),
+    ("Host CPU stolen and blocked", ["host_cpu_steal"]),
+    ("Host run queue", ["host_runqueue"]),
+    ("Host memory available", ["host_memory_available"]),
 ]
 
 DATASOURCE = {"type": "prometheus", "uid": "alloca-prometheus"}

@@ -320,7 +320,7 @@
             "uid": "alloca-prometheus"
           },
           "expr": "rate(alloca_db_pool_empty_acquire_wait_seconds_total[$__rate_interval])",
-          "legendFormat": "DB pool blocked-waiting time",
+          "legendFormat": "DB pool empty-acquire time",
           "range": true
         }
       ]

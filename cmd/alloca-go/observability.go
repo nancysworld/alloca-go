@@ -196,21 +196,26 @@ func newPoolCollector(pool *pgxpool.Pool) *poolCollector {
 		// elapsed time on every successful path, including the one that constructs a new
 		// connection. An acquire that never waited for anything still contributes. The name is
 		// kept because retained evidence and committed panels query it, and renaming would break
-		// comparison against cells already in docs/measurements/ — but read it with the help
-		// text, and use empty_acquire_wait_seconds_total below for actual contention.
+		// comparison against cells already in docs/measurements/ — so the disclaimer travels in
+		// the help text instead.
 		acquireWait: n("acquire_wait_seconds_total",
-			"Cumulative duration of all successful Acquire() calls, including connection setup — NOT blocked-waiting time; see empty_acquire_wait_seconds_total."),
+			"Cumulative duration of all successful Acquire() calls, including connection construction — NOT blocked-waiting time. Not a contention signal alone; read with empty_acquire_wait_seconds_total and new_connections_total."),
 		acquires: n("acquires_total", "Cumulative successful acquires."),
 
-		// The decisive one: time spent blocked because no connection was free, and nothing else.
-		// If this stays flat while acquire_wait_seconds_total climbs, no acquire ever waited for a
-		// connection and the cost is inside the acquire path rather than in pool contention.
+		// **Also not pure waiting.** puddle accumulates this on acquires that found no idle
+		// resource, and that covers two different paths: waiting for an in-use resource to be
+		// released, *and* constructing a new one. On the construction path the clock is read after
+		// the constructor returns, so the full construction time lands here (puddle/pool.go).
+		// No single series separates the two — new_connections_total does.
 		emptyAcquireWait: n("empty_acquire_wait_seconds_total",
-			"Cumulative time blocked because no idle connection was available."),
+			"Cumulative time on acquires that found no idle connection — covers BOTH waiting for one to be released AND constructing a new one; separate them with new_connections_total."),
 		emptyAcquires: n("empty_acquires_total",
-			"Cumulative acquires that found no idle connection."),
+			"Cumulative acquires that found no idle connection, whether they waited or constructed."),
+		// Incremented when construction *starts*, so it counts attempts rather than successes.
+		// Construction calls pgx.ConnectConfig, so a rise here means acquires are paying a real
+		// connection establishment against PostgreSQL — network, TLS and authentication included.
 		newConns: n("new_connections_total",
-			"Cumulative connections established. Rising during a measured window means acquires are paying connection setup."),
+			"Cumulative connection constructions started. Construction connects to PostgreSQL, so a rise means acquires are paying establishment cost."),
 		maxLifetimeDestroys: n("max_lifetime_destroys_total",
 			"Cumulative connections destroyed for exceeding max lifetime."),
 		maxIdleDestroys: n("max_idle_destroys_total",

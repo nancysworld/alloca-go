@@ -1040,19 +1040,40 @@ host effect, and it is not by itself a refutation.
 already exposes everything needed; the collector exports six of its thirteen methods. Adding
 these separates all three candidates:
 
-| Missing metric | What it decides |
+| Missing metric | What it contributes |
 |---|---|
-| `EmptyAcquireWaitTime()` | **The decisive one.** Blocked-waiting time *only*, as opposed to total acquire duration. If this stays near zero while `AcquireDuration` climbs, no acquire ever waited for a connection and candidates 1–2 collapse to "the call itself was slow" |
-| `EmptyAcquireCount()` | how many acquires found no idle connection at all |
-| `NewConnsCount()` | connection establishment during the window — candidate 1 directly |
+| `EmptyAcquireWaitTime()` | time on acquires that found no idle connection. **Not pure contention** — see below |
+| `EmptyAcquireCount()` | how many acquires found no idle connection, whether they waited or constructed |
+| `NewConnsCount()` | constructions started. The series that separates the two things the metric above conflates |
 | `MaxLifetimeDestroyCount()`, `MaxIdleDestroyCount()` | whether the pool was destroying connections underneath the flat `total` |
 | `ConstructingConns()` | construction in flight at sample time |
 | `CanceledAcquireCount()` | acquires abandoned under context cancellation |
 
-This is instrumentation derived from a specific unanswered question, which is the standard §3.13
-sets for `postgres_exporter` and which this meets and that does not — the fault has **not** been
-localised to the PostgreSQL boundary. It has been localised to the acquire path, and the acquire
-path is inside the service.
+> **`EmptyAcquireWaitTime` is not blocked-waiting time either, and an earlier draft of this
+> section said it was.** Verified against the pinned `puddle v2.2.2`: the counter accumulates on
+> acquires that found no idle resource, and that covers *both* waiting for one to be released and
+> constructing a new one — on the construction path the clock is read after the constructor
+> returns, so the full construction time lands in it (`pool.go`, the `emptyAcquireWaitTime +=
+> waitTime` after `initResourceValue`). No single series in this set is a clean contention signal.
+
+**No metric decides this alone; the combination does.** Read together:
+
+| Observation | Reading |
+|---|---|
+| empty-wait ↑ **and** new-conns ↑ | construction/churn is implicated |
+| empty-wait ↑ **and** new-conns flat | acquires waited for an existing connection to be released |
+| acquire-duration ↑ **and** empty-wait flat | the delay is elsewhere in the immediate acquire path, rather than in pool-empty waiting or construction |
+
+**Localisation, stated at its actual strength.** The symptom is localised to the **connection-
+acquire path**, which is a real narrowing from "something in the request path". It does **not**
+place the fault inside the service and exclude PostgreSQL: pgxpool's resource constructor calls
+`pgx.ConnectConfig` (`pgxpool/pool.go`), so a construction event includes PostgreSQL and network
+connection establishment — TCP, TLS and authentication. An earlier draft of this section claimed
+the acquire path "is inside the service"; that is wrong wherever construction is involved, which
+is precisely the case `NewConnsCount` exists to detect.
+
+So `postgres_exporter` stays **evidence-triggered**, per §3.13: current evidence does not justify
+it, and equally does not exclude PostgreSQL participation. What decides it is the next cell.
 
 **Shipped.** All seven are exported by the pool collector and the five diagnostic series are
 retained per cell (`pool_total`, `pool_idle`, `pool_empty_acquire_wait`, `pool_acquire_mean`,
@@ -1061,15 +1082,21 @@ pin the exported set by name, because a missing series here is invisible: the sc
 succeeds and the populated-series gate still passes for the metrics that *are* present. Both were
 proven discriminating by removing a metric from each half.
 
-**One naming trap is kept rather than fixed.** `alloca_db_pool_acquire_wait_seconds_total` does
-not measure waiting, and its name says it does. It is left alone because the retained cells in
-`docs/measurements/` and the committed panels query it, and renaming would break comparison
+**Two naming traps are kept rather than fixed.** Neither
+`alloca_db_pool_acquire_wait_seconds_total` nor `alloca_db_pool_empty_acquire_wait_seconds_total`
+measures waiting, and both names say they do. They are left alone because the retained cells in
+`docs/measurements/` and the committed panels query them, and renaming would break comparison
 against evidence already taken — the same reason §3.12's cells keep their wrong topology label.
-Instead the help text now states what it measures and points at
-`empty_acquire_wait_seconds_total`, the panel note carries the same warning, and
-`TestAcquireDurationHelpDisclaimsBeingWaitTime` fails if either reverts. A name that has already
+Instead each help text states what it actually measures and names the series needed to interpret
+it, the panel notes carry the same warning, and
+`TestNeitherTimingMetricClaimsToBePureWaiting` fails if either reverts. A name that has already
 misled one reading will mislead another; the disclaimer travels with the metric rather than
 living only here.
+
+**Sequencing.** `node_exporter` goes in **before** the next attempt to reproduce the degraded
+regime, not after. The regime is rare, and a cell that captures pool evidence without host
+evidence would leave the same ambiguity standing one run later — the point is for a single
+degraded cell to carry both.
 
 ## 4. Open items
 

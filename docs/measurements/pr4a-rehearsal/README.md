@@ -118,15 +118,20 @@ to **7 while acquire-wait rises**, against a configured maximum of 16.
 > has fallen, or is constructing/reconnecting" needs the pool's total, idle and constructing
 > state, not its maximum.
 >
-> What the cell does establish is narrower and still sharp: **workers are waiting to acquire while
-> fewer connections are acquired**, which makes connection acquisition and availability a concrete
-> part of the degraded-regime diagnosis rather than a generic "service saturation" story. It does
-> not localise the stall to the pool/database boundary on its own.
+> **Answered from this cell's own snapshot.** `alloca_db_pool_total_connections` and
+> `alloca_db_pool_idle_connections` were scraped all along and sit in `tsdb-snapshot/`; they were
+> simply never exported to `panels/`. Queried back out, bounded by this cell's window:
+> **`total` is pinned at 16 for every sample**, and `total == idle + acquired` holds on all 13.
+> The population never fell. The healthy 30 s cell pins `idle` at 0 with `acquired` at 16 — a
+> genuinely saturated pool — while this one holds **6–9 idle** with `acquired` at 7–10. Mean
+> acquire duration rose **16×**, from 0.47 ms to 7.67 ms, with connections available.
 >
-> `alloca_db_pool_total_connections` and `alloca_db_pool_idle_connections` are scraped by the
-> service and **are present in this cell's `tsdb-snapshot/`** — they were simply never exported to
-> `panels/`. The distinction above is therefore answerable from this retained cell, without new
-> instrumentation and without re-running it. See `ag-sept-pr4.md` §3.13.
+> **That localises the symptom to the connection-acquire path, and no further.** It does not put
+> the fault inside the service: pgxpool's constructor calls `pgx.ConnectConfig`, so an acquire
+> that constructs a connection includes PostgreSQL and network establishment. Nor does it name a
+> mechanism — `AcquireDuration` times the whole `Acquire()` call, so churn, pool contention and
+> host-level wall-clock inflation all remain live. The full reading, and the metrics added to
+> separate them, are in `ag-sept-pr4.md` §3.13.1.
 
 > **Do not read the generator's CPU drop as evidence.** The table above shows generator CPU
 > falling 0.1146 → 0.0588 per core, and an earlier version of this record counted that as a third

@@ -58,6 +58,14 @@ Thumbs.db
 # the repo root is how it ends up committed by accident.
 /test/results/
 
+# The observed deployment record. It lives beside the fixtures because a run
+# consumes it as an input, but it is *observed* — record-deployment.sh inspects
+# the running containers and pins their image IDs — so it is never committed.
+# A committed copy would go stale the moment the image is rebuilt, and a run
+# could then certify against a record describing an image that is not the one
+# under test. Regenerate it before every run; test/fixtures/README.md says how.
+/test/fixtures/deployment.json
+
 # Terraform local state and plans
 **/.terraform/*
 *.tfstate

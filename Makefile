@@ -483,7 +483,7 @@ itc-rehearse:
 	@echo
 	@echo "    make obs-rehearse ITC_CPUS_GENERATOR=$(ITC_CPUS_GENERATOR)"
 	@echo "    ITC_GROUPS=$(ITC_GROUPS) ./test/scripts/itc-seed.sh"
-	@echo "    make itc-deployment ITC_GROUPS=$(ITC_GROUPS) > test/results/deployment.json"
+	@echo "    make itc-deployment ITC_GROUPS=$(ITC_GROUPS) > test/fixtures/deployment.json"
 	@echo "    ITC_GROUPS=$(ITC_GROUPS) ITC_CPUS_GENERATOR=$(ITC_CPUS_GENERATOR) ./test/scripts/itc-run.sh"
 	@echo
 	@echo "  generator/monitor CPUs: $(ITC_CPUS_GENERATOR)  (alloca-load, Prometheus, Grafana)"

@@ -72,14 +72,19 @@ WINDOW="${WINDOW:-60s}"
 SLOTS="${SLOTS:-3200}"
 CAPACITY="${CAPACITY:-20}"
 PLACEMENT="${PLACEMENT:-deploy/topology/placement-itc-g${ITC_GROUPS}.json}"
-DEPLOYMENT="${DEPLOYMENT:-test/results/deployment.json}"
+DEPLOYMENT="${DEPLOYMENT:-test/fixtures/deployment.json}"
 # One declaration per capacity point, not one per rehearsal: G1, G2 and G4 are different
 # deployment shapes, and `deployment_topology` is the shape a later run is compared against. A
 # single shared document would describe three topologies with one string, and the two it did not
 # describe would certify against a false statement. Selected by ITC_GROUPS for the same reason
 # the placement document is — so the two cannot drift apart.
 DECLARATION="${DECLARATION:-deploy/topology/declaration-itc-g${ITC_GROUPS}.json}"
-OUT="${OUT:-test/results/itc-g${ITC_GROUPS}-$(date -u +%Y%m%dT%H%M%SZ)}"
+# Runs nest one level under the milestone that commissioned them, so `test/results/` stays
+# navigable as cells accumulate — a flat directory of timestamps stops being readable at about
+# thirty. `RESULTS_GROUP` is the knob: PR4b sets it to `pr4b` rather than editing this default,
+# which keeps its cells from landing in PR4a's drawer.
+RESULTS_GROUP="${RESULTS_GROUP:-pr4a}"
+OUT="${OUT:-test/results/$RESULTS_GROUP/itc-g${ITC_GROUPS}-$(date -u +%Y%m%dT%H%M%SZ)}"
 
 # `capacity`, not `local`, because certification is one of the things PR4a exists to rehearse:
 # the declaration, the deployment record and the per-unit provenance all have to line up, and

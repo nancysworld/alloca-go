@@ -53,32 +53,32 @@ seed 15434 org-d
 
 # 6. record what is running, then drive one bounded run                     (§6)
 go build -o bin/alloca-load ./cmd/alloca-load
-mkdir -p test/results
-make topo-deployment > test/results/deployment.json
-curl -sS http://localhost:9081/metrics > test/results/s1-baseline.prom
-curl -sS http://localhost:9082/metrics > test/results/s2-baseline.prom
+mkdir -p test/results/manual
+make topo-deployment > test/fixtures/deployment.json
+curl -sS http://localhost:9081/metrics > test/results/manual/s1-baseline.prom
+curl -sS http://localhost:9082/metrics > test/results/manual/s2-baseline.prom
 ./bin/alloca-load \
   -placement deploy/topology/placement.json \
   -endpoint authority-1=http://$S1 -endpoint authority-2=http://$S2 \
   -workload multi-org-dispersed \
-  -deployment test/results/deployment.json \
+  -deployment test/fixtures/deployment.json \
   -concurrency 32 -n 400 -slots 100 \
-  -out test/results/topo-run.json
+  -out test/results/manual/topo-run.json
 
 # 7. reconcile it against both authorities — after the run has exited       (§6.1)
-curl -sS http://localhost:9081/metrics > test/results/s1-after.prom
-curl -sS http://localhost:9082/metrics > test/results/s2-after.prom
+curl -sS http://localhost:9081/metrics > test/results/manual/s1-after.prom
+curl -sS http://localhost:9082/metrics > test/results/manual/s2-after.prom
 go build -o bin/alloca-verify ./cmd/alloca-verify
 ./bin/alloca-verify \
-  -run test/results/topo-run.json \
+  -run test/results/manual/topo-run.json \
   -placement deploy/topology/placement.json \
   -authority-db "authority-1=postgres://alloca:alloca@localhost:15433/alloca?sslmode=disable" \
   -authority-db "authority-2=postgres://alloca:alloca@localhost:15434/alloca?sslmode=disable" \
-  -authority-metrics authority-1=test/results/s1-after.prom \
-  -authority-metrics authority-2=test/results/s2-after.prom \
-  -authority-metrics-baseline authority-1=test/results/s1-baseline.prom \
-  -authority-metrics-baseline authority-2=test/results/s2-baseline.prom \
-  -out test/results/topo-verdict.json
+  -authority-metrics authority-1=test/results/manual/s1-after.prom \
+  -authority-metrics authority-2=test/results/manual/s2-after.prom \
+  -authority-metrics-baseline authority-1=test/results/manual/s1-baseline.prom \
+  -authority-metrics-baseline authority-2=test/results/manual/s2-baseline.prom \
+  -out test/results/manual/topo-verdict.json
 
 # 8. tear it down                                                           (§7)
 make topo-down
@@ -514,17 +514,17 @@ routed by the same placement document the services enforce:
 ```sh
 go build -o bin/alloca-load ./cmd/alloca-load
 
-mkdir -p test/results   # git-ignored, and absent on a fresh clone
-make topo-deployment > test/results/deployment.json
+mkdir -p test/results/manual   # git-ignored, and absent on a fresh clone
+make topo-deployment > test/fixtures/deployment.json
 
 ./bin/alloca-load \
   -placement deploy/topology/placement.json \
   -endpoint authority-1=http://$S1 \
   -endpoint authority-2=http://$S2 \
   -workload multi-org-dispersed \
-  -deployment test/results/deployment.json \
+  -deployment test/fixtures/deployment.json \
   -concurrency 32 -n 400 -slots 100 \
-  -out test/results/topo-run.json
+  -out test/results/manual/topo-run.json
 ```
 
 **`-n 400`, not a duration, and the reason matters.** This is a smoke check of the topology, and
@@ -616,15 +616,15 @@ is that step, and it is what turns a run into evidence:
 
 ```sh
 ./bin/alloca-verify \
-  -run test/results/topo-run.json \
+  -run test/results/manual/topo-run.json \
   -placement deploy/topology/placement.json \
   -authority-db "authority-1=postgres://alloca:alloca@localhost:15433/alloca?sslmode=disable" \
   -authority-db "authority-2=postgres://alloca:alloca@localhost:15434/alloca?sslmode=disable" \
-  -authority-metrics authority-1=test/results/s1-after.prom \
-  -authority-metrics authority-2=test/results/s2-after.prom \
-  -authority-metrics-baseline authority-1=test/results/s1-baseline.prom \
-  -authority-metrics-baseline authority-2=test/results/s2-baseline.prom \
-  -out test/results/topo-verdict.json
+  -authority-metrics authority-1=test/results/manual/s1-after.prom \
+  -authority-metrics authority-2=test/results/manual/s2-after.prom \
+  -authority-metrics-baseline authority-1=test/results/manual/s1-baseline.prom \
+  -authority-metrics-baseline authority-2=test/results/manual/s2-baseline.prom \
+  -out test/results/manual/topo-verdict.json
 ```
 
 The verdict names every authority it read, carries each one's local safety checks — capacity,

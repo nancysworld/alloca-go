@@ -51,7 +51,7 @@ provenance.
 ```sh
 # terminal 2
 export DATABASE_URL='postgres://alloca:alloca@localhost:15432/alloca?sslmode=disable'
-mkdir -p test/results   # git-ignored, and absent on a fresh clone
+mkdir -p test/results/manual   # git-ignored, and absent on a fresh clone
 
 # 0. build the generator — see "Why both the service and the generator are built" below
 go build -o bin/alloca-load ./cmd/alloca-load
@@ -60,14 +60,14 @@ go build -o bin/alloca-load ./cmd/alloca-load
 go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
 
 # 2. the run itself
-./bin/alloca-load -workload dispersed -concurrency 8 -n 60 -slots 20 -out test/results/run.json
+./bin/alloca-load -workload dispersed -concurrency 8 -n 60 -slots 20 -out test/results/manual/run.json
 
 # 3. capture the server's own count, before anything else touches the service
-curl -s http://localhost:9090/metrics > test/results/metrics.txt
+curl -s http://localhost:9090/metrics > test/results/manual/metrics.txt
 
 # 4. reconcile client, server and persisted totals
-go run ./cmd/alloca-verify -run test/results/run.json -metrics test/results/metrics.txt \
-  -org load-org -out test/results/verdict.json
+go run ./cmd/alloca-verify -run test/results/manual/run.json -metrics test/results/manual/metrics.txt \
+  -org load-org -out test/results/manual/verdict.json
 ```
 
 Each step exits non-zero when its result is not quotable, so `&&`-chaining them is safe:
@@ -180,20 +180,20 @@ run, and between workloads as much as between repeats of one (§7).
 # hot-slot — many identities, one slot
 go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
 ./bin/alloca-load -workload hot-slot -concurrency 8 -n 60 -slots 20 -slot slot-0 \
-  -out test/results/hot-slot.json
-curl -s http://localhost:9090/metrics > test/results/hot-slot-metrics.txt
-go run ./cmd/alloca-verify -run test/results/hot-slot.json \
-  -metrics test/results/hot-slot-metrics.txt -org load-org
+  -out test/results/manual/hot-slot.json
+curl -s http://localhost:9090/metrics > test/results/manual/hot-slot-metrics.txt
+go run ./cmd/alloca-verify -run test/results/manual/hot-slot.json \
+  -metrics test/results/manual/hot-slot-metrics.txt -org load-org
 ```
 
 ```sh
 # hot-identity — one identity, many slots
 go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
 ./bin/alloca-load -workload hot-identity -concurrency 8 -n 60 -slots 20 -user user-0 \
-  -out test/results/hot-identity.json
-curl -s http://localhost:9090/metrics > test/results/hot-identity-metrics.txt
-go run ./cmd/alloca-verify -run test/results/hot-identity.json \
-  -metrics test/results/hot-identity-metrics.txt -org load-org
+  -out test/results/manual/hot-identity.json
+curl -s http://localhost:9090/metrics > test/results/manual/hot-identity-metrics.txt
+go run ./cmd/alloca-verify -run test/results/manual/hot-identity.json \
+  -metrics test/results/manual/hot-identity-metrics.txt -org load-org
 ```
 
 `-slot` and `-user` already carry these defaults. They are written out because the contended
@@ -213,14 +213,14 @@ when a check has failed and you need to see which way.
 
 ```sh
 # every check and its numbers, including the client/server comparison
-jq -r '.checks[] | "\(.ok)\t\(.name)\t\(.detail)"' test/results/verdict.json
+jq -r '.checks[] | "\(.ok)\t\(.name)\t\(.detail)"' test/results/manual/verdict.json
 
 # client — written by step 2
-jq '.summary.completed_requests, .summary.successful_mutation_goodput' test/results/run.json
+jq '.summary.completed_requests, .summary.successful_mutation_goodput' test/results/manual/run.json
 
 # server — read the replay="false" series only; never add the replay="true" one to it
 # nothing resets these counters, so a scrape taken across two runs reads 120, not 60
-grep '^alloca_requests_total.*replay="false"' test/results/metrics.txt
+grep '^alloca_requests_total.*replay="false"' test/results/manual/metrics.txt
 ```
 
 For the `dispersed` run above, all three say 60:
@@ -264,7 +264,7 @@ operator's view of them:
 run on this workstation reaches `capacity` as soon as it records the deployment facts above.
 
 ```sh
-jq -r '.quotability | "\(.level)\t\(.blocked_because)"' test/results/run.json
+jq -r '.quotability | "\(.level)\t\(.blocked_because)"' test/results/manual/run.json
 ```
 
 **Early AG-Sept runs reach `local`, and that is the correct outcome, not a defect.** The fields
@@ -306,7 +306,7 @@ To confirm it rather than assume it, subtract your client totals from the scrape
 what is left:
 
 ```sh
-grep '^alloca_requests_total' test/results/metrics.txt
+grep '^alloca_requests_total' test/results/manual/metrics.txt
 ```
 
 A residual that is only `reserve`/`admitted_success` is an earlier load run. A residual
@@ -381,10 +381,10 @@ when response validation is off, so a reported success cannot be an unchecked `2
 
 ```sh
 ./bin/alloca-load -workload dispersed -concurrency 8 -n 20 -slots 20 \
-  -validate=false -out test/results/control.json
-curl -s http://localhost:9090/metrics > test/results/control-metrics.txt
-go run ./cmd/alloca-verify -run test/results/control.json \
-  -metrics test/results/control-metrics.txt -org load-org
+  -validate=false -out test/results/manual/control.json
+curl -s http://localhost:9090/metrics > test/results/manual/control-metrics.txt
+go run ./cmd/alloca-verify -run test/results/manual/control.json \
+  -metrics test/results/manual/control-metrics.txt -org load-org
 ```
 
 Expect exit 1 from `alloca-load`, and exit 1 again from `alloca-verify` on `control.json`
@@ -440,7 +440,7 @@ targets at a database that is not the local container.
 **A run reports goodput but the database does not move** — check `replay` in the totals:
 
 ```sh
-jq '.summary.totals' test/results/run.json     # "replay": true on everything means nothing committed
+jq '.summary.totals' test/results/manual/run.json     # "replay": true on everything means nothing committed
 ```
 
 Idempotency keys are `workload-seq-step` with no per-run nonce (`internal/loadgen/workload.go:39`),

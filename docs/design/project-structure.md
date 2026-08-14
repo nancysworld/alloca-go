@@ -23,7 +23,8 @@ which imports are allowed. AG-M1 introduced the most consequential package bound
 | `docs/` | Design docs, decision records, planning, reports, disclosure policy. |
 | `test/` | **Operator-run verification, with one deliberate exception wired into CI.** See below. |
 | `test/scripts/` | Operator and developer shell scripts invoked from the Makefile. Never application logic: anything a Go test or a Go binary should own belongs in `internal/` or `cmd/`. |
-| `test/results/` | Local load-harness output (git-ignored). Scratch only — a run worth keeping is promoted into `docs/measurements/` deliberately. |
+| `test/fixtures/` | Inputs a run consumes. `deployment.json` is the observed deployment record and is **git-ignored**: it pins live image IDs, so a committed copy would go stale and let a run certify against an image that is not the one under test. |
+| `test/results/` | Local load-harness output (git-ignored). Scratch only — a run worth keeping is promoted into `docs/measurements/` deliberately. Runs nest one level under a group (`pr4a/`, `pr3c/`, `sweep/`, `control-generator/`, `manual/`) so the directory stays navigable; each runner's `RESULTS_GROUP` picks its own. |
 | `deploy/` | Deployment artifacts — Compose files, configuration, and the placement document. Never Go source. `deploy/topology/` is the PR3b two-authority topology; `deploy/observability/` is the PR2 diagnostic stack. |
 | `.github/` | CI workflows. |
 | `bin/` | Locally provisioned dev tools and built binaries (git-ignored); never source. |

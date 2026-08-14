@@ -19,8 +19,12 @@
 # move to separate compute later, and a generator holding root on the service host is the
 # opposite of that. So the observation is taken here and travels as a file:
 #
-#   ./test/scripts/record-deployment.sh > test/results/deployment.json
-#   alloca-load -deployment test/results/deployment.json ...
+#   ./test/scripts/record-deployment.sh > test/fixtures/deployment.json
+#   alloca-load -deployment test/fixtures/deployment.json ...
+#
+# It lands in test/fixtures/ because a run consumes it, but it is git-ignored: the record is
+# *observed*, so a committed copy would go stale on the next rebuild and a run could certify
+# against an image that is not the one under test. See test/fixtures/README.md.
 #
 # The image ID, not a registry digest: a locally built image has an immutable content ID
 # straight away, whereas a registry digest exists only after a push. That is what lets PR3b

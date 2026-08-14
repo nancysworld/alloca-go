@@ -23,7 +23,11 @@ set -euo pipefail
 
 : "${DATABASE_URL:?set DATABASE_URL}"
 
-OUT="${OUT:-test/results/sweep-$(date -u +%Y%m%dT%H%M%SZ)}"
+# Grouped like the other runners (see itc-run.sh). This one defaults to its own name rather than
+# to a milestone: a sweep is a general instrument, and PR2 was simply its first caller. Set
+# RESULTS_GROUP when a sweep belongs to a specific milestone's evidence.
+RESULTS_GROUP="${RESULTS_GROUP:-sweep}"
+OUT="${OUT:-test/results/$RESULTS_GROUP/$(date -u +%Y%m%dT%H%M%SZ)}"
 WORKLOADS="${WORKLOADS:-dispersed hot-slot hot-identity}"
 CONCURRENCIES="${CONCURRENCIES:-4 8 16 32}"
 POOLS="${POOLS:-}"                       # empty = whatever DATABASE_URL already says

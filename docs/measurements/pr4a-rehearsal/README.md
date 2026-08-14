@@ -109,9 +109,24 @@ The 60 s cell reproduces PR2's open throughput anomaly on two signature elements
 falling to 0.45 of the healthy rate, and service process CPU roughly halving — and contradicts a
 third, since acquire-wait nearly doubled where PR2's was unchanged.
 
-The pool series is the sharpest part: connections in use falls to **7 of 16 while acquire-wait
-rises**, so connections exist and are not being handed out, which places the stall between the
-pool and the database rather than in the service's own work.
+The pool series is the sharpest part, and it must be read carefully: **acquired** connections fall
+to **7 while acquire-wait rises**, against a configured maximum of 16.
+
+> **`MaxConns=16` is a ceiling, not a population.** An earlier version of this README read
+> "7 of 16" as nine connections existing and being withheld. That does not follow: the pool may
+> simply hold seven. Distinguishing "connections exist but are unavailable" from "the population
+> has fallen, or is constructing/reconnecting" needs the pool's total, idle and constructing
+> state, not its maximum.
+>
+> What the cell does establish is narrower and still sharp: **workers are waiting to acquire while
+> fewer connections are acquired**, which makes connection acquisition and availability a concrete
+> part of the degraded-regime diagnosis rather than a generic "service saturation" story. It does
+> not localise the stall to the pool/database boundary on its own.
+>
+> `alloca_db_pool_total_connections` and `alloca_db_pool_idle_connections` are scraped by the
+> service and **are present in this cell's `tsdb-snapshot/`** — they were simply never exported to
+> `panels/`. The distinction above is therefore answerable from this retained cell, without new
+> instrumentation and without re-running it. See `ag-sept-pr4.md` §3.13.
 
 > **Do not read the generator's CPU drop as evidence.** The table above shows generator CPU
 > falling 0.1146 → 0.0588 per core, and an earlier version of this record counted that as a third

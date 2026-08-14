@@ -31,7 +31,15 @@ LAYOUT = [
     ("Throughput and goodput", ["throughput", "goodput", "replay_rate"]),
     ("Latency", ["latency_p50", "latency_p95", "latency_p99"]),
     ("Outcomes", ["outcomes"]),
-    ("Database pool pressure", ["pool_in_use", "pool_max", "pool_acquire_wait"]),
+    # Three pool graphs, not one, because the single "pool pressure" graph could not answer the
+    # question PR4a §3.13.1 asked of it. Population, cost-per-acquire and blocked-waiting are
+    # different quantities in different units, and plotting in-use against a *maximum* invited
+    # reading a ceiling as a population. `pool_new_conns` shares the population axis rather than
+    # taking a fourth graph: it is connection churn, it is small, and the dashboard's 8-graph cap
+    # is a scope bound worth spending deliberately.
+    ("Database pool population", ["pool_in_use", "pool_idle", "pool_total", "pool_max", "pool_new_conns"]),
+    ("Database pool acquire cost", ["pool_acquire_wait", "pool_empty_acquire_wait"]),
+    ("Database pool mean acquire duration", ["pool_acquire_mean"]),
     ("Process CPU and Go runtime", ["process_cpu", "go_goroutines", "go_gc_pause"]),
     ("Process resident memory", ["process_memory"]),
 ]

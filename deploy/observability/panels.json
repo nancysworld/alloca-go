@@ -76,11 +76,46 @@
       "expr": "alloca_db_pool_max_connections"
     },
     {
+      "key": "pool_total",
+      "title": "DB pool connections held",
+      "unit": "conns",
+      "_note": "The pool's actual population, which is NOT its maximum. Reading a fall in `pool_in_use` against `pool_max` as connections being withheld requires this series to say the connections existed: max is a ceiling. AG-Sept PR4a §3.13.1 is the worked example.",
+      "expr": "alloca_db_pool_total_connections"
+    },
+    {
+      "key": "pool_idle",
+      "title": "DB pool connections idle",
+      "unit": "conns",
+      "_note": "Idle sitting at zero with in-use at the ceiling is a saturated pool. Idle staying high while acquire cost rises is not pool exhaustion, and points at the acquire path instead.",
+      "expr": "alloca_db_pool_idle_connections"
+    },
+    {
       "key": "pool_acquire_wait",
-      "title": "DB pool acquire wait",
+      "title": "DB pool acquire duration",
       "unit": "s/s",
-      "_note": "Seconds of wait accumulated per second. It crosses 1 when requests spend more time queueing for a connection than wall-clock elapses, which is the pool becoming the frontier rather than the database.",
+      "_note": "Seconds of *total Acquire() duration* accumulated per second — NOT queueing time, despite the metric's name. pgxpool times the whole call, including establishing a new connection, so this rises when acquiring is slow for any reason. It does not license 'the pool is the frontier': use pool_empty_acquire_wait for contention, and pool_acquire_mean for per-acquire cost.",
       "expr": "rate(alloca_db_pool_acquire_wait_seconds_total[$RANGE])"
+    },
+    {
+      "key": "pool_empty_acquire_wait",
+      "title": "DB pool blocked-waiting time",
+      "unit": "s/s",
+      "_note": "Time blocked because no idle connection was available, and nothing else. This is the series that means what pool_acquire_wait's name suggests. Flat here while pool_acquire_wait climbs means no acquire ever waited for a connection.",
+      "expr": "rate(alloca_db_pool_empty_acquire_wait_seconds_total[$RANGE])"
+    },
+    {
+      "key": "pool_acquire_mean",
+      "title": "DB pool mean acquire duration",
+      "unit": "s",
+      "_note": "Per-acquire cost, rate(duration)/rate(count). The aggregate rate confounds cost with acquire volume: a cell doing half the work at twice the cost can show an unchanged total. §3.13.1's 16x rise is this series, not the aggregate.",
+      "expr": "rate(alloca_db_pool_acquire_wait_seconds_total[$RANGE]) / rate(alloca_db_pool_acquires_total[$RANGE])"
+    },
+    {
+      "key": "pool_new_conns",
+      "title": "DB pool connections established",
+      "unit": "conns/s",
+      "_note": "Connection setup during a measured window. Non-zero here means acquires are paying establishment cost, which is one of the things pool_acquire_wait silently includes.",
+      "expr": "rate(alloca_db_pool_new_connections_total[$RANGE])"
     },
     {
       "key": "process_cpu",

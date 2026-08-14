@@ -984,6 +984,93 @@ This is not a new Iteration C Problem. It is evidence from implementation exposi
 answering the existing Problem reliably, which is exactly when the schedule is expected to follow
 the evidence rather than preserve a stale PR boundary.
 
+### 3.13.1 The retained cells already answer the pool question, and narrow it sharply
+
+§3.13 asks for "fuller pgxpool population/state evidence" as new instrumentation. **Two thirds of
+it was already retained.** `alloca_db_pool_total_connections` and
+`alloca_db_pool_idle_connections` are scraped by the service's pool collector and sit in both
+cells' TSDB snapshots; they were simply never exported to `panels/`. This is the snapshot doing
+exactly what it is kept for — recovering a series nobody thought to export
+(`docs/measurements/README.md`, *What a sweep cell contains*).
+
+Queried from the retained snapshot, bounded by each cell's own `panels/index.json` window,
+aggregated across all four units:
+
+| | 30 s cell (healthy) | 60 s cell (degraded) |
+|---|---|---|
+| `max` (ceiling) | 16, flat | 16, flat |
+| `total` (population) | **16, flat** | **16, flat** |
+| `idle` | 16 → 4 → **0** | 16 → 3 → **9** |
+| `acquired` | 0 → 12 → **16** | 0 → 13 → **7** |
+| acquires/s | 997 → **3,209** | 641 → 2,194 → **928** |
+| **mean acquire duration** | 0.53 → **0.47 ms** | 0.56 → **7.67 ms** |
+
+**The population never fell.** `total` is pinned at 16 for every sample of both windows, and
+`total == idle + acquired` holds on 13/13 and 7/7 samples. So the alternative §3.13 correctly
+insisted on — that the pool's population had fallen, or was constructing/reconnecting — **is
+refuted for this cell**. It does not need a repeat run to settle.
+
+**The degraded pool was not saturated.** The healthy cell pins `idle` at 0 with `acquired` at the
+full 16, which is what a service genuinely using its pool to the ceiling looks like. The degraded
+cell holds **6–9 connections idle** while `acquired` sits at 7–10 of 16. Whatever is limiting it,
+it is not pool capacity.
+
+**Mean acquire duration rose 16× while connections sat idle and available** — 0.47 ms to 7.67 ms,
+climbing monotonically. That is the sharp, new observation, and it is a *per-acquire mean*
+(`rate(duration)/rate(count)`), not the aggregate rate the earlier draft quoted.
+
+**What it does not establish, and why the number cannot say.** `AcquireDuration` is the duration
+of the whole `Acquire()` call, not blocked-waiting time: `puddle/pool.go` starts the clock on
+entry and adds the elapsed time on *every* successful path, including the one that constructs a
+brand-new connection. So 7.67 ms is consistent with at least three different mechanisms, and the
+retained series cannot separate them:
+
+1. **connection churn** — idle connections destroyed by lifetime/idle limits and re-established,
+   so the acquire pays a full connection setup;
+2. **contention inside the pool's own mutex/semaphore**;
+3. **wall-clock inflation** from host-level descheduling, which would inflate every measured
+   duration without any pool pathology at all.
+
+Candidate 3 is the one the host sensor exists to test, but it is already weakened from inside
+this data: request p50 rose only 1.17× (4.36 → 5.08 ms) across the same window in which acquire
+rose 16×. Uniform wall-clock inflation would move both alike. It does not rule out a *selective*
+host effect, and it is not by itself a refutation.
+
+**The instrumentation this actually justifies is now specific, and it is small.** `pgxpool.Stat`
+already exposes everything needed; the collector exports six of its thirteen methods. Adding
+these separates all three candidates:
+
+| Missing metric | What it decides |
+|---|---|
+| `EmptyAcquireWaitTime()` | **The decisive one.** Blocked-waiting time *only*, as opposed to total acquire duration. If this stays near zero while `AcquireDuration` climbs, no acquire ever waited for a connection and candidates 1–2 collapse to "the call itself was slow" |
+| `EmptyAcquireCount()` | how many acquires found no idle connection at all |
+| `NewConnsCount()` | connection establishment during the window — candidate 1 directly |
+| `MaxLifetimeDestroyCount()`, `MaxIdleDestroyCount()` | whether the pool was destroying connections underneath the flat `total` |
+| `ConstructingConns()` | construction in flight at sample time |
+| `CanceledAcquireCount()` | acquires abandoned under context cancellation |
+
+This is instrumentation derived from a specific unanswered question, which is the standard §3.13
+sets for `postgres_exporter` and which this meets and that does not — the fault has **not** been
+localised to the PostgreSQL boundary. It has been localised to the acquire path, and the acquire
+path is inside the service.
+
+**Shipped.** All seven are exported by the pool collector and the five diagnostic series are
+retained per cell (`pool_total`, `pool_idle`, `pool_empty_acquire_wait`, `pool_acquire_mean`,
+`pool_new_conns`). `TestPoolCollectorDescribesEveryMetricItCollects` and its `Collect` counterpart
+pin the exported set by name, because a missing series here is invisible: the scrape still
+succeeds and the populated-series gate still passes for the metrics that *are* present. Both were
+proven discriminating by removing a metric from each half.
+
+**One naming trap is kept rather than fixed.** `alloca_db_pool_acquire_wait_seconds_total` does
+not measure waiting, and its name says it does. It is left alone because the retained cells in
+`docs/measurements/` and the committed panels query it, and renaming would break comparison
+against evidence already taken — the same reason §3.12's cells keep their wrong topology label.
+Instead the help text now states what it measures and points at
+`empty_acquire_wait_seconds_total`, the panel note carries the same warning, and
+`TestAcquireDurationHelpDisclaimsBeingWaitTime` fails if either reverts. A name that has already
+misled one reading will mislead another; the disclaimer travels with the metric rather than
+living only here.
+
 ## 4. Open items
 
 - **Rung duration** stays open until §2.4's preflight derives it.

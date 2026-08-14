@@ -727,8 +727,8 @@ is still a legitimate artifact of the experiment that produced it.
 ### 3.11 The rehearsal's first valid operating point, and what it is not
 
 With `SLOTS=3200` the same G4 cell ran with useful demand throughout
-(`test/results/itc-g4-20260813T205034Z`, service and generator both `7e46f0f`, both unmodified,
-certified `capacity`):
+([`docs/measurements/pr4a-rehearsal/points/c16/`](../../measurements/pr4a-rehearsal/points/c16/),
+service and generator both `7e46f0f`, both unmodified, certified `capacity`):
 
 | | |
 |---|---|
@@ -774,7 +774,9 @@ What is not in doubt is the shape: a single reported rate does not describe this
 
 ### 3.11.1 A second rung, and why the pair cannot yet be compared
 
-`c=32`, same fixture and reseed (`test/results/itc-g4-20260813T211417Z`, certified `capacity`):
+`c=32`, same fixture and reseed
+([`docs/measurements/pr4a-rehearsal/points/c32/`](../../measurements/pr4a-rehearsal/points/c32/),
+certified `capacity`):
 
 | | `c=16` | `c=32` |
 |---|---|---|
@@ -828,10 +830,10 @@ Three cells at `c=16`, `SLOTS=3200`, identical but for window length, each resee
 state. The intent was to test whether reported Goodput depends on how long a rung runs (§3.11).
 
 All three are retained at
-[`docs/measurements/pr4a-rehearsal-windows/`](../../measurements/pr4a-rehearsal-windows/) —
-[`window-30s/`](../../measurements/pr4a-rehearsal-windows/window-30s/),
-[`window-60s/`](../../measurements/pr4a-rehearsal-windows/window-60s/) and
-[`window-120s-exhausted/`](../../measurements/pr4a-rehearsal-windows/window-120s-exhausted/) —
+[`docs/measurements/pr4a-rehearsal/windows/`](../../measurements/pr4a-rehearsal/windows/) —
+[`30s/`](../../measurements/pr4a-rehearsal/windows/30s/),
+[`60s/`](../../measurements/pr4a-rehearsal/windows/60s/) and
+[`120s-exhausted/`](../../measurements/pr4a-rehearsal/windows/120s-exhausted/) —
 with their panel exports and TSDB snapshots. Every figure below is re-derivable from those
 files; that directory's README carries the evidence class and the reading caveats.
 
@@ -914,9 +916,10 @@ repeating. And the 120 s point needs a fixture that cannot bound it.
   per-cell panel CSVs and a TSDB snapshot alongside the bracketing scrapes, so a cell now carries
   its shape and not just its endpoints. §3.12 is the first analysis that depends on it, and its
   three cells are retained at
-  [`docs/measurements/pr4a-rehearsal-windows/`](../../measurements/pr4a-rehearsal-windows/). The
-  two §3.11 cells predate the change and have bracketing scrapes only — which is why their decay
-  is described from Grafana and is **not** re-derivable from a retained artifact.
+  [`docs/measurements/pr4a-rehearsal/windows/`](../../measurements/pr4a-rehearsal/windows/). The
+  two §3.11 cells predate the change and are retained at
+  [`points/`](../../measurements/pr4a-rehearsal/points/) with bracketing scrapes only — which is
+  why their decay is described from Grafana and is **not** re-derivable from a retained artifact.
 - **The saturation ladder** has not been run, and cannot be until the two items above are settled.
   Concurrency 16 sits exactly at `aggregate_pool_size`, so the ladder must deliberately cross it;
   `c=32` (§3.11.1) is the first rung past it and is recorded as an observation, not a rung.

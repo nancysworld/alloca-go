@@ -31,7 +31,7 @@
     {
       "id": 2,
       "type": "timeseries",
-      "title": "Throughput and goodput",
+      "title": "Throughput and goodput (req/s)",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -44,7 +44,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
+          "unit": "short",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -96,7 +96,7 @@
     {
       "id": 3,
       "type": "timeseries",
-      "title": "Latency",
+      "title": "Latency (s)",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -161,7 +161,7 @@
     {
       "id": 4,
       "type": "timeseries",
-      "title": "Outcomes",
+      "title": "Outcomes (req/s)",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -174,7 +174,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
+          "unit": "short",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -219,7 +219,7 @@
     {
       "id": 6,
       "type": "timeseries",
-      "title": "Pool occupancy",
+      "title": "Pool occupancy (conns)",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -232,7 +232,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "suffix: conns",
+          "unit": "short",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -265,28 +265,8 @@
             "type": "prometheus",
             "uid": "alloca-prometheus"
           },
-          "expr": "alloca_db_pool_idle_connections",
-          "legendFormat": "{{authority}} idle",
-          "range": true
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "alloca-prometheus"
-          },
           "expr": "alloca_db_pool_total_connections",
           "legendFormat": "{{authority}} total",
-          "range": true
-        },
-        {
-          "refId": "D",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "alloca-prometheus"
-          },
-          "expr": "alloca_db_pool_constructing_connections",
-          "legendFormat": "{{authority}} constructing",
           "range": true
         }
       ]
@@ -294,7 +274,7 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Pool lifecycle",
+      "title": "Pool lifecycle (conns/s)",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -307,7 +287,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "suffix: conns/s",
+          "unit": "short",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -349,7 +329,7 @@
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Pool acquire duration",
+      "title": "Pool acquire concurrency (s/s)",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -362,7 +342,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "suffix: s/s",
+          "unit": "short",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -404,7 +384,7 @@
     {
       "id": 9,
       "type": "timeseries",
-      "title": "Pool mean acquire duration",
+      "title": "Pool mean acquire duration (s)",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -475,7 +455,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "suffix: cores",
+          "unit": "short",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -552,7 +532,7 @@
     {
       "id": 13,
       "type": "timeseries",
-      "title": "Service GC pause p75",
+      "title": "Service GC pause p75 (s)",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -597,7 +577,7 @@
     {
       "id": 14,
       "type": "timeseries",
-      "title": "Service resident memory",
+      "title": "Service resident memory (bytes)",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -668,7 +648,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "suffix: cores",
+          "unit": "short",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -713,7 +693,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "suffix: cores",
+          "unit": "short",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -745,7 +725,7 @@
     {
       "id": 18,
       "type": "timeseries",
-      "title": "Host run queue (load average)",
+      "title": "Host run queue (tasks)",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -758,7 +738,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "suffix: tasks",
+          "unit": "short",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -790,7 +770,7 @@
     {
       "id": 19,
       "type": "timeseries",
-      "title": "Host memory available",
+      "title": "Host memory available (bytes)",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"

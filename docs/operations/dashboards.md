@@ -62,14 +62,24 @@ The pool is the object of study in Iteration C, not a background indicator.
 
 | Panel | Answers |
 |---|---|
-| **Pool occupancy** — acquired, idle, total, constructing | is the pool populated, and is it saturated? |
-| **Pool lifecycle** — new connections, destroyed | is it churning underneath a steady population? |
-| **Pool acquire duration** — acquire, empty-acquire | what is an acquire paying, and for what? |
-| **Pool mean acquire duration** | per-acquire cost, which the aggregate rate confounds with volume |
+| **Pool occupancy (conns)** — acquired against total | is the pool populated, and is it saturated? |
+| **Pool lifecycle (conns/s)** — new connections, destroyed | is it churning underneath a steady population? |
+| **Pool acquire concurrency (s/s)** — acquire, empty-acquire | how many acquires are in flight at once, and why? |
+| **Pool mean acquire duration (s)** | per-acquire cost, which the concurrency figure confounds with volume |
 
-A **saturated** pool reads: idle → 0, acquired at the ceiling, acquire cost paid waiting for
-releases. A pool that is *not* saturated while acquire cost climbs is the open anomaly
-(`ag-sept-pr4.md` §3.13.1).
+A **saturated** pool reads: acquired meeting total, acquire cost paid waiting for releases. A pool
+that is *not* saturated while acquire cost climbs is the open anomaly (`ag-sept-pr4.md` §3.13.1).
+
+**`s/s` is a concurrency, not a duration.** A counter of accumulated seconds, differentiated by
+wall-clock seconds, is the average number of operations in flight — the standard reading of a
+duration-counter rate. So **1 s/s means one acquire was in progress at all times, on average**, for
+that authority; 0.4 means one in progress 40% of the time; 2.0 means two overlapping. It exceeds 1
+whenever concurrent workers wait at once, which is why the axis is not a percentage.
+
+**Idle and constructing are exported but not plotted.** `idle` is exactly `total - acquired`, so on
+a four-unit rung it added four more oscillating lines and no information; `constructing` asks the
+same question as `new connections` and was flat. Both remain in every cell's CSVs — `idle` is the
+series §3.13.1 actually reads — under `display: false`.
 
 ### Service process (alloca-go units)
 
@@ -134,6 +144,11 @@ substitutes a literal window, had the data all along.
 
 **An axis carrying two units is labelled for neither**, and the larger series sets the scale.
 
+**A graph with sixteen lines answers nothing.** Four metrics across four authorities is sixteen
+series, and occupancy plotted all of them — including one series that was arithmetically implied by
+two others. Per-authority detail is what `{{authority}}` legends exist for; it is not a reason to
+plot every metric per authority on one graph.
+
 ## Adding a panel
 
 Edit [`panels.json`](../../deploy/observability/panels.json), then:
@@ -147,8 +162,11 @@ The gates will refuse, in `gen-dashboard.py` or in `panels_test.go`:
 
 - a panel defined but placed on no graph, and a graph naming a panel that does not exist — a new
   panel goes into one of the four `SECTIONS` in `gen-dashboard.py`, which is what gives it a
-  heading on screen;
-- **two units on one axis**, and a unit with no Grafana mapping;
+  heading on screen. Set `"display": false` to export a series without plotting it; the exporter
+  ignores the flag on purpose, and a test keeps it ignoring it;
+- **two units on one axis**, and a unit with no Grafana mapping. The graph title states the unit
+  and the axis stays plain numbers — except bytes and seconds, where Grafana's scaling earns its
+  place (`22.9 MiB`, `100 µs`);
 - a query that preserves per-authority cardinality without `{{authority}}` **first** in its legend,
   and the `per_authority` flag contradicting a query that aggregates authorities away;
 - a `rate()` panel on a job scraped more slowly than the datasource's interval without a declared

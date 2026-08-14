@@ -7,7 +7,7 @@
     "",
     "RANGE TOKEN. Range selectors are written as $RANGE rather than as Grafana's",
     "$__rate_interval, because that macro is a Grafana construct the Prometheus HTTP API cannot",
-    "parse — an exporter would have to rewrite the expression, and a rewritten expression is no",
+    "parse \u2014 an exporter would have to rewrite the expression, and a rewritten expression is no",
     "longer the same query source. $RANGE is repository-owned and each consumer substitutes it:",
     "  Grafana   -> $__rate_interval   (adaptive; Grafana knows the panel's resolution)",
     "  exporter  -> a literal window, recorded per cell alongside the CSV",
@@ -16,7 +16,7 @@
     "",
     "PER-AUTHORITY CARDINALITY. `per_authority` declares whether a query preserves one series",
     "per shard-group authority. It is metadata rather than something inferred from the PromQL,",
-    "because inferring it needs a parser that is wrong at the edges — and the property is a",
+    "because inferring it needs a parser that is wrong at the edges \u2014 and the property is a",
     "deliberate choice about what the panel is for, which the author knows and a parser guesses.",
     "",
     "  per_authority: true   -> the legend MUST expose {{authority}}; the generator renders it as",
@@ -29,7 +29,7 @@
     "TestPerAuthorityPanelsExposeAuthority enforces the first, and",
     "TestPerAuthorityMetadataMatchesTheQuery keeps the flag honest against the expression.",
     "",
-    "Scope is measurement-contract §6's required indicators and nothing else."
+    "Scope is measurement-contract \u00a76's required indicators and nothing else."
   ],
   "panels": [
     {
@@ -42,7 +42,7 @@
       "key": "goodput",
       "title": "Successful mutation goodput",
       "unit": "req/s",
-      "_note": "Mutations only, never list_slots (observability §3.1), and replay=false only: a replay returns a recorded outcome without performing a mutation (measurement-contract §4.2), so counting it would overstate useful work and count one booking twice. Same definition as Summary.Goodput and as the FreshAdmittedFor count reconciliation compares against persisted rows.",
+      "_note": "Mutations only, never list_slots (observability \u00a73.1), and replay=false only: a replay returns a recorded outcome without performing a mutation (measurement-contract \u00a74.2), so counting it would overstate useful work and count one booking twice. Same definition as Summary.Goodput and as the FreshAdmittedFor count reconciliation compares against persisted rows.",
       "expr": "sum(rate(alloca_requests_total{operation=~\"reserve|confirm|cancel\",outcome=\"admitted_success\",replay=\"false\"}[$RANGE]))"
     },
     {
@@ -56,7 +56,7 @@
       "key": "latency_p50",
       "title": "Request latency p50",
       "unit": "s",
-      "_note": "Required by measurement-contract §6, and it is an SLO gate (measurement-contract §7: p50 <= 50ms). SLO-safe capacity is the highest goodput satisfying *all* latency gates, so a panel set without p50 cannot evaluate one of the three. Deliberately aggregate: the gate is on the deployment, not on one unit.",
+      "_note": "Required by measurement-contract \u00a76, and it is an SLO gate (measurement-contract \u00a77: p50 <= 50ms). SLO-safe capacity is the highest goodput satisfying *all* latency gates, so a panel set without p50 cannot evaluate one of the three. Deliberately aggregate: the gate is on the deployment, not on one unit.",
       "expr": "histogram_quantile(0.50, sum by (le) (rate(alloca_request_duration_seconds_bucket[$RANGE])))"
     },
     {
@@ -76,7 +76,7 @@
       "title": "Outcomes",
       "unit": "req/s",
       "legend": "{{outcome}}",
-      "_note": "Business refusals are a valid domain answer and are reported separately here, never folded into a failure rate (measurement-contract §3). Aggregates authorities on purpose — the outcome mix is a property of the deployment — while fanning out over `outcome`, which it names itself.",
+      "_note": "Business refusals are a valid domain answer and are reported separately here, never folded into a failure rate (measurement-contract \u00a73). Aggregates authorities on purpose \u2014 the outcome mix is a property of the deployment \u2014 while fanning out over `outcome`, which it names itself.",
       "expr": "sum by (outcome) (rate(alloca_requests_total[$RANGE]))"
     },
     {
@@ -93,8 +93,9 @@
       "unit": "conns",
       "per_authority": true,
       "legend": "idle",
-      "_note": "Idle sitting at zero with in-use at the ceiling is a saturated pool. Idle staying high while acquire cost rises is not pool exhaustion, and points at the acquire path instead.",
-      "expr": "alloca_db_pool_idle_connections"
+      "_note": "Exported, not plotted. It is exactly `total - acquired`, so on a four-unit rung it added four more oscillating lines to the occupancy graph and no information \u2014 but the CSV still carries it, because it is the series \u00a73.13.1 reads: idle staying high while acquire cost rises is not pool exhaustion, and points at the acquire path instead.",
+      "expr": "alloca_db_pool_idle_connections",
+      "display": false
     },
     {
       "key": "pool_total",
@@ -102,7 +103,7 @@
       "unit": "conns",
       "per_authority": true,
       "legend": "total",
-      "_note": "The pool's actual population. `alloca_db_pool_max_connections` is deliberately NOT plotted beside it: it is a per-unit constant, so on a four-unit rung it added four flat redundant lines, and plotting occupancy against a *ceiling* is what invited reading a ceiling as a population (AG-Sept PR4a §3.13.1). The configured maximum is in each run's manifest as `aggregate_pool_size`, and the series is still in the TSDB snapshot.",
+      "_note": "The pool's actual population. `alloca_db_pool_max_connections` is deliberately NOT plotted beside it: it is a per-unit constant, so on a four-unit rung it added four flat redundant lines, and plotting occupancy against a *ceiling* is what invited reading a ceiling as a population (AG-Sept PR4a \u00a73.13.1). The configured maximum is in each run's manifest as `aggregate_pool_size`, and the series is still in the TSDB snapshot.",
       "expr": "alloca_db_pool_total_connections"
     },
     {
@@ -111,8 +112,9 @@
       "unit": "conns",
       "per_authority": true,
       "legend": "constructing",
-      "_note": "Construction in flight at sample time. Non-zero here while occupancy looks healthy means acquires are landing on the construction path, which is where PostgreSQL enters the acquire path (pgxpool's constructor calls pgx.ConnectConfig).",
-      "expr": "alloca_db_pool_constructing_connections"
+      "_note": "Exported, not plotted. Construction in flight at sample time; `pool_new_conns` covers the same question as a rate and is the one the \u00a73.13.1 discriminator names. Kept in the CSV because it is where PostgreSQL enters the acquire path \u2014 pgxpool's constructor calls pgx.ConnectConfig.",
+      "expr": "alloca_db_pool_constructing_connections",
+      "display": false
     },
     {
       "key": "pool_new_conns",
@@ -120,7 +122,7 @@
       "unit": "conns/s",
       "per_authority": true,
       "legend": "new connections",
-      "_note": "Connection constructions started per second. Construction calls pgx.ConnectConfig, so this is real establishment against PostgreSQL — network, TLS and authentication. It is the series that separates the two things pool_empty_acquire_wait conflates, and the reason 'the symptom is in the acquire path' does not exclude PostgreSQL: construction is where PostgreSQL enters that path.",
+      "_note": "Connection constructions started per second. Construction calls pgx.ConnectConfig, so this is real establishment against PostgreSQL \u2014 network, TLS and authentication. It is the series that separates the two things pool_empty_acquire_wait conflates, and the reason 'the symptom is in the acquire path' does not exclude PostgreSQL: construction is where PostgreSQL enters that path.",
       "expr": "rate(alloca_db_pool_new_connections_total[$RANGE])"
     },
     {
@@ -129,7 +131,7 @@
       "unit": "conns/s",
       "per_authority": true,
       "legend": "destroyed",
-      "_note": "Lifetime and idle destroys summed, because for churn the two answer the same question and four units already give four lines each. A flat `pool_total` with non-zero destroys here is a pool replacing connections underneath a steady population — the split is in the TSDB snapshot when it matters.",
+      "_note": "Lifetime and idle destroys summed, because for churn the two answer the same question and four units already give four lines each. A flat `pool_total` with non-zero destroys here is a pool replacing connections underneath a steady population \u2014 the split is in the TSDB snapshot when it matters.",
       "expr": "rate(alloca_db_pool_max_lifetime_destroys_total[$RANGE]) + rate(alloca_db_pool_max_idle_destroys_total[$RANGE])"
     },
     {
@@ -138,7 +140,7 @@
       "unit": "s/s",
       "per_authority": true,
       "legend": "acquire duration",
-      "_note": "Seconds of *total Acquire() duration* accumulated per second — NOT queueing time, despite the metric's name. pgxpool times the whole call, including constructing a new connection, so this rises when acquiring is slow for any reason. It does not license 'the pool is the frontier' on its own; read it with pool_empty_acquire_wait and pool_new_conns. It also confounds cost with volume, which is what pool_acquire_mean separates.",
+      "_note": "Seconds of *total Acquire() duration* accumulated per second \u2014 NOT queueing time, despite the metric's name. pgxpool times the whole call, including constructing a new connection, so this rises when acquiring is slow for any reason. It does not license 'the pool is the frontier' on its own; read it with pool_empty_acquire_wait and pool_new_conns. It also confounds cost with volume, which is what pool_acquire_mean separates.",
       "expr": "rate(alloca_db_pool_acquire_wait_seconds_total[$RANGE])"
     },
     {
@@ -147,7 +149,7 @@
       "unit": "s/s",
       "per_authority": true,
       "legend": "empty-acquire duration",
-      "_note": "Time on acquires that found no idle connection. NOT pure contention: puddle accumulates both waiting for a connection to be released AND constructing a new one here, and construction time is included in full. Separate them with pool_new_conns — rising together implicates construction/churn; empty-wait rising while new-conns stays flat means acquires waited on existing connections. pool_acquire_wait rising while this stays flat puts the delay elsewhere in the immediate acquire path.",
+      "_note": "Time on acquires that found no idle connection. NOT pure contention: puddle accumulates both waiting for a connection to be released AND constructing a new one here, and construction time is included in full. Separate them with pool_new_conns \u2014 rising together implicates construction/churn; empty-wait rising while new-conns stays flat means acquires waited on existing connections. pool_acquire_wait rising while this stays flat puts the delay elsewhere in the immediate acquire path.",
       "expr": "rate(alloca_db_pool_empty_acquire_wait_seconds_total[$RANGE])"
     },
     {
@@ -156,7 +158,7 @@
       "unit": "s",
       "per_authority": true,
       "legend": "mean acquire duration",
-      "_note": "Per-acquire cost, rate(duration)/rate(count). The aggregate rate confounds cost with acquire volume: a cell doing half the work at twice the cost can show an unchanged total. §3.13.1's 16x rise between a healthy and a degraded cell is this series, not the aggregate, which is why it earns its own graph despite the scope cap.",
+      "_note": "Per-acquire cost, rate(duration)/rate(count). The aggregate rate confounds cost with acquire volume: a cell doing half the work at twice the cost can show an unchanged total. \u00a73.13.1's 16x rise between a healthy and a degraded cell is this series, not the aggregate, which is why it earns its own graph despite the scope cap.",
       "expr": "rate(alloca_db_pool_acquire_wait_seconds_total[$RANGE]) / rate(alloca_db_pool_acquires_total[$RANGE])"
     },
     {
@@ -164,7 +166,7 @@
       "title": "Host CPU busy",
       "unit": "cores",
       "range": "30s",
-      "_note": "VAL-NEG-7's primary host indicator (ag-sept-pr4.md §2.1). Non-idle CPU across the whole machine, which is what distinguishes 'the service stopped being given CPU' from 'the service stopped asking for it' — the two the §3.12 degraded cell could not tell apart. JOB-SCOPED to `node` for the same reason the process panels are scoped to `alloca-go`. RANGE 30s, not the default: the host job scrapes at 5s, and Grafana's $__rate_interval is computed from the datasource's single timeInterval (1s, matching the service job), so the macro resolves shorter than two host scrapes and rate() returns nothing — the panel reads 'No data' while the series is healthy. 30s is six scrapes.",
+      "_note": "VAL-NEG-7's primary host indicator (ag-sept-pr4.md \u00a72.1). Non-idle CPU across the whole machine, which is what distinguishes 'the service stopped being given CPU' from 'the service stopped asking for it' \u2014 the two the \u00a73.12 degraded cell could not tell apart. JOB-SCOPED to `node` for the same reason the process panels are scoped to `alloca-go`. RANGE 30s, not the default: the host job scrapes at 5s, and Grafana's $__rate_interval is computed from the datasource's single timeInterval (1s, matching the service job), so the macro resolves shorter than two host scrapes and rate() returns nothing \u2014 the panel reads 'No data' while the series is healthy. 30s is six scrapes.",
       "expr": "sum(rate(node_cpu_seconds_total{job=\"node\",mode!=\"idle\"}[$RANGE]))"
     },
     {
@@ -172,7 +174,7 @@
       "title": "Host CPU steal and iowait",
       "unit": "cores",
       "range": "30s",
-      "_note": "The two modes that mean the host was not running because something outside it decided so. `steal` is the hypervisor taking the CPU — the WSL2 candidate §3.12 named and could not test; `iowait` is blocking on storage, the Docker Desktop storage-path candidate. Separated from host_cpu_busy because both are small next to total busy and would be invisible on a shared axis. RANGE 30s for the same reason as host_cpu_busy: the host job's 5s cadence needs a window the datasource-wide macro does not give it.",
+      "_note": "The two modes that mean the host was not running because something outside it decided so. `steal` is the hypervisor taking the CPU \u2014 the WSL2 candidate \u00a73.12 named and could not test; `iowait` is blocking on storage, the Docker Desktop storage-path candidate. Separated from host_cpu_busy because both are small next to total busy and would be invisible on a shared axis. RANGE 30s for the same reason as host_cpu_busy: the host job's 5s cadence needs a window the datasource-wide macro does not give it.",
       "expr": "sum by (mode) (rate(node_cpu_seconds_total{job=\"node\",mode=~\"steal|iowait\"}[$RANGE]))",
       "legend": "{{mode}}"
     },
@@ -180,14 +182,14 @@
       "key": "host_runqueue",
       "title": "Host run queue (load average)",
       "unit": "tasks",
-      "_note": "Runnable-plus-blocked tasks against this host's CPU count. It answers the §3.12 question from the contention side rather than the consumption side: a host can be far from CPU-saturated and still have work waiting. This is the substitute for kernel PSI, which is the more direct instrument and is NOT available on the WSL2 kernel the rehearsal runs on — /proc/pressure does not exist there and the pressure collector reports success 0 (§3.14). The AWS hosts are expected to carry PSI, at which point a pressure panel supersedes this one.",
+      "_note": "Runnable-plus-blocked tasks against this host's CPU count. It answers the \u00a73.12 question from the contention side rather than the consumption side: a host can be far from CPU-saturated and still have work waiting. This is the substitute for kernel PSI, which is the more direct instrument and is NOT available on the WSL2 kernel the rehearsal runs on \u2014 /proc/pressure does not exist there and the pressure collector reports success 0 (\u00a73.14). The AWS hosts are expected to carry PSI, at which point a pressure panel supersedes this one.",
       "expr": "node_load1{job=\"node\"}"
     },
     {
       "key": "host_memory_available",
       "title": "Host memory available",
       "unit": "bytes",
-      "_note": "Available rather than free: free excludes reclaimable page cache and reads as exhaustion on a healthy machine. Retained because per-unit RSS grew across the §3.11 window and nothing said whether the host had room.",
+      "_note": "Available rather than free: free excludes reclaimable page cache and reads as exhaustion on a healthy machine. Retained because per-unit RSS grew across the \u00a73.11 window and nothing said whether the host had room.",
       "expr": "sum(node_memory_MemAvailable_bytes{job=\"node\"})"
     },
     {
@@ -196,7 +198,7 @@
       "unit": "cores",
       "per_authority": true,
       "legend": "CPU",
-      "_note": "JOB-SCOPED, and every panel below it for the same reason. process_* and go_* are exported by *every* Prometheus-instrumented Go process — node_exporter and Prometheus itself included — so an unscoped selector means \"the service\" only while exactly one job is scraped. Adding the host job would otherwise fold three processes into a panel titled for one, and nothing would report it: the CSV still exports, still carries rows, and still passes the populated-series gate.",
+      "_note": "JOB-SCOPED, and every panel below it for the same reason. process_* and go_* are exported by *every* Prometheus-instrumented Go process \u2014 node_exporter and Prometheus itself included \u2014 so an unscoped selector means \"the service\" only while exactly one job is scraped. Adding the host job would otherwise fold three processes into a panel titled for one, and nothing would report it: the CSV still exports, still carries rows, and still passes the populated-series gate.",
       "expr": "rate(process_cpu_seconds_total{job=\"alloca-go\"}[$RANGE])"
     },
     {

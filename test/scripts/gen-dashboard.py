@@ -33,9 +33,9 @@ OUT = ROOT / "deploy/observability/grafana/dashboards/alloca-frontier.json"
 # ten — so memory set the axis and flattened the other three into a line along the bottom.
 SECTIONS = [
     ("Demand and outcome", [
-        ("Throughput and goodput", ["throughput", "goodput", "replay_rate"]),
-        ("Latency", ["latency_p50", "latency_p95", "latency_p99"]),
-        ("Outcomes", ["outcomes"]),
+        ("Throughput and goodput (req/s)", ["throughput", "goodput", "replay_rate"]),
+        ("Latency (s)", ["latency_p50", "latency_p95", "latency_p99"]),
+        ("Outcomes (req/s)", ["outcomes"]),
     ]),
     # Occupancy, lifecycle and acquire cost are three different questions, and the first version
     # of this put them on one graph with a redundant per-unit constant (`pool_max`) on top. On a
@@ -50,12 +50,12 @@ SECTIONS = [
     # `pool_constructing` sits with occupancy, not lifecycle: it is a connection *count*, and a
     # connection being built is a state the population is in.
     ("Database pool", [
-        ("Pool occupancy", ["pool_in_use", "pool_idle", "pool_total", "pool_constructing"]),
-        ("Pool lifecycle", ["pool_new_conns", "pool_destroys"]),
-        ("Pool acquire duration", ["pool_acquire_wait", "pool_empty_acquire_wait"]),
+        ("Pool occupancy (conns)", ["pool_in_use", "pool_total"]),
+        ("Pool lifecycle (conns/s)", ["pool_new_conns", "pool_destroys"]),
+        ("Pool acquire concurrency (s/s)", ["pool_acquire_wait", "pool_empty_acquire_wait"]),
         # Its own graph: seconds-per-second and seconds-per-acquire differ by three orders of
         # magnitude, so one axis would flatten the series that discriminated the degraded cell.
-        ("Pool mean acquire duration", ["pool_acquire_mean"]),
+        ("Pool mean acquire duration (s)", ["pool_acquire_mean"]),
     ]),
     # Each title names the service explicitly. "Process CPU" was ambiguous the moment a host
     # section existed beside it, and CPU carries its unit in the title because "cores" is the one
@@ -63,8 +63,8 @@ SECTIONS = [
     ("Service process (alloca-go units)", [
         ("Service CPU (cores)", ["process_cpu"]),
         ("Service goroutines", ["go_goroutines"]),
-        ("Service GC pause p75", ["go_gc_pause"]),
-        ("Service resident memory", ["process_memory"]),
+        ("Service GC pause p75 (s)", ["go_gc_pause"]),
+        ("Service resident memory (bytes)", ["process_memory"]),
     ]),
     # VAL-NEG-7's host view (ag-sept-pr4.md §2.1, §2.5). Four graphs rather than one because the
     # quantities that answer §3.12 are small next to the ones that do not: CPU steal against total
@@ -78,8 +78,8 @@ SECTIONS = [
     ("Host (the machine every unit shares)", [
         ("Host CPU busy (cores)", ["host_cpu_busy"]),
         ("Host CPU stolen and blocked (cores)", ["host_cpu_steal"]),
-        ("Host run queue (load average)", ["host_runqueue"]),
-        ("Host memory available", ["host_memory_available"]),
+        ("Host run queue (tasks)", ["host_runqueue"]),
+        ("Host memory available (bytes)", ["host_memory_available"]),
     ]),
 ]
 
@@ -88,32 +88,31 @@ LAYOUT = [graph for _, graphs in SECTIONS for graph in graphs]
 
 DATASOURCE = {"type": "prometheus", "uid": "alloca-prometheus"}
 
-# This repository's unit names mapped onto Grafana's, so an axis formats itself.
+# This repository's unit names mapped onto Grafana's.
 #
-# Without this every panel rendered raw numbers: resident memory as "24000000" rather than
-# "22.9 MiB", and GC pause as "0.0001" rather than "100 µs". Grafana already knows how to scale
-# and suffix those; it simply has to be told what the numbers are.
+# `unit` in panels.json stays repository-owned and human-readable, because it is also what the CSV
+# export and the prose call the series. This table is the translation, in one place, so adding a
+# panel does not mean learning Grafana's identifier list.
 #
-# `unit` in panels.json stays repository-owned and human-readable, because it is also what the
-# CSV export and the prose describe a series as. This table is the translation, in one place, so
-# adding a panel does not mean learning Grafana's identifier list.
-# `suffix: x` is Grafana's custom-unit form: the value is rendered and the string appended. Used
-# wherever Grafana has no native unit for what we are actually counting. "short" was the first
-# answer and it is not one — it renders a bare number, which is how a reader ends up asking what
-# the axis is.
+# **The title carries the unit; the axis carries numbers.** Repeating "cores" down every gridline
+# is noise once the title says it. The only units kept are the two where Grafana's formatting does
+# real work rather than appending a word:
+#
+#   bytes -> 22.9 MiB, not 24000000
+#   s     -> 100 µs,   not 0.0001
+#
+# Dropping those two would make their axes unreadable, which is a worse trade than a repeated
+# suffix. Everything else is "short": plain numbers, with K/M only where the magnitude needs it.
 GRAFANA_UNIT = {
-    "bytes": "bytes",       # IEC: KiB / MiB / GiB
-    "s": "s",               # scales into µs / ms / s
-    "req/s": "reqps",
-    "cores": "suffix: cores",
-    "conns": "suffix: conns",
-    "conns/s": "suffix: conns/s",
-    "count": "short",       # goroutines: a plain count, and K/M suffixing is right for it
-    "tasks": "suffix: tasks",
-    # Seconds accumulated per second. Not a duration and not a percentage: summed across four
-    # units it exceeds 1 whenever more than one connection is being waited on at once, so
-    # percentunit would render a legitimate 1.7 as a nonsensical 170%.
-    "s/s": "suffix: s/s",
+    "bytes": "bytes",
+    "s": "s",
+    "req/s": "short",
+    "cores": "short",
+    "conns": "short",
+    "conns/s": "short",
+    "count": "short",
+    "tasks": "short",
+    "s/s": "short",
     "ratio": "percentunit",
 }
 
@@ -167,11 +166,25 @@ def main() -> None:
     canonical = json.loads(PANELS.read_text())
     by_key = {p["key"]: p for p in canonical["panels"]}
 
+    # A panel may be exported without being plotted, but it has to say so. "Collect broadly, panel
+    # narrowly" already governs which *metrics* are scraped; this is the same rule one level down,
+    # for which retained series earn screen space. `pool_idle` is the worked example: it is exactly
+    # `total - acquired`, so plotting it added a third oscillating line per unit and no
+    # information — while the CSV still wants it, because that is the series §3.13.1 reads.
+    #
+    # Silence is not enough. An undeclared panel missing from the layout is the "panel nobody can
+    # see" defect, so the omission is declared per panel and checked here.
     laid_out = {k for _, keys in LAYOUT for k in keys}
-    if missing := set(by_key) - laid_out:
+    exported_only = {p["key"] for p in canonical["panels"] if p.get("display") is False}
+    if overlap := laid_out & exported_only:
+        raise SystemExit(
+            f"{sorted(overlap)} set display:false but are placed on a graph; one of the two is wrong"
+        )
+    if missing := set(by_key) - laid_out - exported_only:
         raise SystemExit(
             f"panels.json defines {sorted(missing)} but LAYOUT places them on no graph; "
-            "a panel nobody can see is the same as a panel that does not exist"
+            "a panel nobody can see is the same as a panel that does not exist. Set "
+            "\"display\": false if it is meant to be exported and not plotted."
         )
     if unknown := laid_out - set(by_key):
         raise SystemExit(f"LAYOUT references unknown panels: {sorted(unknown)}")

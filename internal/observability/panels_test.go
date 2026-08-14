@@ -26,6 +26,8 @@ const (
 	sweepPath = "../../test/scripts/sweep.sh"
 	// Where each job's scrape cadence is declared; a rate() window has to outlive its own.
 	promConfigPath = "../../deploy/observability/prometheus.yml"
+	// The other consumer of panels.json: it retains every panel, plotted or not.
+	exporterPath = "../../test/scripts/export-panels.sh"
 )
 
 type canonicalPanels struct {
@@ -42,6 +44,9 @@ type canonicalPanels struct {
 		// Explicit rate window, for a series whose scrape cadence the datasource-wide macro
 		// does not fit. Empty means $__rate_interval.
 		Range string `json:"range"`
+		// Pointer so absent and false are distinguishable: absent means "plot it", the default.
+		// false means exported into the cell's CSVs but deliberately kept off the dashboard.
+		Display *bool `json:"display"`
 	} `json:"panels"`
 }
 
@@ -135,6 +140,7 @@ func TestDashboardMatchesCanonicalPanels(t *testing.T) {
 	}
 
 	wanted := map[string]string{} // grafana-form expr -> key
+	exempt := map[string]bool{}   // exported but deliberately not plotted
 	for _, p := range canonical.Panels {
 		if p.Expr == "" {
 			t.Errorf("panel %q has an empty expression", p.Key)
@@ -147,6 +153,12 @@ func TestDashboardMatchesCanonicalPanels(t *testing.T) {
 		if prev, dup := wanted[expr]; dup {
 			t.Errorf("panels %q and %q share an expression; one of them is not measuring "+
 				"what its title claims", prev, p.Key)
+		}
+		// A `display: false` panel is exported and deliberately not plotted, so it is exempt from
+		// "must reach the dashboard" — but not from the other direction: a dashboard expression
+		// that is not canonical is still a number no artifact reproduces.
+		if p.Display != nil && !*p.Display {
+			exempt[expr] = true
 		}
 		wanted[expr] = p.Key
 	}
@@ -165,7 +177,7 @@ func TestDashboardMatchesCanonicalPanels(t *testing.T) {
 
 	var missing []string
 	for expr, key := range wanted {
-		if !found[expr] {
+		if !found[expr] && !exempt[expr] {
 			missing = append(missing, key)
 		}
 	}
@@ -552,6 +564,39 @@ func jobSelectorIn(expr string) string {
 		return ""
 	}
 	return m[1]
+}
+
+// TestUnplottedPanelsAreStillExported pins the half of `display: false` that has no visible
+// symptom.
+//
+// A panel dropped from the dashboard must keep producing a CSV, because the two sets answer
+// different questions: the dashboard is what an operator reads at a glance, and the export is what
+// a report is checked against. `pool_idle` is the case — redundant on screen, since it is exactly
+// `total - acquired`, and load-bearing in the record, since §3.13.1's reading is "idle stayed at
+// 6-9 while acquire cost rose".
+//
+// If the exporter ever learned to skip these, nothing would fail: the dashboard would look right,
+// the cell would complete, and the series would simply not be in the CSV.
+func TestUnplottedPanelsAreStillExported(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Clean(exporterPath))
+	if err != nil {
+		t.Fatalf("reading %s: %v", exporterPath, err)
+	}
+	if strings.Contains(string(raw), "display") {
+		t.Error("export-panels.sh mentions `display`: the flag governs the dashboard only, and a " +
+			"panel omitted from the screen must still be retained in the cell's CSVs")
+	}
+
+	canonical := loadJSON[canonicalPanels](t, panelsPath)
+	unplotted := 0
+	for _, p := range canonical.Panels {
+		if p.Display != nil && !*p.Display {
+			unplotted++
+		}
+	}
+	if unplotted == 0 {
+		t.Skip("no panel currently sets display:false")
+	}
 }
 
 // TestPerAuthorityMetadataMatchesTheQuery stops the flag drifting from the expression it

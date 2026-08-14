@@ -42,59 +42,53 @@ LAYOUT = [
     # reads across the last two, so they must be separable at a glance.
     ("Database pool occupancy", ["pool_in_use", "pool_idle", "pool_total"]),
     ("Database pool lifecycle", ["pool_constructing", "pool_new_conns", "pool_destroys"]),
-    ("Database pool acquire cost", ["pool_acquire_wait", "pool_empty_acquire_wait"]),
+    ("Database pool acquire duration", ["pool_acquire_wait", "pool_empty_acquire_wait"]),
+    # Its own graph rather than sharing the one above: seconds-per-second and seconds-per-acquire
+    # differ by three orders of magnitude here, so one axis would flatten the series that actually
+    # discriminated the degraded cell (§3.13.1).
+    ("Database pool mean acquire duration", ["pool_acquire_mean"]),
     ("Process CPU and Go runtime", ["process_cpu", "go_goroutines", "go_gc_pause"]),
     ("Process resident memory", ["process_memory"]),
 ]
 
 DATASOURCE = {"type": "prometheus", "uid": "alloca-prometheus"}
 
-# Panels whose query returns more than one series, and how each series names itself.
+# How a series names itself. Driven by each panel's own metadata rather than by a table here,
+# because the table was a second place to forget: a panel added to panels.json without a matching
+# entry silently inherited a fixed legend, which is the defect this exists to prevent.
 #
-# A fixed legend is right for a single-series panel and actively misleading for these. There are
-# two ways a panel fans out, and only the first was handled originally:
+# A fixed legend is right for a single-series panel and actively misleading otherwise, and there
+# are two ways a panel fans out:
 #
 #   * **explicitly**, when the query aggregates by a label — `outcomes` is `sum by (outcome)`, and
-#     labelling all of them "Outcomes" hid exactly the distinction the panel exists to expose;
-#   * **implicitly**, when the query is not aggregated at all, so Prometheus returns one series
-#     per scraped target. That was invisible under PR2, which scraped one target. Iteration C
-#     scrapes one per shard group, and every unaggregated panel silently became four
-#     identically-labelled lines (ag-sept-pr4.md §3).
+#     labelling all of them "Outcomes" hid exactly the distinction the panel exists to expose.
+#     Such a panel names the label itself, in its `legend` field.
+#   * **implicitly**, when the query preserves per-authority cardinality, so Prometheus returns one
+#     series per shard group. That was invisible under PR2's single target; Iteration C made every
+#     such panel four identically-labelled lines (ag-sept-pr4.md §3). These declare
+#     `per_authority: true`.
 #
-# So an implicit-fan-out panel names its unit, and a panel carrying several metrics also names
-# which metric each line is — `{{authority}}` alone on the occupancy graph would give three lines
-# per unit that all read "authority-1".
+# **Authority first.** `{{authority}} acquired`, not `acquired {{authority}}`, so every panel's
+# legend sorts and reads by unit — the point is correlating one authority across graphs without
+# relying on colour, and that only works if the identity is in the same place every time.
 #
-# `{{authority}}` renders empty on the PR2 single-instance path, which has no such label. That is
-# harmless there and deliberate: one series needs no disambiguation, and the alternative
-# (`{{instance}}`) reads as an address rather than as the thing the reader is comparing.
-MULTI_SERIES_LEGEND = {
-    "outcomes": "{{outcome}}",
+# `{{authority}}` renders empty on the PR2 single-instance path, which has no such label. Harmless
+# and deliberate: one series needs no disambiguation, and `{{instance}}` would read as an address
+# rather than as the identity that already exists in the placement, the scrape labels and the
+# retained evidence.
 
-    "pool_in_use": "acquired {{authority}}",
-    "pool_idle": "idle {{authority}}",
-    "pool_total": "total {{authority}}",
-    "pool_constructing": "constructing {{authority}}",
-    "pool_new_conns": "new {{authority}}",
-    "pool_destroys": "destroyed {{authority}}",
-    "pool_acquire_wait": "acquire {{authority}}",
-    "pool_empty_acquire_wait": "empty-acquire {{authority}}",
 
-    "process_cpu": "cpu {{authority}}",
-    "process_memory": "rss {{authority}}",
-    "go_goroutines": "goroutines {{authority}}",
-    "go_gc_pause": "gc p75 {{authority}}",
-}
+def legend_for(panel: dict) -> str:
+    """The legend a panel's series carry: unit-prefixed when it keeps per-authority cardinality."""
+    declared = panel.get("legend")
+    if panel.get("per_authority"):
+        return f"{{{{authority}}}} {declared or panel['title']}"
+    return declared or panel["title"]
 
 
 def grafana_expr(expr: str) -> str:
     """Substitute the repository token with Grafana's adaptive macro."""
     return expr.replace("$RANGE", "$__rate_interval")
-
-
-def legend_for(key: str, title: str) -> str:
-    """The legend a series should carry: its label value when the query fans out, else the title."""
-    return MULTI_SERIES_LEGEND.get(key, title)
 
 
 def main() -> None:
@@ -117,7 +111,7 @@ def main() -> None:
                 "refId": chr(ord("A") + i),
                 "datasource": DATASOURCE,
                 "expr": grafana_expr(by_key[k]["expr"]),
-                "legendFormat": legend_for(k, by_key[k]["title"]),
+                "legendFormat": legend_for(by_key[k]),
                 "range": True,
             }
             for i, k in enumerate(keys)

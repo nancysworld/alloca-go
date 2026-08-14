@@ -29,6 +29,10 @@ type canonicalPanels struct {
 		Title string `json:"title"`
 		Unit  string `json:"unit"`
 		Expr  string `json:"expr"`
+		// Whether the query preserves one series per shard-group authority. Declared rather than
+		// inferred from the PromQL: see TestPerAuthorityPanelsExposeAuthority.
+		PerAuthority bool   `json:"per_authority"`
+		Legend       string `json:"legend"`
 	} `json:"panels"`
 }
 
@@ -174,9 +178,17 @@ func TestDashboardIsDeliberatelySmall(t *testing.T) {
 		}
 	}
 
+	// 9 since AG-Sept PR4a, raised from 8 by maintainer decision on 2026-08-14. Iteration C made
+	// the pool the object of study rather than a background indicator: occupancy, lifecycle,
+	// acquire duration and *mean* acquire duration are four separate questions, and §3.13.1's
+	// finding is legible only in the last of them — a per-acquire cost that rose 16x while the
+	// aggregate rate it shares an axis with would have hidden it three orders of magnitude down.
+	//
+	// The bound stays a bound. It exists so that adding a panel is a decision someone makes and
+	// records, which is what this comment is.
 	dash := loadJSON[dashboard](t, dashboardPath)
-	if n := len(dash.Panels); n > 8 {
-		t.Errorf("dashboard has %d panels; PR2's diagnostic view is meant to stay compact. "+
+	if n := len(dash.Panels); n > 9 {
+		t.Errorf("dashboard has %d panels; the diagnostic view is meant to stay compact. "+
 			"Adding one is a scope decision, not a tidy-up", n)
 	}
 	if dash.UID != "alloca-frontier" {
@@ -298,59 +310,77 @@ func TestFannedOutPanelsCarryTheirLabelInTheLegend(t *testing.T) {
 	}
 }
 
-// TestUnaggregatedPanelsNameTheUnitTheyCameFrom covers the other way a panel fans out, which the
-// test above is blind to.
+// TestPerAuthorityPanelsExposeAuthority is the dashboard's cardinality invariant:
 //
-// `sum by (outcome)` fans out *explicitly*, and the label is in the query where a reader can see
-// it. A query with no aggregation at all fans out *implicitly*: Prometheus returns one series per
-// scraped target, and nothing in the expression says so. Under PR2 that was invisible because one
-// target was scraped. Iteration C scrapes one per shard group, and every unaggregated panel
-// quietly became four identically-labelled lines — the pool occupancy graph was a dozen of them,
-// present and useless (ag-sept-pr4.md §3).
+//	if a query preserves per-authority series cardinality, its legend must expose {{authority}};
+//	if it intentionally aggregates authorities, a fixed legend is correct.
 //
-// The rule is the complement of the one above: if a query does not collapse its series, the
-// legend has to say which unit each line belongs to.
-func TestUnaggregatedPanelsNameTheUnitTheyCameFrom(t *testing.T) {
+// `sum by (outcome)` fans out *explicitly*, and the neighbouring test covers it. This covers the
+// other way, which is invisible in the expression: a query that simply does not aggregate returns
+// one series per scraped target. Under PR2's single target that never showed. Iteration C scrapes
+// one per shard group, and every such panel became four identically-labelled lines — the pool
+// occupancy graph was a dozen of them, present and useless (ag-sept-pr4.md §3).
+//
+// The property is read from each panel's `per_authority` flag rather than inferred from its
+// PromQL. Inferring it needs a parser that is wrong at the edges — `histogram_quantile` over
+// `sum by (le)` collapses, a bare selector does not, an arithmetic combination of two rates
+// depends on both sides — and the flag is a statement of intent the panel author holds and a
+// parser can only guess at. TestPerAuthorityMetadataMatchesTheQuery keeps the flag honest.
+func TestPerAuthorityPanelsExposeAuthority(t *testing.T) {
+	canonical := loadJSON[canonicalPanels](t, panelsPath)
 	dash := loadJSON[dashboard](t, dashboardPath)
+
+	perAuthority := map[string]bool{}
+	for _, p := range canonical.Panels {
+		perAuthority[grafanaForm(p.Expr)] = p.PerAuthority
+	}
 
 	checked := 0
 	for _, p := range dash.Panels {
 		for _, target := range p.Targets {
-			if collapsesToOneSeries(target.Expr) {
+			if !perAuthority[target.Expr] {
 				continue
 			}
 			checked++
-			// Either label identifies the unit. `authority` is preferred and is what the pool and
-			// process panels use; `instance` is accepted because it is always present and a panel
-			// may legitimately prefer the address.
-			if !strings.Contains(target.LegendFormat, "{{authority}}") &&
-				!strings.Contains(target.LegendFormat, "{{instance}}") {
-				t.Errorf("panel %q runs %q, which is not aggregated and so returns one series per "+
-					"scraped unit, but its legend is %q: on a multi-unit rung every line would be "+
-					"labelled identically. Use {{authority}}.",
+			if !strings.Contains(target.LegendFormat, "{{authority}}") {
+				t.Errorf("panel %q runs %q, which panels.json declares per_authority, but its "+
+					"legend is %q: on a multi-unit rung every line would be labelled identically. "+
+					"Use \"{{authority}} <what it is>\".",
 					p.Title, target.Expr, target.LegendFormat)
+			}
+			// Authority first, so one unit reads the same in every panel and can be followed
+			// across graphs without relying on colour.
+			if !strings.HasPrefix(target.LegendFormat, "{{authority}} ") {
+				t.Errorf("panel %q legend is %q: {{authority}} must come first, so the same unit "+
+					"reads identically across panels", p.Title, target.LegendFormat)
 			}
 		}
 	}
 	if checked == 0 {
-		t.Error("no dashboard panel is unaggregated, so this test proved nothing")
+		t.Error("no dashboard panel is declared per_authority, so this test proved nothing")
 	}
 }
 
-// collapsesToOneSeries reports whether a query reduces its result to a single series regardless of
-// how many targets are scraped.
+// TestPerAuthorityMetadataMatchesTheQuery stops the flag drifting from the expression it
+// describes. The flag drives the legend, so a wrong flag is a wrong dashboard — and unlike a
+// wrong legend, nothing on screen would look obviously broken.
 //
-// `sum(...)` without `by` collapses everything. `sum by (le) (...)` inside histogram_quantile
-// collapses too — `le` is consumed by the quantile, and no target label survives it. Anything
-// with a surviving `by` label fans out over that label instead, which is the neighbouring test's
-// concern rather than this one's.
-func collapsesToOneSeries(expr string) bool {
-	if !strings.Contains(expr, "sum") {
-		return false
+// This is deliberately a narrow sanity check rather than a PromQL parser: it asserts only the one
+// direction that is unambiguous. A query wrapped in a top-level `sum(...)` with no `by` clause
+// collapses every series into one, so it cannot preserve per-authority cardinality, whatever the
+// flag says.
+func TestPerAuthorityMetadataMatchesTheQuery(t *testing.T) {
+	canonical := loadJSON[canonicalPanels](t, panelsPath)
+
+	for _, p := range canonical.Panels {
+		if !p.PerAuthority {
+			continue
+		}
+		if strings.HasPrefix(p.Expr, "sum(") && !strings.Contains(p.Expr, " by (") {
+			t.Errorf("panel %q declares per_authority but its query is a bare sum(...), which "+
+				"collapses every authority into one series: %s", p.Key, p.Expr)
+		}
 	}
-	// A `by` clause that keeps a real label means the series survive, one per label value — but
-	// they are then named by that label, not by the target, so they are not this test's problem.
-	return true
 }
 
 // TestPanelsSharingAnAxisShareAScale keeps a readable panel readable.

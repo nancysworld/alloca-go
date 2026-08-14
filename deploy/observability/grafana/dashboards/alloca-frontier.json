@@ -226,7 +226,7 @@
             "uid": "alloca-prometheus"
           },
           "expr": "alloca_db_pool_acquired_connections",
-          "legendFormat": "acquired {{authority}}",
+          "legendFormat": "{{authority}} acquired",
           "range": true
         },
         {
@@ -236,7 +236,7 @@
             "uid": "alloca-prometheus"
           },
           "expr": "alloca_db_pool_idle_connections",
-          "legendFormat": "idle {{authority}}",
+          "legendFormat": "{{authority}} idle",
           "range": true
         },
         {
@@ -246,7 +246,7 @@
             "uid": "alloca-prometheus"
           },
           "expr": "alloca_db_pool_total_connections",
-          "legendFormat": "total {{authority}}",
+          "legendFormat": "{{authority}} total",
           "range": true
         }
       ]
@@ -290,7 +290,7 @@
             "uid": "alloca-prometheus"
           },
           "expr": "alloca_db_pool_constructing_connections",
-          "legendFormat": "constructing {{authority}}",
+          "legendFormat": "{{authority}} constructing",
           "range": true
         },
         {
@@ -300,7 +300,7 @@
             "uid": "alloca-prometheus"
           },
           "expr": "rate(alloca_db_pool_new_connections_total[$__rate_interval])",
-          "legendFormat": "new {{authority}}",
+          "legendFormat": "{{authority}} new connections",
           "range": true
         },
         {
@@ -310,7 +310,7 @@
             "uid": "alloca-prometheus"
           },
           "expr": "rate(alloca_db_pool_max_lifetime_destroys_total[$__rate_interval]) + rate(alloca_db_pool_max_idle_destroys_total[$__rate_interval])",
-          "legendFormat": "destroyed {{authority}}",
+          "legendFormat": "{{authority}} destroyed",
           "range": true
         }
       ]
@@ -318,7 +318,7 @@
     {
       "id": 6,
       "type": "timeseries",
-      "title": "Database pool acquire cost",
+      "title": "Database pool acquire duration",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -354,7 +354,7 @@
             "uid": "alloca-prometheus"
           },
           "expr": "rate(alloca_db_pool_acquire_wait_seconds_total[$__rate_interval])",
-          "legendFormat": "acquire {{authority}}",
+          "legendFormat": "{{authority}} acquire duration",
           "range": true
         },
         {
@@ -364,7 +364,7 @@
             "uid": "alloca-prometheus"
           },
           "expr": "rate(alloca_db_pool_empty_acquire_wait_seconds_total[$__rate_interval])",
-          "legendFormat": "empty-acquire {{authority}}",
+          "legendFormat": "{{authority}} empty-acquire duration",
           "range": true
         }
       ]
@@ -372,7 +372,7 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Process CPU and Go runtime",
+      "title": "Database pool mean acquire duration",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -407,28 +407,8 @@
             "type": "prometheus",
             "uid": "alloca-prometheus"
           },
-          "expr": "rate(process_cpu_seconds_total{job=\"alloca-go\"}[$__rate_interval])",
-          "legendFormat": "cpu {{authority}}",
-          "range": true
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "alloca-prometheus"
-          },
-          "expr": "go_goroutines{job=\"alloca-go\"}",
-          "legendFormat": "goroutines {{authority}}",
-          "range": true
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "alloca-prometheus"
-          },
-          "expr": "go_gc_duration_seconds{job=\"alloca-go\",quantile=\"0.75\"}",
-          "legendFormat": "gc p75 {{authority}}",
+          "expr": "rate(alloca_db_pool_acquire_wait_seconds_total[$__rate_interval]) / rate(alloca_db_pool_acquires_total[$__rate_interval])",
+          "legendFormat": "{{authority}} mean acquire duration",
           "range": true
         }
       ]
@@ -436,7 +416,7 @@
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Process resident memory",
+      "title": "Process CPU and Go runtime",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -471,8 +451,72 @@
             "type": "prometheus",
             "uid": "alloca-prometheus"
           },
+          "expr": "rate(process_cpu_seconds_total{job=\"alloca-go\"}[$__rate_interval])",
+          "legendFormat": "{{authority}} CPU",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "alloca-prometheus"
+          },
+          "expr": "go_goroutines{job=\"alloca-go\"}",
+          "legendFormat": "{{authority}} goroutines",
+          "range": true
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "alloca-prometheus"
+          },
+          "expr": "go_gc_duration_seconds{job=\"alloca-go\",quantile=\"0.75\"}",
+          "legendFormat": "{{authority}} GC pause p75",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Process resident memory",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "alloca-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "alloca-prometheus"
+          },
           "expr": "process_resident_memory_bytes{job=\"alloca-go\"}",
-          "legendFormat": "rss {{authority}}",
+          "legendFormat": "{{authority}} RSS",
           "range": true
         }
       ]

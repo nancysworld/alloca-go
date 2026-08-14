@@ -74,7 +74,10 @@ const rangeToken = "$RANGE"
 type dashboard struct {
 	UID    string `json:"uid"`
 	Panels []struct {
-		Title   string `json:"title"`
+		Title string `json:"title"`
+		// "row" is a section header, not a graph: it carries no query, no unit and no axis.
+		// Every rule below is about graphs, so rows are skipped rather than special-cased.
+		Type    string `json:"type"`
 		Targets []struct {
 			Expr         string `json:"expr"`
 			LegendFormat string `json:"legendFormat"`
@@ -218,10 +221,17 @@ func TestDashboardIsDeliberatelySmall(t *testing.T) {
 	//
 	// The bound stays a bound. It exists so that adding a panel is a decision someone makes and
 	// records, which is what this comment is.
+	// Graphs, not rows: a section header carries no query and costs no scope.
 	dash := loadJSON[dashboard](t, dashboardPath)
-	if n := len(dash.Panels); n > 15 {
-		t.Errorf("dashboard has %d panels; the diagnostic view is meant to stay compact. "+
-			"Adding one is a scope decision, not a tidy-up", n)
+	graphs := 0
+	for _, p := range dash.Panels {
+		if p.Type != "row" {
+			graphs++
+		}
+	}
+	if graphs > 15 {
+		t.Errorf("dashboard has %d graphs; the diagnostic view is meant to stay compact. "+
+			"Adding one is a scope decision, not a tidy-up", graphs)
 	}
 	if dash.UID != "alloca-frontier" {
 		t.Errorf("dashboard uid = %q; provisioning and any saved link depend on it", dash.UID)
@@ -621,6 +631,7 @@ func TestEveryPanelDeclaresAGrafanaUnit(t *testing.T) {
 	var doc struct {
 		Panels []struct {
 			Title       string `json:"title"`
+			Type        string `json:"type"`
 			FieldConfig struct {
 				Defaults struct {
 					Unit string `json:"unit"`
@@ -633,6 +644,9 @@ func TestEveryPanelDeclaresAGrafanaUnit(t *testing.T) {
 	}
 
 	for _, p := range doc.Panels {
+		if p.Type == "row" {
+			continue
+		}
 		if p.FieldConfig.Defaults.Unit == "" {
 			t.Errorf("panel %q declares no Grafana unit, so its axis renders raw numbers", p.Title)
 		}

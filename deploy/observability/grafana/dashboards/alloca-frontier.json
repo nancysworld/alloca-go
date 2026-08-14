@@ -17,6 +17,19 @@
   "panels": [
     {
       "id": 1,
+      "type": "row",
+      "title": "Demand and outcome",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
       "type": "timeseries",
       "title": "Throughput and goodput",
       "datasource": {
@@ -27,7 +40,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 0
+        "y": 1
       },
       "fieldConfig": {
         "defaults": {
@@ -81,7 +94,7 @@
       ]
     },
     {
-      "id": 2,
+      "id": 3,
       "type": "timeseries",
       "title": "Latency",
       "datasource": {
@@ -92,7 +105,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 0
+        "y": 1
       },
       "fieldConfig": {
         "defaults": {
@@ -146,7 +159,7 @@
       ]
     },
     {
-      "id": 3,
+      "id": 4,
       "type": "timeseries",
       "title": "Outcomes",
       "datasource": {
@@ -157,7 +170,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 9
       },
       "fieldConfig": {
         "defaults": {
@@ -191,9 +204,22 @@
       ]
     },
     {
-      "id": 4,
+      "id": 5,
+      "type": "row",
+      "title": "Database pool",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "panels": []
+    },
+    {
+      "id": 6,
       "type": "timeseries",
-      "title": "Database pool occupancy",
+      "title": "Pool occupancy",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -201,12 +227,12 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 8
+        "x": 0,
+        "y": 18
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "suffix: conns",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -266,9 +292,9 @@
       ]
     },
     {
-      "id": 5,
+      "id": 7,
       "type": "timeseries",
-      "title": "Database pool lifecycle",
+      "title": "Pool lifecycle",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -276,12 +302,12 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 16
+        "x": 12,
+        "y": 18
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "suffix: conns/s",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -321,9 +347,9 @@
       ]
     },
     {
-      "id": 6,
+      "id": 8,
       "type": "timeseries",
-      "title": "Database pool acquire duration",
+      "title": "Pool acquire duration",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -331,12 +357,12 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 16
+        "x": 0,
+        "y": 26
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "suffix: s/s",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -376,9 +402,9 @@
       ]
     },
     {
-      "id": 7,
+      "id": 9,
       "type": "timeseries",
-      "title": "Database pool mean acquire duration",
+      "title": "Pool mean acquire duration",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -386,8 +412,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 24
+        "x": 12,
+        "y": 26
       },
       "fieldConfig": {
         "defaults": {
@@ -421,9 +447,22 @@
       ]
     },
     {
-      "id": 8,
+      "id": 10,
+      "type": "row",
+      "title": "Service process (alloca-go units)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "panels": []
+    },
+    {
+      "id": 11,
       "type": "timeseries",
-      "title": "Process CPU",
+      "title": "Service CPU (cores)",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -431,12 +470,12 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 24
+        "x": 0,
+        "y": 35
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "suffix: cores",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -466,9 +505,9 @@
       ]
     },
     {
-      "id": 9,
+      "id": 12,
       "type": "timeseries",
-      "title": "Goroutines",
+      "title": "Service goroutines",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -476,8 +515,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 32
+        "x": 12,
+        "y": 35
       },
       "fieldConfig": {
         "defaults": {
@@ -511,9 +550,9 @@
       ]
     },
     {
-      "id": 10,
+      "id": 13,
       "type": "timeseries",
-      "title": "GC pause p75",
+      "title": "Service GC pause p75",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -521,8 +560,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 32
+        "x": 0,
+        "y": 43
       },
       "fieldConfig": {
         "defaults": {
@@ -556,9 +595,9 @@
       ]
     },
     {
-      "id": 11,
+      "id": 14,
       "type": "timeseries",
-      "title": "Process resident memory",
+      "title": "Service resident memory",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -566,8 +605,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 40
+        "x": 12,
+        "y": 43
       },
       "fieldConfig": {
         "defaults": {
@@ -601,9 +640,22 @@
       ]
     },
     {
-      "id": 12,
+      "id": 15,
+      "type": "row",
+      "title": "Host (the machine every unit shares)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 51
+      },
+      "panels": []
+    },
+    {
+      "id": 16,
       "type": "timeseries",
-      "title": "Host CPU",
+      "title": "Host CPU busy (cores)",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -611,12 +663,12 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 40
+        "x": 0,
+        "y": 52
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "suffix: cores",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -646,9 +698,9 @@
       ]
     },
     {
-      "id": 13,
+      "id": 17,
       "type": "timeseries",
-      "title": "Host CPU stolen and blocked",
+      "title": "Host CPU stolen and blocked (cores)",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -656,12 +708,12 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 48
+        "x": 12,
+        "y": 52
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "suffix: cores",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -691,9 +743,9 @@
       ]
     },
     {
-      "id": 14,
+      "id": 18,
       "type": "timeseries",
-      "title": "Host run queue",
+      "title": "Host run queue (load average)",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -701,12 +753,12 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 48
+        "x": 0,
+        "y": 60
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "suffix: tasks",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -736,7 +788,7 @@
       ]
     },
     {
-      "id": 15,
+      "id": 19,
       "type": "timeseries",
       "title": "Host memory available",
       "datasource": {
@@ -746,8 +798,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 56
+        "x": 12,
+        "y": 60
       },
       "fieldConfig": {
         "defaults": {

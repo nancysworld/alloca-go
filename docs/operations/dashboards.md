@@ -46,6 +46,8 @@ across every graph and can be followed without relying on colour.
 
 ## The panels
 
+The dashboard is grouped into four sections, and this page walks them in the same order.
+
 ### Demand and outcome
 
 | Panel | Answers | Do not read it as |
@@ -60,22 +62,26 @@ The pool is the object of study in Iteration C, not a background indicator.
 
 | Panel | Answers |
 |---|---|
-| **Occupancy** — acquired, idle, total, constructing | is the pool populated, and is it saturated? |
-| **Lifecycle** — new connections, destroyed | is it churning underneath a steady population? |
-| **Acquire duration** — acquire, empty-acquire | what is an acquire paying, and for what? |
-| **Mean acquire duration** | per-acquire cost, which the aggregate rate confounds with volume |
+| **Pool occupancy** — acquired, idle, total, constructing | is the pool populated, and is it saturated? |
+| **Pool lifecycle** — new connections, destroyed | is it churning underneath a steady population? |
+| **Pool acquire duration** — acquire, empty-acquire | what is an acquire paying, and for what? |
+| **Pool mean acquire duration** | per-acquire cost, which the aggregate rate confounds with volume |
 
 A **saturated** pool reads: idle → 0, acquired at the ceiling, acquire cost paid waiting for
 releases. A pool that is *not* saturated while acquire cost climbs is the open anomaly
 (`ag-sept-pr4.md` §3.13.1).
 
-### Service process
+### Service process (alloca-go units)
 
-**Process CPU**, **Goroutines**, **GC pause p75** and **Process resident memory** are four graphs
-rather than one because they are four units. Cores, a count, a duration and bytes on one axis
-meant the count set the scale and the rest lay flat and unreadable.
+**Service CPU (cores)**, **Service goroutines**, **Service GC pause p75** and **Service resident
+memory** — four graphs rather than one because they are four units. Cores, a count, a duration and
+bytes on one axis meant the count set the scale and the rest lay flat and unreadable.
 
-### Host
+Every title says *service* because the section below measures the machine those services run on,
+and CPU carries its unit because "cores" is the reading most often assumed wrongly: **2.0 means two
+cores' worth of work, not 2%**.
+
+### Host (the machine every unit shares)
 
 `node_exporter` measures the **machine**, which on the local rehearsal is one WSL VM shared by all
 four shard groups and the generator. That sharing is why local runs are rehearsal evidence and not
@@ -83,9 +89,9 @@ capacity evidence.
 
 | Panel | Answers | Reading |
 |---|---|---|
-| **Host CPU** | how much of the machine is busy | non-idle CPU-seconds per second, so it reads in *cores*. 7.6 of 16 logical CPUs is ~48% |
-| **Host CPU stolen and blocked** | was the host prevented from running? | `steal` is the hypervisor taking the CPU — the WSL2 candidate; `iowait` is blocking on storage — the Docker Desktop storage-path candidate. Both are small next to total busy, which is why they have their own graph |
-| **Host run queue** | is work waiting rather than being done? | `node_load1` against the CPU count. **A one-minute average cannot resolve a stall inside a 60 s cell** — it is still filling for most of one |
+| **Host CPU busy (cores)** | how much of the machine is busy | non-idle CPU-seconds per second, so it reads in *cores*. 7.6 of 16 logical CPUs is ~48% |
+| **Host CPU stolen and blocked (cores)** | was the host prevented from running? | `steal` is the hypervisor taking the CPU — the WSL2 candidate; `iowait` is blocking on storage — the Docker Desktop storage-path candidate. Both are small next to total busy, which is why they have their own graph |
+| **Host run queue (load average)** | is work waiting rather than being done? | `node_load1` against the CPU count. **A one-minute average cannot resolve a stall inside a 60 s cell** — it is still filling for most of one |
 | **Host memory available** | did the host have room? | *available*, not free: free excludes reclaimable page cache and reads as exhaustion on a healthy machine |
 
 **PSI is missing, and it is the instrument this view actually wants.** `/proc/pressure` does not
@@ -139,7 +145,9 @@ make ci
 
 The gates will refuse, in `gen-dashboard.py` or in `panels_test.go`:
 
-- a panel defined but placed on no graph, and a graph naming a panel that does not exist;
+- a panel defined but placed on no graph, and a graph naming a panel that does not exist — a new
+  panel goes into one of the four `SECTIONS` in `gen-dashboard.py`, which is what gives it a
+  heading on screen;
 - **two units on one axis**, and a unit with no Grafana mapping;
 - a query that preserves per-authority cardinality without `{{authority}}` **first** in its legend,
   and the `per_authority` flag contradicting a query that aggregates authorities away;

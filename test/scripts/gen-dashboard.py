@@ -20,17 +20,23 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 PANELS = ROOT / "deploy/observability/panels.json"
 OUT = ROOT / "deploy/observability/grafana/dashboards/alloca-frontier.json"
 
-# Which canonical panels share a graph. Grouped by what an operator reads together: the three
-# latency quantiles on one axis, pool size against pool usage, and so on.
+# The dashboard's sections, and which canonical panels share a graph inside each.
 #
-# Panels only share an axis when they share a *scale*. Resident memory used to sit beside CPU,
-# goroutine count and GC pause: tens of millions against values below ten, so memory set the
-# axis and flattened the other three into a line along the bottom — the panel existed but could
-# not be read. It now has its own.
-LAYOUT = [
-    ("Throughput and goodput", ["throughput", "goodput", "replay_rate"]),
-    ("Latency", ["latency_p50", "latency_p95", "latency_p99"]),
-    ("Outcomes", ["outcomes"]),
+# Sections became necessary once the view spanned four different subjects: a reader looking at
+# "Process CPU" had no way to know whose process it was, and the answer — the service, as opposed
+# to the host two sections below — is exactly the distinction the panel exists to support. The
+# grouping matches docs/operations/dashboards.md so the screen and the reading guide are walked in
+# the same order.
+#
+# Panels only share an axis when they share a *unit*; the generator refuses otherwise. Resident
+# memory once sat beside CPU, goroutine count and GC pause — tens of millions against values below
+# ten — so memory set the axis and flattened the other three into a line along the bottom.
+SECTIONS = [
+    ("Demand and outcome", [
+        ("Throughput and goodput", ["throughput", "goodput", "replay_rate"]),
+        ("Latency", ["latency_p50", "latency_p95", "latency_p99"]),
+        ("Outcomes", ["outcomes"]),
+    ]),
     # Occupancy, lifecycle and acquire cost are three different questions, and the first version
     # of this put them on one graph with a redundant per-unit constant (`pool_max`) on top. On a
     # four-unit rung that rendered as a dozen identically-labelled lines plus four flat ones: the
@@ -40,24 +46,26 @@ LAYOUT = [
     # churning underneath a steady population — which is where PostgreSQL enters, since
     # construction connects. Acquire cost says what an acquire is paying. §3.13.1's discriminator
     # reads across the last two, so they must be separable at a glance.
+    #
     # `pool_constructing` sits with occupancy, not lifecycle: it is a connection *count*, and a
-    # connection being built is a state the population is in. Beside the two rates it forced a
-    # graph plotting conns against conns/s on one axis.
-    ("Database pool occupancy", ["pool_in_use", "pool_idle", "pool_total", "pool_constructing"]),
-    ("Database pool lifecycle", ["pool_new_conns", "pool_destroys"]),
-    ("Database pool acquire duration", ["pool_acquire_wait", "pool_empty_acquire_wait"]),
-    # Its own graph rather than sharing the one above: seconds-per-second and seconds-per-acquire
-    # differ by three orders of magnitude here, so one axis would flatten the series that actually
-    # discriminated the degraded cell (§3.13.1).
-    ("Database pool mean acquire duration", ["pool_acquire_mean"]),
-    # Three graphs, not one. "Process CPU and Go runtime" carried cores (~0.5), a goroutine count
-    # (~30) and a GC pause duration (~0.0001) on a single unlabelled axis: the count set the
-    # scale, and both other series lay flat on the bottom. Memory was moved out of that panel for
-    # exactly this reason and the remaining three were left sharing it.
-    ("Process CPU", ["process_cpu"]),
-    ("Goroutines", ["go_goroutines"]),
-    ("GC pause p75", ["go_gc_pause"]),
-    ("Process resident memory", ["process_memory"]),
+    # connection being built is a state the population is in.
+    ("Database pool", [
+        ("Pool occupancy", ["pool_in_use", "pool_idle", "pool_total", "pool_constructing"]),
+        ("Pool lifecycle", ["pool_new_conns", "pool_destroys"]),
+        ("Pool acquire duration", ["pool_acquire_wait", "pool_empty_acquire_wait"]),
+        # Its own graph: seconds-per-second and seconds-per-acquire differ by three orders of
+        # magnitude, so one axis would flatten the series that discriminated the degraded cell.
+        ("Pool mean acquire duration", ["pool_acquire_mean"]),
+    ]),
+    # Each title names the service explicitly. "Process CPU" was ambiguous the moment a host
+    # section existed beside it, and CPU carries its unit in the title because "cores" is the one
+    # thing a reader most often assumes wrongly — it is not a percentage.
+    ("Service process (alloca-go units)", [
+        ("Service CPU (cores)", ["process_cpu"]),
+        ("Service goroutines", ["go_goroutines"]),
+        ("Service GC pause p75", ["go_gc_pause"]),
+        ("Service resident memory", ["process_memory"]),
+    ]),
     # VAL-NEG-7's host view (ag-sept-pr4.md §2.1, §2.5). Four graphs rather than one because the
     # quantities that answer §3.12 are small next to the ones that do not: CPU steal against total
     # busy is a rounding error on a shared axis, and it is the series that would say whether the
@@ -67,11 +75,16 @@ LAYOUT = [
     # collected and not plotted). Collect broadly, panel narrowly: the snapshot retains everything
     # scraped, so a series nobody thought to plot is still recoverable — which is exactly how the
     # pool population question was answered without re-running a cell (§3.13.1).
-    ("Host CPU", ["host_cpu_busy"]),
-    ("Host CPU stolen and blocked", ["host_cpu_steal"]),
-    ("Host run queue", ["host_runqueue"]),
-    ("Host memory available", ["host_memory_available"]),
+    ("Host (the machine every unit shares)", [
+        ("Host CPU busy (cores)", ["host_cpu_busy"]),
+        ("Host CPU stolen and blocked (cores)", ["host_cpu_steal"]),
+        ("Host run queue (load average)", ["host_runqueue"]),
+        ("Host memory available", ["host_memory_available"]),
+    ]),
 ]
+
+# Flattened, for the checks and the generator body that do not care about sections.
+LAYOUT = [graph for _, graphs in SECTIONS for graph in graphs]
 
 DATASOURCE = {"type": "prometheus", "uid": "alloca-prometheus"}
 
@@ -84,16 +97,23 @@ DATASOURCE = {"type": "prometheus", "uid": "alloca-prometheus"}
 # `unit` in panels.json stays repository-owned and human-readable, because it is also what the
 # CSV export and the prose describe a series as. This table is the translation, in one place, so
 # adding a panel does not mean learning Grafana's identifier list.
+# `suffix: x` is Grafana's custom-unit form: the value is rendered and the string appended. Used
+# wherever Grafana has no native unit for what we are actually counting. "short" was the first
+# answer and it is not one — it renders a bare number, which is how a reader ends up asking what
+# the axis is.
 GRAFANA_UNIT = {
     "bytes": "bytes",       # IEC: KiB / MiB / GiB
     "s": "s",               # scales into µs / ms / s
     "req/s": "reqps",
-    "cores": "short",       # no native core unit; short leaves small values unmangled
-    "conns": "short",
-    "conns/s": "short",
-    "count": "short",
-    "tasks": "short",
-    "s/s": "short",         # seconds accumulated per second — a ratio, not a duration
+    "cores": "suffix: cores",
+    "conns": "suffix: conns",
+    "conns/s": "suffix: conns/s",
+    "count": "short",       # goroutines: a plain count, and K/M suffixing is right for it
+    "tasks": "suffix: tasks",
+    # Seconds accumulated per second. Not a duration and not a percentage: summed across four
+    # units it exceeds 1 whenever more than one connection is being waited on at once, so
+    # percentunit would render a legitimate 1.7 as a nonsensical 170%.
+    "s/s": "suffix: s/s",
     "ratio": "percentunit",
 }
 
@@ -157,52 +177,80 @@ def main() -> None:
         raise SystemExit(f"LAYOUT references unknown panels: {sorted(unknown)}")
 
     panels, pid, y = [], 1, 0
-    for title, keys in LAYOUT:
-        targets = [
-            {
-                "refId": chr(ord("A") + i),
-                "datasource": DATASOURCE,
-                "expr": grafana_expr(by_key[k]),
-                "legendFormat": legend_for(by_key[k]),
-                "range": True,
-            }
-            for i, k in enumerate(keys)
-        ]
-        # One axis, so one unit. Panels sharing a graph must already share a scale, and a graph
-        # whose series disagreed about what the numbers *are* could not be labelled at all — which
-        # is what "Process CPU and Go runtime" was: cores, a goroutine count and a duration on one
-        # unlabelled axis, where the count set the scale and flattened the other two.
-        units = {by_key[k]["unit"] for k in keys}
-        if len(units) > 1:
-            raise SystemExit(
-                f"panel {title!r} plots {sorted(units)} on one axis; a shared axis needs a shared "
-                "unit, or the axis label is a lie and the smallest series is invisible"
-            )
-        unit = GRAFANA_UNIT.get(next(iter(units)))
-        if unit is None:
-            raise SystemExit(
-                f"panel {title!r} uses unit {next(iter(units))!r}, which GRAFANA_UNIT does not "
-                "map; add it rather than letting the axis render raw numbers"
-            )
-
+    for section, graphs in SECTIONS:
+        # A Grafana row: a full-width header that names what the graphs under it are about. The
+        # view spans four subjects now, and "Process CPU" alone could not say whose process.
         panels.append({
             "id": pid,
-            "type": "timeseries",
-            "title": title,
-            "datasource": DATASOURCE,
-            "gridPos": {"h": 8, "w": 12, "x": (pid - 1) % 2 * 12, "y": y},
-            "fieldConfig": {
-                "defaults": {
-                    "unit": unit,
-                    "custom": {"lineWidth": 1, "fillOpacity": 8, "showPoints": "never"},
-                },
-                "overrides": [],
-            },
-            "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": True}},
-            "targets": targets,
+            "type": "row",
+            "title": section,
+            "collapsed": False,
+            "gridPos": {"h": 1, "w": 24, "x": 0, "y": y},
+            "panels": [],
         })
         pid += 1
-        if pid % 2 == 1:
+        y += 1
+        column = 0
+
+        for title, keys in graphs:
+            targets = [
+                {
+                    "refId": chr(ord("A") + i),
+                    "datasource": DATASOURCE,
+                    "expr": grafana_expr(by_key[k]),
+                    "legendFormat": legend_for(by_key[k]),
+                    "range": True,
+                }
+                for i, k in enumerate(keys)
+            ]
+            # One axis, so one unit. Panels sharing a graph must already share a scale, and a
+            # graph whose series disagreed about what the numbers *are* could not be labelled at
+            # all — which is what "Process CPU and Go runtime" was: cores, a goroutine count and a
+            # duration on one unlabelled axis, where the count set the scale and flattened the
+            # other two.
+            units = {by_key[k]["unit"] for k in keys}
+            if len(units) > 1:
+                raise SystemExit(
+                    f"panel {title!r} plots {sorted(units)} on one axis; a shared axis needs a "
+                    "shared unit, or the axis label is a lie and the smallest series is invisible"
+                )
+            unit = GRAFANA_UNIT.get(next(iter(units)))
+            if unit is None:
+                raise SystemExit(
+                    f"panel {title!r} uses unit {next(iter(units))!r}, which GRAFANA_UNIT does "
+                    "not map; add it rather than letting the axis render raw numbers"
+                )
+
+            panels.append({
+                "id": pid,
+                "type": "timeseries",
+                "title": title,
+                "datasource": DATASOURCE,
+                "gridPos": {"h": 8, "w": 12, "x": column * 12, "y": y},
+                "fieldConfig": {
+                    "defaults": {
+                        "unit": unit,
+                        "custom": {
+                            "lineWidth": 1, "fillOpacity": 8, "showPoints": "never",
+                        },
+                    },
+                    "overrides": [],
+                },
+                "options": {
+                    "legend": {
+                        "displayMode": "list", "placement": "bottom", "showLegend": True,
+                    },
+                },
+                "targets": targets,
+            })
+            pid += 1
+            # Two graphs per row of the grid; a section starts a fresh line rather than continuing
+            # the previous one's, so a section boundary is visible as well as titled.
+            column += 1
+            if column == 2:
+                column = 0
+                y += 8
+        if column:
             y += 8
 
     dashboard = {
@@ -225,8 +273,9 @@ def main() -> None:
     }
 
     OUT.write_text(json.dumps(dashboard, indent=2) + "\n")
-    print(f"wrote {OUT.relative_to(ROOT)}: {len(panels)} panels, "
-          f"{sum(len(p['targets']) for p in panels)} targets")
+    graphs = [p for p in panels if p["type"] != "row"]
+    print(f"wrote {OUT.relative_to(ROOT)}: {len(SECTIONS)} sections, {len(graphs)} graphs, "
+          f"{sum(len(p['targets']) for p in graphs)} targets")
 
 
 if __name__ == "__main__":

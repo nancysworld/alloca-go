@@ -188,41 +188,76 @@ ITC_CPUS_GENERATOR="$ITC_CPUS_GENERATOR" \
 # records as the worst there is, because nothing anywhere reports it. That is exactly what the
 # first driven G4 cell hit: Prometheus was healthy and scraping a stale host address.
 #
-# **Identities, not a count.** Counting was the first version of this gate and it is not
-# sufficient: `count(up{job=...} == 1) == ITC_GROUPS` is satisfied by the wrong *set* of targets
-# as easily as the right one. The concrete path is not hypothetical — `obs-up` runs
-# `obs-target.sh` after `itc-obs-targets.sh` and recreates the PR2 host target whenever something
-# is listening on the host's metrics port, so a G4 rehearsal missing `authority-3` but carrying
-# that extra healthy target still counts four. The later per-unit `/metrics` curls would not
-# catch it either: they prove the units answer *this script*, not that Prometheus scraped them.
+# **Identities AND count — they are complementary, and treating them as alternatives cost a
+# gate.** The first version counted: `count(up{job=...} == 1) == ITC_GROUPS`, which the wrong
+# *set* satisfies as easily as the right one — a G4 rehearsal missing `authority-3` but carrying
+# a stray healthy target still counts four. The second version fixed that by comparing the
+# authority set with the selector pinned to `topology="itc-gN"` — and in narrowing the selector it
+# stopped being able to see anything outside the rung, which is precisely where contamination
+# lives. Each version was blind to what the other caught.
 #
-# So the gate asks which authorities are actually being scraped and compares the set. The
-# selector is pinned to this rung's topology as well, which is what excludes a stray target from
-# another experiment before the comparison even starts.
+# The stray target is not hypothetical and survives both halves separately. `obs-rehearse` runs
+# `itc-obs-targets.sh`, which refuses when `targets/alloca-go.json` already exists — but then
+# invokes `obs-up`, which always runs `obs-target.sh`, recreating that file *after* the refusal
+# has passed if anything is listening on the host's metrics port. `OBS_HOST_TARGET=0` now stops
+# the rehearsal path from probing at all, and this gate is the backstop for every other way an
+# extra target arrives.
+#
+# What makes it worth refusing over is not the extra scrape, which is trivial. It is what the
+# extra target implies: a host-run service reachable on :9090 is an **unpinned process in the same
+# WSL environment**, free to contend with the rehearsal while the cpuset and topology checks all
+# pass. That is the silent environment contamination this rehearsal exists to eliminate.
+#
+# So the query is deliberately unfiltered by topology: it asks for every healthy target in the
+# job, and the comparison below rejects both a missing unit and an unexpected one.
+#
+# The later per-unit `/metrics` curls do not cover this: they prove the units answer *this
+# script*, not what Prometheus is scraping.
 #
 # Skipped, loudly, when no Prometheus is reachable: a rehearsal is allowed to run without one, and
 # the run's own totals do not depend on it. What must never happen is a run that believes it was
 # observed when it was not.
 if curl -sf -m 5 "$PROM_URL/-/ready" >/dev/null 2>&1; then
   scraped_authorities="$(curl -sfG -m 10 "$PROM_URL/api/v1/query" \
-      --data-urlencode "query=up{job=\"$PROM_JOB\",topology=\"itc-g${ITC_GROUPS}\"} == 1" 2>/dev/null \
-    | python3 -c 'import json,sys
+      --data-urlencode "query=up{job=\"$PROM_JOB\"} == 1" 2>/dev/null \
+    | ITC_GROUPS="$ITC_GROUPS" python3 -c 'import json,os,sys
+# Identify every healthy target by rung and authority, so an extra one cannot hide behind a
+# correct count and a missing one cannot hide behind an extra.
 try:
-    r = json.load(sys.stdin)["data"]["result"]
-    print(",".join(sorted(s["metric"].get("authority", "?") for s in r)))
+    rung = "itc-g" + os.environ["ITC_GROUPS"]
+    names = []
+    for s in json.load(sys.stdin)["data"]["result"]:
+        m = s["metric"]
+        if m.get("topology") == rung:
+            names.append(m.get("authority", "unlabelled"))
+        else:
+            # Anything outside this rung is named by what it actually is, so the refusal below
+            # can say which foreign target it found rather than only that the set differed.
+            names.append("FOREIGN[topology=%s instance=%s]"
+                         % (m.get("topology", "<none>"), m.get("instance", "?")))
+    print(",".join(sorted(names)))
 except Exception:
     print("")' 2>/dev/null)" || scraped_authorities=""
 
   expected_authorities="$(python3 -c "print(','.join(sorted('authority-%d' % n for n in range(1, $ITC_GROUPS + 1))))")"
 
   if [ "$scraped_authorities" != "$expected_authorities" ]; then
-    fail "prometheus is up, but the scraped units are not the ones this rung raises.
+    fail "prometheus is up, but the scraped units are not exactly the ones this rung raises.
   expected: ${expected_authorities}
   scraped:  ${scraped_authorities:-<none>}
 
-  A successful query against an unscraped job returns nothing and reports no error, so the cell
-  would complete and retain no series — and a count alone would accept the wrong set. Regenerate
-  the target list and give Prometheus its refresh interval to pick it up:
+  A FOREIGN entry above is a healthy target in this job that does not belong to this rung. The
+  extra scrape is trivial; what it implies is not. The PR2 host target only becomes reachable
+  when a service is listening on the host's metrics port, and that process is unpinned — free to
+  contend with the rehearsal while every cpuset and topology check still passes. Remove it and
+  raise the stack with the rehearsal path, which does not probe for it:
+
+      rm -f deploy/observability/targets/alloca-go.json
+      make obs-rehearse ITC_CPUS_GENERATOR=$ITC_CPUS_GENERATOR
+
+  A missing entry is the opposite failure: a successful query against an unscraped job returns
+  nothing and reports no error, so the cell would complete and retain no series. Regenerate the
+  target list and give Prometheus its refresh interval to pick it up:
 
       ITC_GROUPS=$ITC_GROUPS ./test/scripts/itc-obs-targets.sh
       curl -s $PROM_URL/api/v1/targets | grep -o '\"health\":\"[a-z]*\"'

@@ -53,6 +53,11 @@ OBSREHEARSALCOMPOSE ?= deploy/observability/docker-compose.rehearsal.yml
 # for the same reason itc-rehearse does: one recipe raises the stack, and only the file list
 # changes.
 OBS_COMPOSE  ?= -f $(OBSCOMPOSE)
+# Whether `obs-up` probes for the PR2 host-run service and writes it as a scrape target. On by
+# default because that is the PR2 measurement path; `obs-rehearse` sets it to 0, because in a
+# rehearsal the service under test is in containers and any host-run process answering on the
+# metrics port is contamination rather than a target.
+OBS_HOST_TARGET ?= 1
 # The PR3b two-authority topology: two PostgreSQL authorities, two shard-affine service
 # units, one placement document. Separate from the observability stack so a topology can be
 # raised and torn down without disturbing whatever is scraping it.
@@ -253,7 +258,16 @@ obs-up:
 	@# Probe for an address that actually reaches the service, rather than assuming one.
 	@# Tolerated on failure: the stack is still useful with the service down, and the script
 	@# prints what to do. Re-run `make obs-target` once the service is up.
-	@./test/scripts/obs-target.sh || true
+	@#
+	@# OBS_HOST_TARGET=0 skips the probe entirely, and the rehearsal path sets it. The probe
+	@# writes targets/alloca-go.json whenever *anything* answers on the host's metrics port, and
+	@# obs-rehearse invokes this target after itc-obs-targets.sh has already refused that file —
+	@# so without the switch the refusal is simply undone a step later, silently.
+	@if [ "$(OBS_HOST_TARGET)" = "0" ]; then \
+	  echo "obs-up: skipping the PR2 host-target probe (OBS_HOST_TARGET=0)"; \
+	else \
+	  ./test/scripts/obs-target.sh || true; \
+	fi
 	@echo "prometheus  http://localhost:9091"
 	@echo "grafana     http://localhost:3000/d/alloca-frontier"
 
@@ -274,7 +288,11 @@ obs-up:
 # discovered when a report has a hole in it.
 obs-rehearse:
 	@ITC_GROUPS=$(ITC_GROUPS) ./test/scripts/itc-obs-targets.sh
-	@$(MAKE) --no-print-directory obs-up \
+	@# OBS_HOST_TARGET=0: the rehearsal must not probe for the PR2 host target. The probe would
+	@# recreate targets/alloca-go.json after itc-obs-targets.sh refused it, and the process that
+	@# makes it reachable is unpinned — it contends with the rehearsal while every cpuset and
+	@# topology check still passes (ag-sept-pr4.md §3).
+	@$(MAKE) --no-print-directory obs-up OBS_HOST_TARGET=0 \
 	  OBS_COMPOSE="-f $(OBSCOMPOSE) -f $(OBSREHEARSALCOMPOSE)"
 	@echo "  monitoring confined to CPUs $(ITC_CPUS_GENERATOR)"
 	@echo "  scraping $(ITC_GROUPS) unit(s) as service-N:9090 on the topology network"

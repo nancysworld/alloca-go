@@ -253,9 +253,12 @@ log "G$ITC_GROUPS cell -> $OUT"
 # `alloca-seed -reset` also asserts a clean start, so this is where a contaminated fixture is
 # caught rather than inferred later from an odd outcome mix.
 log "  reseeding: $SLOTS slots x $CAPACITY capacity per organisation ($((SLOTS * CAPACITY * 4)) fresh mutations)"
+# `.txt`, not `.log`: `.gitignore` excludes `*.log`, so a transcript written under that name
+# cannot be retained when a cell is promoted into `docs/measurements/`, and a promoted cell would
+# cite a file the repository does not carry.
 ITC_GROUPS="$ITC_GROUPS" SLOTS="$SLOTS" CAPACITY="$CAPACITY" \
-  ./test/scripts/itc-seed.sh > "$OUT/seed.log" 2>&1 \
-  || fail "reseeding failed; see $OUT/seed.log"
+  ./test/scripts/itc-seed.sh > "$OUT/seed.txt" 2>&1 \
+  || fail "reseeding failed; see $OUT/seed.txt"
 
 # Bracketing scrapes. The service counters are cumulative and the units are deliberately left
 # running between cells, so only the delta across the measured window describes this cell —

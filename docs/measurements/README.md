@@ -32,6 +32,7 @@ artifact directories are large and are kept anyway: without them a report is an 
 |---|---|---|
 | [`pr2-frontier/`](pr2-frontier/) | `test/scripts/sweep.sh` | The frontier sweeps: `dispersed/` (concurrency ladder), `pool/` + `pool-repeat/` (pool ladder), `plateau/` + `plateau-repeat/` (the two combined), `contended-1/` + `contended-2/` (hot-slot and hot-identity), and `postgres-waits/` (database-side sampling, diagnostic only) |
 | [`pr3c-phase1/`](pr3c-phase1/) | `test/scripts/pr3c-experiments.sh` | Two passes of the Phase 1 matrix on the two-authority topology: `controls` assertions, `correctness`, `distribution` (one-hot organisation), `refusal` (cross-authority control) and `failure-isolation` (one authority stopped and restored mid-run). Each cell holds its run, verdict and both units' scrape pairs; the failure cell adds the per-authority row census and both units' readiness during the fault. [`failure-with-ambiguity/`](pr3c-phase1/failure-with-ambiguity/) is a **third** failure run, kept beside the passes rather than inside one: its fault produced a real `unknown_replayable` (resolved `replay=false`, so no commit had landed), and it is the only live demonstration of the §12 population contract. It predates the harness hardening, and its own README says what that costs. [`controls-replay/`](pr3c-phase1/controls-replay/) is a later **controls-only** run holding one transcript and no measured cell: it carries the same-key repost that VAL-COR-4's replay clause needs and that neither pass contains, added when the Iteration B A&R found the gap |
+| [`pr4a-rehearsal-windows/`](pr4a-rehearsal-windows/) | `test/scripts/itc-run.sh` | Three `G4` rehearsal cells differing only in window length (30 s, 60 s, 120 s). **Rehearsal/diagnostic only — no capacity claim rests on them**, and the 120 s cell is fixture-bound and its rate must not be quoted. Kept because the 60 s cell reproduces PR2's open throughput anomaly with the generator confined to CPUs disjoint from every unit, which excludes shared-CPU contention by construction. The first cells in this directory to retain per-cell panel series rather than endpoints alone |
 | [`pr2-generator-control/`](pr2-generator-control/) | `test/scripts/control-generator.sh` | The mandatory VAL-NEG-2 generator-headroom control, at ~2,150 req/s |
 | [`pr2-generator-control-plateau/`](pr2-generator-control-plateau/) | `test/scripts/control-generator.sh` | The same control re-run at the ~4,300 req/s operating point the PR2 conclusion rests on |
 | [`pr2-telemetry/`](pr2-telemetry/) | `test/scripts/sweep.sh` | The VAL-NEG-3 telemetry comparison: `full` and `metrics_only`, two passes each. VAL-NEG-3 is **not discharged** — within-mode spread exceeded the between-mode delta, so no overhead figure is claimed |
@@ -63,11 +64,21 @@ anything:
 
 **Every run declares what it may be quoted for.** `run.json`'s `quotability.level` is one of
 `none | local | capacity | publishable`, with `blocked_from` and `blocked_because` naming each
-missing manifest field. **Every run in this directory is `local`** — the operator-supplied
-deployment fields that `capacity` requires were not populated when they were taken. Separately,
-the generator shared a host with the service, which puts `publishable` out of reach
+missing manifest field. **Every run here is `local` except
+[`pr4a-rehearsal-windows/`](pr4a-rehearsal-windows/), which is `capacity`** — everything else
+predates the manifest declaration, so the operator-supplied deployment fields that `capacity`
+requires were not populated when those runs were taken. In every case the generator shared a host
+with the service, which puts `publishable` out of reach for all of them
 ([`measurement-contract.md`](../design/measurement-contract.md) §13.2). A report may not promote a
 number past its artifact's level.
+
+**`quotability.level` is a provenance verdict, not an evidence class.** `capacity` means the
+manifest is complete enough for a capacity claim — declaration, observed deployment and per-unit
+reconciliation all agree. It does not mean the run *is* capacity evidence. The
+`pr4a-rehearsal-windows/` cells are the worked example: they certify `capacity` and are
+simultaneously rehearsal-only, because four shard groups sharing one workstation cannot be
+independently provisioned capacity. Read the run's `manifest.environment` alongside its level;
+the two answer different questions.
 
 **Anomalies are retained, not dropped.** A cell that reads oddly stays in the record with its
 diagnostic panels, and the report explains it. PR2's unexplained ~2× excursions are the worked

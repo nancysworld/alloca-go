@@ -753,6 +753,16 @@ resident memory grows about 19 MB to 23 MB.
 The pool is not the cause at this rung: connections in use oscillate around 2–4 against a maximum
 of 4 per unit, and acquire-wait stays flat until after the load stops.
 
+> **These within-window figures are not re-derivable and must not be quoted.** This cell predates
+> per-cell series retention (`a678153`), so it holds bracketing scrapes and no panel export. Every
+> shape statement in the two paragraphs above — the decay, the latency climb, the memory growth,
+> the pool observation — was read live from Grafana and is now beyond its retention window. They
+> are recorded as **observations that motivated §3.12**, not as evidence: `measurement-contract.md`
+> §2 and §5.3 admit no figure that a retained artifact cannot reproduce. The endpoint totals
+> (110,172 mutations, the per-unit 27,543 agreement, the latency percentiles) are unaffected —
+> those come from `run.json` and the scrape pair. §3.12's cells are the retained version of this
+> observation, and any decay claim that survives must rest on them.
+
 > **Hypothesis withdrawn.** This section originally proposed that cost per mutation rises with
 > accumulated state — the `btree_gist` exclusion index on `user_time_claims` growing under
 > 110,172 inserts, in the measured write path. **§3.12 refutes it**: a 30 s cell reached *more*
@@ -817,10 +827,20 @@ consistent artifact, before any metered AWS time is spent.
 Three cells at `c=16`, `SLOTS=3200`, identical but for window length, each reseeded from the same
 state. The intent was to test whether reported Goodput depends on how long a rung runs (§3.11).
 
+All three are retained at
+[`docs/measurements/pr4a-rehearsal-windows/`](../../measurements/pr4a-rehearsal-windows/) —
+[`window-30s/`](../../measurements/pr4a-rehearsal-windows/window-30s/),
+[`window-60s/`](../../measurements/pr4a-rehearsal-windows/window-60s/) and
+[`window-120s-exhausted/`](../../measurements/pr4a-rehearsal-windows/window-120s-exhausted/) —
+with their panel exports and TSDB snapshots. Every figure below is re-derivable from those
+files; that directory's README carries the evidence class and the reading caveats.
+
 **The 120 s cell is invalid and is excluded.** It admitted **exactly 256,000 of 256,000** — its
-whole supply — so its rate of 2,133/s is precisely `supply ÷ duration` and describes the fixture
-rather than the service. The exhaustion reporter added in §3.10 fired, which is the first time
-that check has caught a live cell.
+whole supply — and then took a further 128,239 `no_capacity` refusals, so its rate of 2,133/s is
+precisely `supply ÷ duration` and describes the fixture rather than the service. The exhaustion
+reporter added in §3.10 fired, which is the first time that check has caught a live cell. Note
+that the cell is still `measurement_sound`: the accounting reconciles, which is a different
+property from having measured the service.
 
 **The remaining two were not the same experiment.** Read from the per-cell panel exports:
 
@@ -885,14 +905,18 @@ repeating. And the 120 s point needs a fixture that cannot bound it.
 - **Rung duration** stays open until §2.4's preflight derives it.
 - **Within-window decay must be characterised before any ladder** (§3.11). Goodput falls ~2.5×
   inside a single 60 s cell, so a rung's reported average depends on how long it ran, and two
-  rungs are not comparable until that dependence is quantified or removed. The next step is the
-  same cell at 30 s, 60 s and 120 s: a rate that falls with window length is a function of
-  accumulated state rather than of the service, and the ladder then needs either a defined
-  steady-state slice or a bounded fixture-state budget per rung.
-- **The rate series is not retained per cell.** `itc-run.sh` keeps bracketing scrapes, which give
-  a delta but no shape — the decay above is visible only in Grafana and would be lost with the
-  retention window. A report cannot quote what is not retained, so a decay-aware result needs the
-  per-cell CSV export or TSDB snapshot the PR2 sweep runner already performs.
+  rungs are not comparable until that dependence is quantified or removed. The 30 s / 60 s / 120 s
+  experiment this item called for **has now been run and did not answer it** (§3.12): the cells
+  landed in different regimes, so window length is confounded with regime and the dependence is
+  still unquantified. The ladder still needs either a defined steady-state slice or a bounded
+  fixture-state budget per rung, and now also needs the regime separated first.
+- ~~**The rate series is not retained per cell.**~~ **Done** (`a678153`). `itc-run.sh` exports the
+  per-cell panel CSVs and a TSDB snapshot alongside the bracketing scrapes, so a cell now carries
+  its shape and not just its endpoints. §3.12 is the first analysis that depends on it, and its
+  three cells are retained at
+  [`docs/measurements/pr4a-rehearsal-windows/`](../../measurements/pr4a-rehearsal-windows/). The
+  two §3.11 cells predate the change and have bracketing scrapes only — which is why their decay
+  is described from Grafana and is **not** re-derivable from a retained artifact.
 - **The saturation ladder** has not been run, and cannot be until the two items above are settled.
   Concurrency 16 sits exactly at `aggregate_pool_size`, so the ladder must deliberately cross it;
   `c=32` (§3.11.1) is the first rung past it and is recorded as an observation, not a rung.

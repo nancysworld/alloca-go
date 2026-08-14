@@ -146,7 +146,12 @@ done
 # The monitoring side shares the generator's set, and moves with it: widening
 # ITC_CPUS_GENERATOR for the headroom control has to widen monitoring too, or the control
 # changes the generator's share while monitoring keeps its old one.
-check alloca-prometheus "$ITC_CPUS_GENERATOR" optional
-check alloca-grafana    "$ITC_CPUS_GENERATOR" optional
+check alloca-prometheus    "$ITC_CPUS_GENERATOR" optional
+check alloca-grafana       "$ITC_CPUS_GENERATOR" optional
+# node_exporter reads the *host's* namespaces, so what it reports does not depend on where it is
+# pinned — but what it costs does. It scrapes six collectors every 5s, and an unpinned exporter
+# spends that on whichever CPU the scheduler picks, which on this partition means a capacity
+# unit's (ag-sept-pr4.md §2.14).
+check alloca-node-exporter "$ITC_CPUS_GENERATOR" optional
 
 exit $fail

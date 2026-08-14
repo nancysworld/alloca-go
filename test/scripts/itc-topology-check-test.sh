@@ -98,7 +98,13 @@ G4_UNITS="alloca-authority-1-db alloca-authority-2-db alloca-authority-3-db allo
           alloca-service-1 alloca-service-2 alloca-service-3 alloca-service-4"
 G2_UNITS="alloca-authority-1-db alloca-authority-2-db alloca-service-1 alloca-service-2"
 G1_UNITS="alloca-authority-1-db alloca-service-1"
-MONITORING="alloca-prometheus alloca-grafana"
+# The whole monitoring set, node_exporter included. It is listed here rather than only in the
+# check because the two gates are in tension and the tension is invisible from either side:
+# itc-run.sh REFUSES a cell that retained no host samples (§2.5), so the exporter has to be
+# running — while this check refuses containers the rehearsal did not raise, so an unlisted
+# exporter would have to be stopped. Shipping the exporter without adding it here made
+# `make itc-rehearse` fail on a correctly configured machine.
+MONITORING="alloca-prometheus alloca-grafana alloca-node-exporter"
 
 echo "itc-topology-check-test: container-set logic"
 

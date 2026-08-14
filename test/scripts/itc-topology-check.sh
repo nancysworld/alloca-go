@@ -91,16 +91,22 @@ fi
 # the monitoring the rehearsal now requires — but the concern was real, because a container the
 # rehearsal did not raise still consumes the envelope the topology is measured in.
 #
-# So companions are enumerated rather than ignored. Prometheus and Grafana are expected: they are
-# the monitoring half of the generator/monitor set, and whether they are *pinned* there is
-# itc-cpuset-check.sh's question, not this one. Anything else — `alloca-pg` from `make db-up` is
-# the likely one — is a container nobody accounted for, running unpinned on the capacity units'
-# CPUs.
+# So companions are enumerated rather than ignored. Prometheus, Grafana and node_exporter are
+# expected: they are the monitoring half of the generator/monitor set, and whether they are
+# *pinned* there is itc-cpuset-check.sh's question, not this one. Anything else — `alloca-pg` from
+# `make db-up` is the likely one — is a container nobody accounted for, running unpinned on the
+# capacity units' CPUs.
+#
+# node_exporter is a companion the rehearsal **requires**, not merely tolerates. It is VAL-NEG-7's
+# host sensor (ag-sept-pr4.md §2.1), and a cell driven without it retains no host evidence — which
+# itc-run.sh refuses outright (§2.5). Refusing it here would have made the two gates contradict
+# each other: one demanding the exporter be running, the other demanding it be stopped.
 if ! others="$(docker ps --filter 'name=alloca-' --format '{{.Names}}' \
                | grep -vxF "$(printf '%s\n' "$running")" || true)"; then
   others=""
 fi
-unexpected="$(printf '%s\n' "$others" | grep -vxE 'alloca-prometheus|alloca-grafana' | grep . || true)"
+unexpected="$(printf '%s\n' "$others" \
+  | grep -vxE 'alloca-prometheus|alloca-grafana|alloca-node-exporter' | grep . || true)"
 if [ -n "$unexpected" ]; then
   echo "itc-topology-check: containers are running that the rehearsal did not raise:" >&2
   printf '%s\n' "$unexpected" | sed 's/^/    /' >&2

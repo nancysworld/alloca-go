@@ -50,6 +50,13 @@ services:
   grafana:
     cpuset: "${ITC_CPUS_GENERATOR:-8-11}"
 
+  # Pinned for cost, not for correctness. It reads the host's namespaces, so what it reports is
+  # the same wherever it runs — but scraping six collectors every 5s is work, and unpinned that
+  # work lands on whichever CPU the scheduler picks, which on this partition means inside a
+  # capacity unit's set. It measures the machine; it must not perturb the units it measures.
+  node-exporter:
+    cpuset: "${ITC_CPUS_GENERATOR:-8-11}"
+
 networks:
   topology:
     external: true

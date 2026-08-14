@@ -99,9 +99,17 @@ def legend_for(panel: dict) -> str:
     return declared or panel["title"]
 
 
-def grafana_expr(expr: str) -> str:
-    """Substitute the repository token with Grafana's adaptive macro."""
-    return expr.replace("$RANGE", "$__rate_interval")
+def grafana_expr(panel: dict) -> str:
+    """Substitute the repository token: the panel's declared range, else Grafana's macro.
+
+    `$__rate_interval` is adaptive and normally right, but it is computed from the datasource's
+    single `timeInterval` — which is 1s here, matching the service job. The host job scrapes at
+    5s, so the macro resolves shorter than two of *its* scrape intervals and rate() over it
+    returns nothing at all: the panel renders "No data" while the series is present and healthy
+    (ag-sept-pr4.md §2.4, §3.14.1). A panel whose series is scraped on a different cadence
+    declares its own window.
+    """
+    return panel["expr"].replace("$RANGE", panel.get("range", "$__rate_interval"))
 
 
 def main() -> None:
@@ -123,7 +131,7 @@ def main() -> None:
             {
                 "refId": chr(ord("A") + i),
                 "datasource": DATASOURCE,
-                "expr": grafana_expr(by_key[k]["expr"]),
+                "expr": grafana_expr(by_key[k]),
                 "legendFormat": legend_for(by_key[k]),
                 "range": True,
             }

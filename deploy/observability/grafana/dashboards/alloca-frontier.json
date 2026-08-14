@@ -559,7 +559,7 @@
             "type": "prometheus",
             "uid": "alloca-prometheus"
           },
-          "expr": "sum(rate(node_cpu_seconds_total{job=\"node\",mode!=\"idle\"}[$__rate_interval]))",
+          "expr": "sum(rate(node_cpu_seconds_total{job=\"node\",mode!=\"idle\"}[30s]))",
           "legendFormat": "Host CPU busy",
           "range": true
         }
@@ -603,7 +603,7 @@
             "type": "prometheus",
             "uid": "alloca-prometheus"
           },
-          "expr": "sum by (mode) (rate(node_cpu_seconds_total{job=\"node\",mode=~\"steal|iowait\"}[$__rate_interval]))",
+          "expr": "sum by (mode) (rate(node_cpu_seconds_total{job=\"node\",mode=~\"steal|iowait\"}[30s]))",
           "legendFormat": "{{mode}}",
           "range": true
         }

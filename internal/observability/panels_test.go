@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 const (
@@ -23,6 +24,8 @@ const (
 	// The sweep runner names required panel keys in its own source; this package is where that
 	// naming can be checked against the panels that actually exist.
 	sweepPath = "../../test/scripts/sweep.sh"
+	// Where each job's scrape cadence is declared; a rate() window has to outlive its own.
+	promConfigPath = "../../deploy/observability/prometheus.yml"
 )
 
 type canonicalPanels struct {
@@ -36,6 +39,9 @@ type canonicalPanels struct {
 		// inferred from the PromQL: see TestPerAuthorityPanelsExposeAuthority.
 		PerAuthority bool   `json:"per_authority"`
 		Legend       string `json:"legend"`
+		// Explicit rate window, for a series whose scrape cadence the datasource-wide macro
+		// does not fit. Empty means $__rate_interval.
+		Range string `json:"range"`
 	} `json:"panels"`
 }
 
@@ -44,8 +50,14 @@ type canonicalPanels struct {
 // sides is deliberate: the substitution is itself part of the contract between the canonical
 // queries and their two consumers, and a test that ignored it would pass while the generator
 // emitted something else.
-func grafanaForm(expr string) string {
-	return strings.ReplaceAll(expr, rangeToken, "$__rate_interval")
+//
+// A panel that declares its own range gets that literal instead of the macro. Applying a
+// different rule here would report drift that does not exist and miss drift that does.
+func grafanaForm(expr, declaredRange string) string {
+	if declaredRange == "" {
+		declaredRange = "$__rate_interval"
+	}
+	return strings.ReplaceAll(expr, rangeToken, declaredRange)
 }
 
 // exporterForm is the other consumer's substitution: a literal duration, recorded per cell.
@@ -128,7 +140,7 @@ func TestDashboardMatchesCanonicalPanels(t *testing.T) {
 			t.Errorf("panel %q hard-codes Grafana's $__rate_interval; canonical expressions "+
 				"use $RANGE so the exporter can substitute a literal window", p.Key)
 		}
-		expr := grafanaForm(p.Expr)
+		expr := grafanaForm(p.Expr, p.Range)
 		if prev, dup := wanted[expr]; dup {
 			t.Errorf("panels %q and %q share an expression; one of them is not measuring "+
 				"what its title claims", prev, p.Key)
@@ -257,7 +269,7 @@ func TestRangeTokenSubstitutesToValidPromQL(t *testing.T) {
 		substituted++
 
 		for name, got := range map[string]string{
-			"grafana":  grafanaForm(p.Expr),
+			"grafana":  grafanaForm(p.Expr, p.Range),
 			"exporter": exporterForm(p.Expr, canonical.ExportRange),
 		} {
 			if strings.Contains(got, rangeToken) {
@@ -347,7 +359,7 @@ func TestPerAuthorityPanelsExposeAuthority(t *testing.T) {
 
 	perAuthority := map[string]bool{}
 	for _, p := range canonical.Panels {
-		perAuthority[grafanaForm(p.Expr)] = p.PerAuthority
+		perAuthority[grafanaForm(p.Expr, p.Range)] = p.PerAuthority
 	}
 
 	checked := 0
@@ -419,6 +431,114 @@ func TestPopulatedSeriesGateNamesPanelsThatExist(t *testing.T) {
 	}
 }
 
+// TestRatePanelsOutliveTheirScrapeInterval catches a panel that renders "No data" while its
+// series is present, healthy and being scraped.
+//
+// rate() needs at least two samples inside its window. Grafana computes $__rate_interval from the
+// datasource's single `timeInterval`, which is 1s here to match the service job — but the host job
+// scrapes at 5s, so the macro resolves shorter than two host scrapes and the query returns nothing
+// at all. Both host rate() panels shipped that way (§3.14.1): the CSV export had data, because the
+// exporter substitutes a literal window, and only the dashboard was blank.
+//
+// Nothing else notices. The query succeeds, the panel exists, the populated-series gate reads the
+// CSV rather than the dashboard, and the failure is visible only to someone looking at Grafana.
+func TestRatePanelsOutliveTheirScrapeInterval(t *testing.T) {
+	canonical := loadJSON[canonicalPanels](t, panelsPath)
+
+	// Scrape cadence per job, read from the Prometheus config so the two cannot drift.
+	raw, err := os.ReadFile(filepath.Clean(promConfigPath))
+	if err != nil {
+		t.Fatalf("reading %s: %v", promConfigPath, err)
+	}
+	interval := scrapeIntervalsByJob(string(raw))
+	if len(interval) == 0 {
+		t.Fatal("parsed no scrape intervals from prometheus.yml")
+	}
+
+	checked := 0
+	for _, p := range canonical.Panels {
+		if !strings.Contains(p.Expr, "[$RANGE]") {
+			continue
+		}
+		job := jobSelectorIn(p.Expr)
+		if job == "" {
+			continue // no job constraint: it rides the global interval, which the macro matches
+		}
+		scrape, ok := interval[job]
+		if !ok {
+			t.Errorf("panel %q selects job=%q, which prometheus.yml does not define", p.Key, job)
+			continue
+		}
+		checked++
+
+		// A panel on a job scraped more slowly than the datasource's timeInterval cannot rely on
+		// $__rate_interval and must declare its own window, wide enough for two samples.
+		if scrape <= interval["__global__"] {
+			continue
+		}
+		if p.Range == "" {
+			t.Errorf("panel %q queries job=%q, scraped every %v — slower than the datasource's "+
+				"timeInterval — but declares no range, so $__rate_interval resolves shorter than "+
+				"two scrapes and the panel renders empty. Declare \"range\".",
+				p.Key, job, scrape)
+			continue
+		}
+		declared, err := time.ParseDuration(p.Range)
+		if err != nil {
+			t.Errorf("panel %q has range %q, which is not a duration: %v", p.Key, p.Range, err)
+			continue
+		}
+		if declared < 2*scrape {
+			t.Errorf("panel %q declares range %v over a job scraped every %v: rate() needs two "+
+				"samples in the window, so this can return nothing", p.Key, declared, scrape)
+		}
+	}
+	if checked == 0 {
+		t.Error("no job-scoped rate() panel was checked, so this test proved nothing")
+	}
+}
+
+// scrapeIntervalsByJob reads prometheus.yml's global interval as "__global__" and each job's
+// override under its own name. Deliberately textual: the file is small, the shape is fixed, and a
+// YAML dependency for two fields would be the heavier answer.
+func scrapeIntervalsByJob(cfg string) map[string]time.Duration {
+	out := map[string]time.Duration{}
+
+	global := regexp.MustCompile(`(?m)^global:(?:\n(?:[ \t]+.*|\s*)$)*`).FindString(cfg)
+	if m := regexp.MustCompile(`scrape_interval:\s*(\S+)`).FindStringSubmatch(global); m != nil {
+		if d, err := time.ParseDuration(m[1]); err == nil {
+			out["__global__"] = d
+		}
+	}
+
+	jobs := regexp.MustCompile(`(?m)^\s*-\s*job_name:\s*(\S+)`).FindAllStringSubmatchIndex(cfg, -1)
+	for i, j := range jobs {
+		name := cfg[j[2]:j[3]]
+		end := len(cfg)
+		if i+1 < len(jobs) {
+			end = jobs[i+1][0]
+		}
+		body := cfg[j[1]:end]
+		if m := regexp.MustCompile(`scrape_interval:\s*(\S+)`).FindStringSubmatch(body); m != nil {
+			if d, err := time.ParseDuration(m[1]); err == nil {
+				out[name] = d
+				continue
+			}
+		}
+		out[name] = out["__global__"]
+	}
+	return out
+}
+
+// jobSelectorIn returns the job a panel constrains itself to, or "" when it names none.
+func jobSelectorIn(expr string) string {
+	m := regexp.MustCompile(`job\s*=\s*"([^"]+)"`).FindStringSubmatch(expr)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
+
 // TestPerAuthorityMetadataMatchesTheQuery stops the flag drifting from the expression it
 // describes. The flag drives the legend, so a wrong flag is a wrong dashboard — and unlike a
 // wrong legend, nothing on screen would look obviously broken.
@@ -453,7 +573,7 @@ func TestPanelsSharingAnAxisShareAScale(t *testing.T) {
 
 	unitByExpr := map[string]string{}
 	for _, p := range canonical.Panels {
-		unitByExpr[grafanaForm(p.Expr)] = p.Unit
+		unitByExpr[grafanaForm(p.Expr, p.Range)] = p.Unit
 	}
 
 	for _, p := range dash.Panels {

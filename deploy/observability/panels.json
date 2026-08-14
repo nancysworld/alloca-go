@@ -163,14 +163,16 @@
       "key": "host_cpu_busy",
       "title": "Host CPU busy",
       "unit": "cores",
-      "_note": "VAL-NEG-7's primary host indicator (ag-sept-pr4.md §2.1). Non-idle CPU across the whole machine, which is what distinguishes 'the service stopped being given CPU' from 'the service stopped asking for it' — the two the §3.12 degraded cell could not tell apart. JOB-SCOPED to `node` for the same reason the process panels are scoped to `alloca-go`.",
+      "range": "30s",
+      "_note": "VAL-NEG-7's primary host indicator (ag-sept-pr4.md §2.1). Non-idle CPU across the whole machine, which is what distinguishes 'the service stopped being given CPU' from 'the service stopped asking for it' — the two the §3.12 degraded cell could not tell apart. JOB-SCOPED to `node` for the same reason the process panels are scoped to `alloca-go`. RANGE 30s, not the default: the host job scrapes at 5s, and Grafana's $__rate_interval is computed from the datasource's single timeInterval (1s, matching the service job), so the macro resolves shorter than two host scrapes and rate() returns nothing — the panel reads 'No data' while the series is healthy. 30s is six scrapes.",
       "expr": "sum(rate(node_cpu_seconds_total{job=\"node\",mode!=\"idle\"}[$RANGE]))"
     },
     {
       "key": "host_cpu_steal",
       "title": "Host CPU steal and iowait",
       "unit": "cores",
-      "_note": "The two modes that mean the host was not running because something outside it decided so. `steal` is the hypervisor taking the CPU — the WSL2 candidate §3.12 named and could not test; `iowait` is blocking on storage, the Docker Desktop storage-path candidate. Separated from host_cpu_busy because both are small next to total busy and would be invisible on a shared axis.",
+      "range": "30s",
+      "_note": "The two modes that mean the host was not running because something outside it decided so. `steal` is the hypervisor taking the CPU — the WSL2 candidate §3.12 named and could not test; `iowait` is blocking on storage, the Docker Desktop storage-path candidate. Separated from host_cpu_busy because both are small next to total busy and would be invisible on a shared axis. RANGE 30s for the same reason as host_cpu_busy: the host job's 5s cadence needs a window the datasource-wide macro does not give it.",
       "expr": "sum by (mode) (rate(node_cpu_seconds_total{job=\"node\",mode=~\"steal|iowait\"}[$RANGE]))",
       "legend": "{{mode}}"
     },

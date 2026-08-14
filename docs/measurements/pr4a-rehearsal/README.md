@@ -105,13 +105,52 @@ One accelerated throughout; the other degraded from its first exported sample an
 fewer mutations in twice the time. Window length is confounded with which regime a run landed in,
 so the two are not comparable and the original question stays open.
 
-The 60 s cell reproduces PR2's open throughput anomaly on three of its four signature elements
-and contradicts the fourth (acquire-wait nearly doubled where PR2's was unchanged). Its
-significance is that the generator halved in sympathy — 0.1146 → 0.0588 per core — while confined
-to CPUs **disjoint** from every unit, which excludes shared-CPU contention by construction in a
-way PR2's unpartitioned host could not. The pool series is the sharpest part: connections in use
-falls to **7 of 16 while acquire-wait rises**, so connections exist and are not being handed out —
-which places the stall between the pool and the database rather than in the service's own work.
+The 60 s cell reproduces PR2's open throughput anomaly on two signature elements — throughput
+falling to 0.45 of the healthy rate, and service process CPU roughly halving — and contradicts a
+third, since acquire-wait nearly doubled where PR2's was unchanged.
+
+The pool series is the sharpest part: connections in use falls to **7 of 16 while acquire-wait
+rises**, so connections exist and are not being handed out, which places the stall between the
+pool and the database rather than in the service's own work.
+
+> **Do not read the generator's CPU drop as evidence.** The table above shows generator CPU
+> falling 0.1146 → 0.0588 per core, and an earlier version of this record counted that as a third
+> matching signature element. It is not one. `alloca-load` is closed-loop — fixed workers send,
+> block on the response, repeat — so when the service path slows, generator CPU falls with
+> throughput *mechanically*, in a completely healthy generator. It carries no information about
+> the cause.
+>
+> The disjoint cpusets (generator on 8–11, units on 0–7, verified per run) establish one thing
+> narrowly: the generator and the units were not competing for the same WSL-visible logical CPUs.
+> They do **not** exclude a shared kernel, shared storage, shared physical cores or SMT siblings,
+> or Windows-side contention — so no host-level cause is either confirmed or ruled out here.
+
+## Every sample here is labelled with the wrong topology
+
+**Read `topology=single-instance-local` in these artifacts as `itc-g4`.** All 1,188 sample rows
+across every `panels/*.csv` here carry it, and the TSDB blocks carry it too.
+
+`prometheus.yml` set `topology` as a job-wide relabel fixed at `single-instance-local`, the PR2
+value. A static rule cannot know which topology the discovered targets belong to, so every
+Iteration C sample inherited PR2's identity. Nothing reported it because the label was *present
+and well-formed*: queries succeeded, CSVs carried rows, and the populated-series gate passed. It
+was found by reading a retained value, not by any gate.
+
+**The data is unaffected — only this one label is wrong.** Each row still carries its correct
+`authority`, `unit` and `instance`, so per-unit work is sound, and `run.json`'s manifest is the
+authoritative environment identity in any case. The harm is exactly the one the label existed to
+prevent: a snapshot separated from this directory would misdescribe itself.
+
+**It is annotated rather than corrected, deliberately.** The label is baked into the retained
+TSDB blocks at ingest, so no re-export can rewrite it — only re-running these cells could, and
+these cells cannot be re-run. The 60 s cell is a *degraded-regime* observation that appeared
+once; §3.12's whole finding is that the regime is not reproducible on demand. Re-running would
+destroy the evidence to fix its metadata.
+
+Fixed for everything future: topology ownership moved to the target documents
+(`itc-obs-targets.sh` stamps `itc-g1`/`itc-g2`/`itc-g4`, `obs-target.sh` keeps
+`single-instance-local`), and `itc-obs-targets-test.sh` fails if the job-wide relabel returns. Any
+cell dated after that change carries its real rung.
 
 ## Reading the series
 

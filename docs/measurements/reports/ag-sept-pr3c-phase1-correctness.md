@@ -436,7 +436,7 @@ make image-provenance                                       # want modified=fals
 go build -o bin/alloca-load ./cmd/alloca-load               # also from a clean tree
 go build -o bin/alloca-verify ./cmd/alloca-verify
 make topo-up
-make topo-deployment > test/fixtures/deployment.json
+make topo-deployment > test/observed/deployment.json
 test/scripts/pr3c-experiments.sh all                        # one pass of the matrix
 make topo-down
 ```

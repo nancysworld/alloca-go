@@ -54,14 +54,14 @@ seed 15434 org-d
 # 6. record what is running, then drive one bounded run                     (§6)
 go build -o bin/alloca-load ./cmd/alloca-load
 mkdir -p test/results/manual
-make topo-deployment > test/fixtures/deployment.json
+make topo-deployment > test/observed/deployment.json
 curl -sS http://localhost:9081/metrics > test/results/manual/s1-baseline.prom
 curl -sS http://localhost:9082/metrics > test/results/manual/s2-baseline.prom
 ./bin/alloca-load \
   -placement deploy/topology/placement.json \
   -endpoint authority-1=http://$S1 -endpoint authority-2=http://$S2 \
   -workload multi-org-dispersed \
-  -deployment test/fixtures/deployment.json \
+  -deployment test/observed/deployment.json \
   -concurrency 32 -n 400 -slots 100 \
   -out test/results/manual/topo-run.json
 
@@ -515,14 +515,14 @@ routed by the same placement document the services enforce:
 go build -o bin/alloca-load ./cmd/alloca-load
 
 mkdir -p test/results/manual   # git-ignored, and absent on a fresh clone
-make topo-deployment > test/fixtures/deployment.json
+make topo-deployment > test/observed/deployment.json
 
 ./bin/alloca-load \
   -placement deploy/topology/placement.json \
   -endpoint authority-1=http://$S1 \
   -endpoint authority-2=http://$S2 \
   -workload multi-org-dispersed \
-  -deployment test/fixtures/deployment.json \
+  -deployment test/observed/deployment.json \
   -concurrency 32 -n 400 -slots 100 \
   -out test/results/manual/topo-run.json
 ```

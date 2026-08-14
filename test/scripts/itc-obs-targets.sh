@@ -49,6 +49,12 @@ OUT="${OUT:-$TARGETS_DIR/itc.json}"
 
 mkdir -p "$TARGETS_DIR"
 
+# `topology` is stamped here, on the targets, rather than by a job-wide relabel in
+# prometheus.yml. It was job-wide once, fixed at `single-instance-local`, and every Iteration C
+# sample inherited the PR2 experiment's identity — a static rule cannot know which topology the
+# discovered targets belong to, and nothing reported the mismatch because the label was present
+# and well-formed. It is a property of *which* targets these are, so it travels with them, and
+# the rung is in the value: a G2 snapshot cannot be mistaken for a G4 one.
 entries=""
 for n in $(seq 1 "$ITC_GROUPS"); do
   var="UNIT_${n}_ADDR"
@@ -59,7 +65,8 @@ for n in $(seq 1 "$ITC_GROUPS"); do
     \"targets\": [\"${addr}\"],
     \"labels\": {
       \"authority\": \"authority-${n}\",
-      \"unit\": \"${n}\"
+      \"unit\": \"${n}\",
+      \"topology\": \"itc-g${ITC_GROUPS}\"
     }
   }"
 done

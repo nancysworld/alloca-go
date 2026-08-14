@@ -35,7 +35,7 @@
 #   test/scripts/pr3c-experiments.sh all
 #
 # It needs the topology up (`make topo-up`) and a deployment record
-# (`make topo-deployment > test/fixtures/deployment.json`).
+# (`make topo-deployment > test/observed/deployment.json`).
 set -euo pipefail
 
 S1="${S1:-http://localhost:8081}"
@@ -45,7 +45,7 @@ M2="${M2:-http://localhost:9082/metrics}"
 A1_DSN="${A1_DSN:-postgres://alloca:alloca@localhost:15433/alloca?sslmode=disable}"
 A2_DSN="${A2_DSN:-postgres://alloca:alloca@localhost:15434/alloca?sslmode=disable}"
 PLACEMENT="${PLACEMENT:-deploy/topology/placement.json}"
-DEPLOYMENT="${DEPLOYMENT:-test/fixtures/deployment.json}"
+DEPLOYMENT="${DEPLOYMENT:-test/observed/deployment.json}"
 # See itc-run.sh for why runs nest under a group rather than sitting flat.
 RESULTS_GROUP="${RESULTS_GROUP:-pr3c}"
 OUT="${OUT:-test/results/$RESULTS_GROUP/$(date -u +%Y%m%dT%H%M%SZ)}"

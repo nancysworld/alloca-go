@@ -837,6 +837,15 @@ All three are retained at
 with their panel exports and TSDB snapshots. Every figure below is re-derivable from those
 files; that directory's README carries the evidence class and the reading caveats.
 
+**Those artifacts are labelled `topology=single-instance-local`, which is wrong — read it as
+`itc-g4`.** `prometheus.yml` set `topology` job-wide at the PR2 value, so every Iteration C
+sample inherited PR2's identity, and nothing reported it because the label was present and
+well-formed. The figures are unaffected — `authority`, `unit` and `instance` are all correct, and
+`run.json`'s manifest is the authoritative environment identity — but a snapshot separated from
+its directory would misdescribe itself. Topology ownership has moved to the target documents and
+`itc-obs-targets-test.sh` guards it; these cells are annotated rather than re-run, because the
+degraded regime they captured cannot be reproduced on demand.
+
 **The 120 s cell is invalid and is excluded.** It admitted **exactly 256,000 of 256,000** — its
 whole supply — and then took a further 128,239 `no_capacity` refusals, so its rate of 2,133/s is
 precisely `supply ÷ duration` and describes the fixture rather than the service. The exhaustion
@@ -870,28 +879,49 @@ handed out. A service merely saturating its database would pin in-use at the cei
 exactly what the healthy cell does at 13–16 of 16 with acquire-wait falling. Whatever the cause,
 it is between the pool and the database rather than in the service's own work.
 
-**It matches PR2's open throughput anomaly on three of its four signature elements, and
-contradicts the fourth.**
+**It matches PR2's open throughput anomaly on two of its signature elements and contradicts a
+third.**
 
 | PR2's signature | this cell |
 |---|---|
 | throughput falls to 0.25–0.54 of the healthy rate | 0.45 — matches |
 | service process CPU roughly halves | 1.46 → 0.70 cores, 0.48 — matches |
-| **the generator's CPU halves too** | 0.1146 → 0.0588 per core, 0.51 — matches |
+| ~~the generator's CPU halves too~~ | 0.1146 → 0.0588 per core — **withdrawn, carries no information** (below) |
 | pool acquire-wait is *unchanged* | 3.95 → 7.12, nearly doubled — **contradicts** |
 
-The match is close enough, on a marker as distinctive as the generator slowing in sympathy, that
-treating this as a different fault would be the less likely reading. But the pool divergence is
-real and unexplained, and this record does not assert the two are the same fault.
+> **The generator row is withdrawn.** This section originally counted the generator's CPU halving
+> as a third matching element, and called it the most distinctive marker of the set. It is not a
+> marker at all. `alloca-load` is **closed-loop**: a fixed pool of workers each send a request,
+> block on the response, and send the next (`internal/loadgen/run.go`; open-loop rate control is
+> named there as a later addition). When the service path slows, completions fall and those
+> workers spend correspondingly longer blocked in I/O, so generator CPU tracks throughput
+> *mechanically* — in a perfectly healthy generator, with nothing whatever reaching CPUs 8–11.
+> A 0.51 ratio beside a 0.45 throughput ratio is the expected arithmetic, not a coincidence
+> needing explanation.
+>
+> The withdrawal is kept visible rather than edited away because the reasoning was seductive: two
+> independent-looking processes falling by the same factor reads like a common cause, and the
+> closed-loop coupling that makes it inevitable is invisible unless you go and look at the
+> generator's own loop.
 
-**What the rehearsal adds that PR2 could not.** In PR2 the generator and the service shared one
-unpartitioned host, so "both slowed together" was compatible with them simply contending for the
-same CPUs. Here the generator is confined to CPUs 8–11 and every unit to 0–7, disjoint sets that
-`itc-cpuset-check.sh` verified for this run — **and both still halved**. Shared-CPU contention is
-therefore excluded by construction, which strengthens PR2's "everything on the host slows at
-once" framing into something much harder to explain any other way: a VM- or host-level effect
-(WSL2 CPU steal, Docker Desktop storage-path latency, Windows-side contention) reaching processes
-that share no cores. Those were exactly the candidates PR2 named and could not test.
+The two surviving matches are weaker evidence than three, and the pool divergence remains real
+and unexplained. This record does not assert the two are the same fault.
+
+**What the rehearsal adds that PR2 could not — stated narrowly.** In PR2 the generator and the
+service shared one unpartitioned host, so "both slowed together" was compatible with them simply
+contending for the same CPUs. Here the generator is confined to CPUs 8–11 and every unit to 0–7,
+disjoint sets that `itc-cpuset-check.sh` verified for this run. **What that excludes is exactly
+one thing: direct competition for the same WSL-visible logical CPUs between the generator and the
+units.** That is worth having, because it was a live candidate in PR2 and could not be tested
+there.
+
+It is not more than that, and the earlier draft of this section claimed more. Disjoint cpusets do
+**not** exclude a shared kernel, a shared storage path, shared physical cores or SMT siblings
+behind the logical CPUs, or Windows-side contention above the VM — every one of which reaches
+processes that share no logical core. So the host-level candidates PR2 named (WSL2 CPU steal,
+Docker Desktop storage-path latency, Windows-side contention) are **neither confirmed nor
+excluded** by this run. They remain the open question, which is why the host sensor below is now
+load-bearing rather than a refinement.
 
 It also shows the anomaly is **not specific to the single-instance deployment** — it appears
 across four independently pinned units, each with its own PostgreSQL.

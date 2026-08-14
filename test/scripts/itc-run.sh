@@ -72,7 +72,7 @@ WINDOW="${WINDOW:-60s}"
 SLOTS="${SLOTS:-3200}"
 CAPACITY="${CAPACITY:-20}"
 PLACEMENT="${PLACEMENT:-deploy/topology/placement-itc-g${ITC_GROUPS}.json}"
-DEPLOYMENT="${DEPLOYMENT:-test/fixtures/deployment.json}"
+DEPLOYMENT="${DEPLOYMENT:-test/observed/deployment.json}"
 # One declaration per capacity point, not one per rehearsal: G1, G2 and G4 are different
 # deployment shapes, and `deployment_topology` is the shape a later run is compared against. A
 # single shared document would describe three topologies with one string, and the two it did not
@@ -127,6 +127,27 @@ command -v taskset >/dev/null 2>&1 \
 [ -f "$DEPLOYMENT" ]  || fail "no deployment record at $DEPLOYMENT — run 'make itc-deployment ITC_GROUPS=$ITC_GROUPS > $DEPLOYMENT'"
 [ -f "$DECLARATION" ] || fail "no declaration at $DECLARATION (ag-sept-pr4.md §2.7)"
 
+# The declaration is the operator's *assertion* about the environment, and certification trusts it
+# — so the one machine-specific number in it has to be checked against the machine. It names the
+# logical CPU count, the committed default says 16, and `itc-cpu-layout.sh` deliberately accepts a
+# rescaled partition on a smaller host: without this, the same run on a 12-CPU machine reaches
+# `capacity` carrying a false environment description, and the falsehood is in exactly the field a
+# reader would use to judge whether the numbers transfer.
+#
+# Checked here, not generated: generating it would make the declared document a second observed
+# one, and the split between what the operator asserts and what the harness observed is the thing
+# §2.7 exists to preserve. A mismatch means edit the declaration — that is the operator saying
+# what this environment is, which is its job.
+declared_cpus="$(grep -o '[0-9]\+ logical CPUs' "$DECLARATION" | head -1 | grep -o '^[0-9]\+' || true)"
+[ -n "$declared_cpus" ] \
+  || fail "$DECLARATION does not state a logical CPU count.
+  The environment field must name it — certification trusts this text, and a reader uses it to
+  judge whether the numbers transfer. Expected a phrase like '$(nproc) logical CPUs exposed'."
+[ "$declared_cpus" = "$(nproc)" ] \
+  || fail "$DECLARATION declares $declared_cpus logical CPUs; this machine exposes $(nproc).
+  The run would certify at capacity carrying a false environment description. Edit the
+  declaration to describe this machine, or drive the rung on the machine it describes."
+
 # `git status --porcelain`, not `git diff`: Go stamps *untracked* files as a modified tree, so a
 # scratch file anywhere refuses every run at level none for source_modified — after the window
 # has been driven (ag-sept-pr4.md §3.6).
@@ -167,35 +188,48 @@ ITC_CPUS_GENERATOR="$ITC_CPUS_GENERATOR" \
 # records as the worst there is, because nothing anywhere reports it. That is exactly what the
 # first driven G4 cell hit: Prometheus was healthy and scraping a stale host address.
 #
-# Counting is what makes it a gate rather than a smoke test. `up == 1` for *some* target passes
-# while three of four units are missing, and a G4 point measured with one unit unobserved is not
-# a G4 point — it is the rung below it, wearing the wrong label.
+# **Identities, not a count.** Counting was the first version of this gate and it is not
+# sufficient: `count(up{job=...} == 1) == ITC_GROUPS` is satisfied by the wrong *set* of targets
+# as easily as the right one. The concrete path is not hypothetical — `obs-up` runs
+# `obs-target.sh` after `itc-obs-targets.sh` and recreates the PR2 host target whenever something
+# is listening on the host's metrics port, so a G4 rehearsal missing `authority-3` but carrying
+# that extra healthy target still counts four. The later per-unit `/metrics` curls would not
+# catch it either: they prove the units answer *this script*, not that Prometheus scraped them.
+#
+# So the gate asks which authorities are actually being scraped and compares the set. The
+# selector is pinned to this rung's topology as well, which is what excludes a stray target from
+# another experiment before the comparison even starts.
 #
 # Skipped, loudly, when no Prometheus is reachable: a rehearsal is allowed to run without one, and
 # the run's own totals do not depend on it. What must never happen is a run that believes it was
 # observed when it was not.
 if curl -sf -m 5 "$PROM_URL/-/ready" >/dev/null 2>&1; then
-  scraped="$(curl -sfG -m 10 "$PROM_URL/api/v1/query" \
-      --data-urlencode "query=count(up{job=\"$PROM_JOB\"} == 1)" 2>/dev/null \
+  scraped_authorities="$(curl -sfG -m 10 "$PROM_URL/api/v1/query" \
+      --data-urlencode "query=up{job=\"$PROM_JOB\",topology=\"itc-g${ITC_GROUPS}\"} == 1" 2>/dev/null \
     | python3 -c 'import json,sys
 try:
     r = json.load(sys.stdin)["data"]["result"]
-    print(int(float(r[0]["value"][1])) if r else 0)
+    print(",".join(sorted(s["metric"].get("authority", "?") for s in r)))
 except Exception:
-    print(0)' 2>/dev/null)" || scraped=0
+    print("")' 2>/dev/null)" || scraped_authorities=""
 
-  if [ "${scraped:-0}" -ne "$ITC_GROUPS" ]; then
-    fail "prometheus is up but ${scraped:-0} of $ITC_GROUPS units are being scraped.
+  expected_authorities="$(python3 -c "print(','.join(sorted('authority-%d' % n for n in range(1, $ITC_GROUPS + 1))))")"
+
+  if [ "$scraped_authorities" != "$expected_authorities" ]; then
+    fail "prometheus is up, but the scraped units are not the ones this rung raises.
+  expected: ${expected_authorities}
+  scraped:  ${scraped_authorities:-<none>}
+
   A successful query against an unscraped job returns nothing and reports no error, so the cell
-  would complete and retain no series. Regenerate the target list and give Prometheus its
-  refresh interval to pick it up:
+  would complete and retain no series — and a count alone would accept the wrong set. Regenerate
+  the target list and give Prometheus its refresh interval to pick it up:
 
       ITC_GROUPS=$ITC_GROUPS ./test/scripts/itc-obs-targets.sh
       curl -s $PROM_URL/api/v1/targets | grep -o '\"health\":\"[a-z]*\"'
 
   Set PROM_URL= to drive a cell deliberately without monitoring."
   fi
-  log "prometheus scraping $scraped/$ITC_GROUPS units"
+  log "prometheus scraping $ITC_GROUPS units: $scraped_authorities"
 elif [ -n "$PROM_URL" ]; then
   fail "prometheus is not reachable at $PROM_URL (set PROM_URL= to run without monitoring)"
 fi

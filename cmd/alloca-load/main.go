@@ -448,7 +448,7 @@ func preflightDeployment(path string, targets []string) (*loadgen.Deployment, er
 				"artifact it measured. "+
 				"service_commit_sha does not cover that — the same code from a stale tag, or "+
 				"rebuilt on a different base layer, carries the same revision on every unit. "+
-				"Record it with `make topo-deployment > test/fixtures/deployment.json`", len(targets))
+				"Record it with `make topo-deployment > test/observed/deployment.json`", len(targets))
 		}
 		return nil, nil
 	}

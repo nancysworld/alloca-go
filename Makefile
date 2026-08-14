@@ -20,7 +20,7 @@ GOLANGCI_LINT_STAMP   := $(TOOLBIN)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 .PHONY: all ci fmt fmt-check vet lint build test test-race test-integration \
         db-up db-down migrate run dev dev-measured smoke obs-up obs-target obs-down tidy tools clean \
         image topo-up topo-down topo-ps itc-up itc-down itc-deployment \
-        itc-layout itc-layout-check itc-topology-check-test itc-rehearse obs-rehearse
+        itc-layout itc-layout-check itc-topology-check-test itc-obs-labels-check itc-rehearse obs-rehearse
 
 # Integration tests need a real PostgreSQL: the properties they prove (capacity safety
 # under concurrent transactions, post-lock decision time, the scoped-key race) do not
@@ -125,7 +125,7 @@ ITC_CPUS_GENERATOR ?= 8-11
 all: ci
 
 ## ci: run the full local gate, identical to CI (fmt, vet, lint, build, test, race)
-ci: fmt-check vet lint build test test-race build-context-check itc-layout-check itc-topology-check-test
+ci: fmt-check vet lint build test test-race build-context-check itc-layout-check itc-topology-check-test itc-obs-labels-check
 
 ## fmt: format all Go files
 fmt:
@@ -335,6 +335,15 @@ itc-layout-check:
 itc-topology-check-test:
 	@./test/scripts/itc-topology-check-test.sh
 
+## itc-obs-labels-check: prove a retained sample can say which topology produced it
+#
+# In `ci` because it needs no daemon: itc-obs-targets.sh is text generation, and the other two
+# assertions read committed files. It exists because prometheus.yml set topology job-wide, which
+# mislabelled every Iteration C sample as PR2's single-instance experiment and survived review —
+# the label was present and well-formed, so every query and every gate passed (ag-sept-pr4.md §3).
+itc-obs-labels-check:
+	@./test/scripts/itc-obs-targets-test.sh
+
 ## image: build the production-shaped service image, tagged with the current commit
 #
 # The build context includes .git on purpose: `go build` stamps the VCS revision into the
@@ -483,7 +492,7 @@ itc-rehearse:
 	@echo
 	@echo "    make obs-rehearse ITC_CPUS_GENERATOR=$(ITC_CPUS_GENERATOR)"
 	@echo "    ITC_GROUPS=$(ITC_GROUPS) ./test/scripts/itc-seed.sh"
-	@echo "    make itc-deployment ITC_GROUPS=$(ITC_GROUPS) > test/fixtures/deployment.json"
+	@echo "    make itc-deployment ITC_GROUPS=$(ITC_GROUPS) > test/observed/deployment.json"
 	@echo "    ITC_GROUPS=$(ITC_GROUPS) ITC_CPUS_GENERATOR=$(ITC_CPUS_GENERATOR) ./test/scripts/itc-run.sh"
 	@echo
 	@echo "  generator/monitor CPUs: $(ITC_CPUS_GENERATOR)  (alloca-load, Prometheus, Grafana)"

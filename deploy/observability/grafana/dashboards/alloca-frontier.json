@@ -31,6 +31,7 @@
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "reqps",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -95,6 +96,7 @@
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "s",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -159,6 +161,7 @@
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "reqps",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -203,6 +206,7 @@
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "short",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -248,6 +252,16 @@
           "expr": "alloca_db_pool_total_connections",
           "legendFormat": "{{authority}} total",
           "range": true
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "alloca-prometheus"
+          },
+          "expr": "alloca_db_pool_constructing_connections",
+          "legendFormat": "{{authority}} constructing",
+          "range": true
         }
       ]
     },
@@ -267,6 +281,7 @@
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "short",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -289,22 +304,12 @@
             "type": "prometheus",
             "uid": "alloca-prometheus"
           },
-          "expr": "alloca_db_pool_constructing_connections",
-          "legendFormat": "{{authority}} constructing",
-          "range": true
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "alloca-prometheus"
-          },
           "expr": "rate(alloca_db_pool_new_connections_total[$__rate_interval])",
           "legendFormat": "{{authority}} new connections",
           "range": true
         },
         {
-          "refId": "C",
+          "refId": "B",
           "datasource": {
             "type": "prometheus",
             "uid": "alloca-prometheus"
@@ -331,6 +336,7 @@
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "short",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -385,6 +391,7 @@
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "s",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -416,7 +423,7 @@
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Process CPU and Go runtime",
+      "title": "Process CPU",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -429,6 +436,7 @@
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "short",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -454,33 +462,13 @@
           "expr": "rate(process_cpu_seconds_total{job=\"alloca-go\"}[$__rate_interval])",
           "legendFormat": "{{authority}} CPU",
           "range": true
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "alloca-prometheus"
-          },
-          "expr": "go_goroutines{job=\"alloca-go\"}",
-          "legendFormat": "{{authority}} goroutines",
-          "range": true
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "alloca-prometheus"
-          },
-          "expr": "go_gc_duration_seconds{job=\"alloca-go\",quantile=\"0.75\"}",
-          "legendFormat": "{{authority}} GC pause p75",
-          "range": true
         }
       ]
     },
     {
       "id": 9,
       "type": "timeseries",
-      "title": "Process resident memory",
+      "title": "Goroutines",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -493,6 +481,97 @@
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "alloca-prometheus"
+          },
+          "expr": "go_goroutines{job=\"alloca-go\"}",
+          "legendFormat": "{{authority}} goroutines",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "GC pause p75",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "alloca-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "alloca-prometheus"
+          },
+          "expr": "go_gc_duration_seconds{job=\"alloca-go\",quantile=\"0.75\"}",
+          "legendFormat": "{{authority}} GC pause p75",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Process resident memory",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "alloca-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -522,7 +601,7 @@
       ]
     },
     {
-      "id": 10,
+      "id": 12,
       "type": "timeseries",
       "title": "Host CPU",
       "datasource": {
@@ -533,10 +612,11 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 32
+        "y": 40
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "short",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -566,7 +646,7 @@
       ]
     },
     {
-      "id": 11,
+      "id": 13,
       "type": "timeseries",
       "title": "Host CPU stolen and blocked",
       "datasource": {
@@ -577,10 +657,11 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 40
+        "y": 48
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "short",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -610,7 +691,7 @@
       ]
     },
     {
-      "id": 12,
+      "id": 14,
       "type": "timeseries",
       "title": "Host run queue",
       "datasource": {
@@ -621,10 +702,11 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 40
+        "y": 48
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "short",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
@@ -654,7 +736,7 @@
       ]
     },
     {
-      "id": 13,
+      "id": 15,
       "type": "timeseries",
       "title": "Host memory available",
       "datasource": {
@@ -665,10 +747,11 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 48
+        "y": 56
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "bytes",
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,

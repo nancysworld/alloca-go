@@ -193,7 +193,7 @@ func TestDashboardIsDeliberatelySmall(t *testing.T) {
 		}
 	}
 
-	// 13 since AG-Sept PR4a, from 8, in two recorded steps on 2026-08-14.
+	// 15 since AG-Sept PR4a, from 8, in three recorded steps on 2026-08-14.
 	//
 	// 8 -> 9: Iteration C made the pool the object of study rather than a background indicator.
 	// Occupancy, lifecycle, acquire duration and *mean* acquire duration are four separate
@@ -207,6 +207,11 @@ func TestDashboardIsDeliberatelySmall(t *testing.T) {
 	// descheduled — the candidate PR2 named and could not test. Memory is bytes and may not share
 	// an axis at all.
 	//
+	// 13 -> 15: one axis carries one unit. "Process CPU and Go runtime" plotted cores, a goroutine
+	// count and a GC pause duration together; the count set the scale and the other two lay flat on
+	// the bottom, unreadable. Splitting them is not decoration — two of that panel's three series
+	// could not be read at all, which is the same defect the pool occupancy graph had.
+	//
 	// The panel set stays narrower than the collector set on purpose: diskstats, netdev and
 	// filesystem are scraped and not plotted, because the snapshot retains everything scraped and
 	// §3.13.1 is the worked example of recovering a series nobody thought to plot.
@@ -214,7 +219,7 @@ func TestDashboardIsDeliberatelySmall(t *testing.T) {
 	// The bound stays a bound. It exists so that adding a panel is a decision someone makes and
 	// records, which is what this comment is.
 	dash := loadJSON[dashboard](t, dashboardPath)
-	if n := len(dash.Panels); n > 13 {
+	if n := len(dash.Panels); n > 15 {
 		t.Errorf("dashboard has %d panels; the diagnostic view is meant to stay compact. "+
 			"Adding one is a scope decision, not a tidy-up", n)
 	}
@@ -584,9 +589,52 @@ func TestPanelsSharingAnAxisShareAScale(t *testing.T) {
 		for _, target := range p.Targets {
 			units[unitByExpr[target.Expr]] = true
 		}
-		if units["bytes"] && len(units) > 1 {
-			t.Errorf("panel %q plots bytes alongside %d other units on one axis; the byte series "+
-				"will set the scale and flatten the rest", p.Title, len(units)-1)
+		// One axis, one unit — the general rule, not just the bytes case that prompted it.
+		//
+		// Bytes were the first offender because they are the most extreme, but the defect is not
+		// about magnitude: it is that an axis carrying two units cannot be labelled truthfully,
+		// and the larger series sets the scale whatever the units are. "Process CPU and Go
+		// runtime" plotted cores (~0.5), a goroutine count (~30) and a GC pause (~0.0001) on one
+		// axis; the count won and the other two lay flat on the bottom, present and unreadable.
+		if len(units) > 1 {
+			names := make([]string, 0, len(units))
+			for u := range units {
+				names = append(names, u)
+			}
+			sort.Strings(names)
+			t.Errorf("panel %q plots %v on one axis: the axis cannot be labelled for all of them, "+
+				"and the largest series sets the scale for the rest", p.Title, names)
+		}
+	}
+}
+
+// TestEveryPanelDeclaresAGrafanaUnit stops an axis rendering raw numbers.
+//
+// A panel with no unit shows resident memory as "24000000" rather than "22.9 MiB", and a GC pause
+// as "0.0001" rather than "100 µs". Grafana can scale and suffix both; it has to be told what the
+// numbers are, and nothing fails if it is not.
+func TestEveryPanelDeclaresAGrafanaUnit(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Clean(dashboardPath))
+	if err != nil {
+		t.Fatalf("reading dashboard: %v", err)
+	}
+	var doc struct {
+		Panels []struct {
+			Title       string `json:"title"`
+			FieldConfig struct {
+				Defaults struct {
+					Unit string `json:"unit"`
+				} `json:"defaults"`
+			} `json:"fieldConfig"`
+		} `json:"panels"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("parsing dashboard: %v", err)
+	}
+
+	for _, p := range doc.Panels {
+		if p.FieldConfig.Defaults.Unit == "" {
+			t.Errorf("panel %q declares no Grafana unit, so its axis renders raw numbers", p.Title)
 		}
 	}
 }

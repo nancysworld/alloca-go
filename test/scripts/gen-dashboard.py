@@ -40,14 +40,23 @@ LAYOUT = [
     # churning underneath a steady population — which is where PostgreSQL enters, since
     # construction connects. Acquire cost says what an acquire is paying. §3.13.1's discriminator
     # reads across the last two, so they must be separable at a glance.
-    ("Database pool occupancy", ["pool_in_use", "pool_idle", "pool_total"]),
-    ("Database pool lifecycle", ["pool_constructing", "pool_new_conns", "pool_destroys"]),
+    # `pool_constructing` sits with occupancy, not lifecycle: it is a connection *count*, and a
+    # connection being built is a state the population is in. Beside the two rates it forced a
+    # graph plotting conns against conns/s on one axis.
+    ("Database pool occupancy", ["pool_in_use", "pool_idle", "pool_total", "pool_constructing"]),
+    ("Database pool lifecycle", ["pool_new_conns", "pool_destroys"]),
     ("Database pool acquire duration", ["pool_acquire_wait", "pool_empty_acquire_wait"]),
     # Its own graph rather than sharing the one above: seconds-per-second and seconds-per-acquire
     # differ by three orders of magnitude here, so one axis would flatten the series that actually
     # discriminated the degraded cell (§3.13.1).
     ("Database pool mean acquire duration", ["pool_acquire_mean"]),
-    ("Process CPU and Go runtime", ["process_cpu", "go_goroutines", "go_gc_pause"]),
+    # Three graphs, not one. "Process CPU and Go runtime" carried cores (~0.5), a goroutine count
+    # (~30) and a GC pause duration (~0.0001) on a single unlabelled axis: the count set the
+    # scale, and both other series lay flat on the bottom. Memory was moved out of that panel for
+    # exactly this reason and the remaining three were left sharing it.
+    ("Process CPU", ["process_cpu"]),
+    ("Goroutines", ["go_goroutines"]),
+    ("GC pause p75", ["go_gc_pause"]),
     ("Process resident memory", ["process_memory"]),
     # VAL-NEG-7's host view (ag-sept-pr4.md §2.1, §2.5). Four graphs rather than one because the
     # quantities that answer §3.12 are small next to the ones that do not: CPU steal against total
@@ -65,6 +74,28 @@ LAYOUT = [
 ]
 
 DATASOURCE = {"type": "prometheus", "uid": "alloca-prometheus"}
+
+# This repository's unit names mapped onto Grafana's, so an axis formats itself.
+#
+# Without this every panel rendered raw numbers: resident memory as "24000000" rather than
+# "22.9 MiB", and GC pause as "0.0001" rather than "100 µs". Grafana already knows how to scale
+# and suffix those; it simply has to be told what the numbers are.
+#
+# `unit` in panels.json stays repository-owned and human-readable, because it is also what the
+# CSV export and the prose describe a series as. This table is the translation, in one place, so
+# adding a panel does not mean learning Grafana's identifier list.
+GRAFANA_UNIT = {
+    "bytes": "bytes",       # IEC: KiB / MiB / GiB
+    "s": "s",               # scales into µs / ms / s
+    "req/s": "reqps",
+    "cores": "short",       # no native core unit; short leaves small values unmangled
+    "conns": "short",
+    "conns/s": "short",
+    "count": "short",
+    "tasks": "short",
+    "s/s": "short",         # seconds accumulated per second — a ratio, not a duration
+    "ratio": "percentunit",
+}
 
 # How a series names itself. Driven by each panel's own metadata rather than by a table here,
 # because the table was a second place to forget: a panel added to panels.json without a matching
@@ -137,6 +168,23 @@ def main() -> None:
             }
             for i, k in enumerate(keys)
         ]
+        # One axis, so one unit. Panels sharing a graph must already share a scale, and a graph
+        # whose series disagreed about what the numbers *are* could not be labelled at all — which
+        # is what "Process CPU and Go runtime" was: cores, a goroutine count and a duration on one
+        # unlabelled axis, where the count set the scale and flattened the other two.
+        units = {by_key[k]["unit"] for k in keys}
+        if len(units) > 1:
+            raise SystemExit(
+                f"panel {title!r} plots {sorted(units)} on one axis; a shared axis needs a shared "
+                "unit, or the axis label is a lie and the smallest series is invisible"
+            )
+        unit = GRAFANA_UNIT.get(next(iter(units)))
+        if unit is None:
+            raise SystemExit(
+                f"panel {title!r} uses unit {next(iter(units))!r}, which GRAFANA_UNIT does not "
+                "map; add it rather than letting the axis render raw numbers"
+            )
+
         panels.append({
             "id": pid,
             "type": "timeseries",
@@ -144,7 +192,10 @@ def main() -> None:
             "datasource": DATASOURCE,
             "gridPos": {"h": 8, "w": 12, "x": (pid - 1) % 2 * 12, "y": y},
             "fieldConfig": {
-                "defaults": {"custom": {"lineWidth": 1, "fillOpacity": 8, "showPoints": "never"}},
+                "defaults": {
+                    "unit": unit,
+                    "custom": {"lineWidth": 1, "fillOpacity": 8, "showPoints": "never"},
+                },
                 "overrides": [],
             },
             "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": True}},

@@ -298,6 +298,61 @@ func TestFannedOutPanelsCarryTheirLabelInTheLegend(t *testing.T) {
 	}
 }
 
+// TestUnaggregatedPanelsNameTheUnitTheyCameFrom covers the other way a panel fans out, which the
+// test above is blind to.
+//
+// `sum by (outcome)` fans out *explicitly*, and the label is in the query where a reader can see
+// it. A query with no aggregation at all fans out *implicitly*: Prometheus returns one series per
+// scraped target, and nothing in the expression says so. Under PR2 that was invisible because one
+// target was scraped. Iteration C scrapes one per shard group, and every unaggregated panel
+// quietly became four identically-labelled lines — the pool occupancy graph was a dozen of them,
+// present and useless (ag-sept-pr4.md §3).
+//
+// The rule is the complement of the one above: if a query does not collapse its series, the
+// legend has to say which unit each line belongs to.
+func TestUnaggregatedPanelsNameTheUnitTheyCameFrom(t *testing.T) {
+	dash := loadJSON[dashboard](t, dashboardPath)
+
+	checked := 0
+	for _, p := range dash.Panels {
+		for _, target := range p.Targets {
+			if collapsesToOneSeries(target.Expr) {
+				continue
+			}
+			checked++
+			// Either label identifies the unit. `authority` is preferred and is what the pool and
+			// process panels use; `instance` is accepted because it is always present and a panel
+			// may legitimately prefer the address.
+			if !strings.Contains(target.LegendFormat, "{{authority}}") &&
+				!strings.Contains(target.LegendFormat, "{{instance}}") {
+				t.Errorf("panel %q runs %q, which is not aggregated and so returns one series per "+
+					"scraped unit, but its legend is %q: on a multi-unit rung every line would be "+
+					"labelled identically. Use {{authority}}.",
+					p.Title, target.Expr, target.LegendFormat)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Error("no dashboard panel is unaggregated, so this test proved nothing")
+	}
+}
+
+// collapsesToOneSeries reports whether a query reduces its result to a single series regardless of
+// how many targets are scraped.
+//
+// `sum(...)` without `by` collapses everything. `sum by (le) (...)` inside histogram_quantile
+// collapses too — `le` is consumed by the quantile, and no target label survives it. Anything
+// with a surviving `by` label fans out over that label instead, which is the neighbouring test's
+// concern rather than this one's.
+func collapsesToOneSeries(expr string) bool {
+	if !strings.Contains(expr, "sum") {
+		return false
+	}
+	// A `by` clause that keeps a real label means the series survive, one per label value — but
+	// they are then named by that label, not by the target, so they are not this test's problem.
+	return true
+}
+
 // TestPanelsSharingAnAxisShareAScale keeps a readable panel readable.
 //
 // Resident memory (tens of millions of bytes) once shared an axis with CPU, goroutines and GC

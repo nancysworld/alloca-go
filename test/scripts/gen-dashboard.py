@@ -31,28 +31,60 @@ LAYOUT = [
     ("Throughput and goodput", ["throughput", "goodput", "replay_rate"]),
     ("Latency", ["latency_p50", "latency_p95", "latency_p99"]),
     ("Outcomes", ["outcomes"]),
-    # Three pool graphs, not one, because the single "pool pressure" graph could not answer the
-    # question PR4a §3.13.1 asked of it. Population, cost-per-acquire and blocked-waiting are
-    # different quantities in different units, and plotting in-use against a *maximum* invited
-    # reading a ceiling as a population. `pool_new_conns` shares the population axis rather than
-    # taking a fourth graph: it is connection churn, it is small, and the dashboard's 8-graph cap
-    # is a scope bound worth spending deliberately.
-    ("Database pool population", ["pool_in_use", "pool_idle", "pool_total", "pool_max", "pool_new_conns"]),
+    # Occupancy, lifecycle and acquire cost are three different questions, and the first version
+    # of this put them on one graph with a redundant per-unit constant (`pool_max`) on top. On a
+    # four-unit rung that rendered as a dozen identically-labelled lines plus four flat ones: the
+    # panel existed and answered nothing.
+    #
+    # Occupancy says whether the pool is populated and saturated. Lifecycle says whether it is
+    # churning underneath a steady population — which is where PostgreSQL enters, since
+    # construction connects. Acquire cost says what an acquire is paying. §3.13.1's discriminator
+    # reads across the last two, so they must be separable at a glance.
+    ("Database pool occupancy", ["pool_in_use", "pool_idle", "pool_total"]),
+    ("Database pool lifecycle", ["pool_constructing", "pool_new_conns", "pool_destroys"]),
     ("Database pool acquire cost", ["pool_acquire_wait", "pool_empty_acquire_wait"]),
-    ("Database pool mean acquire duration", ["pool_acquire_mean"]),
     ("Process CPU and Go runtime", ["process_cpu", "go_goroutines", "go_gc_pause"]),
     ("Process resident memory", ["process_memory"]),
 ]
 
 DATASOURCE = {"type": "prometheus", "uid": "alloca-prometheus"}
 
-# Panels whose query returns one series per label value, and the label that names them.
+# Panels whose query returns more than one series, and how each series names itself.
 #
-# A fixed legend is right for a single-series panel and actively misleading for these: the
-# `outcomes` query returns one series per outcome, and labelling all of them "Outcomes" hid
-# exactly the distinction — admitted success against business refusal against timeout — that
-# the panel exists to expose.
-MULTI_SERIES_LEGEND = {"outcomes": "{{outcome}}"}
+# A fixed legend is right for a single-series panel and actively misleading for these. There are
+# two ways a panel fans out, and only the first was handled originally:
+#
+#   * **explicitly**, when the query aggregates by a label — `outcomes` is `sum by (outcome)`, and
+#     labelling all of them "Outcomes" hid exactly the distinction the panel exists to expose;
+#   * **implicitly**, when the query is not aggregated at all, so Prometheus returns one series
+#     per scraped target. That was invisible under PR2, which scraped one target. Iteration C
+#     scrapes one per shard group, and every unaggregated panel silently became four
+#     identically-labelled lines (ag-sept-pr4.md §3).
+#
+# So an implicit-fan-out panel names its unit, and a panel carrying several metrics also names
+# which metric each line is — `{{authority}}` alone on the occupancy graph would give three lines
+# per unit that all read "authority-1".
+#
+# `{{authority}}` renders empty on the PR2 single-instance path, which has no such label. That is
+# harmless there and deliberate: one series needs no disambiguation, and the alternative
+# (`{{instance}}`) reads as an address rather than as the thing the reader is comparing.
+MULTI_SERIES_LEGEND = {
+    "outcomes": "{{outcome}}",
+
+    "pool_in_use": "acquired {{authority}}",
+    "pool_idle": "idle {{authority}}",
+    "pool_total": "total {{authority}}",
+    "pool_constructing": "constructing {{authority}}",
+    "pool_new_conns": "new {{authority}}",
+    "pool_destroys": "destroyed {{authority}}",
+    "pool_acquire_wait": "acquire {{authority}}",
+    "pool_empty_acquire_wait": "empty-acquire {{authority}}",
+
+    "process_cpu": "cpu {{authority}}",
+    "process_memory": "rss {{authority}}",
+    "go_goroutines": "goroutines {{authority}}",
+    "go_gc_pause": "gc p75 {{authority}}",
+}
 
 
 def grafana_expr(expr: str) -> str:

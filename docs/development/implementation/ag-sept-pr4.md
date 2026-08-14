@@ -1075,9 +1075,17 @@ is precisely the case `NewConnsCount` exists to detect.
 So `postgres_exporter` stays **evidence-triggered**, per §3.13: current evidence does not justify
 it, and equally does not exclude PostgreSQL participation. What decides it is the next cell.
 
-**Shipped.** All seven are exported by the pool collector and the five diagnostic series are
-retained per cell (`pool_total`, `pool_idle`, `pool_empty_acquire_wait`, `pool_acquire_mean`,
-`pool_new_conns`). `TestPoolCollectorDescribesEveryMetricItCollects` and its `Collect` counterpart
+**Shipped.** All seven are exported by the pool collector, and the diagnostic series are retained
+per cell as `pool_total`, `pool_idle`, `pool_constructing`, `pool_new_conns`, `pool_destroys` and
+`pool_empty_acquire_wait`. The dashboard now separates **occupancy** (acquired, idle, total) from
+**lifecycle** (constructing, new, destroyed) from **acquire cost**, because one graph carrying all
+three answered none of them: on a four-unit rung it rendered a dozen identically-labelled lines
+plus four flat ones from `pool_max`, a per-unit constant that has been dropped from the plot
+entirely — the configured ceiling is in each run's manifest as `aggregate_pool_size`.
+
+Per-acquire cost is no longer its own panel; divide `pool_acquire_wait` by
+`rate(alloca_db_pool_acquires_total)`, which the snapshot retains. That keeps the dashboard inside
+its 8-graph scope bound while spending the room on the three questions §3.13.1 actually asks. `TestPoolCollectorDescribesEveryMetricItCollects` and its `Collect` counterpart
 pin the exported set by name, because a missing series here is invisible: the scrape still
 succeeds and the populated-series gate still passes for the metrics that *are* present. Both were
 proven discriminating by removing a metric from each half.

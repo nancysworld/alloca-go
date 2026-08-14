@@ -2,11 +2,12 @@
 
 **Type:** Implementation record, spanning PR4a/PR4b
 **Status:** PR4a in progress. The local multi-group topology and workload machinery are being
-exercised before any metered AWS capacity attempt; AWS capacity evidence remains conditional on
-sufficient quota within the milestone timebox.
+exercised and the measurement procedure qualified before any metered AWS capacity attempt; AWS
+capacity evidence remains conditional on sufficient quota within the milestone timebox.
 **Budget:** 4.0 development days ([AG-Sept plan](../../planning/ag-sept-plan.md) §2, a scheduling
-fact) — 1.5 for PR4a's capacity-environment rehearsal/bootstrap work, up to 2.5 for PR4b's AWS
-evidence and report when quota permits.
+fact), now a **shared PR4a/PR4b envelope**. The original 1.5-day PR4a / up-to-2.5-day PR4b split was
+retired by maintainer decision on 2026-08-14; PR4a may consume more of the envelope for local
+measurement qualification and PR4b correspondingly becomes a smaller bounded AWS execution pass.
 **Owner docs:** [`deployment-architecture.md`](../../design/deployment-architecture.md) §13 owns
 the capacity environment; [`horizontal-scaling.md`](../../design/horizontal-scaling.md) §12–§13
 owns the capacity-unit model; `REQ-SCALE-4` and `REQ-EVID-2`
@@ -22,9 +23,12 @@ way. Where it disagrees with an owning document, the owning document wins.
 
 The gates are owned by [`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §3 and are not restated
 here. In short: PR4a first proves the 1/2/4 experiment machinery in the bounded local partitioned
-rehearsal and fixes or explicitly bounds what that rehearsal finds. An AWS bootstrap may follow when
-it buys useful confidence while quota is pending. PR4b runs the independently provisioned AWS
-capacity experiment only when sufficient quota exists to instantiate the complete environment.
+rehearsal, then qualifies the measurement procedure far enough that a known local regime cannot
+silently contaminate the AWS comparison. Mechanical findings are fixed or explicitly bounded; the
+degraded/non-stationary regime is either fixed/explained or made reliably detectable/excludable.
+An AWS bootstrap may follow when it buys useful confidence while quota is pending. PR4b runs the
+independently provisioned AWS capacity experiment only when sufficient quota exists to instantiate
+the complete environment.
 
 When that complete environment exists, PR4b attempts the validation plan's Tier 1 capacity result
 first; if a proven measurement-system limit prevents that result, it may retain the Tier 2
@@ -249,10 +253,11 @@ not a Tier-2 trigger. It produces no comparable common-`L` topology family; PR4 
 limitation and leaves aggregate capacity scaling and `VAL-SCALE-5` unproven.
 
 This implementation record deliberately carries no duplicate formulas, threshold, or alternate
-selection rule. PR4a's responsibility is to rehearse the measurement machinery and retain enough
-generator and resource evidence to distinguish a server frontier from a measurement-system
-frontier once AWS can run. PR4b's responsibility is to apply the owning validation rule and keep
-its conclusion bounded to the strongest evidence actually established.
+selection rule. PR4a's responsibility is to rehearse and qualify the measurement machinery and
+retain enough generator/resource evidence to distinguish a server frontier from a measurement-
+system or environment regime before AWS can run. PR4b's responsibility is to apply the owning
+validation rule on independently provisioned compute and keep its conclusion bounded to the
+strongest evidence actually established.
 
 ### 2.12 Capacity units are non-burstable, and the generator is larger than a unit
 
@@ -380,9 +385,9 @@ The execution sequence is now:
 
 ```text
 local 12-vCPU partitioned rehearsal
-    -> fix anything the rehearsal discovers
+    -> qualify the measurement procedure; fix, explain or bound material local regimes
     -> optional t2.micro AWS bootstrap if quota is still pending and the proof is useful
-    -> c5 AWS capacity experiment if sufficient quota is available
+    -> bounded c5 AWS capacity experiment if sufficient quota is available
     -> otherwise retain the quota limitation and explicit VAL-SCALE-5-unproven result
     -> PR5 closeout
 ```
@@ -868,16 +873,20 @@ One run accelerated throughout; the other degraded from its first exported sampl
 run lands in, and the original question is unanswered: no rung comparison — and so no ladder — is
 possible until the two are separable.
 
-**Throughput and CPU fall together**, 2.4× against 2.1×. That is this repository's recorded
-signature for a stall *downstream* of the service rather than a limit *in* it, and it is why the
-degraded cell must not be treated as an outlier and dropped.
+**Throughput and CPU fall together**, 2.4× against 2.1×. That is evidence that the service is doing
+less work while the request path slows, and it is why the degraded cell must not be treated as an
+outlier and dropped. It does not by itself identify which layer below or around the service caused
+the stall.
 
-**The pool series is the sharpest evidence, and it is new.** In the degraded cell, connections in
-use falls to **7 of 16 while acquire-wait nearly doubles**: sixteen closed-loop workers, roughly
-nine of them waiting for connections that are *not in use*. Connections exist and are not being
-handed out. A service merely saturating its database would pin in-use at the ceiling, which is
-exactly what the healthy cell does at 13–16 of 16 with acquire-wait falling. Whatever the cause,
-it is between the pool and the database rather than in the service's own work.
+**The pool series is the sharpest evidence, and it is new — but its first interpretation was too
+strong.** In the degraded cell, acquired connections fall to **7** while acquire-wait nearly
+doubles, against a configured aggregate maximum of 16. `MaxConns=16` is a ceiling, not evidence
+that sixteen connections currently exist, so this observation does **not** prove that nine existing
+connections are being withheld. The missing distinction is the pool's actual population and state:
+total, idle and constructing connections, together with acquisition/lifecycle counters. What the
+retained cell establishes is narrower and still important: workers are waiting to acquire while
+fewer connections are acquired, so connection acquisition/availability becomes a concrete part of
+the degraded-regime diagnosis rather than a generic “service saturation” story.
 
 **It matches PR2's open throughput anomaly on two of its signature elements and contradicts a
 third.**
@@ -927,10 +936,53 @@ It also shows the anomaly is **not specific to the single-instance deployment** 
 across four independently pinned units, each with its own PostgreSQL.
 
 **Consequences.** `node_exporter` (§2.1) stops being deferrable: it is the host-level sensor this
-diagnosis needs, and the same evidence arguably fires the `postgres_exporter` deferral trigger,
-since the fault now localises to the pool/database boundary where this deployment has no
-visibility at all. One run per point cannot separate a regime from a trend, so each window needs
-repeating. And the 120 s point needs a fixture that cannot bound it.
+diagnosis needs. The service/pool side also needs enough pgxpool state to distinguish the configured
+maximum from the actual connection population — at minimum total/idle/constructing state plus the
+existing acquisition signal and lifecycle/reconnection evidence. `postgres_exporter` is **not yet
+made mandatory by this observation alone**: add it if host + fuller pool evidence still leaves the
+stall at the PostgreSQL boundary unresolved. One run per point cannot separate a regime from a
+trend, so each window needs repeating. And the 120 s point needs a fixture that cannot bound it.
+
+### 3.13 Maintainer decision: qualify the degraded regime in PR4a before AWS
+
+**Decision, 2026-08-14:** §3.12 is a PR4a blocker, not PR4b exploratory work.
+
+The reason is experimental rather than architectural. Two nominally comparable local `c=16` cells
+landed in materially different regimes: one accelerated while another degraded from its first
+retained samples. Until that distinction is understood or made observable, a `G1/G2/G4` AWS matrix
+could compare different regimes and report the difference as scale efficiency. Moving the same
+ambiguity to independent hosts would make the environment more expensive without making the result
+more interpretable.
+
+PR4a therefore expands from **local machinery rehearsal** to **local measurement qualification +
+AWS readiness**. Before PR4b starts, the degraded regime must meet one of these bounded outcomes:
+
+1. a root cause is demonstrated and fixed; or
+2. the cause is not fully eliminated, but a reliable discriminator/preflight/run-admission rule
+   makes the regime detectable and excludable (or otherwise conservatively bounded) so an AWS
+   topology comparison cannot unknowingly mix it with the healthy regime.
+
+The second outcome is deliberately acceptable. PR4a is not required to explain every performance
+characteristic of WSL2, Docker Desktop or the host; it is required to remove this known ambiguity
+from the **method PR4b will use**.
+
+The diagnostic order is also bounded. Add the already-selected `node_exporter` path and richer
+pgxpool population/state evidence first, repeat comparable cells enough to capture and distinguish
+regimes, then decide from evidence whether PostgreSQL-side instrumentation such as
+`postgres_exporter` is necessary. Do not add the exporter merely because PostgreSQL is plausible.
+The local generator-headroom control follows once a high-useful-demand point is stable enough for
+that comparison to mean something.
+
+**Scheduling consequence.** The existing **4.0 development days for PR4 remain unchanged**, but
+the original 1.5-day PR4a / up-to-2.5-day PR4b split is no longer binding. The workstation has
+proved a useful, repeatable, unmetered diagnostic environment while AWS quota approval is slower
+than planned, so PR4a may consume more of the shared envelope and PR4b correspondingly shrinks into
+a bounded cloud execution pass. Contingency is not touched unless the combined PR4 work exceeds its
+4.0-day allocation.
+
+This is not a new Iteration C Problem. It is evidence from implementation exposing a blocker to
+answering the existing Problem reliably, which is exactly when the schedule is expected to follow
+the evidence rather than preserve a stale PR boundary.
 
 ## 4. Open items
 
@@ -955,8 +1007,9 @@ repeating. And the 120 s point needs a fixture that cannot bound it.
   `c=32` (§3.11.1) is the first rung past it and is recorded as an observation, not a rung.
 - **Final `SLOTS`** is still to be derived from the deepest rung that ladder reaches, then held
   identical across `G1`, `G2` and `G4` (§3.10). 3200 is an interim value sized to one c=16 cell.
-- **The generator-headroom control** is now runnable: §3.11 is the high-useful-demand `G4` point
-  it was waiting for (§3.10).
+- **The generator-headroom control** is runnable but should be taken against a stable high-useful-
+  demand `G4` point after the degraded-regime qualification, so the control does not compare two
+  different regimes by accident.
 - **Per-unit panel aggregation and the dashboard retitle** (§2.6) are not done. The units are
   scraped and labelled by `authority`, but the committed dashboard is still PR2's
   single-instance one.
@@ -967,18 +1020,18 @@ repeating. And the 120 s point needs a fixture that cannot bound it.
   question.
 - **Whether monitoring splits onto its own host** stays open until §2.2's preflight says whether it
   needs to.
-- **`node_exporter` is no longer deferrable** (§2.1, §3.12). It is the host sensor the degraded-
-  regime diagnosis needs, and nothing else can say whether the stall is PostgreSQL, the disk or
-  the WSL VM.
-- **`postgres_exporter`'s deferral trigger has arguably fired** (§2.1, §3.12). The fault localises
-  to the pool/database boundary, which is precisely where this deployment has no visibility.
-  Maintainer decision needed on whether to fund it inside PR4a.
-- **The degraded regime must be characterised before any ladder** (§3.12). Repeat each window
-  several times to establish how often it occurs, and re-run the 120 s point at a fixture that
-  cannot bound it (`SLOTS=8000` gives 640,000).
-- **Pool underutilisation is undetected.** Connections in use falling well below the ceiling
-  *while* acquire-wait rises is a specific, diagnosable fault, and no check reports it — the
-  degraded cell certified `capacity` like any other.
+- **`node_exporter` is no longer deferrable** (§2.1, §3.12–§3.13). It is the host sensor the
+  degraded-regime diagnosis now needs before PR4b.
+- **Fuller pgxpool state is required for the local diagnosis.** The existing acquired/max/wait
+  series cannot distinguish “connections exist but are unavailable” from a pool whose actual
+  population has fallen or is constructing/reconnecting. Retain enough total/idle/constructing and
+  lifecycle evidence to make that distinction.
+- **`postgres_exporter` remains conditional** (§3.13). Add it inside PR4a only if node + fuller
+  pool evidence still leaves a material PostgreSQL-side ambiguity; do not instrument by guess.
+- **The degraded regime must be qualified before any ladder or PR4b** (§3.12–§3.13). Repeat
+  comparable cells enough to establish the discriminating signal; the goal is root cause/fix or a
+  reliable exclusion/bounding rule, not an unlimited WSL investigation. Re-run the 120 s point only
+  with a fixture that cannot bound it (`SLOTS=8000` gives 640,000).
 - **Per-organisation fixture size for the sweep** (§3.5) must be justified against the deepest rung
   the ladder will reach, not the selected point, now that fixture exhaustion at a higher rung
   invalidates the point below it. Derived during PR4a preflight alongside the rung duration (§2.4).

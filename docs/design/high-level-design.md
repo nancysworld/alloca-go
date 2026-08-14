@@ -323,6 +323,7 @@ for it.
 | Public-release disclosure rules, predecessor naming rule, pre-release checks | [`../public-disclosure-policy.md`](../public-disclosure-policy.md), [`../pre-public-checklist.md`](../pre-public-checklist.md) |
 | How to drive an AG-Sept measurement run locally — the procedure, not the rules | [`../operations/load-harness.md`](../operations/load-harness.md) |
 | How to build the image and raise the multi-authority container topology — the procedure, not the design | [`../operations/container-topology.md`](../operations/container-topology.md) |
+| How to read the diagnostic dashboard — what each panel answers, and the readings that look sound and are not | [`../operations/dashboards.md`](../operations/dashboards.md) |
 | Accepted technical debt — what each gap costs and the trigger that ends the acceptance | [`../planning/tech-debts.md`](../planning/tech-debts.md) |
 
 If a durable fact you need is not owned by one of these, it is either high-level enough

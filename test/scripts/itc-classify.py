@@ -85,6 +85,35 @@ def shape_of(values):
     return "rise", spread
 
 
+def expected_points(cell, key):
+    """How many samples this panel's own query could return over this cell's window.
+
+    Every input is recorded in the cell: `queried_from` is where the exporter opened this
+    panel's range query — one of *its* rate ranges after the measured phase began, so no point
+    reads pre-window samples — and `window.end` and `step` bound and space the rest. A panel
+    returning fewer than this lost samples; a panel returning this many is complete, however few
+    that is.
+    """
+    path = os.path.join(cell, "panels", "index.json")
+    if not os.path.exists(path):
+        return 0
+    try:
+        with open(path) as fh:
+            idx = json.load(fh)
+        panel = next(p for p in idx["panels"] if isinstance(p, dict) and p["key"] == key)
+        started = panel.get("queried_from")
+        if not started:
+            return 0
+        fmt = "%Y-%m-%dT%H:%M:%SZ"
+        import datetime
+        begin = datetime.datetime.strptime(started, fmt)
+        end = datetime.datetime.strptime(idx["window"]["end"], fmt)
+        step = float(idx["step"].rstrip("s"))
+        return int((end - begin).total_seconds() / step) + 1
+    except Exception:
+        return 0
+
+
 def ratio(values):
     """Peak against the opening sample: how far a series moved from where the window started."""
     if not values or values[0] == 0:
@@ -159,9 +188,23 @@ def summarise(cell):
     # samples — while missing the segment where the shape happened. A cell with no host panel at
     # all is a different statement: those predate the sensor (§3.14) and were never observed,
     # rather than having lost coverage.
+    #
+    # **Compared against what the panel's own query could yield, never against another panel.**
+    # Panels do not share a rate range: the host CPU panels declare 30s against the node job's 5s
+    # cadence, so the exporter opens their queries 30s into the window and a complete 60s cell
+    # retains seven of them where a 15s panel retains ten. Reading that difference as lost
+    # coverage is a mistake this script made and shipped — the gauge panels beside it held all
+    # thirteen samples from the window's first second, which is the proof the host was scraped
+    # throughout.
     host = read_panel(cell, "host_cpu_busy")
-    row["host_pts"] = f"{len(host)}/{len(values)}" if host else "none"
-    row["host_short"] = bool(host) and len(host) < len(values)
+    expected = expected_points(cell, "host_cpu_busy")
+    if not host:
+        row["host_pts"] = "none"
+    elif expected:
+        row["host_pts"] = f"{len(host)}/{expected}"
+        row["host_short"] = len(host) < expected
+    else:
+        row["host_pts"] = f"{len(host)}/?"
     return row
 
 
@@ -209,8 +252,8 @@ def main(argv):
         print(f"rate/s: min {rates[0]:.0f}, max {rates[-1]:.0f}, "
               f"spread across cells {rates[-1] / rates[0]:.2f}x")
         if any(r.get("host_short") for r in shaped):
-            print("* host CPU series shorter than the throughput series: the cell was not "
-                  "observed for its whole window")
+            print("* host CPU series is shorter than its own query could return: samples were "
+                  "lost, and the cell was not observed for all of the window it claims")
     return 0
 
 

@@ -65,7 +65,7 @@ The pool is the object of study in Iteration C, not a background indicator.
 | **Pool occupancy (conns)** — acquired against total | is the pool populated, and is it saturated? |
 | **Pool lifecycle (conns/s)** — new connections, destroyed | is it churning underneath a steady population? |
 | **Pool acquire concurrency (s/s)** — acquire, empty-acquire | how many acquires are in flight at once, and why? |
-| **Pool mean acquire duration (s)** | per-acquire cost, which the concurrency figure confounds with volume |
+| **Pool mean acquire duration** | per-acquire cost, which the concurrency figure confounds with volume |
 
 A **saturated** pool reads: acquired meeting total, acquire cost paid waiting for releases. A pool
 that is *not* saturated while acquire cost climbs is the open anomaly (`ag-sept-pr4.md` §3.13.1).
@@ -164,9 +164,11 @@ The gates will refuse, in `gen-dashboard.py` or in `panels_test.go`:
   panel goes into one of the four `SECTIONS` in `gen-dashboard.py`, which is what gives it a
   heading on screen. Set `"display": false` to export a series without plotting it; the exporter
   ignores the flag on purpose, and a test keeps it ignoring it;
-- **two units on one axis**, and a unit with no Grafana mapping. The graph title states the unit
-  and the axis stays plain numbers — except bytes and seconds, where Grafana's scaling earns its
-  place (`22.9 MiB`, `100 µs`);
+- **two units on one axis**, a unit with no Grafana mapping, and a **unit stated twice**. The
+  graph title states the unit and the axis stays plain numbers — except bytes and seconds, where
+  Grafana's scaling earns its place (`22.9 MiB`, `100 µs`) and therefore carries the label
+  instead: those titles take no unit suffix, because `(s)` above an axis reading `150 µs` names
+  the one unit the reader is not looking at;
 - a query that preserves per-authority cardinality without `{{authority}}` **first** in its legend,
   and the `per_authority` flag contradicting a query that aggregates authorities away;
 - a `rate()` panel on a job scraped more slowly than the datasource's interval without a declared

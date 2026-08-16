@@ -34,7 +34,7 @@ OUT = ROOT / "deploy/observability/grafana/dashboards/alloca-frontier.json"
 SECTIONS = [
     ("Demand and outcome", [
         ("Throughput and goodput (req/s)", ["throughput", "goodput", "replay_rate"]),
-        ("Latency (s)", ["latency_p50", "latency_p95", "latency_p99"]),
+        ("Latency", ["latency_p50", "latency_p95", "latency_p99"]),
         ("Outcomes (req/s)", ["outcomes"]),
     ]),
     # Occupancy, lifecycle and acquire cost are three different questions, and the first version
@@ -55,7 +55,7 @@ SECTIONS = [
         ("Pool acquire concurrency (s/s)", ["pool_acquire_wait", "pool_empty_acquire_wait"]),
         # Its own graph: seconds-per-second and seconds-per-acquire differ by three orders of
         # magnitude, so one axis would flatten the series that discriminated the degraded cell.
-        ("Pool mean acquire duration (s)", ["pool_acquire_mean"]),
+        ("Pool mean acquire duration", ["pool_acquire_mean"]),
     ]),
     # Each title names the service explicitly. "Process CPU" was ambiguous the moment a host
     # section existed beside it, and CPU carries its unit in the title because "cores" is the one
@@ -63,8 +63,8 @@ SECTIONS = [
     ("Service process (alloca-go units)", [
         ("Service CPU (cores)", ["process_cpu"]),
         ("Service goroutines", ["go_goroutines"]),
-        ("Service GC pause p75 (s)", ["go_gc_pause"]),
-        ("Service resident memory (bytes)", ["process_memory"]),
+        ("Service GC pause p75", ["go_gc_pause"]),
+        ("Service resident memory", ["process_memory"]),
     ]),
     # VAL-NEG-7's host view (ag-sept-pr4.md §2.1, §2.5). Four graphs rather than one because the
     # quantities that answer §3.12 are small next to the ones that do not: CPU steal against total
@@ -79,7 +79,7 @@ SECTIONS = [
         ("Host CPU busy (cores)", ["host_cpu_busy"]),
         ("Host CPU stolen and blocked (cores)", ["host_cpu_steal"]),
         ("Host run queue (tasks)", ["host_runqueue"]),
-        ("Host memory available (bytes)", ["host_memory_available"]),
+        ("Host memory available", ["host_memory_available"]),
     ]),
 ]
 
@@ -94,15 +94,20 @@ DATASOURCE = {"type": "prometheus", "uid": "alloca-prometheus"}
 # export and the prose call the series. This table is the translation, in one place, so adding a
 # panel does not mean learning Grafana's identifier list.
 #
-# **The title carries the unit; the axis carries numbers.** Repeating "cores" down every gridline
-# is noise once the title says it. The only units kept are the two where Grafana's formatting does
-# real work rather than appending a word:
+# **Exactly one of the title and the axis states the unit, never both.** Repeating "cores" down
+# every gridline is noise once the title says it, so most panels put the unit in the title and take
+# "short" — plain numbers, with K/M only where the magnitude needs it.
+#
+# Two units go the other way, because Grafana's formatting does real work rather than appending a
+# word, and it *scales*:
 #
 #   bytes -> 22.9 MiB, not 24000000
 #   s     -> 100 µs,   not 0.0001
 #
-# Dropping those two would make their axes unreadable, which is a worse trade than a repeated
-# suffix. Everything else is "short": plain numbers, with K/M only where the magnitude needs it.
+# For those, the axis is the one that states it and the title does not. The scaled prefix is also
+# the honest label: a title reading "(s)" above an axis reading "150 µs" names a unit the reader is
+# not looking at, and "(bytes)" above "22 MiB" is the same mistake three orders of magnitude up.
+# So a panel whose GRAFANA_UNIT is "bytes" or "s" carries no unit suffix in SECTIONS.
 GRAFANA_UNIT = {
     "bytes": "bytes",
     "s": "s",
@@ -115,6 +120,13 @@ GRAFANA_UNIT = {
     "s/s": "short",
     "ratio": "percentunit",
 }
+
+# The Grafana units that scale their own axis, and so own the unit label rather than sharing it
+# with the title. Derived from the table rather than listed beside it, so a unit added above lands
+# on the right side of the rule without anyone remembering this line exists: "short" prints the
+# number alone, and "percentunit" repeats a sign per gridline, which is the noise case. Everything
+# else rewrites the magnitude — 22.9 MiB, 100 µs — and that scaled form is what the reader sees.
+SCALING_UNITS = {g for g in GRAFANA_UNIT.values() if g not in {"short", "percentunit"}}
 
 # How a series names itself. Driven by each panel's own metadata rather than by a table here,
 # because the table was a second place to forget: a panel added to panels.json without a matching
@@ -232,6 +244,19 @@ def main() -> None:
                 raise SystemExit(
                     f"panel {title!r} uses unit {next(iter(units))!r}, which GRAFANA_UNIT does "
                     "not map; add it rather than letting the axis render raw numbers"
+                )
+            # The half of the one-unit rule that has no exceptions: a scaling axis already names
+            # the unit, in the scaled form the reader is actually looking at, so the title must
+            # not name it again in the base form. Checked rather than only described, because the
+            # titles were written by hand above and a suffix is exactly the kind of thing that
+            # gets copied from the panel beside it. The other half is deliberately not checked —
+            # "Service goroutines" is right to carry no "(count)".
+            if unit in SCALING_UNITS and title.rstrip().endswith(")"):
+                raise SystemExit(
+                    f"panel {title!r} states a unit in its title while its axis scales "
+                    f"({unit!r}: 22.9 MiB, 100 µs). The axis is the honest label — a title "
+                    "reading '(s)' above an axis reading '150 µs' names a unit nobody is "
+                    "looking at. Drop the suffix from SECTIONS."
                 )
 
             panels.append({

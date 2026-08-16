@@ -96,7 +96,7 @@
     {
       "id": 3,
       "type": "timeseries",
-      "title": "Latency (s)",
+      "title": "Latency",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -384,7 +384,7 @@
     {
       "id": 9,
       "type": "timeseries",
-      "title": "Pool mean acquire duration (s)",
+      "title": "Pool mean acquire duration",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -532,7 +532,7 @@
     {
       "id": 13,
       "type": "timeseries",
-      "title": "Service GC pause p75 (s)",
+      "title": "Service GC pause p75",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -577,7 +577,7 @@
     {
       "id": 14,
       "type": "timeseries",
-      "title": "Service resident memory (bytes)",
+      "title": "Service resident memory",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -770,7 +770,7 @@
     {
       "id": 19,
       "type": "timeseries",
-      "title": "Host memory available (bytes)",
+      "title": "Host memory available",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"

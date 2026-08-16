@@ -668,6 +668,18 @@ network has to exist first. That is what makes the scrape path structural rather
 discovered — a WSL restart reassigns host addresses and cannot invalidate a service name.
 Grafana is deliberately not attached to that network: it talks to Prometheus.
 
+It leaves two things to look at:
+
+| | Address | |
+|---|---|---|
+| Grafana | `http://localhost:3000/d/alloca-frontier` | the diagnostic dashboard, provisioned from the repository — panels are read in [`dashboards.md`](dashboards.md) |
+| Prometheus | `http://localhost:9091` | targets at `/targets`, ad-hoc queries at `/graph` |
+
+**Grafana is for diagnosis between cells, never during one.** A query engine under variable load
+on the generator host is the one part of this arrangement that can move while a rung is being
+measured — which is also why it is pinned to the generator's own CPUs rather than left
+unconfined: it is part of the measuring side, not part of the environment.
+
 **`ITC_CPUS_GENERATOR` appears twice and the two must agree.** Monitoring and the generator
 are one measuring side, and moving only half of it changes two things at once. `make
 itc-rehearse` prints the remaining commands with the value it was given, which is the copy to

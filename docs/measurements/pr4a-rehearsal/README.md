@@ -1,15 +1,19 @@
 # The PR4a local rehearsal
 
-Five `G4` cells driven on 2026-08-13 on the scheduler-partitioned local rehearsal of the
-Iteration C 1/2/4 topology, before any metered AWS time was spent.
+Fifteen `G4` cells driven on 2026-08-13 and 2026-08-16 on the scheduler-partitioned local
+rehearsal of the Iteration C 1/2/4 topology, before any metered AWS time was spent.
 
 - [`points/`](points/) — the two operating points, `c=16` and `c=32`.
 - [`windows/`](windows/) — three cells differing only in window length, one of which reproduced
   PR2's open throughput anomaly.
+- [`repeats/`](repeats/) — ten identical cells, and so the **base rate**: three in ten did not
+  run flat, the seven that did agree to within 2.6%, and the three failed in two distinguishable
+  ways. It also carries the first host-level evidence of the degraded regime, and a per-authority
+  reading that contradicts `ag-sept-pr4.md` §3.13.1.
 
 The reading is in
 [`../../development/implementation/ag-sept-pr4.md`](../../development/implementation/ag-sept-pr4.md)
-§3.11, §3.11.1 and §3.12.
+§3.11, §3.11.1 and §3.12; `repeats/` postdates that record and carries its own.
 
 ## Evidence class: rehearsal/diagnostic only
 

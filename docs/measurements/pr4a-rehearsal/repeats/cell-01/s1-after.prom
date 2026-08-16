@@ -1,0 +1,202 @@
+# HELP alloca_db_pool_acquire_wait_seconds_total Cumulative duration of all successful Acquire() calls, including connection construction — NOT blocked-waiting time. Not a contention signal alone; read with empty_acquire_wait_seconds_total and new_connections_total.
+# TYPE alloca_db_pool_acquire_wait_seconds_total counter
+alloca_db_pool_acquire_wait_seconds_total 47.176691173
+# HELP alloca_db_pool_acquired_connections Connections currently in use.
+# TYPE alloca_db_pool_acquired_connections gauge
+alloca_db_pool_acquired_connections 0
+# HELP alloca_db_pool_acquires_total Cumulative successful acquires.
+# TYPE alloca_db_pool_acquires_total counter
+alloca_db_pool_acquires_total 63955
+# HELP alloca_db_pool_canceled_acquires_total Cumulative acquires abandoned by context cancellation.
+# TYPE alloca_db_pool_canceled_acquires_total counter
+alloca_db_pool_canceled_acquires_total 0
+# HELP alloca_db_pool_constructing_connections Connections currently being established.
+# TYPE alloca_db_pool_constructing_connections gauge
+alloca_db_pool_constructing_connections 0
+# HELP alloca_db_pool_empty_acquire_wait_seconds_total Cumulative time on acquires that found no idle connection — covers BOTH waiting for one to be released AND constructing a new one; separate them with new_connections_total.
+# TYPE alloca_db_pool_empty_acquire_wait_seconds_total counter
+alloca_db_pool_empty_acquire_wait_seconds_total 47.161385861
+# HELP alloca_db_pool_empty_acquires_total Cumulative acquires that found no idle connection, whether they waited or constructed.
+# TYPE alloca_db_pool_empty_acquires_total counter
+alloca_db_pool_empty_acquires_total 21988
+# HELP alloca_db_pool_idle_connections Connections idle in the pool.
+# TYPE alloca_db_pool_idle_connections gauge
+alloca_db_pool_idle_connections 4
+# HELP alloca_db_pool_max_connections Configured maximum pool size.
+# TYPE alloca_db_pool_max_connections gauge
+alloca_db_pool_max_connections 4
+# HELP alloca_db_pool_max_idle_destroys_total Cumulative connections destroyed for exceeding max idle time.
+# TYPE alloca_db_pool_max_idle_destroys_total counter
+alloca_db_pool_max_idle_destroys_total 2
+# HELP alloca_db_pool_max_lifetime_destroys_total Cumulative connections destroyed for exceeding max lifetime.
+# TYPE alloca_db_pool_max_lifetime_destroys_total counter
+alloca_db_pool_max_lifetime_destroys_total 2
+# HELP alloca_db_pool_new_connections_total Cumulative connection constructions started. Construction connects to PostgreSQL, so a rise means acquires are paying establishment cost.
+# TYPE alloca_db_pool_new_connections_total counter
+alloca_db_pool_new_connections_total 8
+# HELP alloca_db_pool_total_connections Connections the pool currently holds.
+# TYPE alloca_db_pool_total_connections gauge
+alloca_db_pool_total_connections 4
+# HELP alloca_expiry_iteration_duration_seconds Duration of one expiry worker iteration.
+# TYPE alloca_expiry_iteration_duration_seconds histogram
+alloca_expiry_iteration_duration_seconds_bucket{le="0.01"} 739
+alloca_expiry_iteration_duration_seconds_bucket{le="0.05"} 752
+alloca_expiry_iteration_duration_seconds_bucket{le="0.1"} 766
+alloca_expiry_iteration_duration_seconds_bucket{le="0.5"} 827
+alloca_expiry_iteration_duration_seconds_bucket{le="1"} 827
+alloca_expiry_iteration_duration_seconds_bucket{le="5"} 827
+alloca_expiry_iteration_duration_seconds_bucket{le="15"} 827
+alloca_expiry_iteration_duration_seconds_bucket{le="60"} 827
+alloca_expiry_iteration_duration_seconds_bucket{le="+Inf"} 827
+alloca_expiry_iteration_duration_seconds_sum 8.728345848000007
+alloca_expiry_iteration_duration_seconds_count 827
+# HELP alloca_expiry_iterations_total Expiry worker iterations, by whether the iteration ended in an error.
+# TYPE alloca_expiry_iterations_total counter
+alloca_expiry_iterations_total{failed="false"} 827
+# HELP alloca_expiry_reservations_expired_total Held reservations transitioned to expired by the worker.
+# TYPE alloca_expiry_reservations_expired_total counter
+alloca_expiry_reservations_expired_total 32658
+# HELP alloca_expiry_slots_examined_total Candidate slots examined by the expiry worker.
+# TYPE alloca_expiry_slots_examined_total counter
+alloca_expiry_slots_examined_total 3758
+# HELP alloca_request_duration_seconds Handler duration including the transaction it drove. Excludes reason to bound series count; the counter carries that dimension.
+# TYPE alloca_request_duration_seconds histogram
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.001"} 0
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.0025"} 523
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.005"} 18561
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.01"} 43853
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.025"} 58975
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.05"} 59364
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.1"} 59364
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.25"} 59364
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="0.5"} 59364
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="1"} 59364
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="2.5"} 59364
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="5"} 59364
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="10"} 59364
+alloca_request_duration_seconds_bucket{operation="reserve",outcome="admitted_success",le="+Inf"} 59364
+alloca_request_duration_seconds_sum{operation="reserve",outcome="admitted_success"} 470.25556297800046
+alloca_request_duration_seconds_count{operation="reserve",outcome="admitted_success"} 59364
+# HELP alloca_requests_total Completed requests by terminal outcome. replay is the orthogonal disposition flag (measurement-contract §4), never an outcome of its own.
+# TYPE alloca_requests_total counter
+alloca_requests_total{operation="reserve",outcome="admitted_success",reason="",replay="false"} 59364
+# HELP go_gc_duration_seconds A summary of the wall-time pause (stop-the-world) duration in garbage collection cycles.
+# TYPE go_gc_duration_seconds summary
+go_gc_duration_seconds{quantile="0"} 2.0983e-05
+go_gc_duration_seconds{quantile="0.25"} 2.5192e-05
+go_gc_duration_seconds{quantile="0.5"} 3.0603e-05
+go_gc_duration_seconds{quantile="0.75"} 4.1669e-05
+go_gc_duration_seconds{quantile="1"} 0.000415768
+go_gc_duration_seconds_sum 0.138502594
+go_gc_duration_seconds_count 1080
+# HELP go_gc_gogc_percent Heap size target percentage configured by the user, otherwise 100. This value is set by the GOGC environment variable, and the runtime/debug.SetGCPercent function. Sourced from /gc/gogc:percent.
+# TYPE go_gc_gogc_percent gauge
+go_gc_gogc_percent 100
+# HELP go_gc_gomemlimit_bytes Go runtime memory limit configured by the user, otherwise math.MaxInt64. This value is set by the GOMEMLIMIT environment variable, and the runtime/debug.SetMemoryLimit function. Sourced from /gc/gomemlimit:bytes.
+# TYPE go_gc_gomemlimit_bytes gauge
+go_gc_gomemlimit_bytes 9.223372036854776e+18
+# HELP go_goroutines Number of goroutines that currently exist.
+# TYPE go_goroutines gauge
+go_goroutines 13
+# HELP go_info Information about the Go environment.
+# TYPE go_info gauge
+go_info{version="go1.26.5"} 1
+# HELP go_memstats_alloc_bytes Number of bytes allocated in heap and currently in use. Equals to /memory/classes/heap/objects:bytes.
+# TYPE go_memstats_alloc_bytes gauge
+go_memstats_alloc_bytes 2.479088e+06
+# HELP go_memstats_alloc_bytes_total Total number of bytes allocated in heap until now, even if released already. Equals to /gc/heap/allocs:bytes.
+# TYPE go_memstats_alloc_bytes_total counter
+go_memstats_alloc_bytes_total 2.344708936e+09
+# HELP go_memstats_buck_hash_sys_bytes Number of bytes used by the profiling bucket hash table. Equals to /memory/classes/profiling/buckets:bytes.
+# TYPE go_memstats_buck_hash_sys_bytes gauge
+go_memstats_buck_hash_sys_bytes 1.44453e+06
+# HELP go_memstats_frees_total Total number of heap objects frees. Equals to /gc/heap/frees:objects + /gc/heap/tiny/allocs:objects.
+# TYPE go_memstats_frees_total counter
+go_memstats_frees_total 3.128492e+07
+# HELP go_memstats_gc_sys_bytes Number of bytes used for garbage collection system metadata. Equals to /memory/classes/metadata/other:bytes.
+# TYPE go_memstats_gc_sys_bytes gauge
+go_memstats_gc_sys_bytes 3.352304e+06
+# HELP go_memstats_heap_alloc_bytes Number of heap bytes allocated and currently in use, same as go_memstats_alloc_bytes. Equals to /memory/classes/heap/objects:bytes.
+# TYPE go_memstats_heap_alloc_bytes gauge
+go_memstats_heap_alloc_bytes 2.479088e+06
+# HELP go_memstats_heap_idle_bytes Number of heap bytes waiting to be used. Equals to /memory/classes/heap/released:bytes + /memory/classes/heap/free:bytes.
+# TYPE go_memstats_heap_idle_bytes gauge
+go_memstats_heap_idle_bytes 7.65952e+06
+# HELP go_memstats_heap_inuse_bytes Number of heap bytes that are in use. Equals to /memory/classes/heap/objects:bytes + /memory/classes/heap/unused:bytes
+# TYPE go_memstats_heap_inuse_bytes gauge
+go_memstats_heap_inuse_bytes 3.842048e+06
+# HELP go_memstats_heap_objects Number of currently allocated objects. Equals to /gc/heap/objects:objects.
+# TYPE go_memstats_heap_objects gauge
+go_memstats_heap_objects 24391
+# HELP go_memstats_heap_released_bytes Number of heap bytes released to OS. Equals to /memory/classes/heap/released:bytes.
+# TYPE go_memstats_heap_released_bytes gauge
+go_memstats_heap_released_bytes 6.258688e+06
+# HELP go_memstats_heap_sys_bytes Number of heap bytes obtained from system. Equals to /memory/classes/heap/objects:bytes + /memory/classes/heap/unused:bytes + /memory/classes/heap/released:bytes + /memory/classes/heap/free:bytes.
+# TYPE go_memstats_heap_sys_bytes gauge
+go_memstats_heap_sys_bytes 1.1501568e+07
+# HELP go_memstats_last_gc_time_seconds Number of seconds since 1970 of last garbage collection.
+# TYPE go_memstats_last_gc_time_seconds gauge
+go_memstats_last_gc_time_seconds 1.7869151002535765e+09
+# HELP go_memstats_mallocs_total Total number of heap objects allocated, both live and gc-ed. Semantically a counter version for go_memstats_heap_objects gauge. Equals to /gc/heap/allocs:objects + /gc/heap/tiny/allocs:objects.
+# TYPE go_memstats_mallocs_total counter
+go_memstats_mallocs_total 3.1309311e+07
+# HELP go_memstats_mcache_inuse_bytes Number of bytes in use by mcache structures. Equals to /memory/classes/metadata/mcache/inuse:bytes.
+# TYPE go_memstats_mcache_inuse_bytes gauge
+go_memstats_mcache_inuse_bytes 4592
+# HELP go_memstats_mcache_sys_bytes Number of bytes used for mcache structures obtained from system. Equals to /memory/classes/metadata/mcache/inuse:bytes + /memory/classes/metadata/mcache/free:bytes.
+# TYPE go_memstats_mcache_sys_bytes gauge
+go_memstats_mcache_sys_bytes 16072
+# HELP go_memstats_mspan_inuse_bytes Number of bytes in use by mspan structures. Equals to /memory/classes/metadata/mspan/inuse:bytes.
+# TYPE go_memstats_mspan_inuse_bytes gauge
+go_memstats_mspan_inuse_bytes 88800
+# HELP go_memstats_mspan_sys_bytes Number of bytes used for mspan structures obtained from system. Equals to /memory/classes/metadata/mspan/inuse:bytes + /memory/classes/metadata/mspan/free:bytes.
+# TYPE go_memstats_mspan_sys_bytes gauge
+go_memstats_mspan_sys_bytes 114240
+# HELP go_memstats_next_gc_bytes Number of heap bytes when next garbage collection will take place. Equals to /gc/heap/goal:bytes.
+# TYPE go_memstats_next_gc_bytes gauge
+go_memstats_next_gc_bytes 4.194304e+06
+# HELP go_memstats_other_sys_bytes Number of bytes used for other system allocations. Equals to /memory/classes/other:bytes.
+# TYPE go_memstats_other_sys_bytes gauge
+go_memstats_other_sys_bytes 682590
+# HELP go_memstats_stack_inuse_bytes Number of bytes obtained from system for stack allocator in non-CGO environments. Equals to /memory/classes/heap/stacks:bytes.
+# TYPE go_memstats_stack_inuse_bytes gauge
+go_memstats_stack_inuse_bytes 1.081344e+06
+# HELP go_memstats_stack_sys_bytes Number of bytes obtained from system for stack allocator. Equals to /memory/classes/heap/stacks:bytes + /memory/classes/os-stacks:bytes.
+# TYPE go_memstats_stack_sys_bytes gauge
+go_memstats_stack_sys_bytes 1.081344e+06
+# HELP go_memstats_sys_bytes Number of bytes obtained from system. Equals to /memory/classes/total:byte.
+# TYPE go_memstats_sys_bytes gauge
+go_memstats_sys_bytes 1.8192648e+07
+# HELP go_sched_gomaxprocs_threads The current runtime.GOMAXPROCS setting, or the number of operating system threads that can execute user-level Go code simultaneously. Sourced from /sched/gomaxprocs:threads.
+# TYPE go_sched_gomaxprocs_threads gauge
+go_sched_gomaxprocs_threads 2
+# HELP go_threads Number of OS threads created.
+# TYPE go_threads gauge
+go_threads 9
+# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total 46.48
+# HELP process_max_fds Maximum number of open file descriptors.
+# TYPE process_max_fds gauge
+process_max_fds 1.048576e+06
+# HELP process_network_receive_bytes_total Number of bytes received by the process over the network.
+# TYPE process_network_receive_bytes_total counter
+process_network_receive_bytes_total 1.43980632e+08
+# HELP process_network_transmit_bytes_total Number of bytes sent by the process over the network.
+# TYPE process_network_transmit_bytes_total counter
+process_network_transmit_bytes_total 2.15669668e+08
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+process_open_fds 16
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes 2.1274624e+07
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds 1.78691095954e+09
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes 1.306300416e+09
+# HELP process_virtual_memory_max_bytes Maximum amount of virtual memory available in bytes.
+# TYPE process_virtual_memory_max_bytes gauge
+process_virtual_memory_max_bytes 1.8446744073709552e+19

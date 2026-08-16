@@ -24,12 +24,38 @@ import csv
 import collections
 import json
 import os
+import re
 import sys
 
 # Provisional. The retained cells sit at 1.08 (stationary), 2.07 (dip) and 2.40 (decay), so
 # anything in the low 1.x is well clear of every excursion seen so far. It is a reporting
 # boundary, not a gate: see the module docstring.
 FLAT_SPREAD = 1.30
+
+
+def read_per_authority(cell, key):
+    """{authority: {timestamp: value}} — the view an aggregate cannot substitute for.
+
+    **Summing a multi-unit pool panel destroys the finding.** Each capacity unit has its own pool
+    of four connections, so when one authority stalls, the closed-loop workload blocks on it and
+    the other three go idle: the sum then reads "7 of 16 acquired, 9 idle", which is the shape of
+    a pool with spare capacity. Per authority it is one unit saturated at 3.7 of 4 with acquires
+    queueing, beside three units nobody is asking. Those are opposite diagnoses, and the summed
+    one is wrong.
+
+    This is not hypothetical. It is how ag-sept-pr4.md §3.13.1 concluded that the degraded pool
+    "was not saturated", and how this script first reported cell-07 of the 2026-08-16 series.
+    """
+    path = os.path.join(cell, "panels", f"{key}.csv")
+    out = collections.defaultdict(dict)
+    if not os.path.exists(path):
+        return out
+    with open(path) as fh:
+        for row in csv.DictReader(fh):
+            match = re.search(r"authority=(authority-\d+)", row["labels"])
+            if match:
+                out[match.group(1)][int(row["timestamp"])] = float(row["value"])
+    return out
 
 
 def read_panel(cell, key, combine=sum):
@@ -178,11 +204,28 @@ def summarise(cell):
     acquire_mean = within(read_panel(cell, "pool_acquire_mean", max))
     row["acq_peak_ms"] = max(acquire_mean) * 1000 if acquire_mean else float("nan")
     row["acq_ratio"] = ratio(acquire_mean)
-    in_use = within(read_panel(cell, "pool_in_use"))
-    total = within(read_panel(cell, "pool_total"))
-    if in_use and total:
-        row["idle_max"] = max(t - u for u, t in zip(in_use, total))
-        row["pool"] = f"{min(in_use):.0f}-{max(in_use):.0f}/{max(total):.0f}"
+
+    # Per authority, never summed — see read_per_authority. Two numbers carry the distinction
+    # between a busy deployment and a stalled unit: how loaded the *busiest* pool was, and how
+    # many units were left holding almost nothing while it was.
+    occupancy = read_per_authority(cell, "pool_in_use")
+    if occupancy:
+        means = {}
+        for authority, series in occupancy.items():
+            samples = [v for t, v in series.items() if rate_window[0] <= t <= rate_window[-1]]
+            if samples:
+                means[authority] = sum(samples) / len(samples)
+        if means:
+            hottest = max(means, key=means.get)
+            peak = means[hottest]
+            row["busiest"] = f"{hottest.replace('authority-', 'a')} {peak:.1f}/4"
+            # Starvation is relative, not absolute. A unit holding a third of what the busiest
+            # unit holds is not merely quieter — the generator is closed-loop and round-robins
+            # the four organisations, so a stall on one authority stops the others being asked
+            # at all. An absolute threshold missed this: the starved units sit near one
+            # connection, which is also where a lightly loaded healthy unit sits.
+            row["starved"] = (sum(1 for m in means.values() if m < peak / 3)
+                              if len(means) > 1 and peak > 0 else 0)
 
     # Host coverage, because a cell can pass the per-cell host gate — which asks only for *some*
     # samples — while missing the segment where the shape happened. A cell with no host panel at
@@ -221,7 +264,7 @@ def main(argv):
         return 2
 
     header = (f"{'cell':22} {'rate/s':>7} {'shape':>6} {'spread':>6} {'first':>6} {'min':>6} "
-              f"{'last':>6} {'acq ms':>6} {'acq x':>5} {'pool':>8} {'idle':>4} {'p99ms':>6} "
+              f"{'last':>6} {'acq ms':>6} {'acq x':>5} {'busiest':>9} {'strvd':>5} {'p99ms':>6} "
               f"{'fix%':>5} {'host':>6}")
     print(header)
     print("-" * len(header))
@@ -239,7 +282,7 @@ def main(argv):
         print(f"{r['cell']:22} {r['rate']:7.0f} {r['shape']:>6} {num(r['spread'], '6.2f'):>6} "
               f"{r['first']:6.0f} {r['min']:6.0f} {r['last']:6.0f} "
               f"{num(r['acq_peak_ms'], '6.2f'):>6} {num(r['acq_ratio'], '5.2f'):>5} "
-              f"{r.get('pool', '—'):>8} {num(r.get('idle_max', float('nan')), '4.0f'):>4} "
+              f"{r.get('busiest', '—'):>9} {r.get('starved', '—'):>5} "
               f"{r['p99']:6.1f} {100 * r['supply_used']:5.1f} {r['host_pts']:>5}{flag}")
 
     shaped = [r for r in rows if r.get("shape") not in (None, "no series")]

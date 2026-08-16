@@ -1208,3 +1208,33 @@ before the next reproduction attempt rather than after.
   evidence. If it does not permit the complete G4 environment within the AG-Sept timebox, record
   the blocker and leave `VAL-SCALE-5` explicitly unproven rather than delaying PR5 or promoting the
   local rehearsal.
+
+## 5. AWS Standard On-Demand quota increase declined — 2026-08-16
+
+AWS Support declined the requested increase to the **Running On-Demand Standard
+(A, C, D, H, I, M, R, T, Z)** instance quota in `eu-west-2` after review of the appeal. The support
+response explicitly says the Alloca use case was noted, but the account does not yet have enough
+established AWS service usage and on-time billing history for the increase to be approved. AWS may
+reassess after that account history exists.
+
+**Interpretation:** this is an external account-maturity/provisioning constraint, not evidence about
+Alloca's architecture, capacity, or the validity of the Iteration C experiment. It does not trigger
+Tier 2: the validation plan requires the complete independently provisioned G4 measurement
+environment to exist before Tier 2 can be considered.
+
+**Maintainer decision:** do not spend the current PR4a budget on another immediate appeal. Continue
+the local measurement-qualification work, which is unmetered and has already exposed material
+experiment defects and the degraded-regime ambiguity. A bounded AWS bootstrap may still use the
+quota already available if it removes AWS-specific uncertainty, but any such bootstrap is
+operational evidence only and never capacity evidence. Build genuine AWS usage/billing history and
+re-request the quota later; AG-Sept does not wait on that approval.
+
+PR4b therefore remains conditional on enough quota to instantiate the **complete** independently
+provisioned G1/G2/G4 environment. If that environment is still unavailable inside the AG-Sept
+timebox, PR4 records the AWS blocker, leaves aggregate capacity scaling and `VAL-SCALE-5` explicitly
+unproven, and proceeds to PR5. Neither the shared-workstation rehearsal nor a partial AWS topology
+is promoted as a substitute result.
+
+**Budget consequence:** none. The existing shared 4.0-day PR4a/PR4b envelope remains the scheduling
+owner; this denial changes the probability and likely size of the PR4b cloud pass, not the milestone
+budget or the validation rule.

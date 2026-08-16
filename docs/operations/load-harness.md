@@ -701,6 +701,50 @@ the baseline scrape must precede the window, the after scrape must follow the ge
 **exit** rather than the end of the workload — `alloca-load` replays ambiguous mutations in a
 post-run pass — and the panel export must be bounded to the measured phase.
 
+### A series of identical cells
+
+One cell is an anecdote. Two nominally identical `G4` cells — same fixture, same concurrency,
+same service binary — have come out at 3,152/s flat and 2,177/s with a 2× within-window
+excursion, so a single reading cannot tell a regime from the tail of a distribution, and a
+ladder cannot select an operating point while nominally identical rungs disagree by half.
+
+```sh
+ITC_GROUPS=4 REPEATS=10 ./test/scripts/itc-repeat.sh
+```
+
+Each cell is an ordinary `itc-run.sh` invocation with its own directory — same gates, same
+reseed, same refusals — landing under `test/results/pr4a/repeat-<timestamp>/`, with the series'
+shared configuration in `series.txt` beside them. Budget **~75 s and 25 MB per cell**: 10 s of
+preflight and reseed, the window, then the export and a TSDB snapshot.
+
+Two abort rules, because the series runs unattended:
+
+- **the first cell failing stops the series.** Every gate that refuses a cell runs before its
+  window, so nothing has been measured, and the cause is environmental — ten identical refusals
+  teach nothing the first one did not;
+- **two consecutive failures stop it too.** After the first cell has passed, an isolated failure
+  is a gap in the sample rather than a reason to discard it; two in a row is an environment that
+  changed mid-series.
+
+`GAP` (default 10 s) is the pause between cells. It is deliberately short: whatever accumulates
+across a session is a live hypothesis for the excursion, and a long gap would be an uncontrolled
+intervention on it.
+
+The series prints its own summary, and the same tool reads any set of cells — including retained
+ones, which is how its labels were checked:
+
+```sh
+./test/scripts/itc-classify.py docs/measurements/pr4a-rehearsal/windows/*/
+```
+
+It reports each cell's **shape** rather than its average, because the average is what hides the
+difference: `rise`, `decay`, `flat`, `dip`, `spike`, or `spent` for a cell whose fixture ran out
+and whose rate therefore describes the fixture. Beside it go the pool's occupancy and acquire
+cost over the same window — the pair that separated the degraded cell from the healthy one — and
+whether the host series covered the whole window or only part of it. **The labels are
+descriptive and no document owns them**; promoting any of them into an admission rule is a
+measurement-contract decision.
+
 ### Driving `G1` or `G2` instead
 
 Change `ITC_GROUPS` in every command of §11, including the deployment record. One value

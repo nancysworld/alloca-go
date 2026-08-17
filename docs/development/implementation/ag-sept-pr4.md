@@ -1512,6 +1512,79 @@ and degraded cells at all. If it does not, the extra buffers are being spent ins
 access path, and index or heap bloat, visibility-map state and the index-only-scan heap-fetch path
 become the candidates rather than plan choice.
 
+### 3.20 Root cause: a Seq Scan plan cached against an empty table, and outliving the planner's own correction
+
+Untreated reproducer with all three probes, G1 `c=16` `GAP=10`, 60 cells
+(`test/results/pr4a/repeat-20260817T202458Z`): **7 degraded in 60**, comparable to the untreated
+10 in 60, so the diagnostics neither suppress nor provoke the regime. Healthy rates 1,266–1,356/s
+sit inside the untreated band, which is what makes the plan evidence admissible.
+
+**The executed plans differ, and by two orders of magnitude.** From `auto_explain` at 0.1%
+sampling, segmented by cell window, for the idempotency lookup:
+
+| | samples | access path | mean ms | mean buffers | max buffers |
+|---|---|---|---|---|---|
+| healthy cells | 4,130 | Index Scan (100%) | 0.0117 | 2.81 | 3 |
+| degraded cells | 139 | **Seq Scan** | 0.8026 | **314.66** | 693 |
+| degraded cells | 44 | Index Scan | 0.0096 | 3.00 | 3 |
+
+That reconciles the `pg_stat_statements` figure: a mix of roughly three-quarters Seq Scan at ~314
+buffers and one quarter Index Scan at ~3 gives the ~182 per call §3.18 measured, and the 8.8×
+buffers-per-request separation of §3.17 follows from it.
+
+**The flip is the recovery.** Executed plans through cell-16, one letter per sampled execution
+against the window offset in seconds:
+
+```
+plan   S S S S S S S S S S S S S S S S S | I I I I I I I I I I I I I I I I
+t(s)   2 2 4 5 5 5 7 11 12 19 26 32 35 40 46 50 51 | 52 52 53 54 ... 60
+rate   716  526  438  385  346  317  294  276  |  454  840
+```
+
+Throughput decays monotonically for as long as the Seq Scan is in use and jumps the moment the
+Index Scan appears. Cell-29 repeats it exactly. The `decay` shapes are the cells where the flip
+never happened inside the window — cell-21 ran 27 Seq Scan executions against 2 Index Scan.
+
+**It is a cached plan, not a planner choice, and the probe pair proves it.** `PLAN_PROBE` reports
+what a *fresh* plan would be; `auto_explain` reports what the connections actually ran. In cell-16:
+
+| window offset | live rows | planner would choose | executions actually used |
+|---|---|---|---|
+| 0 s | 3 | Seq Scan | Seq Scan |
+| 5 s | 4,912 | **Index Scan** | Seq Scan |
+| 5–51 s | up to 17,852 | **Index Scan** | **Seq Scan** |
+| 52 s onward | — | Index Scan | Index Scan |
+
+The planner corrected itself within five seconds of the window opening, and the pooled connections
+went on executing the stale plan for another forty-six. Neither probe alone could have shown this:
+the planner-state probe would have said the plan was fine, and `auto_explain` alone could not have
+distinguished a stale plan from a planner that kept choosing badly.
+
+**The mechanism, end to end.** The reseed truncates the four mutation tables and repopulates only
+`slots`, so a measured window opens with `idempotency_records` empty. The service's pooled
+connections prepare the lookup against that empty relation and PostgreSQL caches a Seq Scan. Table
+growth alone does not invalidate a cached plan — only a relcache or statistics invalidation does —
+so every execution on that connection keeps scanning, and the scan's cost grows with the table.
+When an invalidation finally arrives the plan is replaced and throughput snaps back; when none
+arrives inside sixty seconds the cell is a `decay`.
+
+This also explains §3.18's result. `ANALYZE` at reseed time makes matters worse because it runs at
+the one moment the tables are empty, replacing `reltuples=-1` (*unknown*, under which the planner
+still prefers the index) with a confident `0`, under which a Seq Scan of a zero-page relation costs
+0.00 and wins outright.
+
+**Status against §3.13.** Outcome 1's root cause is demonstrated. The *fix* is not: no treatment
+has been validated, and the obvious ones are in tension. Plans cannot simply be made later, because
+the mutation tables are empty at window start by design — they are the workload's own output. The
+candidates are a warm-up that populates the tables followed by an invalidation before the measured
+phase begins, recycling the pool after that warm-up so no connection carries a plan made against an
+empty relation, or accepting the regime and excluding it by the now-reliable discriminator. The
+first two change what the fixture measures and are maintainer decisions, not implementation ones.
+
+**This is a fixture artefact, not an alloca-go defect.** A deployment does not truncate its tables
+and then immediately serve peak load against them. Nothing here is evidence about the service's
+capacity, and the healthy ~1.3k/s remains the local rehearsal regime (§3.17).
+
 ## 4. Open items
 
 - **Rung duration** stays open until §2.4's preflight derives it.

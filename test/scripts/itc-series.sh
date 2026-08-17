@@ -75,6 +75,17 @@ RESULTS_GROUP="${RESULTS_GROUP:-pr4a}"
 SERIES="${SERIES:-test/results/$RESULTS_GROUP/repeat-$(date -u +%Y%m%dT%H%M%SZ)}"
 export RESULTS_GROUP SERIES
 
+# `${PROM_URL-...}`, not `${PROM_URL:-...}`, so an explicitly empty PROM_URL disables monitoring
+# here exactly as it does in itc-run.sh rather than being silently replaced by the default.
+PROM_URL="${PROM_URL-http://localhost:9091}"
+PROM_JOB="${PROM_JOB:-alloca-go}"
+export PROM_URL PROM_JOB
+
+# How long to let the scrape stack converge before giving up. Generous against the two intervals
+# that bound it — a 10s file_sd refresh_interval and a 1s scrape_interval — because the cost of
+# waiting is seconds and the cost of not waiting is the whole series.
+PROM_SETTLE="${PROM_SETTLE:-60}"
+
 DEPLOYMENT=test/observed/deployment.json
 
 # ---------------------------------------------------------------------------
@@ -165,6 +176,60 @@ make itc-rehearse ITC_GROUPS="$ITC_GROUPS"
 
 log "raising the monitoring stack on CPUs $ITC_CPUS_GENERATOR"
 make obs-rehearse ITC_GROUPS="$ITC_GROUPS" ITC_CPUS_GENERATOR="$ITC_CPUS_GENERATOR"
+
+# **Prometheus is not scraping by the time obs-rehearse returns, and the first cell paid for it.**
+# The target file is written before the container starts, so Prometheus normally picks it up
+# during start-up — but it still has to boot, load its configuration and complete a scrape, and
+# file_sd only re-reads the directory on a 10s refresh_interval if it missed the file. A cell
+# driven one second later is refused against an empty target set, and because a first-cell failure
+# is treated as environmental rather than a flake, the entire series stops.
+#
+# It stayed invisible until an image build and a Go build were both warm: the interval between
+# raising the stack and driving cell 1 collapsed from minutes to under a second, and only then was
+# it shorter than Prometheus takes to answer. A fixed sleep would have hidden it again on the next
+# machine, so this waits for the observable condition instead.
+#
+# **A liveness wait, not a gate.** It asks whether this rung is being scraped *yet*. itc-run.sh
+# asks whether *exactly* this rung is being scraped — a different question, and one that stays
+# that script's alone. In particular the FOREIGN-target refusal is deliberately not reimplemented
+# here: duplicating it would create a second definition of a correctness rule that must not drift,
+# and a contaminated scrape set should be reported by the gate that owns the explanation.
+if [ -n "$PROM_URL" ]; then
+  log "waiting up to ${PROM_SETTLE}s for prometheus to scrape G$ITC_GROUPS"
+  settled=0
+  for _ in $(seq 1 "$PROM_SETTLE"); do
+    # **`|| healthy=0` is load-bearing, and its absence made this loop worse than useless.**
+    # Until Prometheus is listening, curl exits 7; under `set -e` and `pipefail` that status
+    # propagates out of the command substitution and kills the script on the first iteration —
+    # aborting the run with a bare exit 7 in precisely the situation the wait exists to survive.
+    # Attaching the fallback to the assignment keeps it exempt from `set -e` without turning the
+    # pipeline's own output into a second value.
+    healthy="$(curl -sfG -m 5 "$PROM_URL/api/v1/query" \
+        --data-urlencode \
+          "query=count(up{job=\"$PROM_JOB\",topology=\"itc-g${ITC_GROUPS}\"} == 1)" \
+        2>/dev/null \
+      | python3 -c 'import json,sys
+# An unmatched count() returns an empty result rather than a zero, and a Prometheus still booting
+# returns nothing at all. Both mean "not yet", so both print 0 rather than raising.
+try:
+    result = json.load(sys.stdin)["data"]["result"]
+    print(int(float(result[0]["value"][1])) if result else 0)
+except Exception:
+    print(0)' 2>/dev/null)" || healthy=0
+    if [ "${healthy:-0}" -ge "$ITC_GROUPS" ]; then
+      settled=1
+      break
+    fi
+    sleep 1
+  done
+  [ "$settled" -eq 1 ] || fail "prometheus did not report $ITC_GROUPS healthy target(s) for
+  topology itc-g$ITC_GROUPS within ${PROM_SETTLE}s, so the scrape gate would refuse cell 1 and
+  stop the series before anything is measured:
+
+      curl -s $PROM_URL/api/v1/targets | grep -o '\"health\":\"[a-z]*\"'
+      ITC_GROUPS=$ITC_GROUPS ./test/scripts/itc-obs-targets.sh"
+  log "prometheus is scraping $ITC_GROUPS unit(s)"
+fi
 
 # Written through a temporary file. `make itc-deployment > deployment.json` truncates the target
 # before the recipe runs, so a failed recording leaves an empty file that looks exactly like a

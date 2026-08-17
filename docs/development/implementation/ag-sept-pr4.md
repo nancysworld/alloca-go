@@ -1314,12 +1314,17 @@ degraded cell — the one step in the sample lands in a healthy one. Buffers wri
 *lower* when degraded. The longest open transaction is ~0.02 s everywhere. Backends are **running,
 not waiting**, which is what makes this a work-volume problem rather than a contention one.
 
-**What ANALYZE after the reseed can and cannot reach — measured against a live authority.**
+**What ANALYZE after the reseed can and cannot reach — measured against a live authority, and
+re-verified as a controlled sequence on a scratch table in §3.18.**
 
 | stage | `reltuples` | `relpages` | `pg_statistic` rows |
 |---|---|---|---|
-| after `TRUNCATE` | **-1** (unknown) | 0 | **survive** — 10, 8, 7, 2, 7 columns |
+| after `TRUNCATE` | **-1** (unknown) | 0 | **survive** |
 | after `ANALYZE` on the emptied tables | **0** | 0 | **still survive** |
+
+The first cell of a series is the exception and it is worth knowing why: `itc-down -v` destroys the
+volumes, so cell-01 runs against tables that have never been analysed and therefore have no
+distributions to survive. Every later cell inherits the previous one's (§3.18).
 
 So ANALYZE at reseed time repopulates row counts only for what is populated at that instant, which
 is `slots` and only `slots` (12,800 rows — 3,200 per organisation across four organisations, all
@@ -1372,6 +1377,71 @@ treatments in one run cannot be attributed.
 **local rehearsal regime** on a shared-kernel workstation with the generator co-resident. It is not
 "the real capacity"; independent AWS capacity evidence remains a separate and unmet requirement,
 and nothing here promotes a rehearsal number into a capacity claim.
+
+### 3.18 The treatment made it worse, which is what confirmed the mechanism
+
+`ANALYZE_AFTER_SEED=1 PG_STAT_STATEMENTS=1`, G1, `c=16`, `GAP=10`, 5 cells
+(`test/results/pr4a/repeat-20260817T191155Z`): **3 degraded in 5** against the untreated
+baseline's 10 in 60. The §3.17 success criterion is **not met** and outcome 1 is not reached by
+this treatment. The result is nonetheless the strongest evidence yet, because the treatment moved
+the regime in the direction the mechanism predicts rather than leaving it unchanged.
+
+**The extra work is attributable to a class of statement, not to "PostgreSQL".** Buffers per call,
+healthy cell-01 against degraded cell-02:
+
+| statement | healthy | degraded | × |
+|---|---|---|---|
+| `SELECT … FROM idempotency_records WHERE …` | 11.8 | 182.0 | 15.4 |
+| `DELETE FROM user_time_claims WHERE user_organisation_id … ` | 8.9 | 103.8 | 11.7 |
+| `SELECT … FROM ONLY reservations WHERE reservation_id = …` (RI trigger) | 9.1 | 91.3 | 10.0 |
+| `SELECT reservation_id, slot_organisation_id, …` | 9.0 | 91.1 | 10.1 |
+| `SELECT … FROM user_identities … FOR UPDATE` | 5.9 | 36.5 | 6.2 |
+| `UPDATE user_time_claims SET expires_at …` | 33.2 | 127.7 | 3.9 |
+| every `INSERT INTO …` | 3.9–20.4 | 3.7–20.5 | ≈1.0 |
+
+**Every statement that finds a row by key gets 6–15× more expensive; every statement that only
+inserts is unchanged.** That is an index scan degrading into a sequential scan and nothing else
+has that shape. `ElapsedHoldSlots`' `SELECT DISTINCT` was the first suspect and is **not** the
+cause: it costs ~34,000 buffers per call but runs 12 times a cell, and its total *falls* when
+degraded (404k healthy against 145k) because it scales with throughput.
+
+**Throughput is a function of that lookup cost**, monotonically across the whole series:
+
+| cell | idempotency lookup buffers/call | rate |
+|---|---|---|
+| 01 | 11.8 | 1293/s |
+| 04 | 8.6 | 1278/s |
+| 03 | 64.0 | 947/s |
+| 05 | 160.7 | 654/s |
+| 02 | 182.0 | 625/s |
+
+**Why ANALYZE at reseed makes it worse, stated precisely.** Verified twice, the second time as a
+controlled sequence on a scratch table rather than against the live fixture: after `TRUNCATE`,
+`reltuples` is **-1** and `relpages` is 0 while the per-column `pg_statistic` rows survive; after
+`ANALYZE` on the emptied table `reltuples` becomes **0** and those rows *still* survive. Untreated,
+`-1` means *unknown* and the planner estimates from the relation's current physical size, so it
+partly self-corrects as the table fills. The treatment replaces that with a **confident zero**, and
+a sequential scan of a table the planner believes is empty always beats an index scan — a plan
+that then has to carry ~79,000 rows arriving during the window.
+
+**The first cell of every series is the control, by accident of the teardown.** `itc-down -v`
+destroys the volumes, so cell-01 runs against tables that have never been analysed: `stat_cols=0`,
+no column distributions at all. Cells 2 onward carry distributions from the previous cell paired
+with `reltuples=0`. In this series cell-01 was the fastest cell, and the three degraded cells all
+sat in the second state. That is consistent with *stale distributions plus a confident zero* being
+the harmful combination rather than missing statistics as such — cell-04 shows it is not
+sufficient on its own, so the timing of autoanalyze within the window still modulates it.
+
+**Consequences for the fix.** ANALYZE at reseed is excluded. The remaining candidates are a much
+lower `autovacuum_analyze_scale_factor` on the four growing tables so autoanalyze corrects them
+early, analysing after a warm-up phase once they hold representative data, or leaving `reltuples`
+at `-1` and relying on the size-based estimate. All three are fixture-side; none is a change to
+alloca-go.
+
+**The prepared-plan variant is no longer hypothetical.** The RI trigger
+`SELECT … FROM ONLY reservations WHERE reservation_id = …` is one of the ten-fold rows above, and
+those plans are cached per session and are not replanned when statistics change. It stays a
+separate controlled variant, not mixed into the next test.
 
 ## 4. Open items
 

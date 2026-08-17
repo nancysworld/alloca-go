@@ -84,3 +84,6 @@ terraform.rc
 
 # Discovered Prometheus scrape targets: a property of the machine, not the project.
 /deploy/observability/targets/*.json
+# Generated per-authority postgres exporter targets: a property of the rung being raised, derived
+# from ITC_GROUPS by test/scripts/itc-obs-targets.sh, never edited by hand.
+/deploy/observability/targets-postgres/*.json

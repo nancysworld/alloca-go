@@ -57,6 +57,111 @@ services:
   node-exporter:
     cpuset: "${ITC_CPUS_GENERATOR:-8-11}"
 
+  # --- PostgreSQL wait-event evidence (ag-sept-pr4.md §3.16) ---------------------------------
+  #
+  # **Why these exist at all.** §3.13 made the exporter conditional — "decide from evidence
+  # whether PostgreSQL-side instrumentation is necessary; do not add the exporter merely because
+  # PostgreSQL is plausible". That condition is now discharged rather than waived. node_exporter
+  # and the fuller pool series are both in, and between them they exclude the host: during a
+  # degraded cell throughput falls 5x, service CPU 4x and iowait 4x while host CPU, run queue and
+  # steal are flat, and the pool sits pegged at 4/4 in healthy and degraded cells alike. What is
+  # left is a database holding each connection about five times longer for no reason any existing
+  # instrument can see. Checkpoints and autovacuum were the two named candidates and both are
+  # refuted from retained logs (§3.15).
+  #
+  # **What they add that nothing else does: `wait_event_type` and `wait_event`.** Those are
+  # labels on `pg_stat_activity_count`, and they say what a backend is blocked *on* — `Lock`,
+  # `LWLock`, `IO`, `BufferPin`, `Client` — rather than that it is slow. Verified live against
+  # this topology before the wiring was written: a deliberately blocked backend reported
+  # `wait_event_type="Lock", wait_event="relation"` and idle clients `Client/ClientRead`.
+  #
+  # **They live in the overlay, not the base file**, because the base file is PR2's path: a
+  # service on the host and no Iteration C topology to point a per-authority exporter at. A
+  # service defined only here is created only when the overlay is applied, which is exactly the
+  # `make obs-rehearse` path — and this file already owns the topology network they need.
+  #
+  # **Pinned to the generator set, like everything else on the measuring side.** An exporter
+  # queries the database it observes, so unpinned it would spend a capacity unit's CPU observing
+  # that same unit. This is the observer effect the partition exists to bound, and it is the one
+  # cost the log-based diagnostics do not have.
+  #
+  # **The collector set is cut to what the diagnosis needs.** The default set is ~380 metric
+  # families per target and every one of them is a query against the database under test and a
+  # series in every retained snapshot. `settings` alone is three hundred static values re-read on
+  # every scrape; the series that matter are recorded once per series into `postgres-settings.txt`
+  # by test/scripts/itc-series.sh instead. Collect narrowly here, unlike node_exporter, precisely
+  # because this exporter's collection lands on the measured database rather than on the host.
+  postgres-exporter-1: &pgexp
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    container_name: alloca-postgres-exporter-1
+    cpuset: "${ITC_CPUS_GENERATOR:-8-11}"
+    restart: "no"
+    environment:
+      DATA_SOURCE_NAME: "postgresql://alloca:alloca@authority-1-db:5432/alloca?sslmode=disable"
+    command:
+      - '--collector.stat_activity'
+      - '--collector.stat_database'
+      - '--collector.stat_progress_vacuum'
+      - '--collector.stat_bgwriter'
+      - '--collector.locks'
+      - '--collector.long_running_transactions'
+      # **`stat_user_tables` is off because it blocks, and a blocked exporter is worse than no
+      # exporter.** Measured against this topology: holding an ACCESS EXCLUSIVE lock on one table
+      # makes a scrape with this collector hang indefinitely — curl gave up at 20 s — while the
+      # set above answers in 0.014 s under the identical lock. Prometheus would mark the target
+      # down and retain nothing, so the instrument would go blind in precisely the situation it
+      # was added to observe. It costs `n_dead_tup` and the per-table vacuum counters, which is a
+      # real loss and the reason the dead-tuple panel is not in panels.json; the autovacuum
+      # question it would have answered is already settled by the server log (§3.15), and that
+      # path cannot be blocked by a lock.
+      - '--no-collector.stat_user_tables'
+      # Not available before PostgreSQL 17 — the exporter logs a warning on every single scrape
+      # and produces nothing. Off rather than left to be noisy about its own uselessness.
+      - '--no-collector.stat_checkpointer'
+      - '--no-collector.settings'
+      - '--no-collector.statio_user_tables'
+      - '--no-collector.statio_user_indexes'
+      - '--no-collector.replication'
+      - '--no-collector.replication_slots'
+      - '--no-collector.stat_wal_receiver'
+      - '--no-collector.stat_archiver'
+      - '--no-collector.xlog_location'
+      - '--no-collector.roles'
+      - '--no-collector.database_wraparound'
+      - '--no-collector.buffercache_summary'
+      - '--no-collector.postmaster'
+      - '--no-collector.process_idle'
+      - '--no-collector.stat_statements'
+    networks:
+      - default
+      - topology
+
+  # Units 2-4 carry the same profiles as the databases they observe, so an exporter cannot be
+  # raised for an authority that is not running and cannot be missing for one that is. The
+  # environment block is written out in full because a service that declares `environment:`
+  # replaces the anchor's map rather than merging into it — the same trap the topology compose
+  # documents for its own anchors.
+  postgres-exporter-2:
+    <<: *pgexp
+    container_name: alloca-postgres-exporter-2
+    profiles: ["g2", "g4"]
+    environment:
+      DATA_SOURCE_NAME: "postgresql://alloca:alloca@authority-2-db:5432/alloca?sslmode=disable"
+
+  postgres-exporter-3:
+    <<: *pgexp
+    container_name: alloca-postgres-exporter-3
+    profiles: ["g4"]
+    environment:
+      DATA_SOURCE_NAME: "postgresql://alloca:alloca@authority-3-db:5432/alloca?sslmode=disable"
+
+  postgres-exporter-4:
+    <<: *pgexp
+    container_name: alloca-postgres-exporter-4
+    profiles: ["g4"]
+    environment:
+      DATA_SOURCE_NAME: "postgresql://alloca:alloca@authority-4-db:5432/alloca?sslmode=disable"
+
 networks:
   topology:
     external: true

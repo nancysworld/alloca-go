@@ -288,14 +288,25 @@ obs-up:
 # discovered when a report has a hole in it.
 obs-rehearse:
 	@ITC_GROUPS=$(ITC_GROUPS) ./test/scripts/itc-obs-targets.sh
+	@# The postgres exporters carry the same profiles as the databases they observe (§3.16), so
+	@# the profile is selected from ITC_GROUPS here exactly as itc-up selects it for the units.
+	@# Deriving it in both places from the same variable is what stops an exporter being raised
+	@# for an authority that is not running, or missing for one that is.
 	@# OBS_HOST_TARGET=0: the rehearsal must not probe for the PR2 host target. The probe would
 	@# recreate targets/alloca-go.json after itc-obs-targets.sh refused it, and the process that
 	@# makes it reachable is unpinned — it contends with the rehearsal while every cpuset and
 	@# topology check still passes (ag-sept-pr4.md §3).
-	@$(MAKE) --no-print-directory obs-up OBS_HOST_TARGET=0 \
-	  OBS_COMPOSE="-f $(OBSCOMPOSE) -f $(OBSREHEARSALCOMPOSE)"
+	@case "$(ITC_GROUPS)" in \
+	  1) profile="" ;; \
+	  2) profile="--profile g2" ;; \
+	  4) profile="--profile g4" ;; \
+	  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept-validation-plan.md §4.6); got '$(ITC_GROUPS)'" >&2; exit 1 ;; \
+	esac; \
+	$(MAKE) --no-print-directory obs-up OBS_HOST_TARGET=0 \
+	  OBS_COMPOSE="-f $(OBSCOMPOSE) -f $(OBSREHEARSALCOMPOSE) $$profile"
 	@echo "  monitoring confined to CPUs $(ITC_CPUS_GENERATOR)"
 	@echo "  scraping $(ITC_GROUPS) unit(s) as service-N:9090 on the topology network"
+	@echo "  scraping $(ITC_GROUPS) postgres exporter(s) as postgres-exporter-N:9187"
 
 ## obs-target: re-probe the scrape address (after a WSL restart, or a late service start)
 obs-target:
@@ -307,8 +318,15 @@ obs-target:
 # the data down with the containers would discard the series a half-finished analysis still
 # needs. `docker compose -f deploy/observability/docker-compose.yml down -v` is the explicit
 # way to discard it.
+#
+# --profile g4 unconditionally, and the rehearsal overlay named, for the same reason itc-down
+# names every profile: `down` must remove containers the *current* invocation might not have
+# raised. The postgres exporters live in the overlay and behind profiles, so a profile-less down
+# against the base file alone would leave exporters 2-4 running against databases that no longer
+# exist, reporting a rung that is not there while claiming the stack was torn down.
 obs-down:
-	docker compose -f $(OBSCOMPOSE) down
+	docker compose -f $(OBSCOMPOSE) -f $(OBSREHEARSALCOMPOSE) \
+	  --profile g2 --profile g4 down
 
 ## smoke: exercise a running service over a real socket (needs `make dev` elsewhere)
 smoke:

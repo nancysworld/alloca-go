@@ -225,6 +225,15 @@
       "legend": "GC pause p75",
       "_note": "The Go collector exports this as a summary, so the series carries its own quantile label rather than needing histogram_quantile.",
       "expr": "go_gc_duration_seconds{job=\"alloca-go\",quantile=\"0.75\"}"
+    },
+    {
+      "key": "pg_wait_events",
+      "title": "PostgreSQL backends by wait event type",
+      "unit": "backends",
+      "range": "30s",
+      "legend": "{{authority}} {{wait_event_type}}",
+      "_note": "The instrument the \u00a73.12/\u00a73.15 diagnosis lacked, and the only postgres series panelled \u2014 the exporter scrapes checkpoints, backend-side buffer writes, backend counts and transaction age too, and the snapshot retains all of them, but \u00a73.13.1 is the standing proof that a scraped-and-unplotted series is recoverable. Every other instrument in this dashboard can say a backend was slow; `wait_event_type` says what it was blocked ON \u2014 Lock, LWLock, IO, BufferPin, Client, Timeout. Verified live against this topology: a deliberately blocked backend reports Lock/relation. Idle pool connections sit in Client/ClientRead and are excluded by state=active, because an idle pool is not a stall. RANGE 30s because the postgres job scrapes at 5s and the datasource-wide macro is sized for the 1s service job.",
+      "expr": "sum by (authority, wait_event_type) (pg_stat_activity_count{job=\"postgres\",state=\"active\"})"
     }
   ],
   "export_range": "15s",

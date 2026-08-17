@@ -39,6 +39,12 @@ services:
       # Discovered scrape targets, written by test/scripts/obs-target.sh. Git-ignored: the
       # address is a property of this machine's WSL networking, not of the project.
       - ./targets:/etc/prometheus/targets:ro
+      # A *separate* directory, and not a second file in the one above. The alloca-go job
+      # discovers `targets/*.json` as a glob, so a postgres target dropped beside the unit
+      # targets would be scraped as though it were a service unit — and the run's scrape gate,
+      # which demands exactly the authorities this rung raises, would refuse every cell with a
+      # FOREIGN entry it was right to complain about.
+      - ./targets-postgres:/etc/prometheus/targets-postgres:ro
       - prometheus-data:/prometheus
 
   # VAL-NEG-7's host sensor (ag-sept-pr4.md §2.1). Added in PR4a because §3.12 produced a

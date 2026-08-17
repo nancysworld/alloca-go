@@ -811,6 +811,64 @@
           "range": true
         }
       ]
+    },
+    {
+      "id": 20,
+      "type": "row",
+      "title": "PostgreSQL (per authority)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 68
+      },
+      "panels": []
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Backends by wait event type",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "alloca-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 69
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "alloca-prometheus"
+          },
+          "expr": "sum by (authority, wait_event_type) (pg_stat_activity_count{job=\"postgres\",state=\"active\"})",
+          "legendFormat": "{{authority}} {{wait_event_type}}",
+          "range": true
+        }
+      ]
     }
   ]
 }

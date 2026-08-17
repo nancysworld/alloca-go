@@ -81,6 +81,16 @@ SECTIONS = [
         ("Host run queue (tasks)", ["host_runqueue"]),
         ("Host memory available", ["host_memory_available"]),
     ]),
+    # PostgreSQL's own view (ag-sept-pr4.md §3.16). The section exists for the first graph: every
+    # other instrument in this dashboard can say a backend was slow, and only `wait_event_type` can
+    # say what it was blocked on. The rest bound the mechanisms that were named and refuted (§3.15)
+    # so the refutations stay re-derivable from a retained cell rather than from container logs.
+    #
+    # No dead-tuple graph, deliberately: `n_dead_tup` comes from the stat_user_tables collector,
+    # which hangs a scrape indefinitely under a table lock and is disabled for that reason.
+    ("PostgreSQL (per authority)", [
+        ("Backends by wait event type", ["pg_wait_events"]),
+    ]),
 ]
 
 # Flattened, for the checks and the generator body that do not care about sections.
@@ -118,6 +128,9 @@ GRAFANA_UNIT = {
     "count": "short",
     "tasks": "short",
     "s/s": "short",
+    "backends": "short",
+    "checkpoints/s": "short",
+    "buffers/s": "short",
     "ratio": "percentunit",
 }
 

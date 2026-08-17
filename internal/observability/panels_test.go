@@ -241,7 +241,13 @@ func TestDashboardIsDeliberatelySmall(t *testing.T) {
 			graphs++
 		}
 	}
-	if graphs > 15 {
+	// Raised 15 -> 16 for the PostgreSQL wait-event graph (ag-sept-pr4.md §3.16), and by exactly
+	// one. The exporter scrapes checkpoints, backend-side buffer writes, backend counts and
+	// transaction age as well; none of them are plotted, because the snapshot retains everything
+	// scraped and the bound is worth more than the convenience. What earned the graph is that no
+	// other instrument in this dashboard can answer what a backend is blocked *on*, which is what
+	// was missing when checkpoints and autovacuum were both refuted (§3.15) with no candidate left.
+	if graphs > 16 {
 		t.Errorf("dashboard has %d graphs; the diagnostic view is meant to stay compact. "+
 			"Adding one is a scope decision, not a tidy-up", graphs)
 	}

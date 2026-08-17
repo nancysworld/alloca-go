@@ -88,3 +88,25 @@ scrape_configs:
     relabel_configs:
       - target_label: milestone
         replacement: ag-sept
+
+  # PostgreSQL's own view, one exporter per authority (ag-sept-pr4.md §3.16). What it adds that
+  # no other job can is `wait_event_type`/`wait_event` on `pg_stat_activity_count`: what a backend
+  # is blocked *on*, rather than that it is slow.
+  #
+  # **Its own target directory, not a second file beside the unit targets.** The alloca-go job
+  # discovers `targets/*.json` as a glob, so a postgres target written there would be scraped as
+  # a service unit and the run's scrape gate — which demands exactly the authorities the rung
+  # raises — would refuse every cell over a FOREIGN entry it was correct to report.
+  #
+  # 5s rather than the 1s the service job uses. These are catalogue views, not counters the
+  # workload moves between adjacent samples, and every scrape is a query against the database
+  # under test — the one instrument here whose collection lands on the measured thing.
+  - job_name: postgres
+    scrape_interval: 5s
+    scrape_timeout: 4s
+    file_sd_configs:
+      - files: ['/etc/prometheus/targets-postgres/*.json']
+        refresh_interval: 10s
+    relabel_configs:
+      - target_label: milestone
+        replacement: ag-sept

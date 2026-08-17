@@ -79,6 +79,37 @@ for n in $(seq 1 "$ITC_GROUPS"); do
   printf '  authority-%s  %s\n' "$n" "${!var:-service-${n}:9090}"
 done
 
+# The per-authority postgres exporters (ag-sept-pr4.md §3.16), derived from the same ITC_GROUPS
+# and in the same place as the unit targets — so the database view and the service view of a rung
+# cannot disagree about how many authorities it has.
+#
+# **A separate directory, and it matters.** The alloca-go job discovers `targets/*.json` as a
+# glob. A postgres target written into that directory would be scraped as though it were a
+# service unit, and the run's scrape gate would refuse every cell over a FOREIGN entry — correctly,
+# which is the worst kind of self-inflicted failure because the message would be right.
+PG_TARGETS_DIR="${PG_TARGETS_DIR:-deploy/observability/targets-postgres}"
+PG_OUT="${PG_OUT:-$PG_TARGETS_DIR/postgres.json}"
+mkdir -p "$PG_TARGETS_DIR"
+
+pg_entries=""
+for n in $(seq 1 "$ITC_GROUPS"); do
+  var="PGEXP_${n}_ADDR"
+  addr="${!var:-postgres-exporter-${n}:9187}"
+  [ -n "$pg_entries" ] && pg_entries="${pg_entries},"
+  pg_entries="${pg_entries}
+  {
+    \"targets\": [\"${addr}\"],
+    \"labels\": {
+      \"authority\": \"authority-${n}\",
+      \"unit\": \"${n}\",
+      \"topology\": \"itc-g${ITC_GROUPS}\"
+    }
+  }"
+done
+printf '[%s\n]\n' "$pg_entries" > "$PG_OUT"
+
+echo "itc-obs-targets: wrote $ITC_GROUPS postgres target(s) to $PG_OUT"
+
 # The host-run target from the PR2 path is a fifth member of the same job, and it is not reachable
 # during a rehearsal — the service under test is in containers. Left in place it is a permanently
 # down target: harmless to the aggregate, but it defeats "exactly N targets configured", and a

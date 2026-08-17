@@ -1148,6 +1148,118 @@ Windows-side effect from a WSL-side one anyway. What it does is make the next de
 both pool and host evidence, which is the §3.13 sequencing requirement and the reason it went in
 before the next reproduction attempt rather than after.
 
+**Superseded in part by §3.15.** The regime did recur, repeatedly, and the host panels this section
+added are what excluded the host: across degraded cells host CPU, run queue and steal stay flat
+while service CPU and iowait both fall. That is the sensor doing its job — it did not name the
+cause, but it removed a class of them.
+
+### 3.15 The regime reproduces at G1, and both named mechanisms are refuted
+
+Driving repeat series from a cold machine is now one command
+(`test/scripts/itc-series.sh <groups> [repeats]`). It tears down whatever is running, raises the
+named rung with its matching partition and scrape set, records the database settings it actually
+started with, and hands off to `itc-repeat.sh`. Two couplings that were previously prose became
+mechanical: the monitoring stack must be raised after the topology, and `ITC_CPUS_GENERATOR` has
+to reach both `obs-rehearse` and the run or half the measuring side lands on the units' own CPUs
+while every cpuset, topology and certification check still passes.
+
+Building it exposed a defect that had been hidden by build times. The wrapper handed off to the
+first cell about a second after starting Prometheus, and the cell was refused against an empty
+target set — correctly, by the §3.9 gate. It passed the first time only because the image build
+and the Go build were cold; warm, the interval collapsed below what Prometheus needs to load a
+file_sd target and complete a scrape. The wrapper now waits for the observable condition rather
+than sleeping a fixed time.
+
+**The regime reproduces at G1, so it does not require cross-group contention.** A G1 series
+degraded 2 cells in 10 and a second degraded 1 in 4. At G1 all four organisations are homed on one
+authority, so the service still shares two CPUs with its own PostgreSQL — the within-group
+relationship is concentrated rather than removed, while the other three pairs and everything
+host-wide they share are gone. The fault therefore lives inside a single service+database pair.
+
+**The dip signature, measured.** Goodput falls ~5x (1,380/s to 274/s at the trough), service CPU
+4x, and iowait 4x, while host CPU busy, run queue and steal stay flat and the pool sits pegged at
+4.0/4 in healthy and degraded cells alike. Pool acquire wait rises 8.7 ms to 43.8 ms. Note that
+`host_cpu_busy` is `mode!="idle"` and therefore *includes* iowait: host CPU flat while the service
+gives up 0.33 cores and iowait falls means something non-service absorbed roughly 0.26 cores and
+was not blocked on I/O. Within the window it is a monotone decay with an abrupt recovery on the
+final sample, and the first sample is already half the healthy rate — the excursion begins before
+the measured phase opens.
+
+**Checkpoints are refuted.** Not necessary: a G4 degraded cell ran with no checkpoint active at
+all. Not sufficient: healthy cells ran inside checkpoints at both rungs. At G1 the checkpoint
+regime is different again — one database absorbing all four organisations' writes reaches
+`max_wal_size` before the 300 s timer, so checkpoints are WAL-triggered rather than timed — and a
+series with the same WAL cadence and distance degraded no cells at all.
+
+**Autovacuum is refuted, and this needed an instrument to say so.** PostgreSQL defaults
+`log_autovacuum_min_duration` to 10 minutes, so an ordinary autovacuum on this fixture leaves no
+trace whatever, while `log_checkpoints` defaults to on. That asymmetry is why checkpoints could be
+refuted from retained logs twice while autovacuum could be neither confirmed nor refuted: the
+evidence for one existed and the evidence for the other never did. With the setting at 0 and the
+value read back from `pg_settings` to prove it took, autovacuum fires **5–7 times inside every
+measured window of every cell**, longest 0.37 s, while all ten cells stayed flat. It is the normal
+state of a healthy cell and cannot distinguish a degraded one.
+
+**It then stopped reproducing.** Thirty consecutive cells across three series at zero, two of them
+at the exact configuration that had produced 2/10 earlier the same morning. Host baselines are
+indistinguishable between the series that degrade and those that do not — memory available
+8.28–8.46 GB, iowait 0.190–0.193, host CPU 2.29–2.32, healthy goodput 1,317–1,376/s. The trigger
+is invisible to every instrument currently deployed.
+
+Two consequences for the §3.13 outcomes. Outcome 1 (root cause demonstrated and fixed) has
+receded: the two mechanisms plausible enough to name are gone and no replacement is visible in the
+data. Outcome 2 (a reliable discriminator or bounding rule) now depends on a base rate that is
+itself unstable — 2 in 10 and 1 in 4 on one morning, 0 in 30 the same afternoon, which is far too
+few cells to state a rate an admission rule could be built on. **Establishing the real
+reproducibility is therefore the next measurement, and it needs materially more cells than a
+single ten-cell series.**
+
+A caution the sequence earned: `GAP` was varied as a phase knob and the result reported as a
+refutation before it was noticed that the phenomenon had already left. `itc-repeat.sh` says in its
+own header that a longer gap is an uncontrolled intervention on exactly these hypotheses. A knob
+that moves two things at once cannot refute anything, and a negative result during a quiet period
+is not a negative result.
+
+### 3.16 `postgres_exporter` is in, and its default collector set would have blinded it
+
+§3.13 made the exporter conditional — decide from evidence whether PostgreSQL-side instrumentation
+is necessary, and do not add it merely because PostgreSQL is plausible. That condition is
+discharged rather than waived. `node_exporter` and the fuller pool series are both in and between
+them exclude the host (§3.15), the two named database mechanisms are refuted, and what remains is a
+database holding each connection about five times longer for no reason any deployed instrument can
+see.
+
+**What it adds that nothing else does is `wait_event_type` and `wait_event`** on
+`pg_stat_activity_count`: what a backend is blocked *on* — `Lock`, `LWLock`, `IO`, `BufferPin` —
+rather than that it is slow. Verified against the live topology before the wiring was written: a
+deliberately blocked backend reports `Lock/relation`, idle pool connections `Client/ClientRead`.
+
+**The default collector set would have made the exporter useless exactly when it matters.**
+Holding an `ACCESS EXCLUSIVE` lock on one table makes a scrape with the `stat_user_tables`
+collector hang indefinitely — curl abandoned it at 20 s — so Prometheus marks the target down and
+retains nothing. The instrument would go blind in precisely the situation it was added to observe.
+Measured on this topology: 1.46 s per scrape unlocked with the default set, hanging under a lock;
+0.014 s under the identical lock with the collector disabled. `stat_user_tables` is therefore off,
+which costs `n_dead_tup` and the per-table vacuum counters and is why there is no dead-tuple panel.
+The autovacuum question those would have answered is already settled by the server log, and a log
+line cannot be blocked by a lock. `stat_checkpointer` is off as well: it does not exist before
+PostgreSQL 17 and otherwise warns on every scrape while producing nothing.
+
+**One exporter per authority, pinned to the generator set, with its own target directory.** Pinned
+because an exporter queries the database it observes, so unpinned it spends a capacity unit's CPU
+observing that same unit — the one instrument here whose collection lands on the measured thing,
+and the reason its collector set is cut narrowly where `node_exporter`'s is deliberately wide. The
+targets are generated from `ITC_GROUPS` in the same script as the unit targets, so the database and
+service views of a rung cannot disagree about how many authorities it has. They are written to a
+*separate* directory because the `alloca-go` job discovers `targets/*.json` as a glob: a postgres
+target beside the unit targets would be scraped as though it were a service unit, and the run's
+scrape gate would refuse every cell over a FOREIGN entry it was correct to report.
+
+**What this does not do.** It does not diagnose the regime, which has not recurred since the
+exporter was added and cannot be provoked deliberately because its trigger is unidentified. What it
+does is make the next degraded cell carry PostgreSQL's own wait evidence alongside the pool and
+host evidence, which is the §3.13 sequencing requirement.
+
 ## 4. Open items
 
 - **Rung duration** stays open until §2.4's preflight derives it.
@@ -1193,12 +1305,31 @@ before the next reproduction attempt rather than after.
   series cannot distinguish “connections exist but are unavailable” from a pool whose actual
   population has fallen or is constructing/reconnecting. Retain enough total/idle/constructing and
   lifecycle evidence to make that distinction.
-- **`postgres_exporter` remains conditional** (§3.13). Add it inside PR4a only if node + fuller
-  pool evidence still leaves a material PostgreSQL-side ambiguity; do not instrument by guess.
+- ~~**`postgres_exporter` remains conditional**~~ **Done** (§3.16). The §3.13 condition was
+  discharged, not waived: host and pool evidence exclude the host, and both named database
+  mechanisms are refuted. One exporter per authority, pinned to the generator set, targets derived
+  from `ITC_GROUPS`, and a collector set cut to what does not block — `stat_user_tables` hangs a
+  scrape indefinitely under a table lock, which would have blinded the instrument in exactly the
+  situation it exists for.
 - **The degraded regime must be qualified before any ladder or PR4b** (§3.12–§3.13). Repeat
   comparable cells enough to establish the discriminating signal; the goal is root cause/fix or a
   reliable exclusion/bounding rule, not an unlimited WSL investigation. Re-run the 120 s point only
-  with a fixture that cannot bound it (`SLOTS=8000` gives 640,000).
+  with a fixture that cannot bound it (`SLOTS=8000` gives 640,000). **Checkpoints and autovacuum
+  are both now refuted** (§3.15) and no replacement mechanism is visible in the data, so outcome 1
+  has receded and outcome 2 is the working target.
+- **The reproducibility rate is not established, and a bounding rule cannot be built without it**
+  (§3.15). Observed 2 in 10 and 1 in 4 on one morning and 0 in 30 the same afternoon, at identical
+  configuration. That is too few cells to state a rate, and an admission rule derived from an
+  unstable base rate would be worse than none — it would license exactly the rung comparison it was
+  meant to protect. The next measurement is a materially larger population than one ten-cell
+  series, and it must not be spent varying knobs: a knob varied during a quiet period refutes
+  nothing, which the `GAP` sequence demonstrated at the cost of two runs.
+- **The regime is a live threat to the PR4b rung comparison** (§3.15). It reproduces at G1, is
+  invisible in every host metric, and can be absent for hours, so a rung measured during a
+  degrading period would be compared against one measured during a quiet period with nothing in
+  the artifacts to say so. Whether each rung must carry enough cells to detect its own regime, and
+  whether the comparison is made on the healthy cluster with the degraded fraction reported
+  alongside, is a measurement-contract decision and is not settled here.
 - **Per-organisation fixture size for the sweep** (§3.5) must be justified against the deepest rung
   the ladder will reach, not the selected point, now that fixture exhaustion at a higher rung
   invalidates the point below it. Derived during PR4a preflight alongside the rung duration (§2.4).

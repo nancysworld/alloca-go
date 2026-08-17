@@ -1400,10 +1400,16 @@ healthy cell-01 against degraded cell-02:
 | every `INSERT INTO …` | 3.9–20.4 | 3.7–20.5 | ≈1.0 |
 
 **Every statement that finds a row by key gets 6–15× more expensive; every statement that only
-inserts is unchanged.** That is an index scan degrading into a sequential scan and nothing else
-has that shape. `ElapsedHoldSlots`' `SELECT DISTINCT` was the first suspect and is **not** the
-cause: it costs ~34,000 buffers per call but runs 12 times a cell, and its total *falls* when
-degraded (404k healthy against 145k) because it scales with throughput.
+inserts is unchanged.** That is an access-path change — a lookup reading many more pages than a
+keyed lookup should. **It is not established that the path is a sequential scan**, and §3.19
+shows a persistent Seq Scan cannot be assumed: offline probing found that one is chosen only while
+the relation genuinely has no pages, and that the choice reverts as soon as it has some, even with
+`reltuples` still 0 and no ANALYZE. What produces a 15× lookup for a full sixty seconds is the
+open question the plan probes exist to answer.
+
+`ElapsedHoldSlots`' `SELECT DISTINCT` was the first suspect and is **not** the cause: it costs
+~34,000 buffers per call but runs 12 times a cell, and its total *falls* when degraded (404k
+healthy against 145k) because it scales with throughput.
 
 **Throughput is a function of that lookup cost**, monotonically across the whole series:
 
@@ -1424,24 +1430,87 @@ partly self-corrects as the table fills. The treatment replaces that with a **co
 a sequential scan of a table the planner believes is empty always beats an index scan — a plan
 that then has to carry ~79,000 rows arriving during the window.
 
-**The first cell of every series is the control, by accident of the teardown.** `itc-down -v`
-destroys the volumes, so cell-01 runs against tables that have never been analysed: `stat_cols=0`,
-no column distributions at all. Cells 2 onward carry distributions from the previous cell paired
-with `reltuples=0`. In this series cell-01 was the fastest cell, and the three degraded cells all
-sat in the second state. That is consistent with *stale distributions plus a confident zero* being
-the harmful combination rather than missing statistics as such — cell-04 shows it is not
-sufficient on its own, so the timing of autoanalyze within the window still modulates it.
+**The first cell of every series is a natural contrast — not a control.** `itc-down -v` destroys
+the volumes, so cell-01 runs against tables that have never been analysed: `stat_cols=0`, no
+column distributions at all. Cells 2 onward carry distributions from the previous cell paired with
+`reltuples=0`. In this series cell-01 was the fastest cell and the three degraded cells all sat in
+the second state.
 
-**Consequences for the fix.** ANALYZE at reseed is excluded. The remaining candidates are a much
-lower `autovacuum_analyze_scale_factor` on the four growing tables so autoanalyze corrects them
-early, analysing after a warm-up phase once they hold representative data, or leaving `reltuples`
-at `-1` and relying on the size-based estimate. All three are fixture-side; none is a change to
-alloca-go.
+It is a contrast rather than a control because cell-01 differs in more than the one variable:
+it is also the first cell after the topology was raised, so its caches, connections and relation
+files are all fresh. Any of those could carry the difference, and nothing in the design isolates
+the statistics term. Cell-04 shows the second state is not sufficient on its own in any case.
 
-**The prepared-plan variant is no longer hypothetical.** The RI trigger
-`SELECT … FROM ONLY reservations WHERE reservation_id = …` is one of the ten-fold rows above, and
-those plans are cached per session and are not replanned when statistics change. It stays a
-separate controlled variant, not mixed into the next test.
+**Consequences for the fix.** ANALYZE at reseed is excluded, and no fixture treatment should be
+chosen until the plan is observed (§3.19).
+
+`autovacuum_analyze_scale_factor` is **not** the next lever, and the arithmetic says so: the
+autoanalyze threshold is `analyze_threshold + analyze_scale_factor × reltuples`, and with
+`reltuples` at 0 or -1 the scale-factor term contributes nothing. The threshold is already just the
+base 50 rows, so autoanalyze should be firing almost immediately as the tables fill — which makes
+*why the degraded state persists for a full window* the question, not how to trigger analysis
+sooner.
+
+**Correction on plan caching.** An earlier revision of this section claimed that cached plans are
+not replanned when statistics change. That is wrong for ordinary prepared statements: PostgreSQL 16
+invalidates and replans them. Verified directly in §3.19 — a statement prepared while the relation
+was empty, and therefore planned as a Seq Scan, replanned to an Index Only Scan once rows were
+present, in the same session and with no ANALYZE. RI-trigger plans are a separate mechanism and are
+**not** covered by that observation; whether they are replanned has to be verified specifically
+rather than assumed in either direction.
+
+### 3.19 The plan is the missing fact, and offline probing already narrowed it
+
+**Maintainer direction, 2026-08-17:** do not choose a fixture treatment until the execution plan is
+observed. Keep the untreated reproducer and `pg_stat_statements`, and add a plan probe.
+
+**Offline probing of the idempotency lookup**, against a live authority using
+`EXPLAIN (GENERIC_PLAN)` — PostgreSQL 16, plans a parameterised statement without values and
+without executing it:
+
+| planner state | plan |
+|---|---|
+| populated, analysed (`reltuples=39225`) | Index Only Scan |
+| after `TRUNCATE` only (`reltuples=-1`, *unknown*) | **Index Only Scan** |
+| after `TRUNCATE` + `ANALYZE` (`reltuples=0`) | **Seq Scan**, cost 0.00..0.00 |
+| 40,000 rows present, statistics never refreshed (`reltuples` still 0) | **Index Only Scan** |
+
+Two results, and the second undermines the first's obvious reading.
+
+**Why the ANALYZE treatment hurt, demonstrated rather than argued.** `-1` means *unknown* and the
+planner still prefers the index; `0` means *confidently empty* and a sequential scan of a zero-page
+relation costs 0.00, which beats any index. That is the whole difference between the untreated
+baseline and the treated series, and it is visible in a single pair of EXPLAINs.
+
+**But the bad plan does not survive the table filling.** A statement prepared while the relation
+was empty — planned as a Seq Scan — replanned to an Index Only Scan once 40,000 rows were present,
+in the same session, with `reltuples` still 0 and no ANALYZE run. The planner reads the relation's
+actual current size when planning, so it self-corrects as soon as there are pages. A Seq Scan can
+therefore only hold for the very beginning of a window, which **cannot** explain a monotonic
+sixty-second decay. The access-path story in §3.18 stands as a description of the measurement; its
+mechanism does not yet stand as an explanation.
+
+**So two probes, answering different halves, both diagnostic and off by default.**
+
+- `PLAN_PROBE=1` samples `EXPLAIN (GENERIC_PLAN)` for the idempotency lookup every 5 s through the
+  window, alongside `reltuples`, `relpages`, live and dead tuples and the last autoanalyze time,
+  into `plan-probe.txt`. It reports what a *fresh* plan would be at each instant, so a flip is
+  visible against the throughput series rather than inferred from its endpoints. It costs a psql
+  process per sample inside the unit's own cpuset.
+- `PG_AUTO_EXPLAIN=1` loads `auto_explain` at 0.1% sampling with `log_analyze` and `log_buffers`,
+  so real executed statements land in the database log the wrapper already retains, carrying their
+  actual plan, row counts and buffer numbers. Sampled rather than thresholded on purpose: a
+  duration threshold selects the slow executions and so cannot show what a healthy execution's plan
+  was, which is precisely the comparison wanted.
+
+`shared_preload_libraries` is assembled once from whichever diagnostics are requested. Passing
+`-c shared_preload_libraries=` twice does not merge — the second replaces the first — so asking for
+both would otherwise load only one and surface the other's absence as a runtime error a cell in.
+
+**What to look for.** Whether the executed plan for the idempotency lookup differs between healthy
+and degraded cells at all. If it does not, the extra buffers are being spent inside the *same*
+access path, and index or heap bloat, visibility-map state and the index-only-scan heap-fetch path
+become the candidates rather than plan choice.
 
 ## 4. Open items
 

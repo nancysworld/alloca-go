@@ -102,17 +102,39 @@ if [ "$PG_LOG_AUTOVACUUM" = "1" ]; then
   ALLOCA_PG_ARGS="${ALLOCA_PG_ARGS:+$ALLOCA_PG_ARGS }-c log_autovacuum_min_duration=0"
 fi
 
-# Statement-level attribution (§3.17). `shared_preload_libraries` is why this belongs here rather
-# than in itc-run.sh: it can only be set at server start, so the topology has to be raised with it
-# already in place. The extension itself is created after the units are up, below.
+# Statement-level attribution and executed-plan capture (§3.17, §3.19). `shared_preload_libraries`
+# is why these belong here rather than in itc-run.sh: it can only be set at server start, so the
+# topology has to be raised with them already in place.
 #
-# Diagnostic only. It costs a few percent on the database under test, so a canonical measurement
-# must not carry it — the same rule as ANALYZE_AFTER_SEED, and for the same reason.
+# **One setting, not two flags.** `-c shared_preload_libraries=` twice does not merge — the second
+# silently replaces the first, so asking for both diagnostics would load only the last one named
+# and the other's absence would surface as a puzzling runtime error one cell in. The list is
+# assembled first and emitted once.
+#
+# Diagnostic only, both of them. They cost measurable overhead on the database under test, so a
+# canonical measurement must not carry them — the ANALYZE_AFTER_SEED rule.
 PG_STAT_STATEMENTS="${PG_STAT_STATEMENTS:-0}"
+PG_AUTO_EXPLAIN="${PG_AUTO_EXPLAIN:-0}"
+pg_preload=""
 if [ "$PG_STAT_STATEMENTS" = "1" ]; then
-  ALLOCA_PG_ARGS="${ALLOCA_PG_ARGS:+$ALLOCA_PG_ARGS }-c shared_preload_libraries=pg_stat_statements"
+  pg_preload="${pg_preload:+$pg_preload,}pg_stat_statements"
 fi
-export ALLOCA_PG_ARGS PG_STAT_STATEMENTS
+if [ "$PG_AUTO_EXPLAIN" = "1" ]; then
+  pg_preload="${pg_preload:+$pg_preload,}auto_explain"
+  # Sampled, not thresholded. A duration threshold selects the slow executions and therefore
+  # cannot show what a *healthy* execution's plan was, which is exactly the comparison wanted;
+  # 0.1% of statements gives on the order of 80 plans a cell across both regimes for negligible
+  # cost. log_analyze carries the real row counts and buffer numbers, which is the quantity the
+  # regime is defined by — at this sample rate its instrumentation overhead is not material.
+  ALLOCA_PG_ARGS="${ALLOCA_PG_ARGS:+$ALLOCA_PG_ARGS }-c auto_explain.log_min_duration=0"
+  ALLOCA_PG_ARGS="$ALLOCA_PG_ARGS -c auto_explain.sample_rate=${PG_AUTO_EXPLAIN_SAMPLE:-0.001}"
+  ALLOCA_PG_ARGS="$ALLOCA_PG_ARGS -c auto_explain.log_analyze=on -c auto_explain.log_buffers=on"
+  ALLOCA_PG_ARGS="$ALLOCA_PG_ARGS -c auto_explain.log_nested_statements=on"
+fi
+if [ -n "$pg_preload" ]; then
+  ALLOCA_PG_ARGS="${ALLOCA_PG_ARGS:+$ALLOCA_PG_ARGS }-c shared_preload_libraries=$pg_preload"
+fi
+export ALLOCA_PG_ARGS PG_STAT_STATEMENTS PG_AUTO_EXPLAIN
 
 DEPLOYMENT=test/observed/deployment.json
 

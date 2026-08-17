@@ -414,6 +414,53 @@ if [ "$PG_STAT_STATEMENTS" = "1" ]; then
   done
 fi
 
+# **Planner-state probe** (§3.19): what access path the planner would choose for the statement the
+# regime is attributed to, sampled through the window so a flip is visible against the throughput
+# series rather than inferred from its endpoints.
+#
+# `EXPLAIN (GENERIC_PLAN)` — PostgreSQL 16 — plans the parameterised statement without values and
+# without executing it, which is what makes it safe to run inside a measured window. It is the
+# *idempotency lookup* because that is the statement with the largest measured separation
+# (11.8 buffers per call healthy against 182.0 degraded, §3.18).
+#
+# **What it observes and what it does not.** It reports the plan a *fresh* plan would take, given
+# the catalog and statistics at that instant, alongside the values that decide it. It does not show
+# what the service's pooled connections are currently executing — auto_explain does that, and the
+# two answer different halves. Offline probing established that a Seq Scan is chosen only while the
+# relation genuinely has no pages, and that the choice reverts as soon as it has some even with
+# reltuples still 0, so "the bad plan persists" cannot be assumed and has to be watched.
+#
+# The probe costs a psql process per sample inside the unit's own cpuset, so it is diagnostic-only
+# and deliberately infrequent.
+PLAN_PROBE="${PLAN_PROBE:-0}"
+probe_pid=""
+if [ "$PLAN_PROBE" = "1" ]; then
+  : > "$OUT/plan-probe.txt"
+  (
+    while :; do
+      for pn in $(seq 1 "$ITC_GROUPS"); do
+        {
+          printf '=== %s authority-%s ===\n' "$(date -u +%H:%M:%SZ)" "$pn"
+          docker exec "alloca-authority-${pn}-db" psql -U alloca -d alloca -qXtA \
+            -c "SELECT 'idempotency_records reltuples='||(SELECT reltuples::bigint FROM pg_class WHERE relname='idempotency_records')
+                     ||' relpages='||(SELECT relpages FROM pg_class WHERE relname='idempotency_records')
+                     ||' live='||(SELECT n_live_tup FROM pg_stat_user_tables WHERE relname='idempotency_records')
+                     ||' dead='||(SELECT n_dead_tup FROM pg_stat_user_tables WHERE relname='idempotency_records')
+                     ||' last_autoanalyze='||coalesce(to_char((SELECT last_autoanalyze FROM pg_stat_user_tables WHERE relname='idempotency_records'),'HH24:MI:SS'),'never')" \
+            -c "EXPLAIN (GENERIC_PLAN, COSTS ON)
+                SELECT user_organisation_id, user_id, operation, key, request_hash, outcome, reason,
+                       reservation_id, booking_id, created_at
+                FROM idempotency_records
+                WHERE user_organisation_id = \$1 AND user_id = \$2 AND operation = \$3 AND key = \$4"
+        } >> "$OUT/plan-probe.txt" 2>&1
+      done
+      sleep "${PLAN_PROBE_INTERVAL:-5}"
+    done
+  ) &
+  probe_pid=$!
+  log "  planner-state probe every ${PLAN_PROBE_INTERVAL:-5}s -> $OUT/plan-probe.txt"
+fi
+
 log "  generator confined to CPUs $ITC_CPUS_GENERATOR ($WORKLOAD c=$CONCURRENCY window=$WINDOW require=$REQUIRE)"
 
 # Bracket the measured phase for the panel export. A cell's headline scalars come from run.json,
@@ -444,6 +491,13 @@ status="${PIPESTATUS[0]}"
 [ "$status" -eq 0 ] || fail "the run failed or was refused below $REQUIRE; see $OUT/generator-output.txt"
 
 measured_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# By PID, never `pkill -f`: the pattern would match this script's own command line and take the
+# run down with the probe.
+if [ -n "$probe_pid" ]; then
+  kill "$probe_pid" 2>/dev/null || true
+  wait "$probe_pid" 2>/dev/null || true
+fi
 
 # After the run has exited, not before: alloca-load replays ambiguous mutations in a post-run
 # pass, and a scrape taken while that is still in flight misses requests the report counts.

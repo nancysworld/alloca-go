@@ -250,37 +250,54 @@ make obs-rehearse ITC_GROUPS="$ITC_GROUPS" ITC_CPUS_GENERATOR="$ITC_CPUS_GENERAT
 # that script's alone. In particular the FOREIGN-target refusal is deliberately not reimplemented
 # here: duplicating it would create a second definition of a correctness rule that must not drift,
 # and a contaminated scrape set should be reported by the gate that owns the explanation.
-if [ -n "$PROM_URL" ]; then
-  log "waiting up to ${PROM_SETTLE}s for prometheus to scrape G$ITC_GROUPS"
-  settled=0
-  for _ in $(seq 1 "$PROM_SETTLE"); do
-    # **`|| healthy=0` is load-bearing, and its absence made this loop worse than useless.**
-    # Until Prometheus is listening, curl exits 7; under `set -e` and `pipefail` that status
-    # propagates out of the command substitution and kills the script on the first iteration —
-    # aborting the run with a bare exit 7 in precisely the situation the wait exists to survive.
-    # Attaching the fallback to the assignment keeps it exempt from `set -e` without turning the
-    # pipeline's own output into a second value.
-    healthy="$(curl -sfG -m 5 "$PROM_URL/api/v1/query" \
-        --data-urlencode \
-          "query=count(up{job=\"$PROM_JOB\",topology=\"itc-g${ITC_GROUPS}\"} == 1)" \
-        2>/dev/null \
-      | python3 -c 'import json,sys
+#
+# **Both jobs, not just the service one.** The postgres exporters are raised with the same stack
+# and discovered through the same file_sd refresh, so they are usually healthy at the same moment —
+# usually is not a property. itc-run.sh's populated-series gate requires the *host* panels and says
+# nothing about the database ones, so an exporter still starting when cell 1 opens produces a cell
+# with empty PostgreSQL panels and nothing anywhere reports it. That is the §3.9 failure shape
+# exactly, on the evidence path added to answer the question the whole series exists for.
+healthy_targets() {
+  # $1 is the job. Captured into a variable and emitted once, rather than letting the pipeline
+  # write straight to stdout with `|| echo 0` appended.
+  #
+  # **That shape emits twice.** Until Prometheus is listening curl exits 7, but python has already
+  # run on empty stdin and printed its own 0; `pipefail` then fails the pipeline and the fallback
+  # prints a second one. The caller receives "0\n0" and dies on `[: integer expression expected`,
+  # which under `set -e` aborts the run in exactly the situation this wait exists to survive. The
+  # single-query version this replaced avoided it by assigning, and the bug came back the moment
+  # the query became a function — so the fallback assigns here too.
+  local answered
+  answered="$(curl -sfG -m 5 "$PROM_URL/api/v1/query" \
+      --data-urlencode "query=count(up{job=\"$1\",topology=\"itc-g${ITC_GROUPS}\"} == 1)" \
+      2>/dev/null \
+    | python3 -c 'import json,sys
 # An unmatched count() returns an empty result rather than a zero, and a Prometheus still booting
 # returns nothing at all. Both mean "not yet", so both print 0 rather than raising.
 try:
     result = json.load(sys.stdin)["data"]["result"]
     print(int(float(result[0]["value"][1])) if result else 0)
 except Exception:
-    print(0)' 2>/dev/null)" || healthy=0
-    if [ "${healthy:-0}" -ge "$ITC_GROUPS" ]; then
+    print(0)' 2>/dev/null)" || answered=0
+  printf '%s\n' "${answered:-0}"
+}
+
+if [ -n "$PROM_URL" ]; then
+  log "waiting up to ${PROM_SETTLE}s for prometheus to scrape G$ITC_GROUPS (service and database)"
+  settled=0
+  for _ in $(seq 1 "$PROM_SETTLE"); do
+    healthy="$(healthy_targets "$PROM_JOB")"
+    healthy_pg="$(healthy_targets postgres)"
+    if [ "${healthy:-0}" -ge "$ITC_GROUPS" ] && [ "${healthy_pg:-0}" -ge "$ITC_GROUPS" ]; then
       settled=1
       break
     fi
     sleep 1
   done
-  [ "$settled" -eq 1 ] || fail "prometheus did not report $ITC_GROUPS healthy target(s) for
-  topology itc-g$ITC_GROUPS within ${PROM_SETTLE}s, so the scrape gate would refuse cell 1 and
-  stop the series before anything is measured:
+  [ "$settled" -eq 1 ] || fail "prometheus did not report $ITC_GROUPS healthy target(s) on both
+  jobs for topology itc-g$ITC_GROUPS within ${PROM_SETTLE}s (service: ${healthy:-0}, postgres:
+  ${healthy_pg:-0}). Cell 1 would either be refused by the scrape gate or retain no database
+  panels at all, and only the first of those reports itself:
 
       curl -s $PROM_URL/api/v1/targets | grep -o '\"health\":\"[a-z]*\"'
       ITC_GROUPS=$ITC_GROUPS ./test/scripts/itc-obs-targets.sh"

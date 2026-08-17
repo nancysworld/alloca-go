@@ -1270,6 +1270,18 @@ Checkpoints are two series on one graph rather than a sum, because the trigger i
 worth reading: timed at G4, WAL-requested at G1 where one database absorbs all four organisations'
 writes and reaches `max_wal_size` before the timer. Summing them would destroy exactly that.
 
+`itc-series.sh` now waits for both jobs before driving cell 1, not just the service job. The
+exporters are raised with the same stack and discovered on the same file_sd refresh, so they are
+*usually* healthy at the same moment — and usually is not a property. The populated-series gate
+requires the host panels and says nothing about the database ones, so an exporter still starting
+when the first cell opens yields a cell with empty PostgreSQL panels and nothing anywhere reports
+it: §3.9's failure shape, on the evidence path added to answer the question the series exists for.
+
+**Whether the populated-series gate should require the database panels is not settled here.** It
+would refuse a cell that retained no PostgreSQL series, which is the right instinct and a change to
+what refuses a measured run — a measurement-contract decision rather than an implementation one.
+The settle-wait closes the ordinary case without touching refusal semantics.
+
 **What this does not do.** It does not diagnose the regime, which has not recurred since the
 exporter was added and cannot be provoked deliberately because its trigger is unidentified. What it
 does is make the next degraded cell carry PostgreSQL's own wait evidence alongside the pool and

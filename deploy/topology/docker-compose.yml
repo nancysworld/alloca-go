@@ -54,6 +54,18 @@ x-service-base: &service-base
 
 x-postgres-base: &postgres-base
   image: postgres:16-alpine
+  # Server arguments, empty by default. The image's own CMD is exactly ["postgres"], so with
+  # ALLOCA_PG_ARGS unset this reproduces the image default argument for argument and changes
+  # nothing — which is what makes it safe to leave committed rather than carried as a patch.
+  #
+  # It exists so a diagnostic can be switched on for one run without editing this file. `ALTER
+  # SYSTEM` is the obvious alternative and is worse here: it persists into postgresql.auto.conf
+  # inside the data volume, which `itc-down -v` destroys before every run, so it would have to be
+  # reapplied each time and would fail *silently* when it was not — turning "no autovacuum was
+  # logged" into a statement about the logging rather than about the database. As a start-up
+  # argument the setting lives and dies with the containers a run raises, so reverting it is not
+  # an operation.
+  command: postgres ${ALLOCA_PG_ARGS:-}
   environment:
     POSTGRES_USER: alloca
     POSTGRES_PASSWORD: alloca

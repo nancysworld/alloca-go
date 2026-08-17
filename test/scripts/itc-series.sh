@@ -86,6 +86,23 @@ export PROM_URL PROM_JOB
 # waiting is seconds and the cost of not waiting is the whole series.
 PROM_SETTLE="${PROM_SETTLE:-60}"
 
+# Opt-in diagnostic: log every autovacuum, however short.
+#
+#   PG_LOG_AUTOVACUUM=1 ./test/scripts/itc-series.sh 1 10
+#
+# PostgreSQL defaults log_autovacuum_min_duration to 10 minutes, so an ordinary autovacuum on
+# this fixture leaves no trace whatever — which is why autovacuum has stayed unobserved through
+# every series so far while checkpoints, on by default, were visible throughout.
+#
+# Off unless asked for, and turning it off again is not an operation: it is a container start-up
+# argument, so it exists only for the life of the containers this script raises and tears down.
+PG_LOG_AUTOVACUUM="${PG_LOG_AUTOVACUUM:-0}"
+ALLOCA_PG_ARGS="${ALLOCA_PG_ARGS:-}"
+if [ "$PG_LOG_AUTOVACUUM" = "1" ]; then
+  ALLOCA_PG_ARGS="${ALLOCA_PG_ARGS:+$ALLOCA_PG_ARGS }-c log_autovacuum_min_duration=0"
+fi
+export ALLOCA_PG_ARGS
+
 DEPLOYMENT=test/observed/deployment.json
 
 # ---------------------------------------------------------------------------
@@ -173,6 +190,45 @@ make image-provenance
 
 log "raising the G$ITC_GROUPS topology, pinned"
 make itc-rehearse ITC_GROUPS="$ITC_GROUPS"
+
+# **Record the settings the databases actually started with, and refuse if a requested diagnostic
+# did not take.** Without this a null result is uninterpretable: "no autovacuum appears in the
+# log" would mean either that none ran or that logging was never enabled, and those demand
+# opposite conclusions. Reading it back from pg_settings rather than trusting the argument we
+# passed is the whole point — the argument is what we asked for, pg_settings is what happened.
+#
+# Recorded unconditionally, not only under the diagnostic, because a series should say what
+# configuration produced it without anyone having to remember.
+mkdir -p "$SERIES"
+pg_settings_file="$SERIES/postgres-settings.txt"
+: > "$pg_settings_file"
+for n in $(seq 1 "$ITC_GROUPS"); do
+  container="alloca-authority-${n}-db"
+  observed="$(docker exec "$container" psql -U alloca -d alloca -tAc \
+    "SELECT name||'='||setting||coalesce(' '||unit,'') FROM pg_settings WHERE name IN
+     ('autovacuum','autovacuum_naptime','log_autovacuum_min_duration',
+      'checkpoint_timeout','checkpoint_completion_target','max_wal_size')
+     ORDER BY name" 2>/dev/null)" || observed=""
+  [ -n "$observed" ] \
+    || fail "could not read pg_settings from $container, so the series would not be able to say
+  what configuration produced it"
+  printf '%s\n%s\n\n' "$container" "$observed" >> "$pg_settings_file"
+
+  if [ "$PG_LOG_AUTOVACUUM" = "1" ] \
+     && ! printf '%s\n' "$observed" | grep -q '^log_autovacuum_min_duration=0'; then
+    fail "PG_LOG_AUTOVACUUM=1 was requested but $container reports
+  $(printf '%s\n' "$observed" | grep '^log_autovacuum_min_duration')
+  The run would produce a log with no autovacuum lines in it and no way to tell that from a
+  database that never vacuumed. Check that ALLOCA_PG_ARGS reached compose."
+  fi
+done
+log "database settings recorded -> $pg_settings_file"
+# An `if`, not `[ ... ] && log ...`: under `set -e` a false test as the final command of a list
+# is a non-zero status, which would abort every run that did not ask for the diagnostic — the
+# default path.
+if [ "$PG_LOG_AUTOVACUUM" = "1" ]; then
+  log "autovacuum logging is ON for this series (every vacuum, regardless of duration)"
+fi
 
 log "raising the monitoring stack on CPUs $ITC_CPUS_GENERATOR"
 make obs-rehearse ITC_GROUPS="$ITC_GROUPS" ITC_CPUS_GENERATOR="$ITC_CPUS_GENERATOR"

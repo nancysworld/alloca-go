@@ -869,6 +869,196 @@
           "range": true
         }
       ]
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Active backends",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "alloca-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 69
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "alloca-prometheus"
+          },
+          "expr": "sum by (authority) (pg_stat_activity_count{job=\"postgres\",state=\"active\"})",
+          "legendFormat": "{{authority}}",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Checkpoints started (per second)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "alloca-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 77
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "alloca-prometheus"
+          },
+          "expr": "sum by (authority) (rate(pg_stat_bgwriter_checkpoints_timed_total{job=\"postgres\"}[60s]))",
+          "legendFormat": "{{authority}} timed",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "alloca-prometheus"
+          },
+          "expr": "sum by (authority) (rate(pg_stat_bgwriter_checkpoints_req_total{job=\"postgres\"}[60s]))",
+          "legendFormat": "{{authority}} requested",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "Buffers written by backends (per second)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "alloca-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 77
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "alloca-prometheus"
+          },
+          "expr": "sum by (authority) (rate(pg_stat_bgwriter_buffers_backend_total{job=\"postgres\"}[30s]))",
+          "legendFormat": "{{authority}}",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "Longest open transaction",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "alloca-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 85
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "alloca-prometheus"
+          },
+          "expr": "max by (authority) (pg_stat_activity_max_tx_duration{job=\"postgres\"})",
+          "legendFormat": "{{authority}}",
+          "range": true
+        }
+      ]
     }
   ]
 }

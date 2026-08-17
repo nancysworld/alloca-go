@@ -241,13 +241,19 @@ func TestDashboardIsDeliberatelySmall(t *testing.T) {
 			graphs++
 		}
 	}
-	// Raised 15 -> 16 for the PostgreSQL wait-event graph (ag-sept-pr4.md §3.16), and by exactly
-	// one. The exporter scrapes checkpoints, backend-side buffer writes, backend counts and
-	// transaction age as well; none of them are plotted, because the snapshot retains everything
-	// scraped and the bound is worth more than the convenience. What earned the graph is that no
-	// other instrument in this dashboard can answer what a backend is blocked *on*, which is what
-	// was missing when checkpoints and autovacuum were both refuted (§3.15) with no candidate left.
-	if graphs > 16 {
+	// Raised 15 -> 20 for the PostgreSQL section (ag-sept-pr4.md §3.16). **Maintainer decision,
+	// 2026-08-17**, which is the form this bound is meant to take: it was first raised to 16 for
+	// the wait-event graph alone, on the "collect broadly, panel narrowly" reading, and the
+	// maintainer chose to plot the remaining four rather than leave them recoverable-in-principle
+	// from the snapshot.
+	//
+	// The reasoning is specific to this diagnosis rather than general. Checkpoints and autovacuum
+	// were both refuted with no candidate left (§3.15), so the next degraded cell has to be read
+	// without a hypothesis to test — and a series nobody plots is a series nobody looks at when
+	// they do not yet know what they are looking for. §3.13.1's precedent says an unplotted series
+	// is *recoverable*; it does not say it is noticed. The bound stays a bound, and the next graph
+	// after these is a decision someone makes and records here, exactly as this one was.
+	if graphs > 20 {
 		t.Errorf("dashboard has %d graphs; the diagnostic view is meant to stay compact. "+
 			"Adding one is a scope decision, not a tidy-up", graphs)
 	}

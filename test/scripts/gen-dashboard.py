@@ -86,10 +86,18 @@ SECTIONS = [
     # say what it was blocked on. The rest bound the mechanisms that were named and refuted (§3.15)
     # so the refutations stay re-derivable from a retained cell rather than from container logs.
     #
+    # The two checkpoint series share one graph on purpose. The trigger is the distinction that
+    # matters — timed at G4, WAL-requested at G1 where one database absorbs all four organisations'
+    # writes — and a single summed series would destroy exactly the thing worth reading.
+    #
     # No dead-tuple graph, deliberately: `n_dead_tup` comes from the stat_user_tables collector,
     # which hangs a scrape indefinitely under a table lock and is disabled for that reason.
     ("PostgreSQL (per authority)", [
         ("Backends by wait event type", ["pg_wait_events"]),
+        ("Active backends", ["pg_backends_active"]),
+        ("Checkpoints started (per second)", ["pg_checkpoints_timed", "pg_checkpoints_req"]),
+        ("Buffers written by backends (per second)", ["pg_buffers_backend"]),
+        ("Longest open transaction", ["pg_long_transactions"]),
     ]),
 ]
 

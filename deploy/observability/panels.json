@@ -232,8 +232,53 @@
       "unit": "backends",
       "range": "30s",
       "legend": "{{authority}} {{wait_event_type}}",
-      "_note": "The instrument the \u00a73.12/\u00a73.15 diagnosis lacked, and the only postgres series panelled \u2014 the exporter scrapes checkpoints, backend-side buffer writes, backend counts and transaction age too, and the snapshot retains all of them, but \u00a73.13.1 is the standing proof that a scraped-and-unplotted series is recoverable. Every other instrument in this dashboard can say a backend was slow; `wait_event_type` says what it was blocked ON \u2014 Lock, LWLock, IO, BufferPin, Client, Timeout. Verified live against this topology: a deliberately blocked backend reports Lock/relation. Idle pool connections sit in Client/ClientRead and are excluded by state=active, because an idle pool is not a stall. RANGE 30s because the postgres job scrapes at 5s and the datasource-wide macro is sized for the 1s service job.",
+      "_note": "The instrument the \u00a73.12/\u00a73.15 diagnosis lacked. Every other instrument in this dashboard can say a backend was slow; `wait_event_type` says what it was blocked ON \u2014 Lock, LWLock, IO, BufferPin, Client, Timeout. Verified live against this topology: a deliberately blocked backend reports Lock/relation. Idle pool connections sit in Client/ClientRead and are excluded by state=active, because an idle pool is not a stall. RANGE 30s because the postgres job scrapes at 5s and the datasource-wide macro is sized for the 1s service job.",
       "expr": "sum by (authority, wait_event_type) (pg_stat_activity_count{job=\"postgres\",state=\"active\"})"
+    },
+    {
+      "key": "pg_backends_active",
+      "title": "PostgreSQL active backends",
+      "unit": "backends",
+      "range": "30s",
+      "legend": "{{authority}}",
+      "_note": "Per authority, so one saturated database cannot hide behind three quiet ones \u2014 the \u00a73.13.1 lesson applied to the database side. Read against the service's own pool panels: the pool sits pegged at 4.0/4 in healthy and degraded cells alike, so the interesting question is how many of those connections the database is actually running rather than how many the service holds.",
+      "expr": "sum by (authority) (pg_stat_activity_count{job=\"postgres\",state=\"active\"})"
+    },
+    {
+      "key": "pg_checkpoints_timed",
+      "title": "PostgreSQL timed checkpoints",
+      "unit": "checkpoints/s",
+      "range": "60s",
+      "legend": "{{authority}} timed",
+      "_note": "Timed and requested are separate series, not a sum, because the trigger is the distinction that matters and summing them destroys it: at G4 checkpoints fire on the 300s timer, while at G1 one database absorbs all four organisations' writes, reaches max_wal_size first, and they become WAL-triggered. Both were refuted as the cause of the degraded regime (\u00a73.15), and plotting the split keeps that refutation re-derivable from a retained cell instead of from container logs. RANGE 60s: a checkpoint every ~250s is invisible in a 30s window.",
+      "expr": "sum by (authority) (rate(pg_stat_bgwriter_checkpoints_timed_total{job=\"postgres\"}[$RANGE]))"
+    },
+    {
+      "key": "pg_checkpoints_req",
+      "title": "PostgreSQL requested checkpoints",
+      "unit": "checkpoints/s",
+      "range": "60s",
+      "legend": "{{authority}} requested",
+      "_note": "The WAL-volume-triggered half of the pair above, plotted on the same graph. A rung whose requested rate is non-zero is writing WAL faster than max_wal_size absorbs it between timers, which is the G1 condition and not the G4 one.",
+      "expr": "sum by (authority) (rate(pg_stat_bgwriter_checkpoints_req_total{job=\"postgres\"}[$RANGE]))"
+    },
+    {
+      "key": "pg_buffers_backend",
+      "title": "PostgreSQL buffers written by backends",
+      "unit": "buffers/s",
+      "range": "30s",
+      "legend": "{{authority}}",
+      "_note": "Backend-side flushing: a client backend forced to write a dirty buffer itself because the bgwriter and checkpointer did not keep up. It is one of the few database-side mechanisms that lengthens the time a connection is held without consuming host CPU or iowait, which is exactly the shape the degraded cells have (\u00a73.15) \u2014 so it is a candidate this dashboard can now rule in or out on sight.",
+      "expr": "sum by (authority) (rate(pg_stat_bgwriter_buffers_backend_total{job=\"postgres\"}[$RANGE]))"
+    },
+    {
+      "key": "pg_long_transactions",
+      "title": "PostgreSQL longest open transaction",
+      "unit": "s",
+      "range": "30s",
+      "legend": "{{authority}}",
+      "_note": "The degraded cells hold each connection about five times longer with no extra CPU and less I/O (\u00a73.15), and this is the most direct reading of that available from the database's own view. No dead-tuple panel sits beside it: n_dead_tup comes from the stat_user_tables collector, which hangs a scrape indefinitely under a table lock and is disabled for that reason (\u00a73.16).",
+      "expr": "max by (authority) (pg_stat_activity_max_tx_duration{job=\"postgres\"})"
     }
   ],
   "export_range": "15s",

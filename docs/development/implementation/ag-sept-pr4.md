@@ -1255,10 +1255,31 @@ service views of a rung cannot disagree about how many authorities it has. They 
 target beside the unit targets would be scraped as though it were a service unit, and the run's
 scrape gate would refuse every cell over a FOREIGN entry it was correct to report.
 
+**The whole section is plotted, and that is a departure from "panel narrowly" — maintainer
+decision, 2026-08-17.** The dashboard bound went to 16 first, for the wait-event graph alone, on
+§3.14's reading that the snapshot makes an unplotted series recoverable. It is now 20: backends by
+wait event, active backends, checkpoints split by trigger, backend-side buffer writes and longest
+open transaction. The reasoning is specific to this diagnosis rather than a general relaxation.
+With checkpoints and autovacuum both refuted and no candidate left, the next degraded cell has to
+be read *without* a hypothesis to test — and §3.13.1's precedent says an unplotted series is
+recoverable, not that it is noticed. Recovery works when you know what to look for; this is the
+case where nobody does. The bound stays a bound, and the graph after these is another decision to
+be recorded in the test that enforces it.
+
+Checkpoints are two series on one graph rather than a sum, because the trigger is the distinction
+worth reading: timed at G4, WAL-requested at G1 where one database absorbs all four organisations'
+writes and reaches `max_wal_size` before the timer. Summing them would destroy exactly that.
+
 **What this does not do.** It does not diagnose the regime, which has not recurred since the
 exporter was added and cannot be provoked deliberately because its trigger is unidentified. What it
 does is make the next degraded cell carry PostgreSQL's own wait evidence alongside the pool and
 host evidence, which is the §3.13 sequencing requirement.
+
+Verified against the live topology: all six expressions return successfully with their `authority`
+label, and under a deliberately blocked backend the wait-event panel splits by type, active
+backends reads 3 and longest open transaction reads 11.3 s. The checkpoint and backend-buffer
+panels are correct at zero on an idle database and remain unexercised at non-zero until the next
+loaded run.
 
 ## 4. Open items
 

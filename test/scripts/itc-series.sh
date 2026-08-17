@@ -101,7 +101,18 @@ ALLOCA_PG_ARGS="${ALLOCA_PG_ARGS:-}"
 if [ "$PG_LOG_AUTOVACUUM" = "1" ]; then
   ALLOCA_PG_ARGS="${ALLOCA_PG_ARGS:+$ALLOCA_PG_ARGS }-c log_autovacuum_min_duration=0"
 fi
-export ALLOCA_PG_ARGS
+
+# Statement-level attribution (§3.17). `shared_preload_libraries` is why this belongs here rather
+# than in itc-run.sh: it can only be set at server start, so the topology has to be raised with it
+# already in place. The extension itself is created after the units are up, below.
+#
+# Diagnostic only. It costs a few percent on the database under test, so a canonical measurement
+# must not carry it — the same rule as ANALYZE_AFTER_SEED, and for the same reason.
+PG_STAT_STATEMENTS="${PG_STAT_STATEMENTS:-0}"
+if [ "$PG_STAT_STATEMENTS" = "1" ]; then
+  ALLOCA_PG_ARGS="${ALLOCA_PG_ARGS:+$ALLOCA_PG_ARGS }-c shared_preload_libraries=pg_stat_statements"
+fi
+export ALLOCA_PG_ARGS PG_STAT_STATEMENTS
 
 DEPLOYMENT=test/observed/deployment.json
 
@@ -222,6 +233,23 @@ for n in $(seq 1 "$ITC_GROUPS"); do
   database that never vacuumed. Check that ALLOCA_PG_ARGS reached compose."
   fi
 done
+if [ "$PG_STAT_STATEMENTS" = "1" ]; then
+  for n in $(seq 1 "$ITC_GROUPS"); do
+    container="alloca-authority-${n}-db"
+    docker exec "$container" psql -U alloca -d alloca -qc \
+      "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;" >/dev/null 2>&1 \
+      || fail "could not create pg_stat_statements on $container"
+    # Created is not the same as loaded: without the preload the CREATE succeeds and every query
+    # against the view then fails at run time, one cell into the series. Reading the view is the
+    # only check that covers both halves.
+    docker exec "$container" psql -U alloca -d alloca -qtAc \
+      "SELECT count(*) FROM pg_stat_statements;" >/dev/null 2>&1 \
+      || fail "pg_stat_statements exists on $container but cannot be read, which means the library
+  was not preloaded. The topology must be raised with the flag, not have it added afterwards."
+  done
+  log "pg_stat_statements active on $ITC_GROUPS database(s) (diagnostic; costs a few percent)"
+fi
+
 log "database settings recorded -> $pg_settings_file"
 # An `if`, not `[ ... ] && log ...`: under `set -e` a false test as the final command of a list
 # is a non-zero status, which would abort every run that did not ask for the diagnostic — the

@@ -1293,6 +1293,86 @@ backends reads 3 and longest open transaction reads 11.3 s. The checkpoint and b
 panels are correct at zero on an idle database and remain unexercised at non-zero until the next
 loaded run.
 
+### 3.17 The regime's discriminator is logical buffer work, and the planner-state treatments are diagnostic
+
+**The untreated baseline** is the 60-cell G1 series at `c=16`, `GAP=10`
+(`test/results/pr4a/repeat-20260817T171147Z`): **10 degraded in 60**, cells 2, 13, 16, 24, 29, 34,
+39, 46, 55, 57. It is the population every treated series is compared against and must not be
+re-run with a treatment applied.
+
+**The discriminator is buffer accesses per request, and the separation is total.** Healthy cells
+sit at 81–88 (mean 86) across the whole run; degraded cells at 612–872 (mean 757). No overlap.
+Cache hit ratio is 1.0000 both ways and `blks_read` is ~0.17/s both ways, so no disk is involved at
+any point. Within a degraded cell `blks_hit/s` stays pinned near ~500k while buffers-per-request
+climbs monotonically — 636 to 2005 in cell-02 — and at recovery it collapses to 175 as throughput
+jumps to 994/s. The database is saturated at a roughly constant logical buffer rate, and throughput
+is that rate divided by work-per-request.
+
+**Refuted with direct evidence, not inference.** Lock waits are zero in every cell. LWLock is
+*lower* when degraded (0.23–0.54 against 0.69–1.08), as is IO. No checkpoint step falls in any
+degraded cell — the one step in the sample lands in a healthy one. Buffers written by backends are
+*lower* when degraded. The longest open transaction is ~0.02 s everywhere. Backends are **running,
+not waiting**, which is what makes this a work-volume problem rather than a contention one.
+
+**What ANALYZE after the reseed can and cannot reach — measured against a live authority.**
+
+| stage | `reltuples` | `relpages` | `pg_statistic` rows |
+|---|---|---|---|
+| after `TRUNCATE` | **-1** (unknown) | 0 | **survive** — 10, 8, 7, 2, 7 columns |
+| after `ANALYZE` on the emptied tables | **0** | 0 | **still survive** |
+
+So ANALYZE at reseed time repopulates row counts only for what is populated at that instant, which
+is `slots` and only `slots` (12,800 rows — 3,200 per organisation across four organisations, all
+homed on one authority at G1). The four tables the workload actually grows during the measured
+window — `reservations`, `user_identities`, `user_time_claims`, `idempotency_records` — are empty
+when the reseed finishes, so ANALYZE pins them at zero rows while leaving column distributions
+describing the *previous* cell's data in place.
+
+**That sharpens the experiment rather than invalidating it.** A null result does not clear stale
+planner state as a cause; it clears `slots` statistics as the cause and points at the tables that
+cannot be usefully analysed until they have filled. Both outcomes are informative, which is why the
+treatment ships as a switch rather than as a fixture change.
+
+**Two diagnostic treatments, both off by default and neither canonical.**
+
+- `ANALYZE_AFTER_SEED=1` runs `ANALYZE` on every authority after the reseed and retains the
+  resulting planner state per cell in `planner-stats.txt`, so a treated cell is identifiable from
+  its own artifacts.
+- `PG_STAT_STATEMENTS=1` preloads and creates the extension, resets the counters at the window's
+  edge and dumps the top statements by `shared_blks_hit` into `pg-statements.txt`. Resetting rather
+  than differencing is deliberate: what is dumped then describes that cell and nothing else.
+  `shared_preload_libraries` can only be set at server start, which is why the switch lives in the
+  wrapper and not in `itc-run.sh`.
+
+Both cost measurable overhead on the database under test — a few percent for `pg_stat_statements` —
+so a canonical measurement must not carry them, exactly as with `PG_LOG_AUTOVACUUM`. Each series
+records which treatment produced it in `series.txt`.
+
+**The extension is verified by reading the view, not by creating it.** Without the preload,
+`CREATE EXTENSION` succeeds and returns 0, and every subsequent query against the view fails with
+"must be loaded via shared_preload_libraries" — one cell into the series. Verified in both
+directions on a throwaway server before the switch shipped.
+
+**Pre-committed success criterion for §3.13 outcome 1**, agreed before the treated run:
+
+1. 0 of 60 cells degraded; **and**
+2. buffers-per-request stays in the healthy ~86 cluster throughout rather than entering 600–900;
+   **and**
+3. the suspect statement's plan or row estimates move in the predicted direction.
+
+All three, not the first alone. If they hold, the regime is a **measurement-fixture planner-state
+artefact** rather than an intrinsic service or PostgreSQL capacity regime.
+
+**Kept separate on purpose:** changed statistics do not replan a cached generic plan, and pgx holds
+prepared statements per connection. If ANALYZE alone does not eliminate the regime, connection or
+plan invalidation is the next controlled variant — it is not mixed into the first test, because two
+treatments in one run cannot be attributed.
+
+**Wording that the eventual report must not blur.** The healthy ~1.3–1.4k/s at G1 is the healthy
+**local rehearsal regime** on a shared-kernel workstation with the generator co-resident. It is not
+"the real capacity"; independent AWS capacity evidence remains a separate and unmet requirement,
+and nothing here promotes a rehearsal number into a capacity claim.
+
 ## 4. Open items
 
 - **Rung duration** stays open until §2.4's preflight derives it.

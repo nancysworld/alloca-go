@@ -61,6 +61,7 @@ WINDOW=${WINDOW:-60s}
 SLOTS=${SLOTS:-3200}
 CAPACITY=${CAPACITY:-20}
 ITC_CPUS_GENERATOR=${ITC_CPUS_GENERATOR:-8-11}
+analyze_after_seed=${ANALYZE_AFTER_SEED:-0}
 revision=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
 tree_clean=$([ -z "$(git status --porcelain 2>/dev/null)" ] && echo yes || echo no)
 EOF

@@ -334,6 +334,46 @@ ITC_GROUPS="$ITC_GROUPS" SLOTS="$SLOTS" CAPACITY="$CAPACITY" \
   ./test/scripts/itc-seed.sh > "$OUT/seed.txt" 2>&1 \
   || fail "reseeding failed; see $OUT/seed.txt"
 
+# **Diagnostic treatment, off by default and deliberately not the canonical fixture behaviour**
+# (ag-sept-pr4.md §3.17). The untreated 60-cell population is the baseline this is measured
+# against, and silently changing what every cell does would destroy the comparison rather than
+# inform it.
+#
+# **What it can and cannot reach, measured rather than assumed.** After the reseed's TRUNCATE,
+# `reltuples` is -1 and `relpages` is 0 on every table, while the per-column `pg_statistic` rows
+# from the *previous* cell survive untouched. ANALYZE here repopulates row counts for whatever is
+# populated at this instant — which is `slots` and only `slots`. The four tables the workload
+# actually grows during the window (reservations, user_identities, user_time_claims,
+# idempotency_records) are still empty, so ANALYZE pins them at reltuples=0 and leaves their stale
+# column distributions in place: verified directly against a live authority, where analysing the
+# empty tables left 10, 8, 7, 2 and 7 stat columns standing.
+#
+# So a null result here does not clear stale planner state as a cause — it clears *`slots`* stats
+# as the cause, and points at the tables that cannot be analysed usefully until they have filled.
+ANALYZE_AFTER_SEED="${ANALYZE_AFTER_SEED:-0}"
+if [ "$ANALYZE_AFTER_SEED" = "1" ]; then
+  log "  ANALYZE after reseed (diagnostic treatment; baseline cells do not have this)"
+  for n in $(seq 1 "$ITC_GROUPS"); do
+    container="alloca-authority-${n}-db"
+    docker exec "$container" psql -U alloca -d alloca -qc "ANALYZE;" >> "$OUT/seed.txt" 2>&1 \
+      || fail "ANALYZE_AFTER_SEED=1 was requested but ANALYZE failed on $container; see
+  $OUT/seed.txt. A cell that silently skipped the treatment would be recorded as treated."
+  done
+  # Retained per cell, so a treated cell is identifiable from its own artifacts rather than from
+  # whoever remembers which series carried the flag.
+  {
+    printf 'analyze_after_seed=1\n'
+    for n in $(seq 1 "$ITC_GROUPS"); do
+      printf -- '--- alloca-authority-%s-db post-ANALYZE planner state ---\n' "$n"
+      docker exec "alloca-authority-${n}-db" psql -U alloca -d alloca -tAc \
+        "SELECT relname||' reltuples='||(SELECT reltuples::bigint FROM pg_class c WHERE c.oid=s.relid)
+                ||' relpages='||(SELECT relpages FROM pg_class c WHERE c.oid=s.relid)
+                ||' stat_cols='||(SELECT count(*) FROM pg_statistic st WHERE st.starelid=s.relid)
+         FROM pg_stat_user_tables s ORDER BY relname" 2>&1
+    done
+  } > "$OUT/planner-stats.txt"
+fi
+
 # Bracketing scrapes. The service counters are cumulative and the units are deliberately left
 # running between cells, so only the delta across the measured window describes this cell —
 # a single scrape describes everything the process has ever done.
@@ -353,6 +393,26 @@ scrape() {
 }
 
 scrape baseline
+
+# **Statement-level attribution, diagnostic and off by default** (§3.17). The regime's discriminator
+# is 8.8x more logical buffer accesses per request, and a separation that large is attributable to
+# a statement rather than to "PostgreSQL". This resets the counters at the window's edge instead of
+# taking a delta, so what is dumped afterwards describes this cell and nothing else — the same
+# reason the .prom scrapes bracket the window rather than being read once.
+#
+# Never on for a canonical measurement: pg_stat_statements costs a few percent on the database
+# under test, which is exactly the kind of unrecorded perturbation the partition exists to
+# prevent. A treated cell records that it was treated, below.
+PG_STAT_STATEMENTS="${PG_STAT_STATEMENTS:-0}"
+if [ "$PG_STAT_STATEMENTS" = "1" ]; then
+  for n in $(seq 1 "$ITC_GROUPS"); do
+    docker exec "alloca-authority-${n}-db" psql -U alloca -d alloca -qtAc \
+      "SELECT pg_stat_statements_reset() IS NOT NULL;" >/dev/null 2>&1 \
+      || fail "PG_STAT_STATEMENTS=1 but pg_stat_statements_reset() failed on authority-$n.
+  The extension has to be preloaded and created before the run:
+      PG_STAT_STATEMENTS=1 ./test/scripts/itc-series.sh $ITC_GROUPS <cells>"
+  done
+fi
 
 log "  generator confined to CPUs $ITC_CPUS_GENERATOR ($WORKLOAD c=$CONCURRENCY window=$WINDOW require=$REQUIRE)"
 
@@ -388,6 +448,31 @@ measured_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # After the run has exited, not before: alloca-load replays ambiguous mutations in a post-run
 # pass, and a scrape taken while that is still in flight misses requests the report counts.
 scrape after
+
+# Ordered by shared buffer hits, because that is the quantity that separates the regimes — not by
+# time, which is the conventional ordering and would rank the answer second. `calls` and `rows`
+# travel with it so a statement doing more work per call is distinguishable from one simply called
+# more often, which is the whole question.
+if [ "$PG_STAT_STATEMENTS" = "1" ]; then
+  {
+    printf 'pg_stat_statements=1  window %s .. %s\n' "$measured_start" "$measured_end"
+    for n in $(seq 1 "$ITC_GROUPS"); do
+      printf -- '\n--- authority-%s: top statements by shared_blks_hit ---\n' "$n"
+      docker exec "alloca-authority-${n}-db" psql -U alloca -d alloca -qXc \
+        "SELECT calls, rows,
+                shared_blks_hit  AS blks_hit,
+                shared_blks_read AS blks_read,
+                round(shared_blks_hit::numeric / GREATEST(calls,1), 1) AS hit_per_call,
+                round(total_exec_time::numeric, 1) AS total_ms,
+                round(mean_exec_time::numeric, 3)  AS mean_ms,
+                left(regexp_replace(query, '\s+', ' ', 'g'), 90) AS statement
+         FROM pg_stat_statements
+         WHERE calls > 0
+         ORDER BY shared_blks_hit DESC LIMIT 12;" 2>&1
+    done
+  } > "$OUT/pg-statements.txt"
+  log "  statement attribution -> $OUT/pg-statements.txt"
+fi
 
 # Retain the shape, not just the endpoints. export-panels.sh writes every canonical panel as a
 # CSV over the measured phase and takes a TSDB snapshot beside them, which is what keeps the

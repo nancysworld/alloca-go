@@ -105,6 +105,12 @@ G1_UNITS="alloca-authority-1-db alloca-service-1"
 # exporter would have to be stopped. Shipping the exporter without adding it here made
 # `make itc-rehearse` fail on a correctly configured machine.
 MONITORING="alloca-prometheus alloca-grafana alloca-node-exporter"
+# The postgres exporters are per-authority, so unlike the three above they cannot be one constant.
+# Shipping them without extending the check repeated the node_exporter mistake described above,
+# verbatim and in the same week: `make itc-rehearse` failed on a correctly configured machine
+# because the check refused a container the rehearsal itself had just raised.
+PGEXP_1="alloca-postgres-exporter-1"
+PGEXP_4="alloca-postgres-exporter-1 alloca-postgres-exporter-2 alloca-postgres-exporter-3 alloca-postgres-exporter-4"
 
 echo "itc-topology-check-test: container-set logic"
 
@@ -122,6 +128,23 @@ case_ "G1 with monitoring running is accepted" \
 # was the defect.
 case_ "a rung without monitoring is accepted" \
   4 "$G4_UNITS" "$G4_UNITS" itc-g4 pass
+
+# The postgres exporters, one per authority (§3.16). Accepted at the rung that raised them.
+case_ "G1 with its postgres exporter is accepted" \
+  1 "$G1_UNITS" "$G1_UNITS $MONITORING $PGEXP_1" itc-g1 pass
+case_ "G4 with all four postgres exporters is accepted" \
+  4 "$G4_UNITS" "$G4_UNITS $MONITORING $PGEXP_4" itc-g4 pass
+
+# Tolerated, never required: `make itc-up` runs this check before obs-rehearse raises anything, so
+# demanding the exporters here would refuse the documented order itself.
+case_ "a rung with no postgres exporter is accepted" \
+  1 "$G1_UNITS" "$G1_UNITS $MONITORING" itc-g1 pass
+
+# An exporter above the rung is a leftover from a larger one, querying a database that is no longer
+# running. Same property as leftover units, one Compose project across — and the case that fails if
+# the tolerated set is ever flattened back into a fixed regex.
+case_ "a postgres exporter above the rung is refused" \
+  1 "$G1_UNITS" "$G1_UNITS $MONITORING $PGEXP_4" itc-g1 "did not raise"
 
 # The property the check exists for. Compose profiles decide what `up` starts and say nothing
 # about what is already running, so G1 after G4 leaves three units alive inside the envelope the

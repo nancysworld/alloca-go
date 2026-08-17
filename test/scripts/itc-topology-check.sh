@@ -105,14 +105,31 @@ if ! others="$(docker ps --filter 'name=alloca-' --format '{{.Names}}' \
                | grep -vxF "$(printf '%s\n' "$running")" || true)"; then
   others=""
 fi
+# The postgres exporters are companions too (ag-sept-pr4.md §3.16), but unlike the three above they
+# are **per authority**, so the tolerated set is derived from ITC_GROUPS rather than fixed. An
+# exporter numbered within the rung is monitoring; one numbered above it is a leftover from a
+# larger rung, querying a database that is no longer running — the same failure the unit equality
+# check exists for, one project across.
+#
+# **Tolerated, not required.** `make itc-up` runs this check before `obs-rehearse` has raised
+# anything, which is the documented order, so demanding the exporters here would refuse the very
+# sequence the repository prescribes. That the *run* needs them is itc-series.sh's settle-wait and
+# itc-run.sh's business, not this script's — the same division that keeps Prometheus optional here
+# while a cell that retained no host samples is refused there.
+companions='alloca-prometheus|alloca-grafana|alloca-node-exporter'
+for n in $(seq 1 "$ITC_GROUPS"); do
+  companions="${companions}|alloca-postgres-exporter-${n}"
+done
+
 unexpected="$(printf '%s\n' "$others" \
-  | grep -vxE 'alloca-prometheus|alloca-grafana|alloca-node-exporter' | grep . || true)"
+  | grep -vxE "$companions" | grep . || true)"
 if [ -n "$unexpected" ]; then
   echo "itc-topology-check: containers are running that the rehearsal did not raise:" >&2
   printf '%s\n' "$unexpected" | sed 's/^/    /' >&2
   echo "  Each consumes the envelope this topology is measured in, and none of them is pinned" >&2
   echo "  by the rehearsal partition. Stop them, or the numbers carry contention no artifact" >&2
-  echo "  records. ('make db-down' stops alloca-pg.)" >&2
+  echo "  records. ('make db-down' stops alloca-pg; 'make obs-down' stops a postgres exporter" >&2
+  echo "  left behind by a larger rung.)" >&2
   exit 1
 fi
 

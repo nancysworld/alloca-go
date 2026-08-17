@@ -95,7 +95,7 @@ SECTIONS = [
     ("PostgreSQL (per authority)", [
         ("Backends by wait event type", ["pg_wait_events"]),
         ("Active backends", ["pg_backends_active"]),
-        ("Checkpoints started (per second)", ["pg_checkpoints_timed", "pg_checkpoints_req"]),
+        ("Checkpoints started (cumulative)", ["pg_checkpoints_timed", "pg_checkpoints_req"]),
         ("Buffers written by backends (per second)", ["pg_buffers_backend"]),
         ("Longest open transaction", ["pg_long_transactions"]),
     ]),

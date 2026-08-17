@@ -918,7 +918,7 @@
     {
       "id": 23,
       "type": "timeseries",
-      "title": "Checkpoints started (per second)",
+      "title": "Checkpoints started (cumulative)",
       "datasource": {
         "type": "prometheus",
         "uid": "alloca-prometheus"
@@ -954,7 +954,7 @@
             "type": "prometheus",
             "uid": "alloca-prometheus"
           },
-          "expr": "sum by (authority) (rate(pg_stat_bgwriter_checkpoints_timed_total{job=\"postgres\"}[60s]))",
+          "expr": "sum by (authority) (pg_stat_bgwriter_checkpoints_timed_total{job=\"postgres\"})",
           "legendFormat": "{{authority}} timed",
           "range": true
         },
@@ -964,7 +964,7 @@
             "type": "prometheus",
             "uid": "alloca-prometheus"
           },
-          "expr": "sum by (authority) (rate(pg_stat_bgwriter_checkpoints_req_total{job=\"postgres\"}[60s]))",
+          "expr": "sum by (authority) (pg_stat_bgwriter_checkpoints_req_total{job=\"postgres\"})",
           "legendFormat": "{{authority}} requested",
           "range": true
         }

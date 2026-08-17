@@ -28,6 +28,9 @@ const (
 	promConfigPath = "../../deploy/observability/prometheus.yml"
 	// The other consumer of panels.json: it retains every panel, plotted or not.
 	exporterPath = "../../test/scripts/export-panels.sh"
+
+	// Owns the measured window every ranged panel has to fit inside.
+	runnerPath = "../../test/scripts/itc-run.sh"
 )
 
 type canonicalPanels struct {
@@ -589,6 +592,60 @@ func jobSelectorIn(expr string) string {
 //
 // If the exporter ever learned to skip these, nothing would fail: the dashboard would look right,
 // the cell would complete, and the series would simply not be in the CSV.
+// A ranged panel whose range is not shorter than the measured window exports nothing: the panel
+// exporter shifts the first evaluation by one range so no exported point carries pre-window
+// samples, and when that shift lands at or past the window's end it refuses the whole cell.
+//
+// This is caught here because the alternative is where it was actually caught — 69 seconds into a
+// measured cell, after the reseed and the full window, by a panel added with a 60s range against
+// the 60s default. Everything before the export had already passed. The two files that must agree
+// are panels.json and itc-run.sh's WINDOW default, and nothing tied them together.
+func TestRangedPanelsFitInsideTheDefaultWindow(t *testing.T) {
+	canonical := loadJSON[canonicalPanels](t, panelsPath)
+
+	// Read from itc-run.sh rather than restated here, so this test cannot be the third place the
+	// window is written down and the first to go stale.
+	raw, err := os.ReadFile(filepath.Clean(runnerPath))
+	if err != nil {
+		t.Fatalf("reading %s: %v", runnerPath, err)
+	}
+	m := regexp.MustCompile(`WINDOW="\$\{WINDOW:-([0-9]+[a-z]+)\}"`).FindStringSubmatch(string(raw))
+	if m == nil {
+		t.Fatalf("could not find the WINDOW default in %s; if it moved, this test must follow it "+
+			"rather than be deleted", runnerPath)
+	}
+	window, err := time.ParseDuration(m[1])
+	if err != nil {
+		t.Fatalf("WINDOW default %q in %s does not parse: %v", m[1], runnerPath, err)
+	}
+
+	checked := 0
+	for _, p := range canonical.Panels {
+		if !strings.Contains(p.Expr, "[$RANGE]") {
+			continue // instant selectors carry no range and keep the full window
+		}
+		effective := p.Range
+		if effective == "" {
+			effective = canonical.ExportRange
+		}
+		declared, err := time.ParseDuration(effective)
+		if err != nil {
+			t.Errorf("panel %q declares range %q, which does not parse: %v", p.Key, effective, err)
+			continue
+		}
+		checked++
+		if declared >= window {
+			t.Errorf("panel %q has range %v against a %v measured window, so the exporter's "+
+				"one-range shift lands at or past the window end and refuses the cell after it "+
+				"has been driven. Lower the panel's range, or make it an instant selector if the "+
+				"quantity is a counter whose steps read better than its rate", p.Key, declared, window)
+		}
+	}
+	if checked == 0 {
+		t.Error("no ranged panels checked; the selector for [$RANGE] has stopped matching")
+	}
+}
+
 func TestUnplottedPanelsAreStillExported(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Clean(exporterPath))
 	if err != nil {

@@ -93,22 +93,31 @@ granularity is false precision that invites its own overrun (Nancy's call, 2026-
 | Multi-authority harness | PR3b | 2.5 | 2.5 | 0.0 | merged |
 | Multi-authority correctness and failure-isolation evidence | PR3c | 1.5 | 1.5 | 0.0 | merged; originally 2.0, with 0.5 returned to contingency |
 | Iteration C planning | PR #18 | 0.5 | 0.5 | 0.0 | complete; hard planning cap met |
-| Iteration C mandatory method + local evidence | PR4a/PR4b | 4.0 | 0.0 | 4.0 | shared envelope; preparation then full local characterisation |
-| Iteration C optional independent verification | PR4c | **0.0** | **0.0** | **0.0** | unscheduled; requires quota + explicit budget decision before opening |
+| Iteration C method preparation and measurement qualification | PR4a | 4.0 | 4.0 | 0.0 | complete; consumed the whole former PR4a/PR4b envelope (§2.1.3) |
+| Iteration C local sustained capacity characterisation | PR4b | 1.0 | 0.0 | 1.0 | funded by a 1.0-day contingency draw (§2.1.3) |
+| Iteration C optional independent verification | PR4c | **0.0** | **0.0** | **0.0** | unscheduled and unbudgeted; requires quota + an explicit budget decision before opening |
 | Iteration C A&R and AG-Sept conclusion | PR5 | 1.5 | 0.0 | 1.5 | not started |
-| **Allocated development budget** | | **15.5** | **10.0** | **5.5** | |
-| Contingency | | **4.0** | **1.0** | **3.0** | 1.0 drawn by §2.1.1 |
-| **Total milestone budget** | | **19.5** | **11.0** | **8.5** | |
+| **Allocated development budget** | | **16.5** | **14.0** | **2.5** | |
+| Contingency | | **3.0** | **1.0** | **2.0** | 1.0 drawn by §2.1.1; 1.0 reallocated to PR4b by §2.1.3 |
+| **Total milestone budget** | | **19.5** | **15.0** | **4.5** | |
 
 **The numeric columns are the accounting source of truth:** `Allocated = Spent + Left` on every
 row. Completed work that returned unused allocation is shown at its current allocation; **Status**
 keeps the historical context, not the accounting.
 
-The existing **4.0-day PR4 allocation now funds the mandatory PR4a + PR4b path**. Adding the name
-PR4c does **not** create another allocation. PR4c is optional and unscheduled until the complete
-independently provisioned environment can be built; if it becomes executable inside AG-Sept, its
-budget must be chosen explicitly from remaining contingency, a deliberate reallocation, or the
-separate rerun/review reserve where appropriate. Merely receiving quota does not silently spend it.
+**PR4a consumed the whole former 4.0-day PR4a/PR4b envelope**, and PR4b is funded by a separate
+1.0-day draw on contingency (§2.1.3). Adding the name PR4c still does **not** create an allocation.
+PR4c is optional and unscheduled until the complete independently provisioned environment can be
+built; if it becomes executable inside AG-Sept, its budget must be chosen explicitly from remaining
+contingency, a deliberate reallocation, or the separate rerun/review reserve where appropriate.
+Merely receiving quota does not silently spend it.
+
+**A contingency draw that funds a work unit is a transfer, not a second entry.** PR4b's day appears
+once, as that row's allocation, and the contingency pool falls by the same day — which is why the
+milestone total is still 19.5. The alternative, leaving the day in contingency *and* showing it
+against PR4b, would count it twice and break `Allocated = Spent + Left`. §2.1.1's draw is recorded
+differently because it funded work that has no work-unit row at all, so it is visible only as
+contingency spend.
 
 If quota never arrives inside the milestone timebox, nothing in the 4.0-day mandatory envelope is
 left waiting for AWS: PR4b still produces the complete local sustained result, and PR5 records the
@@ -138,11 +147,17 @@ The gain is **not** an invitation to widen Iteration C. Contingency is held for 
 investigation that does not resolve on the first attempt, or another hard problem established by
 evidence.
 
-**Every PR is funded at what its scope costs.** No PR carries a deliberate shortfall, and no
-Iteration C mandatory work unit depends on contingency to be reachable.
+**Every PR is funded at what its scope costs.** No PR carries a deliberate shortfall.
 
-**Contingency is not scope.** It is drawn on before §5's descope order. After PR3c's 0.5-day return,
-contingency is **4.0 total**: **1.0 is drawn** (§2.1.1) and **3.0 remains**.
+**PR4b is the first mandatory work unit that depends on contingency to be reachable**, which was
+not true when this section was written: PR4a consumed the whole shared envelope, so PR4b's day
+comes from the reserve (§2.1.3). That is contingency doing its job rather than a shortfall — but it
+does mean the remaining 2.0 days are now carrying a mandatory work unit as well as reruns, and §5's
+descope order is correspondingly closer.
+
+**Contingency is not scope.** It is drawn on before §5's descope order. After PR3c's 0.5-day return
+and PR4b's 1.0-day reallocation, contingency is **3.0 total**: **1.0 is drawn** (§2.1.1) and
+**2.0 remains**.
 
 Unspent contingency is not a licence to expand a PR. It returns to the reserve.
 
@@ -160,6 +175,29 @@ allocation. The 0.5-day difference returned to contingency rather than being car
 & Review or silently charged to the next work unit.
 
 The milestone total stays **19.5 days**; the return changes allocation, not the total budget.
+
+### 2.1.3 PR4a is charged at 4.0 days, and PR4b draws 1.0 from contingency
+
+**Nancy's decision, 2026-08-18:** PR4a is charged at **4.0 days actual**, consuming the whole
+former PR4a/PR4b shared envelope. **PR4b is allocated 1.0 day, drawn from contingency.** PR4c
+remains unbudgeted and its allocation is deferred.
+
+PR4a absorbed the envelope because the re-baseline moved work into it rather than because it
+overran its own scope: independent per-group demand streams, the explicit conditioning contract and
+its accounting, the frozen pool policy and the evidence behind it, derived fixture sizing, the
+600 s retained-run shape, and the single host-executable entry point — none of which existed when
+the 4.0 days were split between preparation and execution.
+
+**The draw is a transfer.** Contingency falls from 4.0 to 3.0 and PR4b's day appears once, as that
+row's allocation, so the milestone total stays **19.5 days** exactly as PR3c's return did. It is
+recorded differently from §2.1.1, whose day funded work that has no work-unit row and is therefore
+visible only as contingency spend.
+
+**What it costs in slack.** 2.0 days of contingency remain, and they are now backing a mandatory
+work unit as well as reruns and review. PR4b at 1.0 day is a *bounded execution* budget: the method
+is qualified and the runs are scripted, so the day covers driving the retained S/H points and their
+confirmations, not further method work. Method work reappearing inside PR4b is the signal to stop
+and re-plan rather than to draw again.
 
 ### 2.2 Review depth is the throughput control
 
@@ -196,6 +234,10 @@ is specific to Iteration C.**
 **Nancy's decision, 2026-08-14:** retire the original fixed 1.5-day / 2.5-day PR4a/PR4b split while
 keeping the combined **4.0-day PR4 allocation unchanged**.
 
+**Superseded by §2.1.3 (2026-08-18)**, which charged the whole 4.0 days to PR4a and funded PR4b
+separately from contingency. The reasoning below is why the split was retired and remains accurate
+as history; the shared envelope it created no longer exists.
+
 The evidence changed the expected value of the two work units. The 16-vCPU WSL/Docker setup proved
 to be a useful, repeatable and unmetered place to exercise the real G1/G2/G4 machinery, while AWS
 quota approval was slower than the schedule assumed. More importantly, the PR4 implementation
@@ -231,9 +273,10 @@ independent provisioning remain different evidence classes. PR4b is now a first-
 result about the recorded local environment (`VAL-SCALE-6`); only optional PR4c can discharge
 `VAL-SCALE-5`.
 
-The 4.0-day allocation remains with mandatory PR4a+PR4b. PR4c carries no implicit budget. If quota
-arrives only after AG-Sept closes, the same independent-provisioning verification can be run later
-as a separate follow-up; it does not silently reopen the milestone.
+Mandatory PR4a and PR4b remain funded: PR4a at the 4.0 days it consumed, PR4b at 1.0 day drawn from
+contingency (§2.1.3). PR4c carries no implicit budget. If quota arrives only after AG-Sept closes,
+the same independent-provisioning verification can be run later as a separate follow-up; it does
+not silently reopen the milestone.
 
 ## 3. PR sequence
 

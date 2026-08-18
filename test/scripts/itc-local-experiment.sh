@@ -49,6 +49,11 @@ usage: ./test/scripts/itc-local-experiment.sh <stage>
   pool                  the bounded G1 pool-sensitivity preflight over the conditioned path,
                         at one worker level, so a single pool policy can be frozen (§4.6.3)
 
+  sustained             the final PR4a qualification: one conditioned 600 s G1 run and one
+                        conditioned 600 s G4 run on the ordinary measurement path, with the
+                        fixture sized from the measured rate. Qualification evidence only —
+                        it is not a capacity result and no E4_local follows from it
+
   recon                 adaptive workers_per_group reconnaissance (§4.6.4)      [not yet built]
   fixture               fixture sizing for a 600 s retained bracket (§4.6.6)    [not yet built]
   capacity              the retained S/H + confirmations, PR4b (§4.6.5)         [not yet built]
@@ -300,6 +305,103 @@ case "$stage" in
     log "pool sensitivity at G1 over the conditioned path: arms [$ITC_POOL_ARMS] at"
     log "workers/group=$ITC_WORKERS_PER_GROUP"
     ./test/scripts/itc-pool-sensitivity.sh
+    ;;
+
+  sustained)
+    # **The ordinary measurement path.** No plan probe, no auto_explain, no pg_stat_statements:
+    # the diagnostics cost measurable overhead on the database under test, and this run has to
+    # behave like the PR4b runs it is qualifying rather than like the diagnostic that preceded it.
+    # They are unset explicitly rather than left to default, so an exported value from an earlier
+    # shell cannot silently instrument a qualification run.
+    unset PLAN_PROBE PG_AUTO_EXPLAIN PG_STAT_STATEMENTS PG_LOG_AUTOVACUUM PG_AUTO_EXPLAIN_SAMPLE
+
+    export ITC_WORKERS_PER_GROUP="${ITC_WORKERS_PER_GROUP:-16}"
+    export WINDOW="${WINDOW:-600s}"
+    export CAPACITY="${CAPACITY:-20}"
+    export REQUIRE="${REQUIRE:-capacity}"
+    # Pinned, not inherited. pool_max_conns=4 is the fixed PR4b capacity-unit policy (maintainer
+    # decision, 2026-08-18); leaving it to pgxpool's default would make it a function of the
+    # cpuset — 4 under the rehearsal partition, 16 unpinned — so the policy would hold by
+    # coincidence rather than by declaration.
+    export ALLOCA_POOL_MAX_CONNS="${ALLOCA_POOL_MAX_CONNS:-4}"
+    export RESULTS_GROUP="${RESULTS_GROUP:-pr4a-sustained}"
+
+    # --- fixture sizing, derived and recorded ---------------------------------------------
+    #
+    # The gate this exists to satisfy: fixture exhaustion must not be able to become the
+    # deciding event of a 600 s run (measurement-contract §5, useful-demand / fixture-headroom).
+    # G4 is what sizes it — it consumes roughly four groups' worth — and the same per-organisation
+    # size is then reused unchanged at G1, because the workload's fixture is fixed for a
+    # comparison (workload-catalog.md, WL-MUT-DISP-4).
+    #
+    # Every input below is measured or declared, and the arithmetic is retained beside the runs
+    # so the number can be checked rather than trusted.
+    measured_group_rate="${ITC_MEASURED_GROUP_RATE:-1136}"   # G1, 16 workers/group, pool 4, 60 s
+    diagnostic_allowance="${ITC_DIAGNOSTIC_ALLOWANCE:-150}"  # % — that G1 rate carried the probes
+    groups_max=4
+    safety="${ITC_FIXTURE_SAFETY:-140}"                      # % explicit headroom on top
+    seconds="${ITC_WINDOW_SECONDS:-600}"
+
+    peak_group_rate=$(( measured_group_rate * diagnostic_allowance / 100 ))
+    # Deliberately assumes *perfect* scaling across the four groups, which is the one thing this
+    # topology is not expected to do. Over-estimating the rate costs seeding time; under-estimating
+    # it costs the run.
+    peak_aggregate=$(( peak_group_rate * groups_max ))
+    per_org=$(( peak_aggregate * seconds / 4 ))
+    required_per_org=$(( (per_org + CONDITIONING_TARGET) * safety / 100 ))
+    slots_per_org=$(( (required_per_org + CAPACITY - 1) / CAPACITY ))
+    # Rounded up to a round number so the retained value is legible in an artifact.
+    slots_per_org=$(( (slots_per_org / 5000 + 1) * 5000 ))
+    export SLOTS="${SLOTS:-$slots_per_org}"
+
+    sizing="test/results/$RESULTS_GROUP/fixture-sizing.txt"
+    mkdir -p "test/results/$RESULTS_GROUP"
+    cat > "$sizing" <<SIZING
+fixture sizing for the PR4a sustained qualification
+derived $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+  measured one-group rate            $measured_group_rate /s   (G1, 16 workers/group, pool 4, 60 s,
+                                                     carrying the executed-plan probes)
+  allowance for removing the probes  ${diagnostic_allowance}%
+  peak one-group rate                $peak_group_rate /s
+  groups at G4                       $groups_max
+  peak aggregate, perfect scaling    $peak_aggregate /s   (an upper bound: the four groups share
+                                                     8 CPUs, one kernel and one storage path)
+  measured duration                  ${seconds}s
+  measured consumption per org       $per_org mutations
+  conditioning per org               $CONDITIONING_TARGET mutations
+  explicit safety headroom           ${safety}%
+  required per org                   $required_per_org mutations
+  capacity per slot                  $CAPACITY
+  slots per organisation             $SLOTS   (rounded up)
+  seeded supply                      $(( SLOTS * CAPACITY * 4 )) mutations across 4 organisations
+  measured supply after conditioning $(( (SLOTS - CONDITIONING_SLOTS) * CAPACITY * 4 )) mutations
+
+The same per-organisation size is used at G1 and G4: the workload's fixture is fixed for a
+comparison, and resizing it per topology would change the workload as well as the topology.
+SIZING
+    log "fixture sizing -> $sizing"
+    sed 's/^/    /' "$sizing"
+
+    clear_sandbox_placeholders
+    build_generator
+
+    for groups in 1 4; do
+      log "sustained qualification: G$groups, ${WINDOW}, workers/group=$ITC_WORKERS_PER_GROUP,"
+      log "  pool_max_conns=$ALLOCA_POOL_MAX_CONNS, conditioned, ordinary measurement path"
+      ./test/scripts/itc-series.sh "$groups" 1         || fail "the sustained G$groups run did not complete. Stop here and diagnose this run
+  rather than adding controls or shorter runs around it."
+
+      series="$(ls -1dt test/results/$RESULTS_GROUP/*/ 2>/dev/null | head -1)"
+      cell="$(ls -1dt "$series"cell-*/ 2>/dev/null | head -1)"
+      [ -n "$cell" ] || fail "G$groups produced no cell directory under $series"
+
+      log "G$groups slices -> ${cell}slices.txt"
+      ./test/scripts/itc-slices.py "$cell" | tee "${cell}slices.txt"
+    done
+
+    log "both sustained runs complete. They are qualification evidence only: no capacity result"
+    log "and no E4_local follows from them, and 16 workers/group is not a selected S (§4.6.5)."
     ;;
 
   recon|fixture|capacity)

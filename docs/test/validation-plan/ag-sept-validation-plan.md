@@ -460,7 +460,7 @@ organisations happen to be colocated. Placement must not accidentally change the
 
 **Requirements:** REQ-COR-1, REQ-ROUTE-1.
 
-Run the refusal control in §3.5 and prove that Phase 1 creates no partial mutation.
+Run the refusal control in §3.5 and prove that Phase 1 creates no partial booking state.
 
 **Two cells discharge it, not one.** The refusal cell drives distinct keys throughout, which is
 what makes it a clean evidence class and also what makes it structurally unable to show §3.5's

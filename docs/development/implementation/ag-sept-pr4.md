@@ -1660,12 +1660,24 @@ constraint has already moved off admission and onto one authority's capacity to 
 work. The trajectory agrees — 8 has both the highest sustained rate and the flattest shape
 (0.80x first-to-last slice, against 0.74x at 4 and 0.69x at 16).
 
-**G4 at the two ends**, as composed-topology evidence rather than as the policy experiment:
-2,857.1/s at pool=4 against 3,129.3/s at pool=16, so +9.5% aggregate — bought with a run queue
-rising from 17.0 to 54.2 and p99 from 39.5 to 50.6 ms. The four authorities behave *more* alike at
-16 (busiest/quietest 1.07x against 1.22x) and none starved. **There is no G4 run at pool=8**: the
-policy was decided on G1, where the variable is isolated, so the frozen value is applied at G2 and
-G4 without direct evidence at that value on those topologies.
+**G4 reproduces the ordering**, which closes the gap this section first recorded. Driven at all
+three values as composed-topology evidence:
+
+| `pool_max_conns` | sustained | slice 1 -> 10 | empty-acquire | PG backends | run queue | p95 / p99 | per-group spread |
+|---:|---:|---|---:|---:|---:|---|---:|
+| 4 | 2,857.1/s | 0.76x | 11.97 | 2.31 | 16.99 | 33.4 / 39.5 ms | 1.22x |
+| **8** | **3,436.0/s** | **0.81x** | 7.83 | 4.40 | 28.28 | **28.1 / 35.6 ms** | **1.06x** |
+| 16 | 3,129.3/s | 0.73x | 0.05 | 7.39 | 54.19 | 35.7 / 50.6 ms | 1.07x |
+
+8 is best on every axis at G4, not only on throughput: highest sustained rate, flattest
+trajectory, lowest p50/p95/p99 and tail maximum, and the most even distribution across the four
+authorities. The mechanism matches G1's exactly — at 4 the pool is an admission queue, at 16 the
+queue vanishes and reappears inside PostgreSQL and the host, with 68% more active backends, 60%
+more wait events and a run queue of 54.2 against 28.3. Its fixture use, 51.7% of the measured
+supply, is the highest of any run in the set and still left headroom.
+
+So the frozen value is not a G1 result imposed on the composed topology: G4 prefers it too, and by
+8.9% over 16.
 
 **Decision (maintainer, 2026-08-18): `pool_max_conns=8`, one value for every shard group at G1, G2
 and G4.** The capacity unit is meant to be the same unit at each topology, and a per-topology pool

@@ -38,11 +38,11 @@ no run was near exhaustion.
 | [`g1-pool8`](g1-pool8/) | G1 | 8 | 749,181 | **1,248.6/s** |
 | [`g1-pool16`](g1-pool16/) | G1 | 16 | 627,960 | 1,046.6/s |
 | [`g4-pool4`](g4-pool4/) | G4 | 4 | 1,714,342 | 2,857.1/s |
+| [`g4-pool8`](g4-pool8/) | G4 | 8 | 2,061,575 | **3,436.0/s** |
 | [`g4-pool16`](g4-pool16/) | G4 | 16 | 1,877,629 | 3,129.3/s |
 
-There is no G4 run at pool=8. The pool policy was decided on G1, which is where the variable is
-isolated; G4 was driven at the two ends to show how the policy interacts with the composed local
-environment.
+The policy was decided on G1, which is where the variable is isolated. G4 was then driven at all
+three values, and reproduces the same ordering: 8 is the peak on both topologies.
 
 ## Two findings the artifacts carry
 
@@ -50,8 +50,8 @@ environment.
 removed the admission queue entirely and converted it into database and host contention, for 16%
 *less* Goodput than 8.
 
-**Every run declines and then plateaus** — G1 0.74×/0.80×/0.69×, G4 0.76×/0.73× from first 60 s
-slice to last. This is not the cached-plan regime of §3.20 and appears to follow accumulated
+**Every run declines and then plateaus** — G1 0.74×/0.80×/0.69×, G4 0.76×/0.81×/0.73× from first
+60 s slice to last, in each case flattest at pool=8. This is not the cached-plan regime of §3.20 and appears to follow accumulated
 dataset growth; it is recorded for Analyse & Review in §3.21 and is unresolved.
 
 ## Reading a run

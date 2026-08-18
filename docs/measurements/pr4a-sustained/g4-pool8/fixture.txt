@@ -1,0 +1,7 @@
+SLOTS=50000
+CAPACITY=20
+organisations=4
+seeded_mutation_supply=4000000
+conditioning_slots_per_organisation=200
+conditioning_target_per_organisation=4000
+measured_mutation_supply=3984000

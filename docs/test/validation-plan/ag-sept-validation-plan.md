@@ -71,6 +71,8 @@ Requirements and Design now constrain the validation deliberately:
 - one service replica and one PostgreSQL authority per shard group, keeping service-replica count
   per group constant;
 - one equivalent AWS EC2 capacity-unit host per group and a separate generator host;
+- **independent closed-loop demand per shard group**: each active group owns its own fixed worker
+  pool, so latency or saturation in one group cannot reduce the workers available to another;
 - Tier 1 target: measured saturation-selected `G1`, `G2`, `G4`, derived 2-group and 4-group capacity
   efficiencies, and the limiting-resource interpretation; if that environment exists but cannot be
   driven far enough to establish the target with proven headroom, §4.6 permits a bounded Tier 2
@@ -276,6 +278,16 @@ by the **same organisation** at `G1`, `G2`, and `G4`. The existing `multi-org-di
 which deliberately includes colocated cross-organisation pairs, remains separate Iteration-B-style
 correctness coverage and must not be substituted into this capacity matrix.
 
+**The closed-loop demand streams are independent per shard group.** A single physical generator
+host may run all of them, but one shared worker pool may not feed several groups: when one group is
+slow, workers blocked on that group would otherwise stop issuing requests to healthy groups and a
+local saturation event would appear as a topology-wide throughput drop. For a rung whose declared
+per-group concurrency is `c`, `G1`, `G2`, and `G4` therefore have total concurrency `c`, `2c`, and
+`4c` respectively, with each group retaining its own `c` workers. Within a group, its worker pool
+continues to distribute demand equally over the organisations that placement assigns to that group.
+Backpressure is allowed to lower the request-completion rate of the group that is slow; it must not
+reduce the configured worker population or offered demand opportunity of another group.
+
 The shard-group capacity units remain like-for-like under `deployment-architecture.md` §13.3; the
 workload semantics, service image, pool policy, timeout policy, and PostgreSQL configuration stay
 fixed across `G1`, `G2`, and `G4`.
@@ -287,17 +299,34 @@ not be the final rung merely because the sweep stopped there.
 
 For each topology:
 
-1. run a concurrency/load ladder far enough to establish the saturation region while preserving
-   the `measurement-contract.md` §3 capacity definition, §5 experiment/evidence gates, and §7
-   provisional SLO/outcome gates;
+1. reset/reseed once, then run each concurrency rung as **one sustained closed-loop measured run**
+   far enough to establish its operating regime and the saturation region while preserving the
+   `measurement-contract.md` §3 capacity definition, §5 experiment/evidence gates, and §7
+   provisional SLO/outcome gates. Fine-grained time slices inside a sustained rung are analysis
+   windows showing evolution/stationarity; they are not independent repeat samples and are not
+   separated by destructive reseeds;
 2. select the highest gated rung whose sustained Goodput is followed by at least one higher rung
    that either **does not produce higher sustained Goodput** or fails one of those gates — this is
    the operational saturation-knee/plateau point for `G1`, `G2`, or `G4`;
-3. repeat that selected point once as a retained confirmation run;
-4. retain the complete ladder, the point-selection justification, reconciliation, and resource
-   evidence alongside the selected point and its repeat.
+3. repeat that selected point once as a **separate full confirmation run**, beginning from a fresh
+   reset/reseed and the same declared configuration. The confirmation is an independent execution
+   of the selected experiment, not a second slice taken from the first sustained run;
+4. retain the complete ladder, each sustained rung's time-series shape, the point-selection
+   justification, reconciliation, and resource evidence alongside the selected point and its
+   confirmation run.
 
-PR2 report §5.6 and §6.3 are the reason this rule is explicit: with the current closed-loop harness,
+The repeated short-cell series used in PR4a remains valid **diagnostic machinery**: it exposed and
+root-caused a fixture-induced cached-plan regime. It is not the canonical capacity-ladder shape.
+Repeated `TRUNCATE -> short load -> gap` cycles deliberately recreate an empty-table planner state
+at roughly the same timescale as the short run itself; sustained rungs let one workload evolve
+continuously instead of repeatedly manufacturing that transient.
+
+The whole sustained run remains in the measurement and reconciliation populations. No hidden
+warm-up traffic may mutate state and then disappear from client totals. If a later analysis wants
+to distinguish an initial transient from a sustained interval, that boundary must remain explicit
+and auditable under `measurement-contract.md` §12 rather than retroactively rewriting the run.
+
+PR2 report §5.6 and §6.3 are the reason this rule is explicit: with a closed-loop harness,
 latency/deadline gates can remain comfortably non-binding while throughput has already saturated.
 Without a demonstrated higher rung, a sweep endpoint is not a capacity result and cannot enter
 `E2` or `E4`.
@@ -312,11 +341,12 @@ beneath it was the frontier. The selected point is invalidated along with the ru
 supposed to exceed it (`measurement-contract.md` §5, useful-demand / fixture-headroom gate).
 
 So the selected point, its confirmation run, **and the higher rung its selection rests on** must
-each retain enough clean fixture state to offer fresh mutations throughout their measured window.
-An unexpected population of `business_refusal` attributable to spent fixture state — rather than to
-the slot contention `WL-MUT-DISP-4` is designed to create — invalidates the point rather than
-describing it, and the ladder is re-run from a re-seeded fixture with a population sized for its
-depth.
+each retain enough clean fixture state to offer fresh mutations throughout their full sustained
+measured interval. Fixture sizing must therefore cover both the deepest intended rung **and the
+longer sustained duration**, with safety headroom, while preserving the required per-organisation
+comparability across `G1`, `G2`, and `G4`. An unexpected population of `business_refusal`
+attributable to spent fixture state — rather than to the slot contention `WL-MUT-DISP-4` is
+designed to create — invalidates the point rather than describing it.
 
 An all-refusal run is the limiting case and is treated the same way: it may be sound and may
 certify at whatever provenance level its manifest earns, but it carries no useful demand and backs
@@ -367,9 +397,10 @@ Only the second produces evidence at all.
 
 Select the **highest useful common per-unit workload intensity** `L` that the complete `G4`
 measurement environment can drive without becoming the plausible limiter. Apply that same per-unit
-intensity across the topology family — with the current closed-loop harness this means approximately
-`c`, `2c`, and `4c` concurrency for the 1-, 2-, and 4-group topologies while A/B/C/D keep equal
-workload share — and retain the resulting goodputs `g1(L)`, `g2(L)`, and `g4(L)`. Derive:
+intensity across the topology family. With the closed-loop harness, `L=c` means **exactly `c`
+workers in each group's independent demand stream**, hence total concurrency `c`, `2c`, and `4c`
+for the 1-, 2-, and 4-group topologies while A/B/C/D retain equal workload share within their
+active groups. Retain the resulting goodputs `g1(L)`, `g2(L)`, and `g4(L)`. Derive:
 
 ```text
 E2(L) = g2(L) / (2 × g1(L))
@@ -378,7 +409,8 @@ E4(L) = g4(L) / (4 × g1(L))
 
 `L` must not be chosen merely because it is easy to drive. Its selection must be justified as a
 substantial operating point within the proven generator/resource envelope, and the same correctness,
-reconciliation, SLO/evidence, like-for-like capacity-unit, and `VAL-NEG-7` controls still apply.
+reconciliation, SLO/evidence, like-for-like capacity-unit, independent-demand, and `VAL-NEG-7`
+controls still apply.
 
 If only Tier 2 is achieved, the conclusion is deliberately bounded: **horizontal scaling is
 established at `L`; aggregate capacity scaling remains unresolved.** A Tier-2 point cannot be
@@ -386,6 +418,20 @@ promoted into a capacity result, cannot satisfy the Tier-1 saturation-selection 
 and cannot be used to claim that the 2- or 4-group topology reached maximum useful Goodput.
 Accordingly, Tier 2 does **not** discharge `VAL-SCALE-5`; that capacity validation remains explicitly
 unproven while the operating-point horizontal-scale result is retained as valid evidence at `L`.
+
+#### Open-loop comparison follows the closed-loop capacity round
+
+Closed-loop remains the primary Iteration C capacity method for this round so the experiment changes
+one major variable at a time. After the sustained closed-loop ladder is qualified and yields measured
+sustainable rates, a bounded **open-loop comparison round** may use those rates to choose offered-load
+points below, around, and above the observed closed-loop frontier. Its purpose is complementary:
+show how achieved Goodput, latency, timeout/error behaviour, and queueing respond when offered arrival
+rate no longer self-throttles as service latency rises.
+
+An open-loop driver must bound outstanding work: explicit request deadlines, an explicit maximum
+in-flight count, and accounting for arrivals that could not be launched because that bound was
+reached. The open-loop round is not used retroactively to redefine the closed-loop capacity result;
+it is a second lens on overload/latency behaviour.
 
 ## 5. Correctness and policy validations
 
@@ -563,15 +609,18 @@ without changing routing or correctness semantics.
 
 Run the fixed matrix and Tier-1 saturation-selection rule in §4.6 and obtain admissible `G1`, `G2`,
 and `G4` for `WL-MUT-DISP-4`. The request-pair semantics remain same-organisation at every topology.
-Derive `E2` and `E4` under the measurement contract and identify or conservatively bound the
-limiting mechanism at each relevant frontier, explicitly accounting for the intended change in
-per-authority data/working-set volume as organisations are distributed across more authorities.
+Each group is driven by its own closed-loop demand stream at the declared per-group concurrency;
+one group's latency/backpressure must not reduce the worker population offered to another. Derive
+`E2` and `E4` under the measurement contract and identify or conservatively bound the limiting
+mechanism at each relevant frontier, explicitly accounting for the intended change in per-authority
+data/working-set volume as organisations are distributed across more authorities.
 
 The validation passes when the numbers are reproducible/admissible, correctness reconciles, the
 resource envelopes are comparable, generator/shared-environment effects cannot plausibly explain
-the result, the saturation point is established rather than assumed from sweep depth, the selected
-point and the rung above it retained fixture headroom to offer fresh mutations throughout (§4.6),
-and the limitations are stated. It does **not** require an efficiency percentage.
+the result, per-group demand independence is proven, the saturation point is established rather
+than assumed from sweep depth, the selected point and the rung above it retained fixture headroom
+to offer fresh mutations throughout (§4.6), and the limitations are stated. It does **not**
+require an efficiency percentage.
 
 If the complete environment exists but a proven measurement-system limit forces §4.6's Tier-2 path
 instead, retain that operating-point horizontal-scale result, but report `VAL-SCALE-5` as
@@ -635,6 +684,20 @@ conservatively bounded.
 A run in which one capacity-unit host is materially constrained relative to its peers is evidence
 about that constraint, not a clean shard-group scale-efficiency point.
 
+### VAL-NEG-8 — Per-shard-group demand independence
+
+Before interpreting `VAL-SCALE-5`, prove that the multi-group closed-loop driver maintains a
+separate fixed worker pool per active shard group. The discriminating control deliberately delays,
+constrains, or otherwise slows one target group while a healthy control group remains available.
+The slowed group may complete fewer requests because its own workers are blocked; the healthy
+group must retain its configured worker population and continue issuing independently rather than
+losing demand because workers are shared globally.
+
+The proof may be a deterministic generator-level integration test rather than a capacity run, but
+it must fail against the old shared-pool/round-robin design. Equal aggregate request counts in a
+healthy run are not sufficient evidence: the defect appears specifically when one group's response
+time diverges.
+
 ## 9. Current validation status
 
 | Validation area | Status | Authoritative evidence / next analysis |
@@ -647,7 +710,8 @@ about that constraint, not a clean shard-group scale-efficiency point.
 | Phase 1 correctness and failure isolation | established for Iteration B | PR3c report and retained artifacts; VAL-COR-1..3, VAL-COR-5, VAL-COR-6 and VAL-FAIL-1 |
 | cross-authority refusal (VAL-COR-4) | established for Iteration B | all four §3.5 clauses now hold on the deployed topology: the refusal and the absence of partial mutation by the PR3c passes, and **same-key replay** by control 3b, retained in [`../../measurements/pr3c-phase1/controls-replay/`](../../measurements/pr3c-phase1/controls-replay/). The replay clause was the gap the Iteration B A&R found (PR3c report §7.4), and it was closed by adding the repost to the control rather than by re-running or reinterpreting the retained cells |
 | database-authority composition (VAL-SCALE-3) | established as architecture/correctness evidence | PR3c; explicitly **not** a capacity multiplier on the co-resident workstation |
-| Iteration C shard-group capacity (VAL-SCALE-5) | **defined; not yet executed** | Tier 1 is the fixed `WL-MUT-DISP-4` A/B/C/D 1/2/4 matrix with saturation-selected `G1/G2/G4` and derived `E2/E4`. Where the complete environment exists but a proven measurement-system limit prevents Tier 1, §4.6 Tier 2 may establish horizontal scaling at a common per-unit `L`, with capacity explicitly unproven. Where that environment cannot be provisioned at all, neither tier applies and `VAL-SCALE-5` is unproven with no substitute result |
+| Iteration C shard-group capacity (VAL-SCALE-5) | **defined; not yet executed** | Tier 1 uses sustained closed-loop rungs over the fixed `WL-MUT-DISP-4` A/B/C/D 1/2/4 matrix, with independent per-group worker pools, saturation-selected `G1/G2/G4`, one separate confirmation run per selected point, and derived `E2/E4`. Where the complete environment exists but a proven measurement-system limit prevents Tier 1, §4.6 Tier 2 may establish horizontal scaling at a common per-unit `L`, with capacity explicitly unproven. Where that environment cannot be provisioned at all, neither tier applies and `VAL-SCALE-5` is unproven with no substitute result |
+| Iteration C per-group demand independence (VAL-NEG-8) | **defined; not yet executed** | generator must prove one slow group cannot throttle the configured worker population of healthy groups; control must fail against shared global closed-loop workers |
 | Iteration C resource-envelope control (VAL-NEG-7) | **defined; not yet executed** | retain per-host resource evidence and explain/exclude/bound material environment variation |
 | stateless replica scaling | unproven and not selected by Iteration C | existing VAL-SCALE-1/2 remain separate future validation definitions |
 | composed multi-authority + multi-replica topology | optional later validation | only after both axes are understood separately |
@@ -669,7 +733,7 @@ For each executed validation:
    and validation intent.
 
 Analyse & Review then records the closure outcome
-[`../../development/engineering-process.md`](../../development/engineering-process.md) §1.4.1
+[`../../development/engineering-process.md`](../../development/engineering-process.md) §1.4.1.1,
 requires, in [`../../requirements/ag-sept.md`](../../requirements/ag-sept.md): problem verdict,
 evidence, durable learning, **goal progress**, and the loop decision.
 

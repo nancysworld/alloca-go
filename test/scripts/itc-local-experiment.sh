@@ -192,6 +192,14 @@ build_generator() {
   log "generator built clean at ${revision#vcs.revision=}"
 }
 
+# **Captured before any default is applied.** A default set here is indistinguishable from an
+# operator's choice by the time a stage reads it, so a stage's own default can never fire — which
+# is exactly what happened: `sustained` asked for `${WINDOW:-600s}` and got the 60s set below,
+# then ran a 60 s cell on a 3,200-slot fixture and reported it as a clean 600 s qualification.
+# Stages read these instead, so "nothing was set" stays distinguishable from "the operator asked".
+ENV_WINDOW="${WINDOW-}"
+ENV_SLOTS="${SLOTS-}"
+
 CONDITIONING_SLOTS="${CONDITIONING_SLOTS:-200}"
 CONDITIONING_TARGET="${CONDITIONING_TARGET:-4000}"
 SLOTS="${SLOTS:-3200}"
@@ -358,7 +366,7 @@ case "$stage" in
     unset PLAN_PROBE PG_AUTO_EXPLAIN PG_STAT_STATEMENTS PG_LOG_AUTOVACUUM PG_AUTO_EXPLAIN_SAMPLE
 
     export ITC_WORKERS_PER_GROUP="${ITC_WORKERS_PER_GROUP:-16}"
-    export WINDOW="${WINDOW:-600s}"
+    export WINDOW="${ENV_WINDOW:-600s}"
     export CAPACITY="${CAPACITY:-20}"
     export REQUIRE="${REQUIRE:-capacity}"
     # Pinned, not inherited. pool_max_conns=4 is the fixed PR4b capacity-unit policy (maintainer
@@ -378,23 +386,22 @@ case "$stage" in
     #
     # Every input below is measured or declared, and the arithmetic is retained beside the runs
     # so the number can be checked rather than trusted.
-    measured_group_rate="${ITC_MEASURED_GROUP_RATE:-1136}"   # G1, 16 workers/group, pool 4, 60 s
-    diagnostic_allowance="${ITC_DIAGNOSTIC_ALLOWANCE:-150}"  # % — that G1 rate carried the probes
-    groups_max=4
+    # The input is now a *measured G4 aggregate* at exactly this configuration rather than a G1
+    # rate extrapolated by four. The extrapolation assumed perfect scaling and over-estimated by
+    # more than two to one: 6,816/s predicted against 3,165/s observed. Measuring the topology
+    # that sizes the fixture is strictly better evidence than reasoning about it.
+    measured_aggregate="${ITC_MEASURED_G4_RATE:-3165}"       # G4, 16 workers/group, pool 4, 60 s
+    sustained_allowance="${ITC_SUSTAINED_ALLOWANCE:-140}"    # % — a 600 s regime may exceed its first minute
     safety="${ITC_FIXTURE_SAFETY:-140}"                      # % explicit headroom on top
     seconds="${ITC_WINDOW_SECONDS:-600}"
 
-    peak_group_rate=$(( measured_group_rate * diagnostic_allowance / 100 ))
-    # Deliberately assumes *perfect* scaling across the four groups, which is the one thing this
-    # topology is not expected to do. Over-estimating the rate costs seeding time; under-estimating
-    # it costs the run.
-    peak_aggregate=$(( peak_group_rate * groups_max ))
+    peak_aggregate=$(( measured_aggregate * sustained_allowance / 100 ))
     per_org=$(( peak_aggregate * seconds / 4 ))
     required_per_org=$(( (per_org + CONDITIONING_TARGET) * safety / 100 ))
     slots_per_org=$(( (required_per_org + CAPACITY - 1) / CAPACITY ))
     # Rounded up to a round number so the retained value is legible in an artifact.
     slots_per_org=$(( (slots_per_org / 5000 + 1) * 5000 ))
-    export SLOTS="${SLOTS:-$slots_per_org}"
+    export SLOTS="${ENV_SLOTS:-$slots_per_org}"
 
     sizing="test/results/$RESULTS_GROUP/fixture-sizing.txt"
     mkdir -p "test/results/$RESULTS_GROUP"
@@ -402,13 +409,10 @@ case "$stage" in
 fixture sizing for the PR4a sustained qualification
 derived $(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-  measured one-group rate            $measured_group_rate /s   (G1, 16 workers/group, pool 4, 60 s,
-                                                     carrying the executed-plan probes)
-  allowance for removing the probes  ${diagnostic_allowance}%
-  peak one-group rate                $peak_group_rate /s
-  groups at G4                       $groups_max
-  peak aggregate, perfect scaling    $peak_aggregate /s   (an upper bound: the four groups share
-                                                     8 CPUs, one kernel and one storage path)
+  measured G4 aggregate rate         $measured_aggregate /s   (G4, 16 workers/group, pool 4, 60 s,
+                                                     ordinary measurement path)
+  allowance for a sustained regime   ${sustained_allowance}%
+  peak aggregate assumed             $peak_aggregate /s
   measured duration                  ${seconds}s
   measured consumption per org       $per_org mutations
   conditioning per org               $CONDITIONING_TARGET mutations
@@ -437,6 +441,24 @@ SIZING
       series="$(ls -1dt test/results/$RESULTS_GROUP/*/ 2>/dev/null | head -1)"
       cell="$(ls -1dt "$series"cell-*/ 2>/dev/null | head -1)"
       [ -n "$cell" ] || fail "G$groups produced no cell directory under $series"
+
+      # **The artifact is checked against the intent, not assumed to match it.** The first
+      # attempt at this stage ran 60 s cells on a 3,200-slot fixture and reported them as clean:
+      # every gate passed, because each gate judged the run that happened rather than the run
+      # that was asked for. Nothing downstream could have noticed.
+      ran_seconds="$(python3 -c "
+import json,sys
+print(int(round(json.load(open(sys.argv[1]))['summary']['duration_seconds'])))" "${cell}run.json")"
+      ran_slots="$(grep '^SLOTS=' "${cell}fixture.txt" | cut -d= -f2)"
+      if [ "$ran_seconds" -lt $(( seconds * 95 / 100 )) ]; then
+        fail "G$groups measured ${ran_seconds}s but the stage asked for ${seconds}s. The cell is
+  sound and describes a different experiment; it is not this qualification."
+      fi
+      if [ "$ran_slots" != "$SLOTS" ]; then
+        fail "G$groups ran on $ran_slots slots/organisation but the sizing derived $SLOTS. The
+  fixture headroom this qualification depends on was not the one that was seeded."
+      fi
+      log "G$groups ran ${ran_seconds}s on $ran_slots slots/org, as intended"
 
       log "G$groups slices -> ${cell}slices.txt"
       ./test/scripts/itc-slices.py "$cell" | tee "${cell}slices.txt"

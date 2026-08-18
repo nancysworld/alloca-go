@@ -733,7 +733,7 @@ For each executed validation:
    and validation intent.
 
 Analyse & Review then records the closure outcome
-[`../../development/engineering-process.md`](../../development/engineering-process.md) §1.4.1.1,
+[`../../development/engineering-process.md`](../../development/engineering-process.md) §1.4.1
 requires, in [`../../requirements/ag-sept.md`](../../requirements/ag-sept.md): problem verdict,
 evidence, durable learning, **goal progress**, and the loop decision.
 

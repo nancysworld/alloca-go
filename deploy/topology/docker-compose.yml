@@ -35,6 +35,23 @@
 
 name: alloca-topology
 
+# **`ALLOCA_POOL_MAX_CONNS` is an optional, inert-by-default pool override.**
+#
+# Unset — which is every run committed before it existed — the `:+` expansion contributes nothing
+# and each DATABASE_URL is byte-identical to what it was, so pgxpool keeps choosing its own
+# default. That matters: under the rehearsal's two-CPU cpuset that default is 4, unpinned it is
+# 16, and baking either number in here would silently change what an existing recipe measures.
+#
+# It exists for the bounded G1 pool-sensitivity preflight PR4a owes before the retained
+# comparisons begin (ag-sept-validation-plan.md §4.6.3): the check has to vary the connection
+# ceiling deliberately, and `ALTER SYSTEM` or a hand-edited URL would leave no record in the
+# run's own artifacts of which ceiling it drove. Once the policy is chosen it is frozen — set
+# identically for G1, G2 and G4 — and the value the service actually opened is observable at
+# /meta as `pool_max_conns`, which is what the manifest records rather than this variable.
+#
+# Every service block below carries the same expansion, and itc-pool-check.sh is what stops the
+# four from drifting: three of four carrying it would produce a sensitivity result in which one
+# authority silently kept the default.
 x-service-base: &service-base
   image: alloca-go:${ALLOCA_IMAGE_TAG:-dev}
   # Graceful termination: the service drains in-flight requests on SIGTERM within its own
@@ -169,7 +186,7 @@ services:
       METRICS_ADDR: ":9090"
       ALLOCA_TELEMETRY: ${ALLOCA_TELEMETRY:-full}
       ALLOCA_AUTHORITY_ID: authority-1
-      DATABASE_URL: postgres://alloca:alloca@authority-1-db:5432/alloca?sslmode=disable
+      DATABASE_URL: postgres://alloca:alloca@authority-1-db:5432/alloca?sslmode=disable${ALLOCA_POOL_MAX_CONNS:+&pool_max_conns=${ALLOCA_POOL_MAX_CONNS}}
     depends_on:
       authority-1-db: {condition: service_healthy}
       authority-1-migrate: {condition: service_completed_successfully}
@@ -186,7 +203,7 @@ services:
       METRICS_ADDR: ":9090"
       ALLOCA_TELEMETRY: ${ALLOCA_TELEMETRY:-full}
       ALLOCA_AUTHORITY_ID: authority-2
-      DATABASE_URL: postgres://alloca:alloca@authority-2-db:5432/alloca?sslmode=disable
+      DATABASE_URL: postgres://alloca:alloca@authority-2-db:5432/alloca?sslmode=disable${ALLOCA_POOL_MAX_CONNS:+&pool_max_conns=${ALLOCA_POOL_MAX_CONNS}}
     depends_on:
       authority-2-db: {condition: service_healthy}
       authority-2-migrate: {condition: service_completed_successfully}
@@ -204,7 +221,7 @@ services:
       METRICS_ADDR: ":9090"
       ALLOCA_TELEMETRY: ${ALLOCA_TELEMETRY:-full}
       ALLOCA_AUTHORITY_ID: authority-3
-      DATABASE_URL: postgres://alloca:alloca@authority-3-db:5432/alloca?sslmode=disable
+      DATABASE_URL: postgres://alloca:alloca@authority-3-db:5432/alloca?sslmode=disable${ALLOCA_POOL_MAX_CONNS:+&pool_max_conns=${ALLOCA_POOL_MAX_CONNS}}
     depends_on:
       authority-3-db: {condition: service_healthy}
       authority-3-migrate: {condition: service_completed_successfully}
@@ -222,7 +239,7 @@ services:
       METRICS_ADDR: ":9090"
       ALLOCA_TELEMETRY: ${ALLOCA_TELEMETRY:-full}
       ALLOCA_AUTHORITY_ID: authority-4
-      DATABASE_URL: postgres://alloca:alloca@authority-4-db:5432/alloca?sslmode=disable
+      DATABASE_URL: postgres://alloca:alloca@authority-4-db:5432/alloca?sslmode=disable${ALLOCA_POOL_MAX_CONNS:+&pool_max_conns=${ALLOCA_POOL_MAX_CONNS}}
     depends_on:
       authority-4-db: {condition: service_healthy}
       authority-4-migrate: {condition: service_completed_successfully}

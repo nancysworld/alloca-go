@@ -20,7 +20,7 @@ GOLANGCI_LINT_STAMP   := $(TOOLBIN)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 .PHONY: all ci fmt fmt-check vet lint build test test-race test-integration \
         db-up db-down migrate run dev dev-measured smoke obs-up obs-target obs-down tidy tools clean \
         image topo-up topo-down topo-ps itc-up itc-down itc-deployment \
-        itc-layout itc-layout-check itc-topology-check-test itc-conditioning-check itc-obs-labels-check itc-rehearse obs-rehearse
+        itc-layout itc-layout-check itc-topology-check-test itc-conditioning-check itc-pool-check itc-obs-labels-check itc-rehearse obs-rehearse
 
 # Integration tests need a real PostgreSQL: the properties they prove (capacity safety
 # under concurrent transactions, post-lock decision time, the scoped-key race) do not
@@ -130,7 +130,7 @@ ITC_CPUS_GENERATOR ?= 8-11
 all: ci
 
 ## ci: run the full local gate, identical to CI (fmt, vet, lint, build, test, race)
-ci: fmt-check vet lint build test test-race build-context-check itc-layout-check itc-topology-check-test itc-conditioning-check itc-obs-labels-check
+ci: fmt-check vet lint build test test-race build-context-check itc-layout-check itc-topology-check-test itc-conditioning-check itc-pool-check itc-obs-labels-check
 
 ## fmt: format all Go files
 fmt:
@@ -379,6 +379,16 @@ itc-topology-check-test:
 # and only the phase boundaries move (ag-sept-validation-plan.md §4.6.2).
 itc-conditioning-check:
 	@./test/scripts/itc-conditioning-test.sh
+
+## itc-pool-check: prove the pool ceiling is declared identically for every shard-group service
+#
+# In `ci` because it needs the Compose renderer but no daemon and raises nothing. It exists
+# because four service blocks have to agree and Compose does not make them: three of four
+# carrying the override raises cleanly, certifies cleanly, and produces a pool-sensitivity
+# comparison in which one authority never received the treatment (ag-sept-validation-plan.md
+# §4.6.3).
+itc-pool-check:
+	@./test/scripts/itc-pool-check.sh
 
 ## itc-obs-labels-check: prove a retained sample can say which topology produced it
 #

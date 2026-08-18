@@ -33,6 +33,14 @@ usage() {
   cat >&2 <<'EOF'
 usage: ./test/scripts/itc-local-experiment.sh <stage>
 
+  build                 rebuild the load generator from the current tree and prove its stamp is
+                        clean, so a later stage cannot discover after the run that it certifies
+                        at no level
+
+  preflight             report whether this machine can drive the experiment at all: host
+                        reachability, Docker, the live topology, tree state and generator
+                        provenance. Read-only — it raises, seeds and mutates nothing
+
   qualify-conditioning  drive one conditioned G1 diagnostic cell with the executed-plan and
                         planner-state probes both on, and establish that the measured interval
                         no longer executes the Seq Scan cached against empty mutation tables
@@ -63,6 +71,30 @@ stage="$1"; shift || true
 # The target is a state, not a duration (§4.6.2). Its value is provisional and is exactly what
 # the qualification stage exists to test: enough committed mutations that the tables the workload
 # grows are no longer empty when the recycled pool opens its connections against them.
+# build_generator rebuilds the load generator from the current tree.
+#
+# **The stages that drive load call this rather than trusting whatever is in bin/.** A generator
+# binary is not interchangeable with the tree it sits beside: it carries its own commit and
+# `vcs.modified` stamp, and the manifest records them as the identity of the thing that produced
+# the numbers. A stale binary therefore reports a revision that did not generate the load, and one
+# built from an unclean tree certifies at no level — both discovered after the run, which on a
+# long cell is the expensive place to discover anything (ag-sept-pr4.md §3.6).
+#
+# It is also the only way a build can happen where the tree is genuinely clean, since the stamp is
+# a function of the tree state at build time and nothing else.
+build_generator() {
+  go build -o bin/alloca-load ./cmd/alloca-load \
+    || fail "could not build the generator"
+  local revision modified
+  revision="$(go version -m bin/alloca-load | grep 'vcs.revision' | awk '{print $NF}')"
+  modified="$(go version -m bin/alloca-load | grep -c 'vcs.modified=true' || true)"
+  if [ "$modified" -ne 0 ]; then
+    fail "the generator built from this tree is stamped vcs.modified=true, so the run would
+  certify at no level. Commit or stash first: $revision"
+  fi
+  log "generator built clean at ${revision#vcs.revision=}"
+}
+
 CONDITIONING_SLOTS="${CONDITIONING_SLOTS:-200}"
 CONDITIONING_TARGET="${CONDITIONING_TARGET:-4000}"
 SLOTS="${SLOTS:-3200}"
@@ -72,6 +104,81 @@ ITC_CPUS_GENERATOR="${ITC_CPUS_GENERATOR:-8-11}"
 export CONDITIONING_SLOTS CONDITIONING_TARGET SLOTS CAPACITY WINDOW ITC_CPUS_GENERATOR
 
 case "$stage" in
+
+  build)
+    build_generator
+    ;;
+
+  preflight)
+    # **Read-only, deliberately.** Every later stage tears down and rebuilds the topology, and the
+    # cost of discovering an unusable machine is that teardown. This asks the same questions those
+    # stages will ask, before anything is destroyed, and changes nothing itself.
+    #
+    # It also answers a question about *this* process rather than the machine: whether the
+    # invocation has the host's network and the host's view of the filesystem at all. Those differ
+    # inside a sandbox, and a stage that discovered it mid-run would have destroyed a topology to
+    # find out.
+    status=0
+    printf '\n--- host reachability -------------------------------------------------------\n'
+    if curl -fsS -m 3 -o /dev/null "${PROM_URL:-http://localhost:9091}/-/ready" 2>/dev/null; then
+      printf '  ok    %s answered: this invocation has the host network\n' "${PROM_URL:-http://localhost:9091}"
+    else
+      printf '  --    %s did not answer. Either the monitoring stack is down, or this\n' "${PROM_URL:-http://localhost:9091}"
+      printf '        invocation cannot reach host-published ports, in which case no stage\n'
+      printf '        below can drive a cell.\n'
+    fi
+
+    printf '\n--- docker and the live topology --------------------------------------------\n'
+    if docker ps --format '{{.Names}}' >/dev/null 2>&1; then
+      units="$(docker ps --format '{{.Names}}' | grep -c '^alloca-service-' || true)"
+      dbs="$(docker ps --format '{{.Names}}' | grep -c '^alloca-authority-.*-db$' || true)"
+      printf '  ok    docker answers: %s service unit(s), %s authority database(s) running\n' "$units" "$dbs"
+      case "$units" in
+        0) printf '        no topology is live; a stage that needs one will raise it\n' ;;
+        1|2|4) printf '        that is the shape of G%s\n' "$units" ;;
+        *) printf '  !!    %s units is not a G1/G2/G4 shape\n' "$units"; status=1 ;;
+      esac
+    else
+      printf '  !!    docker is not reachable; no stage can raise or drive a topology\n'
+      status=1
+    fi
+
+    printf '\n--- tree state --------------------------------------------------------------\n'
+    dirty="$(git status --porcelain | wc -l)"
+    if [ "$dirty" -eq 0 ]; then
+      printf '  ok    the tree is clean, so a build stamps vcs.modified=false and can certify\n'
+    else
+      printf '  !!    %s uncommitted path(s): every clean-tree gate below will refuse, and a\n' "$dirty"
+      printf '        binary built from this tree stamps vcs.modified=true and certifies at no\n'
+      printf '        level. First three:\n'
+      git status --porcelain | head -3 | sed 's/^/          /'
+      status=1
+    fi
+
+    printf '\n--- generator ---------------------------------------------------------------\n'
+    if [ -x bin/alloca-load ]; then
+      modified="$(go version -m bin/alloca-load 2>/dev/null | grep -c 'vcs.modified=true' || true)"
+      revision="$(go version -m bin/alloca-load 2>/dev/null | grep 'vcs.revision' | awk '{print $NF}')"
+      if [ "$modified" -eq 0 ]; then
+        printf '  ok    bin/alloca-load is stamped clean at %s\n' "${revision:-unknown}"
+      else
+        printf '  !!    bin/alloca-load is stamped vcs.modified=true (%s): it cannot certify.\n' "${revision:-unknown}"
+        printf '        Rebuild it from a clean tree: go build -o bin/alloca-load ./cmd/alloca-load\n'
+        status=1
+      fi
+    else
+      printf '  !!    bin/alloca-load does not exist: go build -o bin/alloca-load ./cmd/alloca-load\n'
+      status=1
+    fi
+
+    printf '\n'
+    if [ "$status" -eq 0 ]; then
+      log "preflight clean: this machine can drive the experiment"
+    else
+      log "preflight found blockers above; fix them before a stage that destroys the topology"
+    fi
+    exit "$status"
+    ;;
 
   qualify-conditioning)
     # **Both probes, because neither answers the question alone** (§3.20). auto_explain records
@@ -88,6 +195,7 @@ case "$stage" in
     export RESULTS_GROUP="${RESULTS_GROUP:-pr4a-conditioning}"
     export REQUIRE="${REQUIRE:-local}"
 
+    build_generator
     log "qualifying conditioning at G1: one conditioned cell, executed-plan and planner-state"
     log "probes both on, workers/group=$ITC_WORKERS_PER_GROUP window=$WINDOW"
     log "  this is a diagnostic: the probes cost measurable overhead and it backs no capacity number"
@@ -127,6 +235,7 @@ case "$stage" in
     export ITC_POOL_ARMS="${ITC_POOL_ARMS:-4 8}"
     export RESULTS_GROUP="${RESULTS_GROUP:-pr4a-pool}"
 
+    build_generator
     log "pool sensitivity at G1 over the conditioned path: arms [$ITC_POOL_ARMS] at"
     log "workers/group=$ITC_WORKERS_PER_GROUP"
     ./test/scripts/itc-pool-sensitivity.sh

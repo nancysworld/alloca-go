@@ -1,6 +1,6 @@
 # PR4a sustained qualification and pool-policy sensitivity
 
-Five retained 600 s runs, driven 2026-08-18 through
+Six retained 600 s runs, driven 2026-08-18 through
 [`test/scripts/itc-local-experiment.sh`](../../../test/scripts/itc-local-experiment.sh) on the
 scheduler-partitioned workstation.
 
@@ -18,16 +18,16 @@ owns saturation reconnaissance, `S`/`H` selection and the retained capacity comp
 Every run is a *single* observation. `measurement-contract.md` treats a single reading as
 provisional, and none of these was repeated.
 
-## Configuration common to all five
+## Configuration common to all six
 
 `WL-MUT-DISP-4`, conditioned to 4,000 fresh mutations per organisation followed by a
 state-preserving service/pool recycle, 600 s measured interval, 16 workers per shard group with
 one independent demand stream each, 50,000 slots per organisation at capacity 20, ordinary
 observability only — no plan probe, no `auto_explain`, no `pg_stat_statements`. Generator confined
-to CPUs 8–11, each shard group to two CPUs. All five certified `capacity`.
+to CPUs 8–11, each shard group to two CPUs. All six certified `capacity`.
 
 Fixture sizing is derived in [`fixture-sizing.txt`](fixture-sizing.txt) from the measured G4
-aggregate rate rather than chosen. Consumption reached 47.1% of the measured supply at worst, so
+aggregate rate rather than chosen. Consumption reached 51.7% of the measured supply at worst, so
 no run was near exhaustion.
 
 ## The runs

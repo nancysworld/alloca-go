@@ -44,7 +44,7 @@ type keyNamespacer interface {
 // workload's identity (workload-catalog.md, "WL-MUT-DISP-4 — Population") — and only their
 // grouping moves. G1 therefore yields one stream owning all four, G4 four streams owning one
 // each, from the same fixture.
-func NewMutDisp4Streams(populations []OrgPopulation, groups []OrgGroup, confirm bool) ([]Stream, error) {
+func NewMutDisp4Streams(populations []OrgPopulation, groups []OrgGroup, confirm bool, phase Phase) ([]Stream, error) {
 	if len(groups) == 0 {
 		return nil, fmt.Errorf("loadgen: wl-mut-disp-4 streams need at least one shard group")
 	}
@@ -77,8 +77,13 @@ func NewMutDisp4Streams(populations []OrgPopulation, groups []OrgGroup, confirm 
 		placed += len(owned)
 
 		streams = append(streams, Stream{
-			Group:    string(group.Authority),
-			Workload: MutDisp4{Orgs: owned, Confirm: confirm, Group: string(group.Authority)},
+			Group: string(group.Authority),
+			Workload: MutDisp4{
+				Orgs:    owned,
+				Confirm: confirm,
+				Group:   string(group.Authority),
+				Phase:   phase,
+			},
 		})
 	}
 
@@ -128,4 +133,50 @@ func validateStreams(streams []Stream) error {
 		namespaces[scoped.keyNamespace()] = true
 	}
 	return nil
+}
+
+// SplitPopulationsForConditioning divides each organisation's seeded slots into a
+// conditioning population and a measured population.
+//
+// The two phases must not compete for the same rows. Conditioning exists to leave
+// representative table state behind — rows in `idempotency_records`, `reservations` and the
+// claim tables, so the pool's connections plan against a populated database rather than an
+// empty one — and it consumes slot capacity to do it. If it drew from the measured
+// population's slots it would arrive at the measured interval having already spent part of
+// the fixture the capacity point depends on, and the resulting `business_refusal` population
+// would invalidate the point while looking like contention (measurement-contract §5,
+// useful-demand / fixture-headroom gate).
+//
+// The split is returned as a pair from one function rather than computed twice because that
+// is the only way the two phases cannot disagree about where the boundary is. A caller that
+// derived each side separately would have two expressions that must stay equal, with nothing
+// tying them together.
+func SplitPopulationsForConditioning(populations []OrgPopulation, conditioningSlotsPerOrg int) (conditioning, measured []OrgPopulation, err error) {
+	if conditioningSlotsPerOrg <= 0 {
+		return nil, nil, fmt.Errorf("loadgen: conditioning needs at least one slot per " +
+			"organisation; a phase with no population establishes no state")
+	}
+
+	for _, population := range populations {
+		if len(population.Slots) <= conditioningSlotsPerOrg {
+			return nil, nil, fmt.Errorf("loadgen: organisation %q was seeded %d slots and "+
+				"conditioning wants %d of them, leaving the measured population nothing to "+
+				"book; the fixture must cover conditioning *and* the measured interval",
+				population.Org, len(population.Slots), conditioningSlotsPerOrg)
+		}
+
+		// Conditioning takes the head of each organisation's slice and the measured
+		// population takes the tail. Which end is arbitrary; that they are taken from one
+		// slice in one place is not.
+		conditioning = append(conditioning, OrgPopulation{
+			Org:   population.Org,
+			Slots: population.Slots[:conditioningSlotsPerOrg],
+		})
+		measured = append(measured, OrgPopulation{
+			Org:   population.Org,
+			Slots: population.Slots[conditioningSlotsPerOrg:],
+		})
+	}
+
+	return conditioning, measured, nil
 }

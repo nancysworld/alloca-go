@@ -121,6 +121,37 @@ type MutDisp4 struct {
 	// identity, population and demand shape must not vary with the topology, which is what
 	// makes G1, G2 and G4 comparable at all.
 	Group string
+	// Phase separates conditioning traffic from the measured population. It changes the
+	// identity and key namespaces this instance mints in and nothing else: conditioning has
+	// to drive the *same* mutation path against the *same* physical tables, or the state it
+	// establishes is not the state the measurement then runs against.
+	Phase Phase
+}
+
+// Phase names which population a request belongs to.
+//
+// The distinction is the measurement contract's, not a convenience: conditioning requests
+// establish the declared starting state and are retained separately, while the measured
+// population owns Goodput, latency and every rate whose denominator is the measured interval
+// (measurement-contract.md §12.1).
+type Phase string
+
+const (
+	// PhaseMeasured is the population a capacity number is read from. It is the zero value,
+	// so a workload built without thinking about phases is the measured one.
+	PhaseMeasured Phase = ""
+	// PhaseConditioning establishes representative table state before the measured interval
+	// opens. It is not discarded warm-up: its requests, outcomes and mutations are retained
+	// and reconciled, they are simply not measured performance.
+	PhaseConditioning Phase = "conditioning"
+)
+
+// identityPrefix is the user-identity namespace this phase mints in.
+func (p Phase) identityPrefix() string {
+	if p == PhaseConditioning {
+		return "c"
+	}
+	return "u"
 }
 
 // Name is the catalog identity, deliberately independent of the group. It is what the
@@ -136,10 +167,14 @@ func (MutDisp4) Name() string { return "wl-mut-disp-4" }
 // a retained key could not be attributed to the stream that issued it, and a later analysis
 // joining client keys to persisted rows would find one key with two homes.
 func (m MutDisp4) keyNamespace() string {
-	if m.Group == "" {
-		return m.Name()
+	namespace := m.Name()
+	if m.Phase != PhaseMeasured {
+		namespace += "-" + string(m.Phase)
 	}
-	return m.Name() + "-" + m.Group
+	if m.Group != "" {
+		namespace += "-" + m.Group
+	}
+	return namespace
 }
 func (MutDisp4) IntendsReplays() bool { return false }
 
@@ -164,7 +199,16 @@ func (m MutDisp4) Do(ctx context.Context, c *Client, seq int) []Response {
 	// same-organisation by construction rather than by a check. seq keeps the identity
 	// distinct per request, so the dispersed shape does not collapse into the hot-identity
 	// control's serialization on a single user row.
-	user := User{OrganisationID: population.Org, UserID: domain.UserID(fmt.Sprintf("u-%d", seq))}
+	//
+	// The prefix carries the phase, so conditioning claims a disjoint set of identities from
+	// the measured population rather than the same ones. Disjoint slots alone would not be
+	// enough: a user's schedule is its own serialization authority, so reusing the identities
+	// would let conditioning's claims contend with measured ones on rows the measured
+	// population is supposed to have to itself (measurement-contract §5, conditioning gate).
+	user := User{
+		OrganisationID: population.Org,
+		UserID:         domain.UserID(fmt.Sprintf("%s-%d", m.Phase.identityPrefix(), seq)),
+	}
 
 	reserved := c.Reserve(ctx, user, slot, c.key(m.keyNamespace(), seq, "reserve"))
 	out := []Response{reserved}

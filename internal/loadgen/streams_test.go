@@ -3,8 +3,10 @@ package loadgen_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -24,6 +26,7 @@ type pacedUnit struct {
 	mu       sync.Mutex
 	requests int
 	keys     []string
+	users    []string
 }
 
 func newPacedUnit(t *testing.T, delay time.Duration) (*pacedUnit, string) {
@@ -32,9 +35,15 @@ func newPacedUnit(t *testing.T, delay time.Duration) (*pacedUnit, string) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(unit.delay)
 
+		var body struct {
+			UserID string `json:"user_id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+
 		unit.mu.Lock()
 		unit.requests++
 		unit.keys = append(unit.keys, r.Header.Get("Idempotency-Key"))
+		unit.users = append(unit.users, body.UserID)
 		unit.mu.Unlock()
 
 		w.Header().Set("Content-Type", "application/json")
@@ -57,6 +66,12 @@ func (u *pacedUnit) mintedKeys() []string {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return append([]string(nil), u.keys...)
+}
+
+func (u *pacedUnit) mintedUsers() []string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]string(nil), u.users...)
 }
 
 // twoGroupFixture is the G2 placement: `org-a`/`org-b` on authority-1, `org-c`/`org-d` on
@@ -96,7 +111,7 @@ func twoGroupFixture(t *testing.T, slow time.Duration) (*loadgen.Client, *pacedU
 	if err != nil {
 		t.Fatalf("building groups: %v", err)
 	}
-	streams, err := loadgen.NewMutDisp4Streams(populations, groups, false)
+	streams, err := loadgen.NewMutDisp4Streams(populations, groups, false, loadgen.PhaseMeasured)
 	if err != nil {
 		t.Fatalf("building streams: %v", err)
 	}
@@ -275,5 +290,147 @@ func TestRunStreamsRefusesAStreamSetItCannotAttribute(t *testing.T) {
 					"to a group is a configuration error, not a run with a caveat")
 			}
 		})
+	}
+}
+
+// TestConditioningAndMeasuredPopulationsShareNothing is the conditioning gate's disjointness
+// clause (measurement-contract §5).
+//
+// Conditioning has to leave representative rows in the same physical tables, so it cannot be
+// separated by pointing it at a different fixture. What must be disjoint is what it *claims*:
+// the slots whose capacity it spends, the identities whose schedules it occupies, and the
+// idempotency keys it mints. Overlap in any of the three would let the conditioning phase
+// consume the measured population's headroom, which invalidates the capacity point while
+// presenting as ordinary contention.
+func TestConditioningAndMeasuredPopulationsShareNothing(t *testing.T) {
+	slotsByOrg := map[domain.OrganisationID][]loadgen.Slot{}
+	for _, org := range []domain.OrganisationID{"org-a", "org-b", "org-c", "org-d"} {
+		var slots []loadgen.Slot
+		for i := range 6 {
+			slots = append(slots, loadgen.Slot{
+				OrganisationID: org,
+				SlotID:         domain.SlotID(fmt.Sprintf("%s-%d", org, i)),
+			})
+		}
+		slotsByOrg[org] = slots
+	}
+	populations, err := loadgen.NewOrgPopulations(slotsByOrg)
+	if err != nil {
+		t.Fatalf("building populations: %v", err)
+	}
+
+	conditioning, measured, err := loadgen.SplitPopulationsForConditioning(populations, 2)
+	if err != nil {
+		t.Fatalf("splitting populations: %v", err)
+	}
+
+	// Every organisation survives the split on both sides. A phase that silently dropped one
+	// would condition three organisations and measure four, and the unconditioned authority
+	// would carry the cold-plan regime into the measured interval alone.
+	if len(conditioning) != len(populations) || len(measured) != len(populations) {
+		t.Fatalf("split produced %d conditioning and %d measured populations, want %d each",
+			len(conditioning), len(measured), len(populations))
+	}
+
+	claimed := map[domain.SlotID]string{}
+	for _, population := range conditioning {
+		for _, slot := range population.Slots {
+			claimed[slot.SlotID] = "conditioning"
+		}
+	}
+	for _, population := range measured {
+		for _, slot := range population.Slots {
+			if phase, taken := claimed[slot.SlotID]; taken {
+				t.Errorf("slot %q is in both the %s and measured populations; conditioning "+
+					"would spend fixture the capacity point depends on", slot.SlotID, phase)
+			}
+		}
+	}
+
+	// The whole fixture is used: a split that quietly dropped slots would shrink the measured
+	// population without saying so, and the fixture-headroom calculation would be wrong in
+	// the dangerous direction.
+	var total int
+	for i := range conditioning {
+		total += len(conditioning[i].Slots) + len(measured[i].Slots)
+	}
+	if want := len(populations) * 6; total != want {
+		t.Errorf("the split accounts for %d slots, want the whole seeded %d", total, want)
+	}
+}
+
+// The two phases must also mint disjoint identities and idempotency keys against the same
+// authority, which the slot split alone does not give: a user's schedule is its own
+// serialization authority, and a shared key namespace would make conditioning's records
+// replayable by measured requests.
+func TestConditioningMintsADisjointIdentityAndKeyNamespace(t *testing.T) {
+	unit, url := newPacedUnit(t, 0)
+	client := loadgen.NewRoutedClient(loadgen.SingleTarget(url), 5*time.Second, true).WithRunID("run-1")
+
+	population := []loadgen.OrgPopulation{{
+		Org:   "org-a",
+		Slots: []loadgen.Slot{{OrganisationID: "org-a", SlotID: "a-1"}},
+	}}
+	usersByPhase := map[loadgen.Phase][]string{}
+	for _, phase := range []loadgen.Phase{loadgen.PhaseConditioning, loadgen.PhaseMeasured} {
+		before := len(unit.mintedUsers())
+		workload := loadgen.MutDisp4{Orgs: population, Group: "authority-1", Phase: phase}
+		loadgen.NewRunner(client, loadgen.Options{Concurrency: 1, Iterations: 3}).
+			Run(context.Background(), workload)
+		usersByPhase[phase] = unit.mintedUsers()[before:]
+	}
+
+	// The identities, not only the keys. A user's schedule is its own serialization
+	// authority, so reusing an identity would let conditioning's claims contend with the
+	// measured population's on rows it is supposed to have to itself — and that contention
+	// would present as ordinary latency rather than as a fixture error.
+	conditioningUsers := map[string]bool{}
+	for _, user := range usersByPhase[loadgen.PhaseConditioning] {
+		conditioningUsers[user] = true
+	}
+	if len(conditioningUsers) == 0 {
+		t.Fatal("the conditioning phase minted no identities, so nothing was checked")
+	}
+	for _, user := range usersByPhase[loadgen.PhaseMeasured] {
+		if conditioningUsers[user] {
+			t.Errorf("identity %q is used by both phases; conditioning's claims would contend "+
+				"with the measured population on that user's schedule", user)
+		}
+	}
+
+	keys := unit.mintedKeys()
+	if len(keys) == 0 {
+		t.Fatal("no requests were observed, so nothing was checked")
+	}
+	seen := map[string]bool{}
+	var conditioningKeys int
+	for _, key := range keys {
+		if seen[key] {
+			t.Errorf("key %q was minted by both phases; a measured request replaying a "+
+				"conditioning record commits nothing and reports goodput short by that "+
+				"population", key)
+		}
+		seen[key] = true
+		if strings.Contains(key, string(loadgen.PhaseConditioning)) {
+			conditioningKeys++
+		}
+	}
+	if conditioningKeys == 0 {
+		t.Error("no key names the conditioning phase, so the retained artifact cannot say " +
+			"which population a record belongs to")
+	}
+}
+
+// Conditioning may not be sized to leave the measured population nothing to book.
+func TestSplitRefusesAConditioningPhaseThatWouldEatTheFixture(t *testing.T) {
+	populations := []loadgen.OrgPopulation{{
+		Org:   "org-a",
+		Slots: []loadgen.Slot{{OrganisationID: "org-a", SlotID: "a-1"}, {OrganisationID: "org-a", SlotID: "a-2"}},
+	}}
+	for _, conditioningSlots := range []int{0, 2, 3} {
+		if _, _, err := loadgen.SplitPopulationsForConditioning(populations, conditioningSlots); err == nil {
+			t.Errorf("a %d-slot conditioning phase against a 2-slot organisation was accepted",
+				conditioningSlots)
+		}
 	}
 }

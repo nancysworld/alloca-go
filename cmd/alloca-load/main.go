@@ -684,7 +684,7 @@ func buildStreams(name string, spec workloadSpec) ([]loadgen.Stream, error) {
 	if err != nil {
 		return nil, err
 	}
-	return loadgen.NewMutDisp4Streams(populations, groups, spec.Confirm)
+	return loadgen.NewMutDisp4Streams(populations, groups, spec.Confirm, loadgen.PhaseMeasured)
 }
 
 // slotsByOrgFor seeds the same per-organisation datasets orgPopulations does, so the streams

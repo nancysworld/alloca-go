@@ -130,7 +130,7 @@ incidental complexity.
 ### 2.1 How the contingency is spent
 
 **Completed work returns unused allocation to contingency rather than to scope.** PR3a came in at
-1.0 against 3.0 and returned 2.0; PR3c came in at 1.5 against 2.0 (§2.1.2). The
+1.0 against 3.0 and returned 2.0; PR3c came in at 1.5 against 2.0 and returned 0.5 (§2.1.2). The
 figures recorded are conservative under the half-day rule rather than attempts to account for
 hours precisely.
 
@@ -663,7 +663,7 @@ external provisioning prevents its test.
 PR5 then records the required Analyse & Review outcome and closes the **AG-Sept** engineering loop.
 It does not start the next Alloca iteration. Any continuation after AG-Sept begins with a separate
 kickoff that chooses the next Goal and Problem from the evidence, roadmap, and priorities current at
-that time.
+the time.
 
 **After PR5 and before the repository is made public**, complete §7's pre-publication documentation
 pass. This is a public-readiness gate, not a new technical iteration: it improves how the settled

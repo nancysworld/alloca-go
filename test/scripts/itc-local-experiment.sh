@@ -71,6 +71,55 @@ stage="$1"; shift || true
 # The target is a state, not a duration (§4.6.2). Its value is provisional and is exactly what
 # the qualification stage exists to test: enough committed mutations that the tables the workload
 # grows are no longer empty when the recycled pool opens its connections against them.
+# Mount points the agent sandbox leaves in the repository root.
+#
+# **What they are.** A sandboxed process sees `/dev/null` bind-mounted over each of these paths,
+# and a bind mount needs the path to exist, so the harness creates a zero-byte file first. Those
+# files used to be cleaned up; they are now left behind, and they land in exactly the place that
+# breaks the experiment: `git status --porcelain` is non-empty, so `go build` stamps
+# `vcs.modified=true`, `make image-provenance` refuses, and a long run dies at a gate that is
+# working perfectly (ag-sept-pr4.md §3.6).
+#
+# **Why the cleanup is here and not in preflight.** Any sandboxed command recreates all ten,
+# measured directly: delete them, run one unrelated command, and they are back. So a cleanup that
+# runs and then hands control back is useless — the next command undoes it. It has to run inside
+# the process that will reach the gate, which is this one, because nothing between here and the
+# gate is sandboxed.
+#
+# **This is an environment workaround, not a repository concern**, and it should be deleted the
+# day the harness stops leaving them. It is scoped as narrowly as that allows: named files only,
+# and it refuses rather than deletes anything that is tracked, non-empty, or a directory — because
+# every one of these names could one day be a real file. `.mcp.json` is the likeliest: a
+# project-level MCP configuration would live at exactly this path.
+SANDBOX_PLACEHOLDERS=".bash_profile .bashrc .gitconfig .gitmodules .idea .mcp.json .profile .ripgreprc .zprofile .zshrc"
+
+clear_sandbox_placeholders() {
+  local removed=0 name
+  for name in $SANDBOX_PLACEHOLDERS; do
+    [ -e "$name" ] || continue
+
+    if git ls-files --error-unmatch "$name" >/dev/null 2>&1; then
+      fail "$name is tracked by this repository, so it is not a sandbox mount point. Refusing to
+  remove it. If the experiment cannot run with it present, that is a decision for a person."
+    fi
+    if [ -d "$name" ]; then
+      fail "$name is a directory, so it is not a sandbox mount point — a real .idea would be one.
+  Refusing to remove it."
+    fi
+    if [ -s "$name" ]; then
+      fail "$name has content, so it is not an empty sandbox mount point. Refusing to remove it:
+  a project-level .mcp.json would look exactly like this and is not the harness's."
+    fi
+
+    rm -f "$name" && removed=$((removed + 1))
+  done
+
+  if [ "$removed" -gt 0 ]; then
+    log "cleared $removed empty sandbox mount point(s) from the repository root, so the"
+    log "clean-tree gates below judge the repository rather than the harness"
+  fi
+}
+
 # build_generator rebuilds the load generator from the current tree.
 #
 # **The stages that drive load call this rather than trusting whatever is in bin/.** A generator
@@ -83,6 +132,7 @@ stage="$1"; shift || true
 # It is also the only way a build can happen where the tree is genuinely clean, since the stamp is
 # a function of the tree state at build time and nothing else.
 build_generator() {
+  clear_sandbox_placeholders
   go build -o bin/alloca-load ./cmd/alloca-load \
     || fail "could not build the generator"
   local revision modified
@@ -145,8 +195,17 @@ case "$stage" in
 
     printf '\n--- tree state --------------------------------------------------------------\n'
     dirty="$(git status --porcelain | wc -l)"
+    placeholders=0
+    for name in $SANDBOX_PLACEHOLDERS; do
+      [ -e "$name" ] && [ ! -s "$name" ] && [ ! -d "$name" ] && placeholders=$((placeholders + 1))
+    done
     if [ "$dirty" -eq 0 ]; then
       printf '  ok    the tree is clean, so a build stamps vcs.modified=false and can certify\n'
+    elif [ "$dirty" -eq "$placeholders" ]; then
+      # Named rather than counted. "10 uncommitted paths" sends a reader looking for their own
+      # unfinished work; this says whose they are and that a driving stage removes them.
+      printf '  --    %s empty sandbox mount point(s) and nothing else. A driving stage clears\n' "$placeholders"
+      printf '        these itself; they are the harness, not the repository.\n'
     else
       printf '  !!    %s uncommitted path(s): every clean-tree gate below will refuse, and a\n' "$dirty"
       printf '        binary built from this tree stamps vcs.modified=true and certifies at no\n'
@@ -195,6 +254,7 @@ case "$stage" in
     export RESULTS_GROUP="${RESULTS_GROUP:-pr4a-conditioning}"
     export REQUIRE="${REQUIRE:-local}"
 
+    clear_sandbox_placeholders
     build_generator
     log "qualifying conditioning at G1: one conditioned cell, executed-plan and planner-state"
     log "probes both on, workers/group=$ITC_WORKERS_PER_GROUP window=$WINDOW"
@@ -235,6 +295,7 @@ case "$stage" in
     export ITC_POOL_ARMS="${ITC_POOL_ARMS:-4 8}"
     export RESULTS_GROUP="${RESULTS_GROUP:-pr4a-pool}"
 
+    clear_sandbox_placeholders
     build_generator
     log "pool sensitivity at G1 over the conditioned path: arms [$ITC_POOL_ARMS] at"
     log "workers/group=$ITC_WORKERS_PER_GROUP"

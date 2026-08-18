@@ -417,7 +417,7 @@ with the business deadline.
    | `ReadHeaderTimeout` | Receipt of request headers | Independent — protects header receipt; unrelated to request execution time |
    | `ReadTimeout` | Reading the full request (headers + body) | Sized to the maximum supported request-upload duration / body size; not compared to the business deadline |
    | `WriteTimeout` | Handler execution + response write | **> server request deadline + explicit response-writing margin**, so the Go context deadline fires first and yields a classified `timeout_server` / `timeout_db` (§4) rather than a connection-write teardown |
-   | `IdleTimeout` | Keep-alive inactivity between requests | Independent — not part of the nested mutation chain |
+   | `IdleTimeout` | Keep-alive inactivity between requests | Independent — not part of the nested mutation deadline chain |
 
    The load-balancer idle timeout is likewise a connection-inactivity control, outside
    the per-request chain, and must sit above the client end-to-end deadline.

@@ -134,55 +134,100 @@ func (s sharedPoolRoundRobin) Do(ctx context.Context, c *loadgen.Client, seq int
 	return s.streams[seq%len(s.streams)].Workload.Do(ctx, c, seq)
 }
 
+// The fixture both halves of VAL-NEG-8 are driven with. Shared so the two designs are compared
+// under one set of parameters rather than two that could drift.
+const (
+	negWindow  = 600 * time.Millisecond
+	negWorkers = 4
+	negSlow    = 40 * time.Millisecond
+	negGroups  = 2
+)
+
+// demandIndependence is the VAL-NEG-8 predicate, applied to whatever design produced the counts.
+//
+// **It compares the two groups inside one run, never one run against another.** The first
+// version of this test measured the healthy group beside a slow one and again alone, and
+// required the two numbers to be within 25%. That is a comparison of two independently timed
+// samples: on a shared CI runner it read 1569 against 2652 and failed, while the slow group had
+// completed 60 requests either way — so demand independence plainly held and the assertion was
+// measuring the machine. A within-run ratio cancels machine speed out, because both numbers come
+// from the same run on the same hardware.
+//
+// Two independent signals, because they fail differently:
+//
+//   - the *ratio*. With independent pools the healthy group runs at its own speed while the slow
+//     one is gated by its latency, so the ratio is ~90. Sharing the pool makes every worker
+//     alternate, so both groups are gated by the slow one and the ratio collapses to ~1.0. Two
+//     orders of magnitude separate them;
+//   - an absolute floor *derived from the fixture*, not from this machine. A shared pool cannot
+//     complete more than totalWorkers × window/delay logical units in the whole run, because each
+//     unit costs the slow group's latency. The healthy group alone exceeding several times that
+//     total is something no shared-pool design can produce at any clock speed.
+func demandIndependence(fast, slow int) error {
+	if slow == 0 {
+		return fmt.Errorf("the slow group served nothing at all, so the fixture is not " +
+			"exercising the divergence this control detects")
+	}
+
+	// The thresholds are set against measured values at both ends rather than chosen round
+	// numbers. Independent pools: healthy ~4700-5400, slow 60, ratio 79-91 locally under -race,
+	// and healthy 1569 on the CI runner that first failed this test. Shared pool: healthy 119,
+	// slow 120, ratio 1.0, and healthy cannot exceed the ceiling below by construction. So any
+	// threshold between the two discriminates; these sit roughly in the middle of that range,
+	// leaving ~3x margin against the defect and ~4x against the slowest healthy run observed.
+	//
+	// The slow group's count is the stable half of the ratio: it is latency-bound at
+	// workers × window/delay = 60 whatever the machine's speed, which is why the ratio moves
+	// only with the healthy group.
+	sharedPoolCeiling := negWorkers * negGroups * int(negWindow/negSlow)
+	if fast <= 3*sharedPoolCeiling {
+		return fmt.Errorf("the healthy group completed %d requests, within reach of the %d a "+
+			"single shared pool could complete in this whole run: its workers are being gated "+
+			"by the slow group's latency, which is the coupling VAL-NEG-8 forbids",
+			fast, sharedPoolCeiling)
+	}
+
+	if ratio := float64(fast) / float64(slow); ratio < 10 {
+		return fmt.Errorf("the healthy group completed %d requests against the slow group's %d "+
+			"(ratio %.1f): with independent pools the healthy group runs at its own speed and "+
+			"the ratio is large, and a ratio near 1 is what sharing workers produces",
+			fast, slow, ratio)
+	}
+	return nil
+}
+
 // TestOneSlowGroupDoesNotThrottleAHealthyGroup is VAL-NEG-8.
 //
-// The property is not "both groups completed similar work" — they must not, since one
-// authority is ten times slower — but that the healthy group's *offered demand* is what it
-// would have been alone. The reference run establishes that number rather than assuming it,
-// because a hard-coded expectation would encode this machine's speed.
+// The property is not "both groups completed similar work" — they must not, since one authority
+// is ten times slower — but that the healthy group keeps issuing at its own pace while its
+// neighbour is stalled.
 func TestOneSlowGroupDoesNotThrottleAHealthyGroup(t *testing.T) {
 	const (
-		window  = 600 * time.Millisecond
-		workers = 4
-		slow    = 40 * time.Millisecond
+		window  = negWindow
+		workers = negWorkers
+		slow    = negSlow
 	)
 
-	// Reference: the healthy group alone, no slow neighbour in the run at all.
-	client, _, fastAlone, streams := twoGroupFixture(t, slow)
-	runner := loadgen.NewRunner(client, loadgen.Options{WorkersPerGroup: workers, Duration: window})
-	if _, err := runner.RunStreams(context.Background(), streams[1:]); err != nil {
-		t.Fatalf("reference run: %v", err)
-	}
-	alone := fastAlone.served()
-	if alone == 0 {
-		t.Fatal("the reference run served nothing, so it cannot bound anything")
-	}
-
-	// The measurement: both groups, independent pools.
 	client, slowUnit, fastUnit, streams := twoGroupFixture(t, slow)
-	runner = loadgen.NewRunner(client, loadgen.Options{WorkersPerGroup: workers, Duration: window})
+	if len(streams) != negGroups {
+		t.Fatalf("fixture built %d groups, want %d: the derived shared-pool ceiling assumes it",
+			len(streams), negGroups)
+	}
+	runner := loadgen.NewRunner(client, loadgen.Options{WorkersPerGroup: workers, Duration: window})
 	summary, err := runner.RunStreams(context.Background(), streams)
 	if err != nil {
 		t.Fatalf("independent run: %v", err)
 	}
 
-	// The slow group must actually have been slow, or the control proved nothing.
-	if slowUnit.served() == 0 {
-		t.Fatal("the slow group served nothing at all; the fixture is not exercising the case")
-	}
-	if ratio := float64(fastUnit.served()) / float64(slowUnit.served()); ratio < 4 {
-		t.Fatalf("the two groups completed comparable work (%d fast vs %d slow); the delay is "+
-			"not diverging their response times and the control is not discriminating",
-			fastUnit.served(), slowUnit.served())
+	if err := demandIndependence(fastUnit.served(), slowUnit.served()); err != nil {
+		t.Error(err)
 	}
 
-	// The healthy group kept its own demand. The margin is wide because this is a timing
-	// test: the defect it detects costs an order of magnitude, not a few percent.
-	if floor := alone * 3 / 4; fastUnit.served() < floor {
-		t.Errorf("the healthy group completed %d requests beside a slow group but %d alone: "+
-			"its offered demand fell with another group's latency, which is the coupling "+
-			"VAL-NEG-8 forbids", fastUnit.served(), alone)
-	}
+	// Reported whether or not the assertions passed: a future failure on someone else's machine
+	// is far easier to read against the numbers this one produced.
+	t.Logf("independent pools: healthy=%d slow=%d ratio=%.1f",
+		fastUnit.served(), slowUnit.served(),
+		float64(fastUnit.served())/float64(slowUnit.served()))
 
 	// Per-group accounting must be present and attributable, since the capacity comparison
 	// reads it: an aggregate alone cannot show one saturated group and three starved ones.
@@ -215,32 +260,26 @@ func TestOneSlowGroupDoesNotThrottleAHealthyGroup(t *testing.T) {
 // If this test ever stops seeing the collapse, the control above has stopped discriminating
 // and its passing says nothing.
 func TestSharedPoolRoundRobinFailsTheDemandIndependenceControl(t *testing.T) {
-	const (
-		window  = 600 * time.Millisecond
-		workers = 4
-		slow    = 40 * time.Millisecond
-	)
-
-	client, _, fastAlone, streams := twoGroupFixture(t, slow)
-	runner := loadgen.NewRunner(client, loadgen.Options{WorkersPerGroup: workers, Duration: window})
-	if _, err := runner.RunStreams(context.Background(), streams[1:]); err != nil {
-		t.Fatalf("reference run: %v", err)
-	}
-	alone := fastAlone.served()
-
-	// Same total workers as the independent run — 2 groups × 4 — so the difference is the
-	// pool structure and not the demand.
-	client, slowUnit, fastUnit, streams := twoGroupFixture(t, slow)
-	shared := loadgen.NewRunner(client, loadgen.Options{Concurrency: workers * len(streams), Duration: window})
+	// Same total workers as the independent run — 2 groups × 4 — so the difference between the
+	// two tests is the pool structure and nothing else.
+	client, slowUnit, fastUnit, streams := twoGroupFixture(t, negSlow)
+	shared := loadgen.NewRunner(client, loadgen.Options{
+		Concurrency: negWorkers * len(streams),
+		Duration:    negWindow,
+	})
 	shared.Run(context.Background(), sharedPoolRoundRobin{streams: streams})
 
-	if slowUnit.served() == 0 {
-		t.Fatal("the slow group served nothing at all; the fixture is not exercising the case")
-	}
-	if floor := alone * 3 / 4; fastUnit.served() >= floor {
-		t.Fatalf("the shared-pool design served %d healthy requests against %d alone, which "+
-			"passes the VAL-NEG-8 assertion: the control does not discriminate between the "+
-			"two designs and proves nothing about the new one", fastUnit.served(), alone)
+	t.Logf("shared pool: healthy=%d slow=%d ratio=%.1f",
+		fastUnit.served(), slowUnit.served(),
+		float64(fastUnit.served())/float64(slowUnit.served()))
+
+	// The *same* predicate, not a mirror of it. A second assertion written to be the opposite of
+	// the first can drift from it, and then this test would be reporting that the old design
+	// fails a check the new one is no longer held to.
+	if err := demandIndependence(fastUnit.served(), slowUnit.served()); err == nil {
+		t.Fatalf("the shared-pool design passed the VAL-NEG-8 predicate (healthy=%d slow=%d): "+
+			"the control does not discriminate between the two designs, so the new one passing "+
+			"it says nothing", fastUnit.served(), slowUnit.served())
 	}
 }
 

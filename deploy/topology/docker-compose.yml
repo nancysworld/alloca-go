@@ -19,9 +19,39 @@
 #     unlikely;
 #   - **each unit names its own authority.** The unit refuses to start if the map does not
 #     assign it any organisation, so a typo here fails at boot rather than serving nothing.
+#
+# **Group count is a profile, and the placement document is a variable.** Iteration C compares
+# the same workload at one, two and four shard groups (ag-sept-validation-plan.md §4.6), so the
+# file has to raise all three shapes without becoming three files that drift apart. Authority 1
+# is unconditional; 2 joins under the `g2` and `g4` profiles and 3/4 under `g4`, which makes the
+# group count the only thing a caller chooses. `make topo-up` passes `--profile g2` so the PR3b
+# two-authority recipe every earlier report cites still means what it meant.
+#
+# The placement document must be chosen with the profile and cannot be defaulted safely: a
+# four-unit topology mounted with a two-authority map would leave units 3 and 4 assigned nothing
+# and refuse to boot — the good case — while a *one*-unit topology mounted with the four-authority
+# map boots happily and silently drops three quarters of the organisations onto an authority that
+# is not running. `make itc-up` pairs the two, and nothing else should mount them by hand.
 
 name: alloca-topology
 
+# **`ALLOCA_POOL_MAX_CONNS` is an optional, inert-by-default pool override.**
+#
+# Unset — which is every run committed before it existed — the `:+` expansion contributes nothing
+# and each DATABASE_URL is byte-identical to what it was, so pgxpool keeps choosing its own
+# default. That matters: under the rehearsal's two-CPU cpuset that default is 4, unpinned it is
+# 16, and baking either number in here would silently change what an existing recipe measures.
+#
+# It exists for the bounded G1 pool-sensitivity preflight PR4a owes before the retained
+# comparisons begin (ag-sept-validation-plan.md §4.6.3): the check has to vary the connection
+# ceiling deliberately, and `ALTER SYSTEM` or a hand-edited URL would leave no record in the
+# run's own artifacts of which ceiling it drove. Once the policy is chosen it is frozen — set
+# identically for G1, G2 and G4 — and the value the service actually opened is observable at
+# /meta as `pool_max_conns`, which is what the manifest records rather than this variable.
+#
+# Every service block below carries the same expansion, and itc-pool-check.sh is what stops the
+# four from drifting: three of four carrying it would produce a sensitivity result in which one
+# authority silently kept the default.
 x-service-base: &service-base
   image: alloca-go:${ALLOCA_IMAGE_TAG:-dev}
   # Graceful termination: the service drains in-flight requests on SIGTERM within its own
@@ -30,7 +60,7 @@ x-service-base: &service-base
   stop_grace_period: 30s
   restart: "no"
   volumes:
-    - ./placement.json:/etc/alloca/placement.json:ro
+    - ${ALLOCA_PLACEMENT_DOC:-./placement.json}:/etc/alloca/placement.json:ro
   # No container healthcheck. The runtime image has no shell and no curl by design (§9.1
   # forbids development tooling in it), and adding a probe-only mode to the production
   # binary to work around that would put a second, weaker definition of "ready" inside the
@@ -41,6 +71,18 @@ x-service-base: &service-base
 
 x-postgres-base: &postgres-base
   image: postgres:16-alpine
+  # Server arguments, empty by default. The image's own CMD is exactly ["postgres"], so with
+  # ALLOCA_PG_ARGS unset this reproduces the image default argument for argument and changes
+  # nothing — which is what makes it safe to leave committed rather than carried as a patch.
+  #
+  # It exists so a diagnostic can be switched on for one run without editing this file. `ALTER
+  # SYSTEM` is the obvious alternative and is worse here: it persists into postgresql.auto.conf
+  # inside the data volume, which `itc-down -v` destroys before every run, so it would have to be
+  # reapplied each time and would fail *silently* when it was not — turning "no autovacuum was
+  # logged" into a statement about the logging rather than about the database. As a start-up
+  # argument the setting lives and dies with the containers a run raises, so reverting it is not
+  # an operation.
+  command: postgres ${ALLOCA_PG_ARGS:-}
   environment:
     POSTGRES_USER: alloca
     POSTGRES_PASSWORD: alloca
@@ -65,6 +107,19 @@ services:
     <<: *postgres-base
     container_name: alloca-authority-2-db
     ports: ["${AUTHORITY_2_PGPORT:-15434}:5432"]
+    profiles: ["g2", "g4"]
+
+  authority-3-db:
+    <<: *postgres-base
+    container_name: alloca-authority-3-db
+    ports: ["${AUTHORITY_3_PGPORT:-15435}:5432"]
+    profiles: ["g4"]
+
+  authority-4-db:
+    <<: *postgres-base
+    container_name: alloca-authority-4-db
+    ports: ["${AUTHORITY_4_PGPORT:-15436}:5432"]
+    profiles: ["g4"]
 
   # One migration per authority. They run to completion and exit; the services below wait
   # for that exit rather than for the container merely to have started.
@@ -87,20 +142,51 @@ services:
     depends_on:
       authority-2-db: {condition: service_healthy}
     restart: "no"
+    profiles: ["g2", "g4"]
+
+  authority-3-migrate:
+    image: alloca-go:${ALLOCA_IMAGE_TAG:-dev}
+    container_name: alloca-authority-3-migrate
+    entrypoint: ["/usr/local/bin/alloca-migrate"]
+    environment:
+      DATABASE_URL: postgres://alloca:alloca@authority-3-db:5432/alloca?sslmode=disable
+    depends_on:
+      authority-3-db: {condition: service_healthy}
+    restart: "no"
+    profiles: ["g4"]
+
+  authority-4-migrate:
+    image: alloca-go:${ALLOCA_IMAGE_TAG:-dev}
+    container_name: alloca-authority-4-migrate
+    entrypoint: ["/usr/local/bin/alloca-migrate"]
+    environment:
+      DATABASE_URL: postgres://alloca:alloca@authority-4-db:5432/alloca?sslmode=disable
+    depends_on:
+      authority-4-db: {condition: service_healthy}
+    restart: "no"
+    profiles: ["g4"]
 
   service-1:
     <<: *service-base
     container_name: alloca-service-1
     ports:
       - "${SERVICE_1_PORT:-8081}:8080"
-      - "${SERVICE_1_METRICS_PORT:-9091}:9090"
+      # Metrics mirror the HTTP ports: unit n serves on 808n and publishes metrics on 908n.
+      #
+      # **Not 9091-9094.** Those collided head-on with Prometheus, which publishes 9091 and is
+      # referenced as Prometheus by sweep.sh, export-panels.sh and the Grafana datasource. The
+      # two stacks never ran together before Iteration C — PR2 measured a host-run service and
+      # PR3b/PR3c scraped the topology directly without Prometheus — so `make obs-up` after
+      # `make itc-up` failed with "Bind for 0.0.0.0:9091 failed: port is already allocated",
+      # and `9091` already meant two different things in two different documents.
+      - "${SERVICE_1_METRICS_PORT:-9081}:9090"
     environment:
       ALLOCA_PLACEMENT_FILE: /etc/alloca/placement.json
       ALLOCA_LISTEN_ADDR: ":8080"
       METRICS_ADDR: ":9090"
       ALLOCA_TELEMETRY: ${ALLOCA_TELEMETRY:-full}
       ALLOCA_AUTHORITY_ID: authority-1
-      DATABASE_URL: postgres://alloca:alloca@authority-1-db:5432/alloca?sslmode=disable
+      DATABASE_URL: postgres://alloca:alloca@authority-1-db:5432/alloca?sslmode=disable${ALLOCA_POOL_MAX_CONNS:+&pool_max_conns=${ALLOCA_POOL_MAX_CONNS}}
     depends_on:
       authority-1-db: {condition: service_healthy}
       authority-1-migrate: {condition: service_completed_successfully}
@@ -110,14 +196,51 @@ services:
     container_name: alloca-service-2
     ports:
       - "${SERVICE_2_PORT:-8082}:8080"
-      - "${SERVICE_2_METRICS_PORT:-9092}:9090"
+      - "${SERVICE_2_METRICS_PORT:-9082}:9090"
     environment:
       ALLOCA_PLACEMENT_FILE: /etc/alloca/placement.json
       ALLOCA_LISTEN_ADDR: ":8080"
       METRICS_ADDR: ":9090"
       ALLOCA_TELEMETRY: ${ALLOCA_TELEMETRY:-full}
       ALLOCA_AUTHORITY_ID: authority-2
-      DATABASE_URL: postgres://alloca:alloca@authority-2-db:5432/alloca?sslmode=disable
+      DATABASE_URL: postgres://alloca:alloca@authority-2-db:5432/alloca?sslmode=disable${ALLOCA_POOL_MAX_CONNS:+&pool_max_conns=${ALLOCA_POOL_MAX_CONNS}}
     depends_on:
       authority-2-db: {condition: service_healthy}
       authority-2-migrate: {condition: service_completed_successfully}
+    profiles: ["g2", "g4"]
+
+  service-3:
+    <<: *service-base
+    container_name: alloca-service-3
+    ports:
+      - "${SERVICE_3_PORT:-8083}:8080"
+      - "${SERVICE_3_METRICS_PORT:-9083}:9090"
+    environment:
+      ALLOCA_PLACEMENT_FILE: /etc/alloca/placement.json
+      ALLOCA_LISTEN_ADDR: ":8080"
+      METRICS_ADDR: ":9090"
+      ALLOCA_TELEMETRY: ${ALLOCA_TELEMETRY:-full}
+      ALLOCA_AUTHORITY_ID: authority-3
+      DATABASE_URL: postgres://alloca:alloca@authority-3-db:5432/alloca?sslmode=disable${ALLOCA_POOL_MAX_CONNS:+&pool_max_conns=${ALLOCA_POOL_MAX_CONNS}}
+    depends_on:
+      authority-3-db: {condition: service_healthy}
+      authority-3-migrate: {condition: service_completed_successfully}
+    profiles: ["g4"]
+
+  service-4:
+    <<: *service-base
+    container_name: alloca-service-4
+    ports:
+      - "${SERVICE_4_PORT:-8084}:8080"
+      - "${SERVICE_4_METRICS_PORT:-9084}:9090"
+    environment:
+      ALLOCA_PLACEMENT_FILE: /etc/alloca/placement.json
+      ALLOCA_LISTEN_ADDR: ":8080"
+      METRICS_ADDR: ":9090"
+      ALLOCA_TELEMETRY: ${ALLOCA_TELEMETRY:-full}
+      ALLOCA_AUTHORITY_ID: authority-4
+      DATABASE_URL: postgres://alloca:alloca@authority-4-db:5432/alloca?sslmode=disable${ALLOCA_POOL_MAX_CONNS:+&pool_max_conns=${ALLOCA_POOL_MAX_CONNS}}
+    depends_on:
+      authority-4-db: {condition: service_healthy}
+      authority-4-migrate: {condition: service_completed_successfully}
+    profiles: ["g4"]

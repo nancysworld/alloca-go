@@ -58,27 +58,45 @@ workstation, **not** a capacity multiplier.
 The accepted design remains owned by `horizontal-database-authority.md`; the durable A&R closure
 and next Problem are owned by `../../requirements/ag-sept.md`.
 
-### Iteration C — independently provisioned shard-group capacity
+### Iteration C — shard-group capacity, then independent-provisioning verification
 
 Iteration B's A&R selected the next **Problem**: how aggregate mutation capacity scales as
 independently provisioned shard groups are added for independent organisation workloads, what
 limits that scaling, and what workload and placement envelope each shard group should own.
 
-Requirements and Design now constrain the validation deliberately:
+The strongest requirement is unchanged: only an independently provisioned topology with equivalent
+growing capacity-unit envelopes can discharge `VAL-SCALE-5`. Iteration C now deliberately builds
+evidence in two layers rather than leaving useful workstation capacity unused while that external
+environment is quota-blocked:
+
+- **local controlled characterisation** — the same G1/G2/G4 workload and qualified measurement
+  method run on scheduler-partitioned shard groups inside one workstation. This can establish
+  `VAL-SCALE-6`, including `E2_local` and `E4_local`, but the groups still share a host/kernel/
+  storage path and the result is never promoted into `VAL-SCALE-5`;
+- **independently provisioned verification** — when the complete environment can actually be
+  provisioned, the same method runs on equivalent independent capacity-unit hosts. Tier 1 remains
+  the target and Tier 2 remains the bounded measurement-limited fallback defined in §4.6.
+
+Requirements and Design constrain both layers deliberately:
 
 - workload: `WL-MUT-DISP-4`, four equivalent independent organisations A/B/C/D;
 - shard-group axis: exactly **1, 2, and 4 groups**;
 - one service replica and one PostgreSQL authority per shard group, keeping service-replica count
   per group constant;
-- one equivalent AWS EC2 capacity-unit host per group and a separate generator host;
-- outputs: measured `G1`, `G2`, `G4`, derived 2-group and 4-group scale efficiencies, and the
-  limiting-resource interpretation;
+- **independent closed-loop demand per shard group**: each active group owns its own fixed worker
+  pool, so latency or saturation in one group cannot reduce the workers available to another;
+- the experiment variable is **`workers_per_group`** — closed-loop load-generator workers assigned
+  to one shard group — and is deliberately distinct from PostgreSQL/pool connection counts;
+- the pool policy, workload semantics, timeout policy, service image and PostgreSQL configuration
+  are fixed before the retained G1/G2/G4 comparisons begin;
+- independently provisioned verification uses one equivalent capacity-unit host per group plus
+  separate generator compute under `deployment-architecture.md` §13;
 - **no efficiency threshold**: obtaining and explaining the numeric result is the validation goal.
 
-Any capacity claim must also **explain, exclude, or conservatively bound shared-environment
-variation**. Iteration C does that by removing the workstation's fixed shared resource envelope
-from the comparison, retaining host/resource evidence for each capacity unit, and proving generator
-headroom separately.
+Any capacity/scaling claim must also **explain, exclude, or conservatively bound environment and
+measurement-system variation** at the evidence level it asserts. Local results carry the shared-host
+limitation explicitly; independently provisioned results additionally discharge the equivalent-host
+resource-envelope controls.
 
 ## 2. Validation principles
 
@@ -101,11 +119,11 @@ Replica or authority scale efficiency is compared only between runs with the sam
 semantics and compatible SLO/evidence status. Deliberate policy refusals, injected failures, and
 healthy-capacity runs are separate evidence classes.
 
-For Iteration C, the capacity-unit equivalence contract is owned by
-[`../../design/deployment-architecture.md`](../../design/deployment-architecture.md) §13.3. This
-plan selects that design rather than restating its fields: `G1`, `G2`, and `G4` use equivalent
-shard-group capacity units and the one-group baseline is measured in the same AWS environment as
-the multi-group points.
+Iteration C never mixes environments in one efficiency calculation. `G1_local`, `G2_local` and
+`G4_local` are one scheduler-partitioned workstation family. If independently provisioned evidence
+is later obtained, `G1_aws`, `G2_aws` and `G4_aws` are a second family whose capacity-unit
+equivalence contract is owned by [`../../design/deployment-architecture.md`](../../design/deployment-architecture.md)
+§13.3. A workstation baseline is never combined with an independently provisioned scale-out point.
 
 ### 2.4 Negative controls must be discriminating
 
@@ -255,70 +273,273 @@ Which of these are scheduled, in what order, and with what budget is owned by
 `docs/planning/ag-sept-plan.md`. A row here is a validation's meaning, not a commitment to run it
 in a particular milestone.
 
-### 4.6 Iteration C fixed capacity matrix
+### 4.6 Iteration C capacity method
 
-Iteration C is deliberately more constrained than the generic families above. It runs exactly the
-following placement matrix for `WL-MUT-DISP-4`:
+Iteration C keeps one topology/workload semantics across two evidence environments:
 
-| Capacity point | Shard groups | Organisation placement | Capacity-unit resources |
-|---|---:|---|---|
-| `G1` | 1 | `A B C D` | 1 equivalent shard-group EC2 host |
-| `G2` | 2 | `A B` / `C D` | 2 equivalent shard-group EC2 hosts |
-| `G4` | 4 | `A` / `B` / `C` / `D` | 4 equivalent shard-group EC2 hosts |
+| Point | Shard groups | Organisation placement |
+|---|---:|---|
+| `G1` | 1 | `A B C D` |
+| `G2` | 2 | `A B` / `C D` |
+| `G4` | 4 | `A` / `B` / `C` / `D` |
 
-Each group has **one service replica + one PostgreSQL authority**. The generator runs on separate
-EC2 compute and routes equal workload share for A/B/C/D according to the active placement map.
-`WL-MUT-DISP-4` keeps the request pair itself topology-independent: every user books a slot owned
-by the **same organisation** at `G1`, `G2`, and `G4`. The existing `multi-org-dispersed` workload,
-which deliberately includes colocated cross-organisation pairs, remains separate Iteration-B-style
-correctness coverage and must not be substituted into this capacity matrix.
+Each group has **one service replica + one PostgreSQL authority**. `WL-MUT-DISP-4` keeps the request
+pair topology-independent: every user books a slot owned by the **same organisation** at `G1`,
+`G2`, and `G4`. The existing `multi-org-dispersed` workload deliberately exercises colocated
+cross-organisation pairs and remains separate Iteration-B correctness coverage.
 
-The shard-group capacity units remain like-for-like under `deployment-architecture.md` §13.3; the
-workload semantics, service image, pool policy, timeout policy, and PostgreSQL configuration stay
-fixed across `G1`, `G2`, and `G4`.
+#### 4.6.1 Worker semantics and demand independence
 
-#### Capacity-point selection rule
+The experiment variable is **`workers_per_group`**, meaning closed-loop load-generator workers
+assigned to one shard group. This is not a PostgreSQL connection count and is not constrained to a
+multiple of `pool_max_conns`.
 
-A capacity point must be selected by the **same saturation rule** at all three topologies; it must
-not be the final rung merely because the sweep stopped there.
-
-For each topology:
-
-1. run a concurrency/load ladder far enough to establish the saturation region while preserving
-   the `measurement-contract.md` §3 capacity definition, §5 experiment/evidence gates, and §7
-   provisional SLO/outcome gates;
-2. select the highest gated rung whose sustained Goodput is followed by at least one higher rung
-   that either **does not produce higher sustained Goodput** or fails one of those gates — this is
-   the operational saturation-knee/plateau point for `G1`, `G2`, or `G4`;
-3. repeat that selected point once as a retained confirmation run;
-4. retain the complete ladder, the point-selection justification, reconciliation, and resource
-   evidence alongside the selected point and its repeat.
-
-PR2 report §5.6 and §6.3 are the reason this rule is explicit: with the current closed-loop harness,
-latency/deadline gates can remain comfortably non-binding while throughput has already saturated.
-Without a demonstrated higher rung, a sweep endpoint is not a capacity result and cannot enter
-`E2` or `E4`.
-
-If the two retained observations materially disagree, do not average the disagreement into a
-clean headline number: explain, exclude, or conservatively bound the variation before promoting a
-single capacity result.
-
-**Per-authority data volume is an intended co-varying factor of this sharding experiment.** `G1`
-places four organisation datasets on one authority while `G4` places one on each. Retain
-per-authority row/data-volume and, where practical, index/working-set evidence sufficient to make
-that change visible. A smaller per-authority working set may be part of what sharding buys; it must
-therefore be named when interpreting sub- or super-linear efficiency rather than silently treated
-as invariant.
-
-The experiment derives:
+For `workers_per_group = w`:
 
 ```text
-E2 = G2 / (2 × G1)
-E4 = G4 / (4 × G1)
+G1 total_workers = w
+G2 total_workers = 2w
+G4 total_workers = 4w
 ```
 
-under `measurement-contract.md` §3.1. `E2` and `E4` are **results, not gates**; no percentage is
-required for Iteration C to be sufficiently resolved.
+Every active group owns a separate fixed worker pool. A single physical generator may host all
+pools, but a worker blocked on group A may not reduce the workers available to B/C/D. Within a
+group, its workers distribute demand equally across the organisations assigned to that group.
+Per-group and aggregate request/outcome accounting are both retained.
+
+Historical PR4a labels predate this convention. In particular, old G4 `c16` means **16 total
+workers, approximately 4/group**, and old G4 `c32` means **32 total, approximately 8/group**. They
+must not be compared as though `c16` meant `workers_per_group=16`.
+
+One topology consequence is deliberate and must remain visible when interpreting the result. At a
+common `w`, per-organisation worker share is approximately `w/4` at G1, `w/2` at G2, and `w` at G4.
+The experiment holds **per-shard-group intensity** fixed because shard-group capacity is the object
+being scaled; it cannot simultaneously hold per-organisation intensity fixed. Per-organisation
+request distribution is therefore retained alongside the per-authority data/working-set trajectory.
+If organisation-local contention becomes material, that is workload-envelope evidence rather than a
+quantity to hide.
+
+#### 4.6.2 Conditioning is explicit state preparation, not discarded warm-up
+
+The PR4a diagnosis demonstrated that `TRUNCATE -> immediate peak load` repeatedly manufactures a
+cold/empty mutation-table planner state whose cached execution plan can outlive the fresh planner's
+own correction. The canonical sustained experiment must therefore not begin from that uncontrolled
+transient.
+
+Each retained capacity run uses this sequence:
+
+1. reset/reseed the declared fixture once;
+2. drive an explicit **conditioning phase** through the real mutation path until a fixed,
+   predeclared **state target** is reached. Prefer a per-organisation mutation target over a time
+   duration so faster and slower topologies do not begin measurement at different logical states;
+3. retain conditioning requests/outcomes separately and capture the persisted state/counters at the
+   conditioning boundary;
+4. deterministically recycle the service DB pool or restart the service, without reseeding or
+   removing the conditioned database state, so measured connections begin against the representative
+   table state rather than carrying plans made against empty mutation tables;
+5. pass readiness/provenance/observability checks, then open the measured interval.
+
+Conditioning uses the same physical tables and mutation path but must not create logical conflicts
+with the measured population; the implementation may use a disjoint conditioning identity/key/slot
+namespace inside the same fixture. Its mutations remain real state and fixture sizing includes both
+conditioning supply and measured supply.
+
+This is **not** the old arbitrary `-warm-up` behaviour whose requests disappear from accounting.
+`measurement-contract.md` §5 and §12 own the population boundary: conditioning is explicit and
+auditable, measured Goodput/latency begin only at the declared measured boundary, and final
+reconciliation accounts for the conditioning baseline plus the measured/resolution deltas. No
+traffic that mutates persisted state may be silently discarded.
+
+Cold-empty-database behaviour remains a legitimate separate workload question. It is simply not the
+capacity question Iteration C has selected.
+
+#### 4.6.3 Pool policy is qualified once, then fixed
+
+Before retained G1/G2/G4 capacity comparisons begin, a bounded G1 sensitivity check establishes
+that the chosen `pool_max_conns` is not an obviously removable connection-admission ceiling for the
+current shard-group resource shape. This is not a new pool-tuning matrix: the purpose is to choose a
+reasonable fixed policy, not optimise connection count.
+
+Once selected, pool policy stays identical across G1/G2/G4 within an evidence environment. If a
+later result shows the pool itself became the frontier, that is a measured limiting mechanism; the
+configuration is not silently changed mid-comparison.
+
+#### 4.6.4 Adaptive reconnaissance brackets saturation; it is not capacity evidence
+
+Iteration C does **not** require a low-to-high sustained ladder merely to discover where saturation
+might lie. Short, non-canonical reconnaissance probes may search adaptively in
+`workers_per_group`, beginning near the range suggested by prior/local evidence and moving upward or
+downward as necessary.
+
+Reconnaissance answers only: **which two worker levels should receive the expensive retained
+measurement?** It does not enter `E2`/`E4`, does not itself establish capacity, and is not promoted
+because a probe happened to look stable.
+
+Let:
+
+- `S` = the candidate selected worker level;
+- `H` = a higher worker level whose retained result is used to decide whether `S` is at the useful
+  sustained frontier.
+
+If `H` still produces materially higher gated sustained Goodput, the bracket is not found: move
+higher and repeat the reconnaissance/retained-point selection as necessary. There is **no fixed
+maximum such as 16 workers/group**; the upper bound is empirical and generator/resource gates still
+apply.
+
+#### 4.6.5 Retained closed-loop capacity points are 600 s, with both sides confirmed
+
+For each topology, once reconnaissance identifies a candidate bracket:
+
+1. establish the conditioned start state and run `S` for **600 s**;
+2. from a fresh reset/reseed/conditioning sequence, run `H` for **600 s**;
+3. from another fresh sequence, repeat `S` as a separate **600 s confirmation**;
+4. from another fresh sequence, repeat `H` as a separate **600 s confirmation**.
+
+The 600 s duration is a fixed Iteration C experiment parameter chosen to expose sustained behaviour
+well beyond the short cached-plan transient PR4a diagnosed. It is not a claim that ten minutes is a
+universal stationarity threshold; evidence may force a later explicit methodology revision.
+
+Each 600 s run is analysed as ten contiguous **60 s time slices** for stationarity/evolution. Those
+slices are observations of one trajectory, **not ten independent samples**. No destructive reset
+occurs between slices.
+
+**The comparison quantity is the full-600 s horizon average** (maintainer decision, 2026-08-18).
+Every Iteration C number that enters a comparison — `S` against `H`, a point against its
+confirmation, one topology against another, and any efficiency derived from them — is the
+**fresh-mutation Goodput over the whole 600 s measured interval, from the same fixed conditioned
+starting state**. Nothing is read from a sub-interval.
+
+This is a definition, not a workaround, and it exists because the trajectory is not stationary
+within the window. PR4a measured both topologies declining and then plateauing across the 600 s
+(`ag-sept-pr4.md` §3.21), which leaves two ways to state a run's Goodput and only one of them
+comparable:
+
+- **the horizon average**, which asks what the topology delivers over a fixed horizon from a fixed
+  starting state — a question every arm answers the same way; or
+- **a later plateau**, which asks what it settles to — and cannot be compared across arms, because
+  each arm reaches its plateau at a different elapsed time and a different accumulated dataset
+  size, so the selection itself would carry the difference the comparison is trying to measure.
+
+**The slices therefore describe and disqualify; they never select.** They show evolution, expose a
+run whose shape says it belongs to an invalid regime, and let a reader see what the average
+averages. Reading a headline number from slices 6–10 because the trajectory looks flatter there is
+exactly the cherry-picking this rule forbids, and it would make the reported figure a function of
+where the reader chose to start.
+
+**Dataset state at both ends of the interval is part of the evidence**, not an incidental
+observation. A horizon average is only interpretable beside the state it began from and the state
+it reached: the conditioned starting state is fixed and declared, and the per-authority row and
+data volume at the start and end of the measured interval are retained under §4.6.6. Two arms whose
+starting states differ are not comparable however carefully their averages are computed.
+
+Whether an indefinitely growing dataset is the right thing for this benchmark to represent at all
+is a separate and open question, carried to Analyse & Review rather than settled here.
+
+`S` is selected only when the `S/H` relationship is reproducible: the deciding `H` run and its
+confirmation both fail to produce higher sustained Goodput — the horizon average defined above —
+than the corresponding selected-point runs, or reproducibly fail a legitimate load-induced SLO/system gate. A fixture, generator,
+measurement-system, unrelated environment, or qualification failure at `H` cannot establish the
+knee. If the two `H` observations disagree materially, or either belongs to an unrelated invalid
+regime, the knee remains unresolved; investigate or move the bracket rather than averaging the
+disagreement into a result.
+
+This replaces the earlier rule that confirmed only the selected point. It also replaces the earlier
+canonical “every ladder rung is a sustained run” shape: short reconnaissance discovers the bracket;
+only the two load-bearing points and their independent confirmations receive the full retained
+600 s treatment.
+
+#### 4.6.6 Fixture and state trajectory are part of the evidence
+
+The selected point, deciding higher point, and both confirmations must retain enough clean fixture
+state to offer fresh mutations throughout conditioning **and** the full 600 s measured interval.
+Fixture sizing therefore uses the deepest intended bracket, an expected maximum useful rate, the
+600 s duration, the conditioning population, and explicit safety headroom. The same per-organisation
+fixture size is then reused unchanged across G1/G2/G4 within the comparison.
+
+An unexpected population of `business_refusal` attributable to spent fixture state invalidates the
+point rather than describing capacity. An all-refusal run remains sound/provenance-bearing if its
+accounting is correct, but it contains no mutation-capacity result.
+
+Retain the data trajectory as well as the start state. Per-authority row/data/index/working-set
+volume intentionally changes as four organisation datasets move from one authority at G1 to one per
+authority at G4, and table growth during 600 s may itself affect work per request. These are
+co-varying properties of the sharding experiment and must be named when interpreting scale
+efficiency.
+
+#### 4.6.7 Local sustained capacity characterisation
+
+The scheduler-partitioned workstation runs the complete method above and derives:
+
+```text
+E2_local = G2_local / (2 × G1_local)
+E4_local = G4_local / (4 × G1_local)
+```
+
+This discharges `VAL-SCALE-6` when the method/evidence gates hold. It is a quantitative capacity and
+scale characterisation of the **explicitly recorded local environment**, not rehearsal-only data.
+Its shared workstation/WSL kernel/storage/cache resources remain a first-class limitation, so
+`E2_local`/`E4_local` do not discharge `VAL-SCALE-5`, are not Tier 1 or Tier 2, and are never mixed
+with independently provisioned points.
+
+#### 4.6.8 Tier 1 — independently provisioned capacity verification
+
+Tier 1 remains the strongest Iteration C result and the only path here that can establish aggregate
+mutation-capacity scaling across independently provisioned shard groups.
+
+It presupposes a complete G1/G2/G4 family of equivalent independently provisioned capacity-unit
+hosts plus generator compute separate from the serving units. Apply the same qualified method,
+workload semantics and fixed configuration used to make the local result interpretable. AWS EC2 is
+the currently selected bounded mechanism under `deployment-architecture.md` §13, not an
+architectural requirement in itself.
+
+Derive only within that environment:
+
+```text
+E2_aws = G2_aws / (2 × G1_aws)
+E4_aws = G4_aws / (4 × G1_aws)
+```
+
+`E2_aws` and `E4_aws` are results, not gates. Where both local and AWS evidence exist, comparing
+`E*_local` with `E*_aws` is useful evidence about how well scheduler partitioning approximated
+independent resource envelopes; it does not retroactively promote the local result.
+
+If quota or another external provisioning limit prevents the complete equivalent G4 environment
+from existing, there is no Tier 1 result. Record the blocker and leave `VAL-SCALE-5` explicitly
+unproven; neither the complete local experiment nor a partial AWS topology substitutes for it.
+
+#### 4.6.9 Tier 2 — operating-point horizontal scale when a complete environment cannot be driven
+
+Tier 2 presupposes that the complete independently provisioned `G4` environment **exists** but a
+demonstrated measurement-system limit prevents Tier 1 from establishing saturation.
+
+Select the highest useful common per-group worker level `L` the complete environment can drive
+without becoming the plausible limiter, and retain `g1(L)`, `g2(L)` and `g4(L)` under the same
+correctness/reconciliation/resource controls. Derive:
+
+```text
+E2(L) = g2(L) / (2 × g1(L))
+E4(L) = g4(L) / (4 × g1(L))
+```
+
+The conclusion is deliberately bounded: **horizontal scaling is established at `L`; aggregate
+capacity scaling remains unresolved**, so Tier 2 does not discharge `VAL-SCALE-5`.
+
+A generator limit is not a soft Tier-2 exit. If PR4a qualified generator headroom above the intended
+range and a later run contradicts that result, first record the mismatch, resize/requalify where
+reasonably possible, and determine the real measurement frontier. Tier 2 is available only after a
+remaining demonstrated measurement-system limit prevents Tier 1; “the generator could not drive it”
+without that diagnosis is insufficient.
+
+#### 4.6.10 Bounded open-loop comparison is a second lens
+
+Closed-loop remains the capacity-selection method. After the sustained closed-loop result is
+secure, `VAL-LOAD-1` may run offered-load points below, around and above the observed sustainable
+rate to expose latency, queueing, timeout/error and Goodput behaviour when arrival rate no longer
+self-throttles as service latency rises.
+
+An open-loop driver must bound outstanding work with explicit request deadlines and a maximum
+in-flight count, and account for arrivals that could not be launched because that bound was
+reached. The open-loop round does not redefine closed-loop capacity and does not enter `E2`/`E4`.
 
 ## 5. Correctness and policy validations
 
@@ -432,7 +653,7 @@ Demonstrate that:
   persisted-state verdict; the experiment is not required to manufacture `unknown_replayable`;
 - the failure experiment is reported separately from healthy capacity/SLO runs.
 
-## 7. Scaling validations
+## 7. Scaling and load validations
 
 **Every scaling result names its believed limiting mechanism and the evidence for it.** Naming a
 frontier without naming what set it is an observation, not a conclusion, and it is the step at
@@ -494,16 +715,50 @@ without changing routing or correctness semantics.
 
 **Requirements:** REQ-COR-1, REQ-SCALE-1, REQ-SCALE-4, REQ-DEPLOY-1, REQ-EVID-1, REQ-EVID-2.
 
-Run the fixed matrix and saturation-selection rule in §4.6 and obtain admissible `G1`, `G2`, and
-`G4` for `WL-MUT-DISP-4`. The request-pair semantics remain same-organisation at every topology.
-Derive `E2` and `E4` under the measurement contract and identify or conservatively bound the
-limiting mechanism at each relevant frontier, explicitly accounting for the intended change in
-per-authority data/working-set volume as organisations are distributed across more authorities.
+Run the §4.6 method on the complete independently provisioned G1/G2/G4 family for
+`WL-MUT-DISP-4`. Each group is driven by its own closed-loop worker pool at the declared
+`workers_per_group`; one group's latency/backpressure must not reduce another group's configured
+workers. Tier 1 derives `E2_aws` and `E4_aws` and identifies or conservatively bounds the limiting
+mechanism at each relevant frontier.
 
-The validation passes when the numbers are reproducible/admissible, correctness reconciles, the
-resource envelopes are comparable, generator/shared-environment effects cannot plausibly explain
-the result, the saturation point is established rather than assumed from sweep depth, and the
-limitations are stated. It does **not** require an efficiency percentage.
+The validation passes when the S/H relationship and **both** points reproduce, correctness and
+conditioning-aware reconciliation hold, fixture headroom remains throughout, resource envelopes
+are comparable, generator/shared-environment effects cannot plausibly explain the result,
+per-group demand independence is proven, and limitations/co-varying data and per-organisation
+intensity are stated. It does **not** require an efficiency percentage.
+
+If the complete environment exists but a proven measurement-system limit forces §4.6's Tier-2
+path, retain that operating-point horizontal-scale result but report `VAL-SCALE-5` as **unproven**.
+If the complete equivalent environment cannot be provisioned at all, neither tier applies: record
+the external limitation and report `VAL-SCALE-5` as **unproven** with no local or partial-AWS
+substitute.
+
+### VAL-SCALE-6 — Local scheduler-partitioned shard-group capacity characterisation
+
+**Requirements:** REQ-COR-1, REQ-SCALE-1, REQ-EVID-1, REQ-EVID-2.
+
+Run the same §4.6 qualified method across local G1/G2/G4 with the declared non-overlapping
+scheduler CPU partition and shared-host resource evidence. Derive `E2_local` and `E4_local`, retain
+the S/H points and both confirmations for each topology, and identify or conservatively bound the
+local limiting mechanisms and shared-host effects.
+
+The validation passes when the quantitative local result is admissible and reproducible **for that
+explicit workstation environment**. Passing it does not establish independent resource-envelope
+composition, does not satisfy REQ-SCALE-4's strongest claim, and does not discharge `VAL-SCALE-5`.
+The point of the validation is to retain useful controlled evidence without laundering shared-host
+partitioning into independent provisioning.
+
+### VAL-LOAD-1 — Bounded open-loop load-response characterisation
+
+After the closed-loop capacity result is established for the environment being characterised,
+drive a bounded set of offered arrival rates below, around and above that observed sustainable rate.
+Retain offered arrivals, launched requests, completions, Goodput, latency, outcome/timeout rates,
+maximum in-flight occupancy, and arrivals not launched because the in-flight bound was reached.
+
+The validation is admissible when those populations reconcile, request deadlines and the
+max-in-flight bound are explicit, and generator headroom is established. Its output describes the
+latency/reliability response to fixed offered demand. It does **not** select closed-loop capacity,
+does not enter `E2`/`E4`, and is not required to discharge `VAL-SCALE-5` or `VAL-SCALE-6`.
 
 ## 8. Measurement-system negative controls
 
@@ -521,11 +776,14 @@ Deliberately constrain the load generator and demonstrate how the apparent front
 Any stronger capacity interpretation then requires evidence that the selected generator has
 headroom.
 
-For Iteration C, PR4a must first preflight a generator configuration above the intended `G4` sweep
-range under `deployment-architecture.md` §13.2. PR4b still proves headroom at every quoted server
-point. The generator may be resized and requalified between topology points because it is
-measurement infrastructure rather than part of the shard-group capacity unit; its actual shape and
-headroom evidence remain part of each run's provenance/evidence.
+For Iteration C, PR4a first qualifies a generator configuration above the intended local G4
+reconnaissance/retained range. PR4b still proves headroom at every quoted local server point. If
+PR4c later executes independently provisioned verification, that environment re-establishes
+headroom for every quoted point rather than inheriting the workstation result.
+
+A later observation that contradicts PR4a's headroom qualification is recorded as a discovered
+measurement-system mismatch first. Resize/requalify where reasonably possible before treating a
+remaining demonstrated generator limit as a reason to use Tier 2.
 
 ### VAL-NEG-3 — Telemetry-overhead control
 
@@ -550,12 +808,31 @@ The discriminating control is VAL-COR-5 and is mandatory for a multi-authority t
 **Requirements:** REQ-SCALE-4, REQ-EVID-2.
 
 Before interpreting `VAL-SCALE-5`, retain enough per-host CPU, memory, storage/I/O, network and
-service/database resource evidence to establish that each shard-group host had the intended
-equivalent envelope and that material host/environment variation is explained, excluded, or
-conservatively bounded.
+service/database resource evidence to establish that each independently provisioned shard-group
+host had the intended equivalent envelope and that material host/environment variation is
+explained, excluded, or conservatively bounded.
 
 A run in which one capacity-unit host is materially constrained relative to its peers is evidence
-about that constraint, not a clean shard-group scale-efficiency point.
+about that constraint, not a clean independently provisioned scale-efficiency point.
+
+The local `VAL-SCALE-6` result retains analogous resource evidence but cannot satisfy this control's
+independent-host premise merely by assigning disjoint CPU sets.
+
+### VAL-NEG-8 — Per-shard-group demand independence
+
+Before interpreting either `VAL-SCALE-5` or `VAL-SCALE-6`, prove that the multi-group closed-loop
+driver maintains a separate fixed worker pool per active shard group. The discriminating control
+deliberately delays, constrains, or otherwise slows one target group while a healthy control group
+remains available. The slowed group may complete fewer requests because its own workers are blocked;
+the healthy group must retain its configured `workers_per_group` and continue issuing independently
+rather than losing demand because workers are shared globally.
+
+The proof may be a deterministic generator-level integration test rather than a capacity run, but
+it must fail against the old shared-pool/round-robin design. Equal aggregate request counts in a
+healthy run are not sufficient evidence: the defect appears specifically when one group's response
+time diverges. Independent streams also require disjoint idempotency-key sequence spaces; an
+implementation that starts each group at sequence zero must include stable group identity in the
+key rather than minting the same logical key in several streams.
 
 ## 9. Current validation status
 
@@ -567,10 +844,14 @@ about that constraint, not a clean shard-group scale-efficiency point.
 | Phase 1 placement and supported policy implementation | established for Iteration B | PR3a/PR3b implementation records plus PR3c controls/evidence |
 | multi-authority reconciliation | established for Iteration B | PR3b harness exercised and reconciled by PR3c retained runs |
 | Phase 1 correctness and failure isolation | established for Iteration B | PR3c report and retained artifacts; VAL-COR-1..3, VAL-COR-5, VAL-COR-6 and VAL-FAIL-1 |
-| cross-authority refusal (VAL-COR-4) | established for Iteration B | all four §3.5 clauses now hold on the deployed topology: the refusal and the absence of partial mutation by the PR3c passes, and **same-key replay** by control 3b, retained in [`../../measurements/pr3c-phase1/controls-replay/`](../../measurements/pr3c-phase1/controls-replay/). The replay clause was the gap the Iteration B A&R found (PR3c report §7.4), and it was closed by adding the repost to the control rather than by re-running or reinterpreting the retained cells |
+| cross-authority refusal (VAL-COR-4) | established for Iteration B | all four §3.5 clauses now hold on the deployed topology: the refusal and absence of partial booking state by the PR3c passes, and **same-key replay** by control 3b, retained in [`../../measurements/pr3c-phase1/controls-replay/`](../../measurements/pr3c-phase1/controls-replay/) |
 | database-authority composition (VAL-SCALE-3) | established as architecture/correctness evidence | PR3c; explicitly **not** a capacity multiplier on the co-resident workstation |
-| Iteration C shard-group capacity (VAL-SCALE-5) | **defined; not yet executed** | fixed `WL-MUT-DISP-4` same-organisation request semantics at A/B/C/D across 1/2/4 shard groups; saturation-selected G1/G2/G4 and derived E2/E4 |
-| Iteration C resource-envelope control (VAL-NEG-7) | **defined; not yet executed** | retain per-host resource evidence and explain/exclude/bound material environment variation |
+| Iteration C measurement method | **defined; implementation qualification in progress** | §4.6: explicit conditioning, fixed pool policy, independent `workers_per_group`, adaptive reconnaissance, retained 600 s S/H + confirmation of both, 60 s analysis slices |
+| Iteration C local capacity (VAL-SCALE-6) | **defined; not yet executed** | PR4b will run the full qualified G1/G2/G4 method locally and derive bounded `E2_local`/`E4_local` |
+| Iteration C independently provisioned capacity (VAL-SCALE-5) | **defined; externally blocked at present** | optional PR4c only when the complete equivalent environment can actually be provisioned; Tier 1 derives `E2_aws`/`E4_aws`; otherwise remains explicitly unproven |
+| Iteration C per-group demand independence (VAL-NEG-8) | **defined; not yet executed** | PR4a generator work must prove one slow group cannot throttle healthy groups; control must fail against shared global closed-loop workers |
+| Iteration C resource-envelope control (VAL-NEG-7) | **defined; not yet executed** | applies to independently provisioned `VAL-SCALE-5`; local resource evidence does not satisfy the independent-host premise |
+| bounded open-loop response (VAL-LOAD-1) | **defined; optional after closed-loop result** | second lens only; does not enter closed-loop capacity or E2/E4 |
 | stateless replica scaling | unproven and not selected by Iteration C | existing VAL-SCALE-1/2 remain separate future validation definitions |
 | composed multi-authority + multi-replica topology | optional later validation | only after both axes are understood separately |
 

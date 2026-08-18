@@ -160,12 +160,23 @@ func serveMetrics(addr string, reg *prometheus.Registry, logger *slog.Logger) fu
 type poolCollector struct {
 	pool *pgxpool.Pool
 
-	acquired    *prometheus.Desc
-	idle        *prometheus.Desc
-	total       *prometheus.Desc
-	max         *prometheus.Desc
-	acquireWait *prometheus.Desc
-	acquires    *prometheus.Desc
+	acquired     *prometheus.Desc
+	idle         *prometheus.Desc
+	total        *prometheus.Desc
+	max          *prometheus.Desc
+	constructing *prometheus.Desc
+	acquireWait  *prometheus.Desc
+	acquires     *prometheus.Desc
+
+	// The set added after §3.13.1: a degraded cell showed mean acquire duration rising 16× while
+	// 6-9 connections sat idle, and the six metrics above cannot say why. Each of these decides
+	// between a specific pair of explanations rather than being exported for completeness.
+	emptyAcquireWait    *prometheus.Desc
+	emptyAcquires       *prometheus.Desc
+	newConns            *prometheus.Desc
+	maxLifetimeDestroys *prometheus.Desc
+	maxIdleDestroys     *prometheus.Desc
+	canceledAcquires    *prometheus.Desc
 }
 
 func newPoolCollector(pool *pgxpool.Pool) *poolCollector {
@@ -173,13 +184,44 @@ func newPoolCollector(pool *pgxpool.Pool) *poolCollector {
 		return prometheus.NewDesc(metrics.Namespace+"_db_pool_"+name, help, nil, nil)
 	}
 	return &poolCollector{
-		pool:        pool,
-		acquired:    n("acquired_connections", "Connections currently in use."),
-		idle:        n("idle_connections", "Connections idle in the pool."),
-		total:       n("total_connections", "Connections the pool currently holds."),
-		max:         n("max_connections", "Configured maximum pool size."),
-		acquireWait: n("acquire_wait_seconds_total", "Cumulative time spent waiting to acquire."),
-		acquires:    n("acquires_total", "Cumulative successful acquires."),
+		pool:         pool,
+		acquired:     n("acquired_connections", "Connections currently in use."),
+		idle:         n("idle_connections", "Connections idle in the pool."),
+		total:        n("total_connections", "Connections the pool currently holds."),
+		max:          n("max_connections", "Configured maximum pool size."),
+		constructing: n("constructing_connections", "Connections currently being established."),
+
+		// **Not "time spent waiting", despite the metric name.** pgxpool's AcquireDuration is the
+		// duration of the whole Acquire() call: puddle starts the clock on entry and adds the
+		// elapsed time on every successful path, including the one that constructs a new
+		// connection. An acquire that never waited for anything still contributes. The name is
+		// kept because retained evidence and committed panels query it, and renaming would break
+		// comparison against cells already in docs/measurements/ — so the disclaimer travels in
+		// the help text instead.
+		acquireWait: n("acquire_wait_seconds_total",
+			"Cumulative duration of all successful Acquire() calls, including connection construction — NOT blocked-waiting time. Not a contention signal alone; read with empty_acquire_wait_seconds_total and new_connections_total."),
+		acquires: n("acquires_total", "Cumulative successful acquires."),
+
+		// **Also not pure waiting.** puddle accumulates this on acquires that found no idle
+		// resource, and that covers two different paths: waiting for an in-use resource to be
+		// released, *and* constructing a new one. On the construction path the clock is read after
+		// the constructor returns, so the full construction time lands here (puddle/pool.go).
+		// No single series separates the two — new_connections_total does.
+		emptyAcquireWait: n("empty_acquire_wait_seconds_total",
+			"Cumulative time on acquires that found no idle connection — covers BOTH waiting for one to be released AND constructing a new one; separate them with new_connections_total."),
+		emptyAcquires: n("empty_acquires_total",
+			"Cumulative acquires that found no idle connection, whether they waited or constructed."),
+		// Incremented when construction *starts*, so it counts attempts rather than successes.
+		// Construction calls pgx.ConnectConfig, so a rise here means acquires are paying a real
+		// connection establishment against PostgreSQL — network, TLS and authentication included.
+		newConns: n("new_connections_total",
+			"Cumulative connection constructions started. Construction connects to PostgreSQL, so a rise means acquires are paying establishment cost."),
+		maxLifetimeDestroys: n("max_lifetime_destroys_total",
+			"Cumulative connections destroyed for exceeding max lifetime."),
+		maxIdleDestroys: n("max_idle_destroys_total",
+			"Cumulative connections destroyed for exceeding max idle time."),
+		canceledAcquires: n("canceled_acquires_total",
+			"Cumulative acquires abandoned by context cancellation."),
 	}
 }
 
@@ -188,8 +230,15 @@ func (c *poolCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.idle
 	ch <- c.total
 	ch <- c.max
+	ch <- c.constructing
 	ch <- c.acquireWait
 	ch <- c.acquires
+	ch <- c.emptyAcquireWait
+	ch <- c.emptyAcquires
+	ch <- c.newConns
+	ch <- c.maxLifetimeDestroys
+	ch <- c.maxIdleDestroys
+	ch <- c.canceledAcquires
 }
 
 func (c *poolCollector) Collect(ch chan<- prometheus.Metric) {
@@ -205,8 +254,15 @@ func (c *poolCollector) Collect(ch chan<- prometheus.Metric) {
 	gauge(c.idle, float64(s.IdleConns()))
 	gauge(c.total, float64(s.TotalConns()))
 	gauge(c.max, float64(s.MaxConns()))
+	gauge(c.constructing, float64(s.ConstructingConns()))
 	counter(c.acquireWait, s.AcquireDuration().Seconds())
 	counter(c.acquires, float64(s.AcquireCount()))
+	counter(c.emptyAcquireWait, s.EmptyAcquireWaitTime().Seconds())
+	counter(c.emptyAcquires, float64(s.EmptyAcquireCount()))
+	counter(c.newConns, float64(s.NewConnsCount()))
+	counter(c.maxLifetimeDestroys, float64(s.MaxLifetimeDestroyCount()))
+	counter(c.maxIdleDestroys, float64(s.MaxIdleDestroyCount()))
+	counter(c.canceledAcquires, float64(s.CanceledAcquireCount()))
 }
 
 var _ prometheus.Collector = (*poolCollector)(nil)

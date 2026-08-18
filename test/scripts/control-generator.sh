@@ -18,7 +18,10 @@ set -euo pipefail
 
 : "${DATABASE_URL:?set DATABASE_URL}"
 
-OUT="${OUT:-test/results/control-generator-$(date -u +%Y%m%dT%H%M%SZ)}"
+# Grouped like the other runners (see itc-run.sh); a control is a general instrument, so it
+# defaults to its own name rather than to a milestone.
+RESULTS_GROUP="${RESULTS_GROUP:-control-generator}"
+OUT="${OUT:-test/results/$RESULTS_GROUP/$(date -u +%Y%m%dT%H%M%SZ)}"
 WORKLOAD="${WORKLOAD:-dispersed}"
 CONCURRENCY="${CONCURRENCY:-16}"
 WINDOW="${WINDOW:-20s}"

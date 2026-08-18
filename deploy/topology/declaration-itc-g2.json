@@ -1,0 +1,4 @@
+{
+  "environment": "local WSL2/Docker Desktop workstation; 16 logical CPUs exposed; scheduler-partitioned rehearsal; shared host/kernel/storage, not independently provisioned capacity evidence",
+  "deployment_topology": "2 shard groups: one alloca-go service and one PostgreSQL authority per group, each pair sharing that group's two-CPU set, two organisations homed on each authority"
+}

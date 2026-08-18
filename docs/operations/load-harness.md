@@ -1,7 +1,37 @@
-# Running the PR1 load harness locally
+# Running the load harness locally
 
 How to drive one AG-Sept run on your own machine, and how to tell whether the run it
 produced may be quoted.
+
+**Two procedures live here.** They share the generator, the manifest and the quotability
+ladder, and they measure different things:
+
+| Procedure | Sections | Drives | What its numbers are |
+|---|---|---|---|
+| the **PR1 single-service run** | §1–§8 | one service and one database on this host | a reproducible observation of this machine; establishes no capacity |
+| the **PR4a Iteration C rehearsal cell** | §9–§17 | 1, 2 or 4 shard groups pinned to disjoint CPU sets, with monitoring | rehearsal/diagnostic only; never a capacity, scale-efficiency or Tier-2 result |
+
+**One entry point drives the whole local experiment.**
+[`../../test/scripts/itc-local-experiment.sh`](../../test/scripts/itc-local-experiment.sh) composes
+the scripts below into the stages §4.6 requires, in the order it requires them, and is the single
+host-executable command the experiment needs:
+
+```sh
+./test/scripts/itc-local-experiment.sh preflight     # read-only: can this machine drive it?
+./test/scripts/itc-local-experiment.sh build         # generator, refused unless its stamp is clean
+./test/scripts/itc-local-experiment.sh sustained     # conditioned 600 s G1 and G4
+./test/scripts/itc-local-experiment.sh pool          # the bounded G1 pool sensitivity
+```
+
+The stages carry a dependency that is not a preference — qualify conditioning, freeze the pool,
+find the worker bracket, size the fixture — and each consumes the previous one's answer. `recon`,
+`fixture` and `capacity` are named and refuse until they are built, because a stage that silently
+did nothing would look like a stage that found nothing. The scripts below remain the workers and
+can still be driven directly.
+
+§9 onwards assumes §1–§8 rather than repeating it: what the manifest records, what each
+quotability level means (§4), and why both the service and the generator are built rather
+than `go run` (§3) are the same facts in both procedures.
 
 **This document owns the procedure, not the rules.** What a run must contain and when a
 number may be quoted are owned by
@@ -9,7 +39,8 @@ number may be quoted are owned by
 workloads exist and what each proves is owned by
 [`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md);
 what PR1 built against them is recorded in
-[`ag-sept-pr1.md`](../development/implementation/ag-sept-pr1.md). Where those disagree with
+[`ag-sept-pr1.md`](../development/implementation/ag-sept-pr1.md), and what PR4a built in
+[`ag-sept-pr4.md`](../development/implementation/ag-sept-pr4.md). Where those disagree with
 this page, they win.
 
 ## 1. The four binaries
@@ -51,7 +82,7 @@ provenance.
 ```sh
 # terminal 2
 export DATABASE_URL='postgres://alloca:alloca@localhost:15432/alloca?sslmode=disable'
-mkdir -p test/results   # git-ignored, and absent on a fresh clone
+mkdir -p test/results/manual   # git-ignored, and absent on a fresh clone
 
 # 0. build the generator — see "Why both the service and the generator are built" below
 go build -o bin/alloca-load ./cmd/alloca-load
@@ -60,14 +91,14 @@ go build -o bin/alloca-load ./cmd/alloca-load
 go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
 
 # 2. the run itself
-./bin/alloca-load -workload dispersed -concurrency 8 -n 60 -slots 20 -out test/results/run.json
+./bin/alloca-load -workload dispersed -concurrency 8 -n 60 -slots 20 -out test/results/manual/run.json
 
 # 3. capture the server's own count, before anything else touches the service
-curl -s http://localhost:9090/metrics > test/results/metrics.txt
+curl -s http://localhost:9090/metrics > test/results/manual/metrics.txt
 
 # 4. reconcile client, server and persisted totals
-go run ./cmd/alloca-verify -run test/results/run.json -metrics test/results/metrics.txt \
-  -org load-org -out test/results/verdict.json
+go run ./cmd/alloca-verify -run test/results/manual/run.json -metrics test/results/manual/metrics.txt \
+  -org load-org -out test/results/manual/verdict.json
 ```
 
 Each step exits non-zero when its result is not quotable, so `&&`-chaining them is safe:
@@ -180,20 +211,20 @@ run, and between workloads as much as between repeats of one (§7).
 # hot-slot — many identities, one slot
 go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
 ./bin/alloca-load -workload hot-slot -concurrency 8 -n 60 -slots 20 -slot slot-0 \
-  -out test/results/hot-slot.json
-curl -s http://localhost:9090/metrics > test/results/hot-slot-metrics.txt
-go run ./cmd/alloca-verify -run test/results/hot-slot.json \
-  -metrics test/results/hot-slot-metrics.txt -org load-org
+  -out test/results/manual/hot-slot.json
+curl -s http://localhost:9090/metrics > test/results/manual/hot-slot-metrics.txt
+go run ./cmd/alloca-verify -run test/results/manual/hot-slot.json \
+  -metrics test/results/manual/hot-slot-metrics.txt -org load-org
 ```
 
 ```sh
 # hot-identity — one identity, many slots
 go run ./cmd/alloca-seed -reset -slots 20 -capacity 5
 ./bin/alloca-load -workload hot-identity -concurrency 8 -n 60 -slots 20 -user user-0 \
-  -out test/results/hot-identity.json
-curl -s http://localhost:9090/metrics > test/results/hot-identity-metrics.txt
-go run ./cmd/alloca-verify -run test/results/hot-identity.json \
-  -metrics test/results/hot-identity-metrics.txt -org load-org
+  -out test/results/manual/hot-identity.json
+curl -s http://localhost:9090/metrics > test/results/manual/hot-identity-metrics.txt
+go run ./cmd/alloca-verify -run test/results/manual/hot-identity.json \
+  -metrics test/results/manual/hot-identity-metrics.txt -org load-org
 ```
 
 `-slot` and `-user` already carry these defaults. They are written out because the contended
@@ -213,14 +244,14 @@ when a check has failed and you need to see which way.
 
 ```sh
 # every check and its numbers, including the client/server comparison
-jq -r '.checks[] | "\(.ok)\t\(.name)\t\(.detail)"' test/results/verdict.json
+jq -r '.checks[] | "\(.ok)\t\(.name)\t\(.detail)"' test/results/manual/verdict.json
 
 # client — written by step 2
-jq '.summary.completed_requests, .summary.successful_mutation_goodput' test/results/run.json
+jq '.summary.completed_requests, .summary.successful_mutation_goodput' test/results/manual/run.json
 
 # server — read the replay="false" series only; never add the replay="true" one to it
 # nothing resets these counters, so a scrape taken across two runs reads 120, not 60
-grep '^alloca_requests_total.*replay="false"' test/results/metrics.txt
+grep '^alloca_requests_total.*replay="false"' test/results/manual/metrics.txt
 ```
 
 For the `dispersed` run above, all three say 60:
@@ -264,7 +295,7 @@ operator's view of them:
 run on this workstation reaches `capacity` as soon as it records the deployment facts above.
 
 ```sh
-jq -r '.quotability | "\(.level)\t\(.blocked_because)"' test/results/run.json
+jq -r '.quotability | "\(.level)\t\(.blocked_because)"' test/results/manual/run.json
 ```
 
 **Early AG-Sept runs reach `local`, and that is the correct outcome, not a defect.** The fields
@@ -306,7 +337,7 @@ To confirm it rather than assume it, subtract your client totals from the scrape
 what is left:
 
 ```sh
-grep '^alloca_requests_total' test/results/metrics.txt
+grep '^alloca_requests_total' test/results/manual/metrics.txt
 ```
 
 A residual that is only `reserve`/`admitted_success` is an earlier load run. A residual
@@ -381,10 +412,10 @@ when response validation is off, so a reported success cannot be an unchecked `2
 
 ```sh
 ./bin/alloca-load -workload dispersed -concurrency 8 -n 20 -slots 20 \
-  -validate=false -out test/results/control.json
-curl -s http://localhost:9090/metrics > test/results/control-metrics.txt
-go run ./cmd/alloca-verify -run test/results/control.json \
-  -metrics test/results/control-metrics.txt -org load-org
+  -validate=false -out test/results/manual/control.json
+curl -s http://localhost:9090/metrics > test/results/manual/control-metrics.txt
+go run ./cmd/alloca-verify -run test/results/manual/control.json \
+  -metrics test/results/manual/control-metrics.txt -org load-org
 ```
 
 Expect exit 1 from `alloca-load`, and exit 1 again from `alloca-verify` on `control.json`
@@ -440,7 +471,7 @@ targets at a database that is not the local container.
 **A run reports goodput but the database does not move** — check `replay` in the totals:
 
 ```sh
-jq '.summary.totals' test/results/run.json     # "replay": true on everything means nothing committed
+jq '.summary.totals' test/results/manual/run.json     # "replay": true on everything means nothing committed
 ```
 
 Idempotency keys are `workload-seq-step` with no per-run nonce (`internal/loadgen/workload.go:39`),
@@ -534,3 +565,530 @@ Two consequences for anything you keep:
 `test/results/` is git-ignored scratch, and that is the whole distinction: a run only
 becomes evidence by being copied into `../measurements/` on purpose. Nothing is lost by
 deleting the directory, and nothing in it is quotable while it sits there.
+
+## 9. The PR4a Iteration C rehearsal cell
+
+Sections 1–8 drive one service on this host. This one drives the **Iteration C topology** —
+one, two or four shard groups, each a service unit with its own PostgreSQL authority — with
+every group pinned to CPUs no other group can touch, and the generator and monitoring stack
+confined to CPUs of their own.
+
+The containers underneath it are [`container-topology.md`](container-topology.md); the panels
+it exports are [`dashboards.md`](dashboards.md); the decisions and the findings are
+[`ag-sept-pr4.md`](../development/implementation/ag-sept-pr4.md); the 1/2/4 matrix and the
+result model are
+[`ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md) §4.6. This
+section is only how to drive one.
+
+**Read the evidence class before the recipe.** Every group shares one workstation, one WSL
+kernel, one storage path and one page cache, so the partition bounds CPU and nothing else. A
+cell's Goodput is rehearsal/diagnostic evidence: it cannot discharge `VAL-SCALE-5`, cannot
+become a Tier-2 operating-point result, and is never mixed with AWS points to derive `E2` or
+`E4` (`ag-sept-pr4.md` §2.14). What a rehearsal *can* establish is that the machinery —
+placement, fixture, declaration, deployment record, provenance, cpuset partition, scrape
+coverage, certification and retention — runs end to end before any of it is exercised on
+metered infrastructure.
+
+**A cell certifying at `capacity` has not measured capacity.** The level is a statement about
+provenance: the declaration, the observed deployment and the per-unit `/meta` all line up.
+Every cell in [`../measurements/pr4a-rehearsal/`](../measurements/pr4a-rehearsal/) reads
+`capacity` and none of them backs a capacity number — each manifest's own `environment` string
+says so. §4's ladder is unchanged here; what §9 adds is the reminder that provenance and
+evidence are different gates, and only the first one is automated.
+
+### The partition
+
+```text
+ITC_CPUS_A           capacity unit A     CPUs 0-1     alloca-service-1 + authority-1 PostgreSQL
+ITC_CPUS_B           capacity unit B     CPUs 2-3     alloca-service-2 + authority-2 PostgreSQL
+ITC_CPUS_C           capacity unit C     CPUs 4-5     alloca-service-3 + authority-3 PostgreSQL
+ITC_CPUS_D           capacity unit D     CPUs 6-7     alloca-service-4 + authority-4 PostgreSQL
+ITC_CPUS_GENERATOR   generator/monitor   CPUs 8-11    alloca-load, Prometheus, Grafana,
+                                                      node_exporter
+—                    (headroom)          CPUs 12-15   idle; the only spare capacity the
+                                                      generator control widens into
+```
+
+`make itc-layout ITC_GROUPS=n` prints the sets this machine will actually be partitioned into,
+and prints only the units the rung uses.
+
+`G1` uses unit A, `G2` uses A+B, `G4` uses all four; unused sets stay idle rather than being
+borrowed. A service and its authority deliberately share one group's two CPUs, which is the
+contention shape the planned EC2 capacity unit has.
+
+**`ITC_CPUS_GENERATOR` names the whole measuring side, not just the generator.** Prometheus
+scrapes every unit on a one-second interval and compacts its TSDB; unpinned it does that from
+inside the capacity units' own CPUs, and it does it harder at `G4` than at `G1` — against
+exactly the comparison `E2` and `E4` come from.
+
+### What raises what
+
+| Command | Raises | Pinned by |
+|---|---|---|
+| `make itc-rehearse ITC_GROUPS=n` | the image, `n` service units, `n` PostgreSQL authorities, `n` one-shot migrations | `docker-compose.rehearsal.yml` cpusets |
+| `make obs-rehearse ITC_GROUPS=n` | Prometheus, Grafana, `node_exporter`, and the file_sd target list for exactly those `n` units | the observability rehearsal overlay |
+| `./test/scripts/itc-run.sh` | nothing — it drives one cell against what is already up | `taskset` on the generator |
+
+`make itc-up` and `make obs-up` raise the same containers **unpinned**. That is correct for
+ordinary local work and wrong for a cell: the run addresses the right units, every routing and
+provenance check passes, and the numbers carry contention no artifact records. §12's cpuset
+check is what stops that reaching a report.
+
+## 10. Prerequisites for a cell
+
+Docker, Go, `python3`, `curl`, and `taskset` (util-linux). `jq` for reading the result.
+
+**Monitoring is not optional here, unlike in §3.** `itc-run.sh` refuses a cell it cannot prove
+was observed, because a Prometheus scraping nothing returns empty results and no error — the
+first driven `G4` cell completed, reconciled and certified while retaining no time series at
+all (`ag-sept-pr4.md` §3.9). Driving without monitoring is allowed, but only by saying
+`PROM_URL=` out loud (§13).
+
+A machine with at least 12 logical CPUs for the committed partition, and 16 for the
+generator-headroom control, which widens the measuring side onto `8-15`. Separately, the
+machine's logical CPU count has to match what the declaration document claims (§12): the layout
+check accepts a partition rescaled to a smaller host, and the declaration is what stops a
+rescaled run certifying with a false description of the machine.
+
+## 11. One cell, start to finish
+
+```sh
+# 0. provenance first: one uncommitted file makes every run certify at `none`
+git status --porcelain          # expect no output at all, untracked files included
+make image-provenance           # builds, extracts the binary, asserts modified=false
+
+# 1. check the partition against this machine, before anything is built or raised
+make itc-layout ITC_GROUPS=4
+
+# 2. raise the pinned topology (builds the image, then polls /readyz on every unit)
+make itc-rehearse ITC_GROUPS=4
+
+# 3. raise the pinned monitoring stack — after the topology, never before
+make obs-rehearse ITC_GROUPS=4 ITC_CPUS_GENERATOR=8-11
+
+# 4. record what the containers are actually serving
+make itc-deployment ITC_GROUPS=4 > test/observed/deployment.json
+
+# 5. build the generator — `go run` stamps no VCS data (§3)
+go build -o bin/alloca-load ./cmd/alloca-load
+
+# 6. drive one cell: preflight, reseed, baseline scrape, window, after scrape, export, report
+ITC_GROUPS=4 ITC_CPUS_GENERATOR=8-11 ./test/scripts/itc-run.sh
+```
+
+Step 1 is cheap and catches the expensive mistake: Docker refuses an out-of-range cpuset on
+its own, but only after it has built an image and started four database containers, and its
+message names neither the partition nor the machine.
+
+**Step 3 must follow step 2.** Prometheus joins the topology's Compose network
+(`alloca-topology_default`) and scrapes the units by their Compose service names, so the
+network has to exist first. That is what makes the scrape path structural rather than
+discovered — a WSL restart reassigns host addresses and cannot invalidate a service name.
+Grafana is deliberately not attached to that network: it talks to Prometheus.
+
+It leaves two things to look at:
+
+| | Address | |
+|---|---|---|
+| Grafana | `http://localhost:3000/d/alloca-frontier` | the diagnostic dashboard, provisioned from the repository — panels are read in [`dashboards.md`](dashboards.md) |
+| Prometheus | `http://localhost:9091` | targets at `/targets`, ad-hoc queries at `/graph` |
+
+**Grafana is for diagnosis between cells, never during one.** A query engine under variable load
+on the generator host is the one part of this arrangement that can move while a rung is being
+measured — which is also why it is pinned to the generator's own CPUs rather than left
+unconfined: it is part of the measuring side, not part of the environment.
+
+**`ITC_CPUS_GENERATOR` appears twice and the two must agree.** Monitoring and the generator
+are one measuring side, and moving only half of it changes two things at once. `make
+itc-rehearse` prints the remaining commands with the value it was given, which is the copy to
+take.
+
+**Re-record step 4 after anything that recreates a container.** The record names each unit's
+image ID and published address, and `alloca-load` refuses a run whose routed units are not
+exactly the recorded ones — before any measured request.
+
+**There is no seed step, and that is deliberate.** `itc-run.sh` reseeds immediately before
+every measured window and fails the cell if the seed fails, because "reseed between rungs" is
+the step a twelve-cell ladder drops once, silently, after which every later point is wrong
+(`ag-sept-pr4.md` §3.10). `make itc-rehearse` prints `itc-seed.sh` among its next steps;
+running it by hand is only useful for inspecting a fixture before driving anything, since the
+measured cell reseeds regardless.
+
+Everything from the reseed to the export is one script because the ordering is load-bearing:
+the baseline scrape must precede the window, the after scrape must follow the generator's
+**exit** rather than the end of the workload — `alloca-load` replays ambiguous mutations in a
+post-run pass — and the panel export must be bounded to the measured phase.
+
+### A series of identical cells
+
+One cell is an anecdote. Two nominally identical `G4` cells — same fixture, same concurrency,
+same service binary — have come out at 3,152/s flat and 2,177/s with a 2× within-window
+excursion, so a single reading cannot tell a regime from the tail of a distribution, and a
+ladder cannot select an operating point while nominally identical rungs disagree by half.
+
+```sh
+ITC_GROUPS=4 REPEATS=10 ./test/scripts/itc-repeat.sh
+```
+
+Each cell is an ordinary `itc-run.sh` invocation with its own directory — same gates, same
+reseed, same refusals — landing under `test/results/pr4a/repeat-<timestamp>/`, with the series'
+shared configuration in `series.txt` beside them. Budget **~75 s and 25 MB per cell**: 10 s of
+preflight and reseed, the window, then the export and a TSDB snapshot.
+
+Two abort rules, because the series runs unattended:
+
+- **the first cell failing stops the series.** Every gate that refuses a cell runs before its
+  window, so nothing has been measured, and the cause is environmental — ten identical refusals
+  teach nothing the first one did not;
+- **two consecutive failures stop it too.** After the first cell has passed, an isolated failure
+  is a gap in the sample rather than a reason to discard it; two in a row is an environment that
+  changed mid-series.
+
+`GAP` (default 10 s) is the pause between cells. It is deliberately short: whatever accumulates
+across a session is a live hypothesis for the excursion, and a long gap would be an uncontrolled
+intervention on it.
+
+The series prints its own summary, and the same tool reads any set of cells — including retained
+ones, which is how its labels were checked:
+
+```sh
+./test/scripts/itc-classify.py docs/measurements/pr4a-rehearsal/windows/*/
+```
+
+It reports each cell's **shape** rather than its average, because the average is what hides the
+difference: `rise`, `decay`, `flat`, `dip`, `spike`, or `spent` for a cell whose fixture ran out
+and whose rate therefore describes the fixture. Beside it go the pool's occupancy and acquire
+cost over the same window — the pair that separated the degraded cell from the healthy one — and
+whether the host series covered the whole window or only part of it. **The labels are
+descriptive and no document owns them**; promoting any of them into an admission rule is a
+measurement-contract decision.
+
+### Driving `G1` or `G2` instead
+
+Change `ITC_GROUPS` in every command of §11, including the deployment record. One value
+selects the Compose profile, the placement document, the declaration, the scrape target list,
+the recorded container set and the seeded authorities together, and that is the pairing the
+targets exist to make impossible to get wrong.
+
+The variable is `ITC_GROUPS`, never `GROUPS`: `GROUPS` is a bash built-in array of the
+caller's group IDs, and bash discards an assignment to it without error, so the script would
+receive your GID and Make would be unaffected.
+
+## 12. What the preflight refuses, and what each check is for
+
+Every check below runs **before the fixture is touched**, except the last two, which run after
+the window. Each exists because the failure it catches is otherwise invisible downstream:
+the cell completes, certifies, and produces a number nobody can tell is wrong.
+
+| Check | Refuses when | What it costs when it is missing |
+|---|---|---|
+| `taskset` present | util-linux is not installed | the generator runs on the units' CPUs and dissolves the partition |
+| generator built | `bin/alloca-load` is absent or not executable | — |
+| placement, deployment record, declaration all present | any of the three is missing | a late refusal, after the window has been driven |
+| declared CPU count vs `nproc` | `declaration-itc-g<n>.json` names a different machine | a rescaled partition certifies at `capacity` carrying a false environment string, in the one field a reader uses to judge whether the numbers transfer |
+| clean working tree | `git status --porcelain` is non-empty | Go stamps *untracked* files as a modified tree, so the run certifies at `none` and backs nothing |
+| CPU layout legal | sets overlap, units are unequal, the generator is no larger than a unit, the partition exceeds the machine, or a spec is malformed | an efficiency figure that carries an imbalance in the partition rather than the architecture |
+| running topology is exactly `G<n>` | units from a larger rung are still up, or a unit serves another topology's routing version | the stale units consume the envelope this one is measured in |
+| cpusets applied | any container's cpuset disagrees with the partition, or cannot be read | the stack was raised with `itc-up`/`obs-up`; the numbers carry unrecorded contention |
+| scraped set is exactly this rung's authorities | a unit is missing, or a foreign target is healthy in the job | a missing unit retains no series and reports no error; a foreign target implies an unpinned process free to contend |
+| panel export succeeded | Prometheus or the snapshot call failed | the cell keeps its scalars and loses its shape, and this workload's rate is not flat within a window |
+| host panels non-empty | `node_exporter` retained no samples | the cell cannot separate a stall in the service from one in the machine under it — the `VAL-NEG-7` evidence and the degraded-regime diagnosis both |
+
+Two things the table cannot carry.
+
+**The scraped-set check compares identities *and* count, because each half is blind to what
+the other catches.** A count alone is satisfied by the wrong set — a `G4` rehearsal missing
+`authority-3` while carrying a stray healthy target still counts four. A set comparison
+narrowed to this rung's own label cannot see anything outside the rung, which is exactly where
+contamination lives. So the query is unfiltered and the refusal names any `FOREIGN` target it
+found. What makes a stray target worth refusing over is not the extra scrape, which is
+trivial: a host-run service answering on the metrics port is an unpinned process in the same
+WSL environment, free to contend while every cpuset and topology check passes.
+
+**Fixture exhaustion is reported, not refused.** After the run, the script compares admitted
+mutations against `SLOTS × CAPACITY × 4` and says plainly when the cell consumed its whole
+supply. It reports rather than gating because useful demand is an evidence gate rather than a
+provenance one (`measurement-contract.md` §5): an exhausted cell is still a legitimate,
+self-describing artifact — it simply measured how fast the service can decline. Remember that
+an exhausted rung also invalidates the rung *below* it, because a saturation argument rests on
+the higher rung having been short of service rather than short of fixture.
+
+## 13. The knobs
+
+All of these are environment variables read by
+[`../../test/scripts/itc-run.sh`](../../test/scripts/itc-run.sh):
+
+| Variable | Default | Changes |
+|---|---|---|
+| `ITC_GROUPS` | `4` | the rung: 1, 2 or 4 shard groups |
+| `WORKLOAD` | `wl-mut-disp-4` | the workload; `WL-MUT-DISP-4` is the one topologies are compared with |
+| `CONCURRENCY` | `16` | closed-loop workers, the run **total** — historical `c16`/`c32` cells mean this |
+| `ITC_WORKERS_PER_GROUP` | unset | workers offered to **each** shard group; the run's total is this times the group count, so `16` at `G4` offers 64. Mutually exclusive with `CONCURRENCY`, which `alloca-load` refuses rather than resolving |
+| `CONDITIONING_SLOTS`, `CONDITIONING_TARGET` | `0`, `0` | the conditioning phase: slots per organisation it claims, and the fresh mutations per organisation it must commit. Both unset means an unconditioned cell, and the cell says so |
+| `ALLOCA_POOL_MAX_CONNS` | unset (pgxpool's own default) | the per-unit connection ceiling. **Iteration C's frozen policy is 8**, applied by `itc-local-experiment.sh`; unset here so existing recipes render unchanged |
+| `WINDOW` | `60s` | the measured window |
+| `SLOTS`, `CAPACITY` | `3200`, `20` | the per-organisation fixture, and so the fresh-mutation supply |
+| `REQUIRE` | `capacity` | the level below which the run exits non-zero |
+| `PROM_URL`, `PROM_JOB` | `http://localhost:9091`, `alloca-go` | where the scrape gate looks |
+| `RESULTS_GROUP`, `OUT` | `pr4a`, a timestamped directory under it | where the cell lands |
+| `PLACEMENT`, `DEPLOYMENT`, `DECLARATION` | derived from `ITC_GROUPS` | the three provenance inputs |
+| `ITC_CPUS_A`…`ITC_CPUS_D`, `ITC_CPUS_GENERATOR` | `0-1`…`6-7`, `8-11` | the partition |
+| `SERVICE_n_PORT`, `SERVICE_n_METRICS_PORT` | `808n`, `908n` | where the cell addresses and scrapes each unit |
+
+**The fixture supply is `SLOTS × CAPACITY × 4`** — 256,000 fresh mutations at the defaults,
+and the cell prints admitted against it. `3200` is an interim value sized to one `c=16` cell,
+**not** PR4b's fixture size: that has to be derived from the deepest rung its ladder reaches
+and then held identical across `G1`, `G2` and `G4`.
+
+**`CONCURRENCY` and `ITC_WORKERS_PER_GROUP` are different quantities and a run records both.**
+The first is the total; the second is Iteration C's experiment variable. The retained `c16`/`c32`
+cells predate the distinction and mean 16 and 32 *total*, roughly 4 and 8 per group at `G4` — they
+must not be read as the new variable.
+
+**The pool ceiling is a declared policy, not pgxpool's default.** Left unset, pgxpool chooses
+`max(4, NumCPU)`, which under the rehearsal partition is 4 and unpinned is 16 — so the same recipe
+would measure two different units depending on how the containers were raised. Iteration C freezes
+it at **8** for every shard group at `G1`, `G2` and `G4`, from three retained 600 s `G1` runs:
+4 gave 944/s, 8 gave 1,249/s, and 16 gave 1,047/s while doubling the host run queue
+(`ag-sept-pr4.md` §3.22). Whatever is requested, the manifest's `pool_size_per_replica` records
+what the service actually opened.
+
+**`capacity` is the ceiling locally, not a conservative default.** The generator is co-resident
+with the units it drives, and co-residency blocks `publishable` outright however clean
+everything else is (§4), so requiring it would refuse every rehearsal cell for a reason the
+rehearsal cannot fix.
+
+**There is no warm-up flag, deliberately.** `-warm-up` drops responses from the client totals
+while their rows stay in the database, which persisted-state reconciliation cannot square, so
+it refuses the run at `none` (§5).
+
+**Conditioning is what replaced it**, and it is not the same thing. A conditioning phase drives
+the real mutation path to a declared per-organisation state target, against its own disjoint
+slot/identity/key namespace, and writes its own retained artifact; the measured run then begins
+from that artifact rather than being told the boundary a second time. Its requests, outcomes and
+mutations stay in the reconciliation population — what they are not is measured performance
+(`measurement-contract.md` §5, §12.1). Between the two phases the service is restarted so no
+measured connection carries a plan prepared against empty mutation tables, and the cell retains
+`phases.txt` so any server-side observation can be attributed to a phase.
+
+### The generator-headroom control
+
+The cpuset analogue of `VAL-NEG-2`: rerun a cell with the measuring side given twice the CPUs
+the partition holds idle.
+
+```sh
+make obs-rehearse    ITC_GROUPS=4 ITC_CPUS_GENERATOR=8-15
+ITC_GROUPS=4 ITC_CPUS_GENERATOR=8-15 ./test/scripts/itc-run.sh
+```
+
+If Goodput does not move, the generator was not the binding constraint at that operating point
+and the units' number stands; if it tracks the generator's size, the cell was measuring the
+harness. **Widen both commands or neither** — moving only the generator changes two things and
+the comparison carries the second one. Take the control against a stable, high-useful-demand
+point: against a cell whose generator sat at 7.7% of a core it could prove nothing.
+
+### Driving without monitoring
+
+```sh
+PROM_URL= ITC_GROUPS=4 ./test/scripts/itc-run.sh
+```
+
+Legitimate while shaking out the harness. The cell keeps its totals and its scrape pairs and
+retains no series, so nothing quoted from it can describe a shape. What must never happen is a
+run that believes it was observed when it was not, which is why this is a spoken argument
+rather than the consequence of Prometheus being quietly absent.
+
+## 14. What a cell leaves behind, and how to read it
+
+```text
+test/results/pr4a/itc-g4-<timestamp>/
+```
+
+| File | Holds |
+|---|---|
+| `run.json` | the client's totals, the full manifest and the `quotability` verdict |
+| `generator-output.txt` | what the generator printed, including any refusal |
+| `seed.txt` | the reseed transcript, per organisation and authority |
+| `fixture.txt` | `SLOTS`, `CAPACITY` and the derived fresh-mutation supply |
+| `cpu-partition.txt` | the partition this cell was *asked* for, plus `nproc` |
+| `observed-cpusets.txt` | the cpusets read off the running containers — the applied partition, which is a different fact |
+| `s<n>-baseline.prom`, `s<n>-after.prom` | the scrapes bracketing the window, per unit; counters are cumulative, so the delta is the measurement |
+| `panels/*.csv` + `panels/index.json` | the exported series with the resolved PromQL, rate range, step and both windows recorded beside the data |
+| `tsdb-snapshot/` | the Prometheus snapshot, so a series nobody thought to export is still recoverable |
+
+The two partition files are separate on purpose: a declared partition and an applied one are
+different facts, and the declaration deliberately does not name the generator's CPUs, since the
+headroom control widens them and a static string would be false for half the runs it describes.
+
+```sh
+CELL=test/results/pr4a/itc-g4-<timestamp>
+
+# what the run may back, and what is holding it there
+jq -r '.quotability | "\(.level)  blocked_from=\(.blocked_from)\n\(.blocked_because)"' $CELL/run.json
+
+# the headline scalars
+jq -r '.summary | "\(.completed_requests) completed, \(.successful_mutation_goodput) goodput, \(.duration_seconds)s"' $CELL/run.json
+jq -c '.summary.latency_ms, .summary.generator' $CELL/run.json
+
+# the outcome mix — a refusal is a recorded outcome, not a failure
+jq -r '.summary.totals[] | "\(.count)\t\(.operation)\t\(.outcome)\treplay=\(.replay)"' $CELL/run.json
+```
+
+**The agreement is stronger evidence than the rate.** Difference each unit's scrape pair and
+sum the four: that server-side total is an accounting independent of the client's, and a
+correct placement must also leave the units balanced to the request.
+
+```sh
+admitted() {  # admitted() <file> — fresh admissions in one scrape
+  awk '/^alloca_requests_total\{.*outcome="admitted_success".*replay="false"/ {s+=$NF} END {print s+0}' "$1"
+}
+for n in 1 2 3 4; do
+  echo "authority-$n  $(( $(admitted $CELL/s$n-after.prom) - $(admitted $CELL/s$n-baseline.prom) ))"
+done
+```
+
+In the retained `c=16` cell
+([`../measurements/pr4a-rehearsal/points/c16/`](../measurements/pr4a-rehearsal/points/c16/))
+that prints 27,543 four times, summing exactly to the client's 110,172.
+
+**A single reported rate does not describe the window**, which is what the panel export is for.
+Two retained cells identical but for window length, each read from its own
+`panels/throughput.csv`: the 30 s cell **rose** from 2,875 to 3,208 req/s across its four
+exported points, and the 60 s cell **fell** from 2,194 to 927 across its ten
+([`../measurements/pr4a-rehearsal/windows/`](../measurements/pr4a-rehearsal/windows/)). Each
+average is a figure across a slope, and the two landed in materially different regimes — the
+open finding `ag-sept-pr4.md` §3.12 records, and the reason no rung comparison is possible
+until the regimes are separable. Read the shape, not the mean:
+
+```sh
+jq -r '.rate_range, .step, (.window|tojson)' $CELL/panels/index.json
+jq -r '.panels[] | "\(.points)\t\(.series)\t\(.key)"' $CELL/panels/index.json   # 0 points = retained nothing
+column -s, -t $CELL/panels/throughput.csv | head
+```
+
+`panels/index.json` records two windows and they are not the same: `window` is the measured
+phase and is the authority for what was measured, while `query_window` is what the range
+queries actually cover — one rate range later, so no exported point can reach back into the
+samples before the window opened. Quote against `window`, and bound any query of the snapshot
+by it, because the snapshot is cumulative Prometheus history and carries other cells' windows
+too.
+
+Which panel answers which question, and which readings look sound and are not, is
+[`dashboards.md`](dashboards.md).
+
+## 15. Reconciliation is a separate step, and is not wired
+
+`itc-run.sh` does not run `alloca-verify`, and no retained rehearsal cell carries a
+`verdict.json` — a gap against both `measurement-contract.md` §12, which requires client,
+server and persisted totals to reconcile, and `ag-sept-pr4.md` §2.10, which makes the
+multi-authority verification path PR4a's work rather than PR4b's discovery. A cell's
+`measurement_sound` covers the client/server accounting the generator itself can see; it is
+not the database-side reconciliation.
+
+The cell already writes every input the verifier needs, so the step is a command rather than a
+change:
+
+```sh
+go build -o bin/alloca-verify ./cmd/alloca-verify
+
+dsn() { echo "postgres://alloca:alloca@localhost:$1/alloca?sslmode=disable"; }
+./bin/alloca-verify \
+  -run $CELL/run.json \
+  -placement deploy/topology/placement-itc-g4.json \
+  -authority-db "authority-1=$(dsn 15433)" -authority-db "authority-2=$(dsn 15434)" \
+  -authority-db "authority-3=$(dsn 15435)" -authority-db "authority-4=$(dsn 15436)" \
+  -authority-metrics authority-1=$CELL/s1-after.prom \
+  -authority-metrics authority-2=$CELL/s2-after.prom \
+  -authority-metrics authority-3=$CELL/s3-after.prom \
+  -authority-metrics authority-4=$CELL/s4-after.prom \
+  -authority-metrics-baseline authority-1=$CELL/s1-baseline.prom \
+  -authority-metrics-baseline authority-2=$CELL/s2-baseline.prom \
+  -authority-metrics-baseline authority-3=$CELL/s3-baseline.prom \
+  -authority-metrics-baseline authority-4=$CELL/s4-baseline.prom \
+  -require capacity -out $CELL/verdict.json
+```
+
+**This command has not been executed against an Iteration C cell** (§17). It is the four-unit
+form of the two-unit invocation `container-topology.md` §6.1 documents and
+`pr3c-experiments.sh` runs, and the constraints described there apply unchanged: every unit's
+scrape or none, verify promptly before unconfirmed holds expire, and `-placement` is mutually
+exclusive with `-database-url`/`-org`.
+
+Drop the unused `-authority-*` lines for `G1` and `G2`, and change the placement document with
+the rung.
+
+## 16. When a cell goes wrong
+
+**`prometheus is up, but the scraped units are not exactly the ones this rung raises`** — the
+refusal prints the expected and scraped sets. A `FOREIGN[...]` entry is a healthy target in the
+job that does not belong to this rung, and the usual one is the PR2 host-run target; remove
+`deploy/observability/targets/alloca-go.json` and raise the stack with `make obs-rehearse`,
+which does not probe for it. A *missing* entry is the opposite failure, and the more dangerous
+one: regenerate the list with `itc-obs-targets.sh` and give Prometheus its refresh interval.
+
+**`the cell retained no host samples for: ...`** — `node_exporter` is not being scraped. It is
+`VAL-NEG-7`'s host sensor and the instrument the degraded-regime diagnosis needs, so a cell
+without it cannot separate a stall in the service from one in the machine under it.
+
+```sh
+curl -s http://localhost:9091/api/v1/targets | grep -A2 '"job":"node"'
+```
+
+**`working tree is not clean`** — including untracked files. `go build` derives `vcs.modified`
+from `git status --porcelain`, so one scratch file stamps both binaries modified, and
+`Manifest.Validate` refuses that at `local`, the floor of the ladder. The cheap symptom is a
+`-dirty` suffix on the image tag.
+
+**`<declaration> declares N logical CPUs; this machine exposes M`** — edit the declaration to
+describe this machine, or drive the cell on the machine it describes. It is checked rather than
+generated on purpose: generating it would make the declared document a second observed one, and
+the split between what the operator asserts and what the harness observed is the point of it.
+
+**`the containers are not pinned where the partition says`** — the stack was raised with `make
+itc-up`/`make obs-up`. Raise it with `make itc-rehearse`/`make obs-rehearse`.
+
+**`the running topology is not the selected G<n>`** — units from a larger rung are still up.
+Raising a smaller topology does not stop a larger one's units: `make itc-down`, then raise the
+rung you want. The same check refuses a unit serving another topology's routing version, which
+is a unit still running against a previous placement document.
+
+**`this cell exhausted its fixture`** — the cell measured refusal throughput after its supply
+ran out, and it still certifies. Raise `SLOTS` and re-run before quoting anything, and discard
+the rung below it too.
+
+**A cell reports far less Goodput than a comparable one, with process CPU down as well** —
+this is the open degraded regime (`ag-sept-pr4.md` §3.12), not an outlier to drop. Throughput
+and CPU falling together is evidence that the service is doing less work while the request path
+slows. Read the pool panels before concluding anything: a *saturated* pool reads as acquired
+meeting total, while this regime holds connections idle with `total` flat at its ceiling and
+mean acquire duration climbing — 0.56 ms to 7.67 ms across the retained 60 s cell
+(`ag-sept-pr4.md` §3.13.1). Keep the cell, with its host panels and snapshot; a degraded cell
+carrying both is what the diagnosis needs.
+
+**`Bind for 0.0.0.0:9091 failed: port is already allocated`** — historical, and fixed by moving
+the topology's metrics ports to `9081`–`9084` so unit *n* serves on `808n` and publishes
+metrics on `908n`. If you meet it, something is pinned to the old numbers: a saved dashboard, a
+shell history, or a `SERVICE_n_METRICS_PORT` override. Prometheus keeps `9091`.
+
+**Ports fail to bind after a Windows reboot** — a reserved dynamic-port block; §7 has the
+`netsh.exe` incantation. Every port in this topology is below 49152 for that reason.
+
+## 17. What has been executed on this page
+
+Written on 2026-08-16 at `e123035`, from the scripts and Makefile targets it documents.
+
+| Step | Status |
+|---|---|
+| `make itc-layout` at `ITC_GROUPS=1`, `2` and `4` | **run** on a 16-CPU machine; each reports the partition §9 describes, listing only the units its rung uses |
+| §11 steps 0 and 2–6 | **not run in this pass.** It is the sequence `make itc-rehearse` prints and the one that produced the five cells in [`../measurements/pr4a-rehearsal/`](../measurements/pr4a-rehearsal/) on 2026-08-13, at an earlier revision |
+| §14's reading commands | **run against retained cells** — `points/c16/` and `windows/30s/` — not against a live cell directory. The per-unit recipe reproduces 27,543 × 4 = 110,172 from that cell's scrape pairs |
+| §15's reconciliation command | **never executed against an Iteration C cell.** No retained cell carries a `verdict.json` |
+
+Every figure quoted above is re-derivable from a retained artifact: the `c=16` per-unit
+agreement (27,543 × 4 = 110,172) from that cell's four scrape pairs, and both window slopes
+from the cells' own `panels/throughput.csv`. The within-window decay recorded in
+`ag-sept-pr4.md` §3.11 is deliberately **not** quoted here — that cell predates per-cell series
+retention, and the implementation record marks those figures as observations that cannot be
+re-derived.
+
+If you run something and it disagrees with this page, this page is wrong; fix it here.

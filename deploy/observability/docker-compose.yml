@@ -39,7 +39,75 @@ services:
       # Discovered scrape targets, written by test/scripts/obs-target.sh. Git-ignored: the
       # address is a property of this machine's WSL networking, not of the project.
       - ./targets:/etc/prometheus/targets:ro
+      # A *separate* directory, and not a second file in the one above. The alloca-go job
+      # discovers `targets/*.json` as a glob, so a postgres target dropped beside the unit
+      # targets would be scraped as though it were a service unit — and the run's scrape gate,
+      # which demands exactly the authorities this rung raises, would refuse every cell with a
+      # FOREIGN entry it was right to complain about.
+      - ./targets-postgres:/etc/prometheus/targets-postgres:ro
       - prometheus-data:/prometheus
+
+  # VAL-NEG-7's host sensor (ag-sept-pr4.md §2.1). Added in PR4a because §3.12 produced a
+  # degraded cell that service and pool metrics could not explain: throughput and service CPU
+  # both fell, which is consistent with a stall anywhere below or around the service, and
+  # nothing in the deployment could see the host to tell those apart.
+  #
+  # **One exporter, because the local rehearsal has one host.** §2.1 asks for node_exporter on
+  # every capacity-unit host and on the generator/monitor host; on this workstation all four
+  # shard groups and the generator share a single WSL VM, so one exporter observes all of them
+  # and a second would report the same kernel twice. PR4b's independently provisioned topology
+  # is where the set becomes plural — and that is the point of the exercise, since a shared
+  # kernel is exactly what makes the local numbers rehearsal evidence rather than capacity
+  # evidence.
+  #
+  # It measures the host, so it is pinned with the rest of the measuring side rather than left
+  # to land on a capacity unit's CPUs (rehearsal overlay).
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    container_name: alloca-node-exporter
+    # The host's PID namespace, so process-level host state is the host's rather than this
+    # container's view of itself.
+    pid: host
+    command:
+      # Read the host's namespaces through bind mounts rather than the container's own, which
+      # would otherwise describe the container: its cgroup CPU count, its filesystem, its
+      # network. That is the failure mode where every series is present, plausible, and about
+      # the wrong machine.
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      # Restricted collector set (§2.3). The default set is orders of magnitude more series per
+      # target, and the retained-evidence path pays for every one of them in snapshot size. These
+      # six are what the §3.12 diagnosis actually needs: whether the host was starved of CPU,
+      # short of memory, blocked on disk, saturated on the network, out of space, or — the one
+      # that answers the question most directly — under kernel-reported resource pressure.
+      - '--collector.disable-defaults'
+      - '--collector.cpu'
+      - '--collector.meminfo'
+      - '--collector.diskstats'
+      - '--collector.netdev'
+      - '--collector.filesystem'
+      # Kept although this kernel cannot serve it. PSI (/proc/pressure) is the most direct answer
+      # to "was the host stalling rather than merely busy", and it is absent on the WSL2 kernel
+      # this rehearsal runs on — `node_scrape_collector_success{collector="pressure"}` reads 0
+      # here (§3.14). Left enabled so the AWS hosts, whose kernels do carry it, collect it without
+      # a config change; a failed collector costs one series and reports itself.
+      - '--collector.pressure'
+      # The substitute while PSI is unavailable: run-queue depth against CPU count is the classic
+      # oversubscription signal, and unlike utilisation it rises when work is waiting rather than
+      # when work is being done.
+      - '--collector.loadavg'
+      # Bind mounts are read-only, but the filesystem collector would still walk container and
+      # overlay mounts and report them as host filesystems.
+      - '--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+|host/(proc|sys))($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    # Not published on the host. Prometheus reaches it by service name on this network, and a
+    # published port would be one more thing an operator could scrape by accident.
+    expose:
+      - '9100'
 
   grafana:
     image: grafana/grafana:11.5.1

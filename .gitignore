@@ -58,6 +58,16 @@ Thumbs.db
 # the repo root is how it ends up committed by accident.
 /test/results/
 
+# Observed run state: what was actually running, captured from the live system.
+# The whole directory is ignored rather than one file at a time, because the
+# reason applies to the class and not to deployment.json specifically — an
+# observation committed goes stale silently and then misdescribes what was under
+# test, while looking exactly as authoritative as a fresh one. That is the
+# opposite of the *declared* documents in deploy/topology/, which are committed
+# precisely because they state intent. Only the README explaining this is kept.
+/test/observed/*
+!/test/observed/README.md
+
 # Terraform local state and plans
 **/.terraform/*
 *.tfstate
@@ -74,3 +84,6 @@ terraform.rc
 
 # Discovered Prometheus scrape targets: a property of the machine, not the project.
 /deploy/observability/targets/*.json
+# Generated per-authority postgres exporter targets: a property of the rung being raised, derived
+# from ITC_GROUPS by test/scripts/itc-obs-targets.sh, never edited by hand.
+/deploy/observability/targets-postgres/*.json

@@ -1,0 +1,17 @@
+{
+	"ulid": "01M062THE69W4YRH2JMXHTN0S7",
+	"minTime": 1786744800000,
+	"maxTime": 1786752000000,
+	"stats": {
+		"numSamples": 2672847,
+		"numSeries": 1167,
+		"numChunks": 23103
+	},
+	"compaction": {
+		"level": 1,
+		"sources": [
+			"01M062THE69W4YRH2JMXHTN0S7"
+		]
+	},
+	"version": 1
+}

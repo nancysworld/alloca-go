@@ -71,7 +71,8 @@ type MultiOrgDispersed struct {
 	Confirm bool
 }
 
-func (MultiOrgDispersed) Name() string { return "multi-org-dispersed" }
+func (MultiOrgDispersed) Name() string         { return "multi-org-dispersed" }
+func (MultiOrgDispersed) IntendsReplays() bool { return false }
 
 func (m MultiOrgDispersed) Do(ctx context.Context, c *Client, seq int) []Response {
 	group := m.Groups[seq%len(m.Groups)]
@@ -98,12 +99,12 @@ func (m MultiOrgDispersed) Do(ctx context.Context, c *Client, seq int) []Respons
 
 	user := User{OrganisationID: userOrg, UserID: domain.UserID(fmt.Sprintf("u-%d", seq))}
 
-	reserved := c.Reserve(ctx, user, slot, key(m.Name(), seq, "reserve"))
+	reserved := c.Reserve(ctx, user, slot, c.key(m.Name(), seq, "reserve"))
 	out := []Response{reserved}
 	if !m.Confirm || reserved.ReservationID == "" {
 		return out
 	}
-	return append(out, c.Confirm(ctx, user, reserved.ReservationID, key(m.Name(), seq, "confirm")))
+	return append(out, c.Confirm(ctx, user, reserved.ReservationID, c.key(m.Name(), seq, "confirm")))
 }
 
 // HotOrganisation concentrates every request on one organisation, so one authority carries
@@ -118,12 +119,13 @@ type HotOrganisation struct {
 	Slots []Slot
 }
 
-func (HotOrganisation) Name() string { return "hot-organisation" }
+func (HotOrganisation) Name() string         { return "hot-organisation" }
+func (HotOrganisation) IntendsReplays() bool { return false }
 
 func (h HotOrganisation) Do(ctx context.Context, c *Client, seq int) []Response {
 	slot := h.Slots[seq%len(h.Slots)]
 	user := User{OrganisationID: h.Org, UserID: domain.UserID(fmt.Sprintf("u-%d", seq))}
-	return []Response{c.Reserve(ctx, user, slot, key(h.Name(), seq, "reserve"))}
+	return []Response{c.Reserve(ctx, user, slot, c.key(h.Name(), seq, "reserve"))}
 }
 
 // CrossAuthorityControl issues reserves whose two organisations resolve to *different*
@@ -142,7 +144,8 @@ type CrossAuthorityControl struct {
 	Groups []OrgGroup
 }
 
-func (CrossAuthorityControl) Name() string { return "cross-authority-control" }
+func (CrossAuthorityControl) Name() string         { return "cross-authority-control" }
+func (CrossAuthorityControl) IntendsReplays() bool { return false }
 
 func (x CrossAuthorityControl) Do(ctx context.Context, c *Client, seq int) []Response {
 	if len(x.Groups) < 2 {
@@ -162,7 +165,7 @@ func (x CrossAuthorityControl) Do(ctx context.Context, c *Client, seq int) []Res
 	slot := slotGroup.Slots[seq%len(slotGroup.Slots)]
 	user := User{OrganisationID: userOrg, UserID: domain.UserID(fmt.Sprintf("u-%d", seq))}
 
-	return []Response{c.Reserve(ctx, user, slot, key(x.Name(), seq, "reserve"))}
+	return []Response{c.Reserve(ctx, user, slot, c.key(x.Name(), seq, "reserve"))}
 }
 
 var (

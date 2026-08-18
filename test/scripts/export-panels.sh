@@ -72,22 +72,45 @@ def seconds(d):
 #
 # Both windows are recorded below: `window` is the cell's measured phase and stays the
 # authority for what was measured; `query_window` is what these files actually cover.
-query_start = (datetime.datetime.fromisoformat(start.replace("Z", "+00:00"))
-               + datetime.timedelta(seconds=seconds(rng)))
-query_start_s = query_start.strftime("%Y-%m-%dT%H:%M:%SZ")
-if query_start >= datetime.datetime.fromisoformat(end.replace("Z", "+00:00")):
+def shifted(from_s, rng_s):
+    """The first evaluation instant whose rate window lies wholly inside the measured phase."""
+    t = (datetime.datetime.fromisoformat(from_s.replace("Z", "+00:00"))
+         + datetime.timedelta(seconds=seconds(rng_s)))
+    return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+query_start_s = shifted(start, rng)
+if query_start_s >= end:
     raise SystemExit(
         f"measured window {start}..{end} is shorter than one rate range ({rng}), so no exported "
         f"point could be free of pre-window samples; lengthen WINDOW or lower export_range")
 
 manifest = []
 for p in panels:
-    expr = p["expr"].replace("$RANGE", rng)
+    # Per-panel range (ag-sept-pr4.md §2.4). A host series and a request-rate series do not want
+    # the same window: `alloca-go` is scraped at 1s, the host job at 5s, and a rate() window
+    # shorter than two scrape intervals of *its own* series returns nothing at all. The panel
+    # declares what it needs; export_range is the default for everything that does not care.
+    panel_range = p.get("range", rng)
+    expr = p["expr"].replace("$RANGE", panel_range)
     if "$" in expr:
         raise SystemExit(f"panel {p['key']}: unsubstituted variable in {expr}")
 
     # Instant selectors carry no range, so nothing bleeds in and they keep the full window.
-    q_start = query_start_s if "[" in p["expr"] else start
+    #
+    # A ranged panel is shifted by *its own* range, not by the global one. Shifting a 30s panel
+    # by 15s would leave its first evaluation covering [start-15s, start+15s] — reaching into
+    # warm-up, which is the exact artifact this shift exists to remove, and it would do it only
+    # for the panels that declared a longer window.
+    if "[" not in p["expr"]:
+        q_start = start
+    else:
+        q_start = shifted(start, panel_range)
+        if q_start >= end:
+            raise SystemExit(
+                f"panel {p['key']}: measured window {start}..{end} is shorter than its rate "
+                f"range ({panel_range}), so no exported point could be free of pre-window "
+                f"samples; lengthen WINDOW or lower this panel's range")
     url = prom + "/api/v1/query_range?" + urllib.parse.urlencode(
         {"query": expr, "start": q_start, "end": end, "step": step}
     )

@@ -1,0 +1,12 @@
+started=2026-08-16T21:17:10Z
+repeats=10
+gap_seconds=10
+ITC_GROUPS=4
+WORKLOAD=wl-mut-disp-4
+CONCURRENCY=16
+WINDOW=60s
+SLOTS=3200
+CAPACITY=20
+ITC_CPUS_GENERATOR=8-11
+revision=85ea98f
+tree_clean=yes

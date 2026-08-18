@@ -1,0 +1,60 @@
+# The local partitioned rehearsal overlay (ag-sept-pr4.md §2.14).
+#
+# Applied on top of docker-compose.yml to confine each shard group to its own non-overlapping
+# set of scheduler-visible CPUs, so the local 1/2/4 family can exercise the Iteration C
+# machinery before any metered AWS time is spent.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.rehearsal.yml ...
+#
+# **cpuset, not CPU-time quota.** `cpus:` limits how much CPU time a container may accumulate;
+# it does not stop two shard groups from being scheduled onto the same core and contending for
+# its caches and execution ports. The rehearsal exists to make groups independent in the way
+# separate EC2 hosts would be, and only a cpuset does that.
+#
+# **The service and its PostgreSQL share one group's set on purpose.** That is the contention
+# shape a c5.large capacity unit has — one service and one authority on two vCPUs — and
+# reproducing it is most of what makes the rehearsal informative about the planned experiment.
+#
+# **This overlay is local-only and never describes a capacity point.** All groups still share
+# one workstation, one WSL kernel, one storage path and one page cache, so a partition bounds
+# CPU and nothing else. Rehearsal Goodput is diagnostic evidence: it cannot discharge
+# `VAL-SCALE-5`, cannot become a Tier-2 result, and is never mixed with AWS points
+# (ag-sept-validation-plan.md §4.6).
+#
+# **Pinning the units is only half of it.** A generator free to run anywhere will land on the
+# units' CPUs and dissolve the partition it was raised to create. `make itc-rehearse` prints the
+# generator's set, and test/scripts/itc-run.sh confines it with taskset.
+
+services:
+  authority-1-db:
+    cpuset: "${ITC_CPUS_A:-0-1}"
+  service-1:
+    cpuset: "${ITC_CPUS_A:-0-1}"
+
+  authority-2-db:
+    cpuset: "${ITC_CPUS_B:-2-3}"
+  service-2:
+    cpuset: "${ITC_CPUS_B:-2-3}"
+
+  authority-3-db:
+    cpuset: "${ITC_CPUS_C:-4-5}"
+  service-3:
+    cpuset: "${ITC_CPUS_C:-4-5}"
+
+  authority-4-db:
+    cpuset: "${ITC_CPUS_D:-6-7}"
+  service-4:
+    cpuset: "${ITC_CPUS_D:-6-7}"
+
+  # Migrations run before the services and are not part of the measured shape, but they are
+  # pinned to their own group's set anyway: an unpinned migration would be the one container
+  # allowed to touch every CPU, which is exactly the kind of exception that later gets
+  # forgotten when someone adds a step to it.
+  authority-1-migrate:
+    cpuset: "${ITC_CPUS_A:-0-1}"
+  authority-2-migrate:
+    cpuset: "${ITC_CPUS_B:-2-3}"
+  authority-3-migrate:
+    cpuset: "${ITC_CPUS_C:-4-5}"
+  authority-4-migrate:
+    cpuset: "${ITC_CPUS_D:-6-7}"

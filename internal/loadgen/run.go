@@ -15,7 +15,19 @@ import (
 
 // Options configure one run. Exactly one of Iterations or Duration bounds it.
 type Options struct {
+	// Concurrency is the worker population of a single-pool run, which is every run that
+	// drives one target set from one shared queue. It remains the *total*, which is what the
+	// historical sweeps and their retained artifacts mean by it.
 	Concurrency int
+	// WorkersPerGroup is Iteration C's experiment variable: the closed-loop workers assigned
+	// to each active shard group (ag-sept-validation-plan.md §4.6.1). It is not a PostgreSQL
+	// connection count and is not constrained to a multiple of `pool_max_conns`.
+	//
+	// It is a separate field from Concurrency rather than a reinterpretation of it because
+	// the two are different quantities and a run reports both: at G4, `WorkersPerGroup=16`
+	// is 64 total workers, while the historical `c16` cells were 16 total, about 4 per
+	// group. Reusing one field would make those artifacts silently comparable.
+	WorkersPerGroup int
 	// Iterations bounds the run by logical units of work. Closed-loop by concurrency is
 	// sufficient for PR1 (§6.3); open-loop rate control is a later, optional addition.
 	//
@@ -24,6 +36,11 @@ type Options struct {
 	// goes the sooner the cell ends, so the fewest samples are collected at exactly the
 	// operating points a frontier is read from, and no two cells cover the same interval.
 	// PR1's 60-iteration smoke run completed in 0.06s, which no rate() window can resolve.
+	//
+	// In a multi-stream run it bounds *each* stream rather than the run. A shared budget
+	// would be one more way for groups to couple: the fast ones would consume it while a
+	// slow one was still working, and the slow group's offered demand would depend on its
+	// neighbours' throughput. Duration is the bound Iteration C's retained runs use anyway.
 	Iterations int
 	// Duration bounds the run by wall-clock instead: workers keep pulling units until the
 	// window elapses. Every cell then covers the same interval whatever throughput it
@@ -54,14 +71,44 @@ func NewRunner(c *Client, opts Options) *Runner { return &Runner{client: c, opts
 // responses already collected are still summarised, because a truncated run that reports
 // what it did is more useful than one that reports nothing.
 func (r *Runner) Run(ctx context.Context, w Workload) Summary {
+	// One unnamed stream is the single-pool run this method has always performed: one
+	// sequence, one collector, Concurrency workers.
+	return r.run(ctx, []Stream{{Workload: w}}, r.opts.Concurrency)
+}
+
+// RunStreams executes several shard groups' demand concurrently, each from its own fixed
+// worker pool, and returns one summary carrying both aggregate and per-group accounting.
+//
+// The measured interval is shared — one barrier, one deadline, one elapsed — because the run
+// is one experiment and every rate it reports has that interval as its denominator. What is
+// not shared is anything that could make one group's latency reduce another's offered demand:
+// workers, sequences and collectors are per stream (validation plan §4.6.1, VAL-NEG-8).
+//
+// An invalid stream set is refused rather than measured. Attributing requests to groups is
+// the point of this path, so a set that cannot be attributed is a configuration error, not a
+// run with a caveat.
+func (r *Runner) RunStreams(ctx context.Context, streams []Stream) (Summary, error) {
+	if err := validateStreams(streams); err != nil {
+		return Summary{}, err
+	}
+	if r.opts.WorkersPerGroup <= 0 {
+		return Summary{}, fmt.Errorf("loadgen: a multi-group run needs workers per group")
+	}
+	return r.run(ctx, streams, r.opts.WorkersPerGroup), nil
+}
+
+// run is the closed-loop engine both entry points share. workers is the pool size *per
+// stream*, so the run offers workers × len(streams) in total.
+func (r *Runner) run(ctx context.Context, streams []Stream, workers int) Summary {
 	var (
-		seq       atomic.Int64
-		finished  atomic.Int64
-		mu        sync.Mutex
-		collected []Response
-		barrier   = make(chan struct{})
-		wg        sync.WaitGroup
+		barrier = make(chan struct{})
+		wg      sync.WaitGroup
 	)
+
+	// Per stream, not per run. A shared collector would put every worker behind one mutex,
+	// which is a coupling this path exists to remove: a group's workers must be delayed by
+	// its own authority and by nothing else the generator does.
+	streamState := make([]streamCollector, len(streams))
 
 	// Generator utilisation is sampled around the run rather than derived afterwards:
 	// §6.3 requires the harness to expose enough of its own behaviour to rule out
@@ -82,37 +129,42 @@ func (r *Runner) Run(ctx context.Context, w Workload) Summary {
 	// goroutine happened to be scheduled.
 	var deadline time.Time
 
-	for range r.opts.Concurrency {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-barrier
-			for {
-				n := int(seq.Add(1)) - 1
-				if ctx.Err() != nil {
-					return
+	for i := range streams {
+		stream := streams[i]
+		state := &streamState[i]
+		for range workers {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-barrier
+				for {
+					n := int(state.seq.Add(1)) - 1
+					if ctx.Err() != nil {
+						return
+					}
+					if deadline.IsZero() && n >= r.opts.Iterations {
+						return
+					}
+					if !deadline.IsZero() && !time.Now().Before(deadline) {
+						return
+					}
+					responses := stream.Workload.Do(ctx, r.client, n)
+					now := time.Now()
+					state.mu.Lock()
+					for i := range responses {
+						responses[i].completedAt = now
+						responses[i].group = stream.Group
+						state.collected = append(state.collected, responses[i])
+					}
+					state.mu.Unlock()
+					// Counted after Do returns, so this is *logical units finished*, not
+					// units started. A workload that issues several requests per unit —
+					// dispersed with -confirm — makes the two different numbers, and it is
+					// this one that says whether the experiment ran to its stated size.
+					state.finished.Add(1)
 				}
-				if deadline.IsZero() && n >= r.opts.Iterations {
-					return
-				}
-				if !deadline.IsZero() && !time.Now().Before(deadline) {
-					return
-				}
-				responses := w.Do(ctx, r.client, n)
-				now := time.Now()
-				mu.Lock()
-				for i := range responses {
-					responses[i].completedAt = now
-					collected = append(collected, responses[i])
-				}
-				mu.Unlock()
-				// Counted after Do returns, so this is *logical units finished*, not
-				// units started. A workload that issues several requests per unit —
-				// dispersed with -confirm — makes the two different numbers, and it is
-				// this one that says whether the experiment ran to its stated size.
-				finished.Add(1)
-			}
-		}()
+			}()
+		}
 	}
 
 	started := time.Now()
@@ -123,10 +175,31 @@ func (r *Runner) Run(ctx context.Context, w Workload) Summary {
 	wg.Wait()
 	elapsed := time.Since(started)
 
+	var (
+		collected      []Response
+		completedUnits int
+	)
+	for i := range streamState {
+		collected = append(collected, streamState[i].collected...)
+		completedUnits += int(streamState[i].finished.Load())
+	}
+
 	measured, discarded := applyWarmUp(collected, started, r.opts.WarmUp)
-	return summarise(w.Name(), measured, elapsed, cpuDelta(startCPU), r.opts, r.client.validate,
+
+	// The summary reports the *total* worker population as Concurrency, whichever entry
+	// point ran: it is what the run offered, and every historical artifact means that by the
+	// field. WorkersPerGroup carries the per-group variable beside it rather than instead of
+	// it (measurement-contract §11).
+	opts := r.opts
+	opts.Concurrency = workers * len(streams)
+	if len(streams) > 1 || r.opts.WorkersPerGroup > 0 {
+		opts.WorkersPerGroup = workers
+	}
+
+	first := streams[0].Workload
+	summary := summarise(first.Name(), first.IntendsReplays(), measured, elapsed, cpuDelta(startCPU), opts, r.client.validate,
 		runFacts{
-			completedUnits:      int(finished.Load()),
+			completedUnits:      completedUnits,
 			interrupted:         ctx.Err() != nil,
 			warmUpDiscarded:     discarded,
 			warmUpWindow:        r.opts.WarmUp,
@@ -134,6 +207,49 @@ func (r *Runner) Run(ctx context.Context, w Workload) Summary {
 			duration:            r.opts.Duration,
 			elapsed:             elapsed,
 		})
+	if len(streams) > 1 || r.opts.WorkersPerGroup > 0 {
+		summary.Groups = summariseGroups(streams, streamState, workers, started, r.opts.WarmUp)
+	}
+	return summary
+}
+
+// streamCollector is one stream's own sequence, counter and buffer.
+//
+// Nothing in it is shared with another stream. That is the point: the run may report that a
+// group's workers were blocked on their own authority, and never that they were blocked on
+// the generator's bookkeeping for a different group.
+type streamCollector struct {
+	seq       atomic.Int64
+	finished  atomic.Int64
+	mu        sync.Mutex
+	collected []Response
+}
+
+// summariseGroups builds the per-group accounting the capacity comparison reads.
+//
+// Every group is reported even if it completed nothing. A group that vanished from the
+// artifact because it never answered is exactly the observation VAL-NEG-8 exists to make
+// visible, and an absent row would read as a topology that had fewer groups.
+func summariseGroups(
+	streams []Stream, state []streamCollector, workers int, started time.Time, warmUp time.Duration,
+) []GroupSummary {
+	groups := make([]GroupSummary, 0, len(streams))
+	for i := range streams {
+		measured, _ := applyWarmUp(state[i].collected, started, warmUp)
+		tally := tallyResponses(measured)
+		groups = append(groups, GroupSummary{
+			Group:               streams[i].Group,
+			Workers:             workers,
+			CompletedIterations: int(state[i].finished.Load()),
+			Completed:           tally.completed,
+			Goodput:             tally.goodput,
+			ReplayedMutations:   tally.replayed,
+			Invalid:             tally.invalid,
+			Totals:              tally.totals(),
+			LatencyMS:           percentiles(tally.latencies),
+		})
+	}
+	return groups
 }
 
 // runFacts are what Run observed about the run itself rather than about any response.
@@ -184,9 +300,19 @@ func (f runFacts) truncationReason(s Summary) string {
 // Summary is the machine-readable run result: the totals a capacity claim is built from,
 // and the evidence that the claim is admissible at all.
 type Summary struct {
-	Workload    string `json:"workload"`
-	Concurrency int    `json:"concurrency"`
-	Iterations  int    `json:"iterations"`
+	Workload string `json:"workload"`
+	// ReplaysIntended records whether this workload drives replays deliberately, so a reader
+	// — and Certify — can tell a measured disposition control from a run served out of a
+	// previous run's idempotency records. Both report replays; only one of them meant to.
+	ReplaysIntended bool `json:"replays_intended"`
+	// Concurrency is the total worker population the run offered.
+	Concurrency int `json:"concurrency"`
+	// WorkersPerGroup is Iteration C's experiment variable, omitted by single-pool runs so
+	// their artifacts keep their historical shape. Both are reported because neither can be
+	// derived from the other without knowing the topology, and the retained `c16`/`c32`
+	// cells predate the distinction: they are 16 and 32 *total* (validation plan §4.6.1).
+	WorkersPerGroup int `json:"workers_per_group,omitempty"`
+	Iterations      int `json:"iterations"`
 	// DurationRequestedSeconds is the window a duration-bounded run was asked for, zero when
 	// the run was bounded by Iterations instead. Reported so a reader can tell which bound
 	// applied without inferring it: `iterations: 100` on a duration run is the flag default,
@@ -207,6 +333,12 @@ type Summary struct {
 	// Totals is every completed request keyed by operation and outcome, with replay as an
 	// orthogonal dimension rather than a peer outcome (measurement-contract §4).
 	Totals []Total `json:"totals"`
+
+	// Groups is per-shard-group accounting for a multi-group run, empty for a single-pool
+	// one. The aggregate above stays the run's headline because capacity is a property of
+	// the topology; the breakdown is what shows the aggregate was not one saturated group
+	// and three starved ones (validation plan §4.6.1).
+	Groups []GroupSummary `json:"groups,omitempty"`
 
 	// Completed counts every request that reached a terminal classification. Goodput
 	// counts only successful *mutations* — summed over the three mutation operations,
@@ -529,12 +661,14 @@ type GeneratorStats struct {
 
 // summarise folds responses into the reported totals.
 func summarise(
-	workload string, responses []Response, elapsed time.Duration,
+	workload string, replaysIntended bool, responses []Response, elapsed time.Duration,
 	cpuSeconds float64, opts Options, validated bool, facts runFacts,
 ) Summary {
 	s := Summary{
 		Workload:                 workload,
+		ReplaysIntended:          replaysIntended,
 		Concurrency:              opts.Concurrency,
+		WorkersPerGroup:          opts.WorkersPerGroup,
 		Iterations:               opts.Iterations,
 		CompletedIterations:      facts.completedUnits,
 		DurationSeconds:          elapsed.Seconds(),
@@ -544,47 +678,14 @@ func summarise(
 		ValidationEnabled:        validated,
 	}
 
-	cells := map[Total]int{}
-	latencies := make([]float64, 0, len(responses))
-	for _, r := range responses {
-		s.Completed++
-		cells[Total{Operation: string(r.Operation), Outcome: r.Outcome, Reason: r.Reason, Replay: r.Replay}]++
-		latencies = append(latencies, float64(r.Latency)/float64(time.Millisecond))
-
-		// IsKnown is the mutation test: the read route deliberately does not count toward
-		// booking goodput. A successful listing is admitted_success in the sense that the
-		// service answered correctly, but it is not a booking (observability §3.1).
-		if r.Outcome == domain.OutcomeAdmittedSuccess && r.Operation.IsKnown() {
-			if r.Replay {
-				s.ReplayedMutations++
-			} else {
-				s.Goodput++
-			}
-		}
-		if r.Invalid != "" {
-			s.Invalid++
-			if len(s.InvalidSamples) < 5 {
-				s.InvalidSamples = append(s.InvalidSamples, r.Invalid)
-			}
-		}
-	}
-
-	for cell, n := range cells {
-		cell.Count = n
-		s.Totals = append(s.Totals, cell)
-	}
-	sort.Slice(s.Totals, func(i, j int) bool {
-		a, b := s.Totals[i], s.Totals[j]
-		if a.Operation != b.Operation {
-			return a.Operation < b.Operation
-		}
-		if a.Outcome != b.Outcome {
-			return a.Outcome < b.Outcome
-		}
-		return a.Reason < b.Reason
-	})
-
-	s.LatencyMS = percentiles(latencies)
+	tally := tallyResponses(responses)
+	s.Completed = tally.completed
+	s.Goodput = tally.goodput
+	s.ReplayedMutations = tally.replayed
+	s.Invalid = tally.invalid
+	s.InvalidSamples = tally.invalidSamples
+	s.Totals = tally.totals()
+	s.LatencyMS = percentiles(tally.latencies)
 	s.Generator = GeneratorStats{
 		GOMAXPROCS: runtime.GOMAXPROCS(0),
 		Goroutines: runtime.NumGoroutine(),
@@ -643,6 +744,93 @@ func applyWarmUp(responses []Response, started time.Time, warmUp time.Duration) 
 		kept = append(kept, r)
 	}
 	return kept, len(responses) - len(kept)
+}
+
+// GroupSummary is one shard group's own accounting inside a multi-group run.
+//
+// It carries the fields a per-group reading actually needs and not a second copy of the
+// whole Summary: soundness, generator utilisation and the measured interval are properties
+// of the run, and a per-group verdict on them would invite quoting one group as though it
+// were an experiment.
+type GroupSummary struct {
+	// Group is the shard-group identity its demand stream declared.
+	Group string `json:"group"`
+	// Workers is the fixed pool this group owned. It is reported per group rather than
+	// inferred from the run's total because the claim under test is that this number did
+	// not move when another group slowed down (VAL-NEG-8).
+	Workers             int         `json:"workers"`
+	CompletedIterations int         `json:"completed_iterations"`
+	Completed           int         `json:"completed_requests"`
+	Goodput             int         `json:"successful_mutation_goodput"`
+	ReplayedMutations   int         `json:"replayed_mutations"`
+	Invalid             int         `json:"invalid_responses"`
+	Totals              []Total     `json:"totals"`
+	LatencyMS           Percentiles `json:"latency_ms"`
+}
+
+// responseTally is the per-response arithmetic shared by the run summary and each group's.
+//
+// It exists so the two cannot drift: a goodput rule applied to the aggregate but not to the
+// breakdown, or the other way round, would produce a run whose groups do not sum to it.
+type responseTally struct {
+	completed      int
+	goodput        int
+	replayed       int
+	invalid        int
+	invalidSamples []string
+	latencies      []float64
+	cells          map[Total]int
+}
+
+func tallyResponses(responses []Response) responseTally {
+	t := responseTally{
+		cells:     map[Total]int{},
+		latencies: make([]float64, 0, len(responses)),
+	}
+	for _, r := range responses {
+		t.completed++
+		t.cells[Total{Operation: string(r.Operation), Outcome: r.Outcome, Reason: r.Reason, Replay: r.Replay}]++
+		t.latencies = append(t.latencies, float64(r.Latency)/float64(time.Millisecond))
+
+		// IsKnown is the mutation test: the read route deliberately does not count toward
+		// booking goodput. A successful listing is admitted_success in the sense that the
+		// service answered correctly, but it is not a booking (observability §3.1).
+		if r.Outcome == domain.OutcomeAdmittedSuccess && r.Operation.IsKnown() {
+			if r.Replay {
+				t.replayed++
+			} else {
+				t.goodput++
+			}
+		}
+		if r.Invalid != "" {
+			t.invalid++
+			if len(t.invalidSamples) < 5 {
+				t.invalidSamples = append(t.invalidSamples, r.Invalid)
+			}
+		}
+	}
+	return t
+}
+
+// totals renders the tallied cells in a stable order, so two runs of the same experiment
+// produce artifacts that diff.
+func (t responseTally) totals() []Total {
+	out := make([]Total, 0, len(t.cells))
+	for cell, n := range t.cells {
+		cell.Count = n
+		out = append(out, cell)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Operation != b.Operation {
+			return a.Operation < b.Operation
+		}
+		if a.Outcome != b.Outcome {
+			return a.Outcome < b.Outcome
+		}
+		return a.Reason < b.Reason
+	})
+	return out
 }
 
 // percentiles computes the reported quantiles by nearest-rank on the sorted sample.

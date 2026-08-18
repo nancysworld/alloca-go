@@ -43,3 +43,20 @@ this README is the navigation entry point, not a second definition of the proces
 
 A fact should have one normative home. Other documents link to that owner rather than maintaining
 a competing copy.
+
+## Diagram convention
+
+Durable documentation should use diagrams when they materially improve **first-read
+comprehension** of structure, topology, flow, ownership, sequence, state transitions, or comparison.
+The purpose is to give a reader the mental model quickly; precise prose still owns the exact
+semantics.
+
+Prefer small, reviewable diagrams close to the text they explain. **Mermaid is the default** when it
+can express the idea clearly because its source remains version-controlled beside the document.
+ASCII diagrams remain appropriate when they are simpler or more portable.
+
+A useful diagram should have one clear job and should complement rather than duplicate a large
+block of prose. Do not add diagrams only for decoration. If a diagram carries normative semantics,
+the owning document and surrounding text must make that explicit; otherwise it is explanatory.
+When the adjacent contract changes, update the diagram in the same change so an intuitive picture
+cannot silently become stale.

@@ -23,7 +23,8 @@ which imports are allowed. AG-M1 introduced the most consequential package bound
 | `docs/` | Design docs, decision records, planning, reports, disclosure policy. |
 | `test/` | **Operator-run verification, with one deliberate exception wired into CI.** See below. |
 | `test/scripts/` | Operator and developer shell scripts invoked from the Makefile. Never application logic: anything a Go test or a Go binary should own belongs in `internal/` or `cmd/`. |
-| `test/results/` | Local load-harness output (git-ignored). Scratch only — a run worth keeping is promoted into `docs/measurements/` deliberately. |
+| `test/observed/` | What was actually running, captured from the live system at run time and consumed by a run. **Everything here is git-ignored**: an observation is the opposite of the *declared* documents in `deploy/topology/`, and a committed one goes stale silently — `deployment.json` pins live image IDs, so a stale copy would let a run certify against an image that is not the one under test. Future clock and host captures belong here for the same reason. |
+| `test/results/` | Local load-harness output (git-ignored). Scratch only — a run worth keeping is promoted into `docs/measurements/` deliberately. Runs nest one level under a group (`pr4a/`, `pr3c/`, `sweep/`, `control-generator/`, `manual/`) so the directory stays navigable; each runner's `RESULTS_GROUP` picks its own. |
 | `deploy/` | Deployment artifacts — Compose files, configuration, and the placement document. Never Go source. `deploy/topology/` is the PR3b two-authority topology; `deploy/observability/` is the PR2 diagnostic stack. |
 | `.github/` | CI workflows. |
 | `bin/` | Locally provisioned dev tools and built binaries (git-ignored); never source. |
@@ -37,14 +38,27 @@ The name invites two wrong assumptions, so both are answered here.
 looking for a package's tests will look first. Nothing under `test/` is compiled, and no Go
 tooling treats the name specially — only `testdata/` is special to the toolchain.
 
-**One thing under it runs in CI, deliberately.** The gates are otherwise Go-only: `gofmt`,
+**Three things under it run in CI, deliberately.** The gates are otherwise Go-only: `gofmt`,
 `go vet`, `go build`, `go test ./...`, the race pass, the `-tags=integration` suite against a
-PostgreSQL service, and `golangci-lint`. Beside them `.github/workflows/ci.yml` runs
-`test/scripts/check-build-context.sh`, which asserts that `.dockerignore` excludes no tracked
-file — the property whose absence stamps every containerised run `vcs.modified=true` and makes
-it uncertifiable at any level (AG-Sept PR3b). It qualifies as a gate because it needs nothing
-an operator would have to provide: no daemon, no database, no judgement. Its end-to-end
-counterpart, `check-image-provenance.sh`, needs Docker and so stays a `make` target.
+PostgreSQL service, and `golangci-lint`. Beside them `.github/workflows/ci.yml` runs three shell
+checks:
+
+- `test/scripts/check-build-context.sh` asserts that `.dockerignore` excludes no tracked file —
+  the property whose absence stamps every containerised run `vcs.modified=true` and makes it
+  uncertifiable at any level (AG-Sept PR3b). Its end-to-end counterpart,
+  `check-image-provenance.sh`, needs Docker and so stays a `make` target.
+- `test/scripts/itc-cpu-layout-test.sh` asserts that `itc-cpu-layout.sh` still refuses a bad
+  Iteration C CPU partition. That check is what stops a rehearsal running on a partition nothing
+  validated, it is bash, and its comments once described four properties its code did not
+  enforce (AG-Sept PR4a). It controls the machine's apparent CPU count with `taskset`, so it
+  needs no override inside the script under test.
+- `test/scripts/itc-topology-check-test.sh` asserts that `itc-topology-check.sh` still classifies
+  running containers correctly — the units this rung raises, leftovers from a larger one, and
+  containers belonging to another Compose project entirely. It stubs `docker`, because the
+  property is set arithmetic over names rather than anything a daemon decides (AG-Sept PR4a).
+
+Both qualify as gates for the same reason: they need nothing an operator would have to provide —
+no daemon, no database, no judgement.
 
 The split is by *what a check needs*, not by how much it is worth. A merge gate has to
 reproduce on a clean runner with no operator present. Most of what lives in `test/` needs a

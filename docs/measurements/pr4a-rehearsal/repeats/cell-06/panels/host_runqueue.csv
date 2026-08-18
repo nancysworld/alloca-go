@@ -1,0 +1,14 @@
+timestamp,labels,value
+1786915445,"host=rehearsal-workstation,instance=node-exporter:9100,job=node,milestone=ag-sept,topology=rehearsal-host",10.54
+1786915450,"host=rehearsal-workstation,instance=node-exporter:9100,job=node,milestone=ag-sept,topology=rehearsal-host",9.77
+1786915455,"host=rehearsal-workstation,instance=node-exporter:9100,job=node,milestone=ag-sept,topology=rehearsal-host",10.11
+1786915460,"host=rehearsal-workstation,instance=node-exporter:9100,job=node,milestone=ag-sept,topology=rehearsal-host",10.74
+1786915465,"host=rehearsal-workstation,instance=node-exporter:9100,job=node,milestone=ag-sept,topology=rehearsal-host",11.17
+1786915470,"host=rehearsal-workstation,instance=node-exporter:9100,job=node,milestone=ag-sept,topology=rehearsal-host",11.95
+1786915475,"host=rehearsal-workstation,instance=node-exporter:9100,job=node,milestone=ag-sept,topology=rehearsal-host",11.72
+1786915480,"host=rehearsal-workstation,instance=node-exporter:9100,job=node,milestone=ag-sept,topology=rehearsal-host",12.78
+1786915485,"host=rehearsal-workstation,instance=node-exporter:9100,job=node,milestone=ag-sept,topology=rehearsal-host",12
+1786915490,"host=rehearsal-workstation,instance=node-exporter:9100,job=node,milestone=ag-sept,topology=rehearsal-host",12.32
+1786915495,"host=rehearsal-workstation,instance=node-exporter:9100,job=node,milestone=ag-sept,topology=rehearsal-host",12.69
+1786915500,"host=rehearsal-workstation,instance=node-exporter:9100,job=node,milestone=ag-sept,topology=rehearsal-host",12.56
+1786915505,"host=rehearsal-workstation,instance=node-exporter:9100,job=node,milestone=ag-sept,topology=rehearsal-host",13.31

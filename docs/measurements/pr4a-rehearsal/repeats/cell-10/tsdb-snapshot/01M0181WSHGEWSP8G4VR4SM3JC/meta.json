@@ -1,0 +1,17 @@
+{
+	"ulid": "01M0181WSHGEWSP8G4VR4SM3JC",
+	"minTime": 1786737600304,
+	"maxTime": 1786744800000,
+	"stats": {
+		"numSamples": 3239583,
+		"numSeries": 1161,
+		"numChunks": 27232
+	},
+	"compaction": {
+		"level": 1,
+		"sources": [
+			"01M0181WSHGEWSP8G4VR4SM3JC"
+		]
+	},
+	"version": 1
+}

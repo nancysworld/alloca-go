@@ -202,7 +202,12 @@ iteration; it does **not** emit:
 - process or database resource indicators (CPU, memory, goroutines, GC, connections);
 - admission queue depth and age, which have no producer until AG-M2.
 
-No aggregation, retention, or dashboard exists yet. Nothing here is a measured result:
-this milestone builds the **emission** path, and
-[`measurement-contract.md`](measurement-contract.md) §2 governs what may later be claimed
-from it.
+Nothing here is a measured result: this document owns the **emission** path, and
+[`measurement-contract.md`](measurement-contract.md) §2 governs what may be claimed from it.
+
+Aggregation, retention and a dashboard did not exist at AG-M1 and do now: AG-Sept PR2 added the
+Prometheus/Grafana path and per-cell CSV and TSDB retention, and PR4a added `node_exporter` as the
+host sensor. What the diagnostic view shows and how to read it is owned by
+[`../operations/dashboards.md`](../operations/dashboards.md); the canonical queries live in
+`deploy/observability/panels.json`. This document remains the authority on what the *service*
+emits, which is upstream of all of it.

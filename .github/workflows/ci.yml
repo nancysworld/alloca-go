@@ -8,9 +8,14 @@ name: CI
 # the `toolchain` directive is. golangci-lint is pinned below and mirrored by the
 # Makefile so the local and remote lint gates are identical.
 
+# `push` is restricted to main rather than "**". Listening to both events meant every push to an
+# open PR branch started two identical runs of the whole workflow — one for `push`, one for
+# `pull_request` — on the same SHA, doubling Actions minutes for ordinary development. An open PR
+# now gets one hosted run per update, and main gets one after merge. `make ci` remains the local
+# pre-push gate and runs the same checks.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -61,6 +66,29 @@ jobs:
       # the image unquotable at the floor of the ladder. Cheap, and needs no daemon.
       - name: build context (docker provenance gate)
         run: ./test/scripts/check-build-context.sh
+
+      # Guards the Iteration C rehearsal's CPU layout check, which is what refuses a bad
+      # partition before an image build and four database containers. It is bash, so the Go
+      # suite says nothing about it, and its comments once described four properties its code
+      # did not enforce (ag-sept-pr4.md §3.7). Needs bash, taskset and a few CPUs; the cases
+      # that assert the full 12-CPU partition skip on a smaller runner, the negative cases fit
+      # in four and run here.
+      - name: iteration C cpu layout check
+        run: ./test/scripts/itc-cpu-layout-test.sh
+
+      # Guards itc-topology-check.sh's container-set logic, which decides whether the topology
+      # about to be measured is the one selected. It stubs `docker`, so it needs no daemon: the
+      # property is set arithmetic over container names. It exists because that check counted the
+      # observability stack as topology units and refused a correct G4 (ag-sept-pr4.md §3).
+      - name: iteration C topology check logic
+        run: ./test/scripts/itc-topology-check-test.sh
+
+      # Guards the label that says which experiment a retained sample belongs to. prometheus.yml
+      # once set topology=single-instance-local job-wide, so every Iteration C sample was stamped
+      # as the PR2 experiment — and nothing reported it, because the label was present and
+      # well-formed. Pure text generation plus two static reads, so no daemon.
+      - name: iteration C observability labels
+        run: ./test/scripts/itc-obs-targets-test.sh
 
   integration:
     name: postgres integration

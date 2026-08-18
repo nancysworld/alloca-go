@@ -1,0 +1,4 @@
+SLOTS=3200
+CAPACITY=20
+organisations=4
+fresh_mutation_supply=256000

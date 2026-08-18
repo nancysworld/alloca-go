@@ -1,0 +1,125 @@
+{
+  "manifest": {
+    "service_commit_sha": "a76490115a589a69b96d3415668f1bece690ec2d",
+    "service_source_modified": false,
+    "service_go_version": "go1.26.5",
+    "image_id": "sha256:5c42a512fe65b9dac3f86afc2101cb0aa388cec370e78370a36961a50f901431",
+    "image_tag": "alloca-go:a764901",
+    "container_deployment": true,
+    "generator_commit_sha": "a76490115a589a69b96d3415668f1bece690ec2d",
+    "generator_source_modified": false,
+    "generator_go_version": "go1.26.5",
+    "replica_count": 1,
+    "deployment_topology": "1 shard group: one alloca-go service and one PostgreSQL authority sharing the group's two-CPU set, serving all four organisations from a single authority",
+    "environment": "local WSL2/Docker Desktop workstation; 16 logical CPUs exposed; scheduler-partitioned rehearsal; shared host/kernel/storage, not independently provisioned capacity evidence",
+    "authority_count": 1,
+    "routing_version": "itc-g1",
+    "placement_assignment": {
+      "authority-1": [
+        "org-a",
+        "org-b",
+        "org-c",
+        "org-d"
+      ]
+    },
+    "placement_digest": "2880afa3df5cecedddd4454f762a1a791488d4e6f16413a7d4fe48b205cf1abf",
+    "unit_count": 1,
+    "server_gomaxprocs": 2,
+    "timeout_budget": "admission_cap=250ms client_deadline=6s db_acquire_cap=500ms lock_timeout=2s server_deadline=5s statement_timeout=3s txn_budget=3.5s",
+    "reservation_ttl": "2m0s",
+    "postgres_version": "16.14",
+    "pool_size_per_replica": 16,
+    "aggregate_pool_size": 16,
+    "telemetry_mode": "full",
+    "run_id": "57e235cc2114b85c",
+    "workload": "wl-mut-disp-4",
+    "concurrency": 16,
+    "workers_per_group": 16,
+    "iterations": 16000,
+    "warm_up": "0s",
+    "dataset_slots": 200000,
+    "phase": "conditioning",
+    "conditioning": {
+      "run_id": "",
+      "slots_per_organisation": 200,
+      "target_mutations_per_organisation": 4000,
+      "organisations": 4,
+      "achieved_mutations": 16000,
+      "conditioning_requests": 16000,
+      "pool_recycled": false
+    },
+    "generator_location": "local",
+    "generator_gomaxprocs": 4,
+    "generator_num_cpu": 4,
+    "target": "http://localhost:8081",
+    "timestamp": "2026-08-18T18:12:50.720759707Z"
+  },
+  "summary": {
+    "workload": "wl-mut-disp-4",
+    "replays_intended": false,
+    "concurrency": 16,
+    "workers_per_group": 16,
+    "iterations": 16000,
+    "completed_iterations": 16000,
+    "duration_seconds": 9.558637107,
+    "warm_up_seconds": 0,
+    "warm_up_discarded": 0,
+    "totals": [
+      {
+        "operation": "reserve",
+        "outcome": "admitted_success",
+        "replay": false,
+        "count": 16000
+      }
+    ],
+    "groups": [
+      {
+        "group": "authority-1",
+        "workers": 16,
+        "completed_iterations": 16000,
+        "completed_requests": 16000,
+        "successful_mutation_goodput": 16000,
+        "replayed_mutations": 0,
+        "invalid_responses": 0,
+        "totals": [
+          {
+            "operation": "reserve",
+            "outcome": "admitted_success",
+            "replay": false,
+            "count": 16000
+          }
+        ],
+        "latency_ms": {
+          "p50": 8.80667,
+          "p95": 15.479368,
+          "p99": 28.689684,
+          "max": 169.733935
+        }
+      }
+    ],
+    "completed_requests": 16000,
+    "successful_mutation_goodput": 16000,
+    "replayed_mutations": 0,
+    "latency_ms": {
+      "p50": 8.80667,
+      "p95": 15.479368,
+      "p99": 28.689684,
+      "max": 169.733935
+    },
+    "generator": {
+      "gomaxprocs": 4,
+      "goroutines": 37,
+      "cpu_seconds": 1.885037,
+      "cpu_utilisation_per_core": 0.049301929210691195,
+      "num_cpu": 4
+    },
+    "response_validation_enabled": true,
+    "invalid_responses": 0,
+    "measurement_sound": true
+  },
+  "quotability": {
+    "level": "capacity",
+    "blocked_from": "publishable",
+    "blocked_because": "manifest is incomplete for a publishable claim: generator_location is \"local\": measurement-contract §13.1 requires the generator on compute separate from the service for a publishable claim"
+  }
+}

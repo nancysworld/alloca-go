@@ -432,7 +432,10 @@ SIZING
     clear_sandbox_placeholders
     build_generator
 
-    for groups in 1 4; do
+    # Which topologies this stage drives. Both, for the qualification itself; a single one when a
+    # later comparison has to hold every other variable fixed — running the *same* code path is
+    # what makes "everything else identical" true by construction rather than by inspection.
+    for groups in ${ITC_SUSTAINED_GROUPS:-1 4}; do
       log "sustained qualification: G$groups, ${WINDOW}, workers/group=$ITC_WORKERS_PER_GROUP,"
       log "  pool_max_conns=$ALLOCA_POOL_MAX_CONNS, conditioned, ordinary measurement path"
       ./test/scripts/itc-series.sh "$groups" 1         || fail "the sustained G$groups run did not complete. Stop here and diagnose this run

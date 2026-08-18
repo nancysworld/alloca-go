@@ -1585,6 +1585,52 @@ first two change what the fixture measures and are maintainer decisions, not imp
 and then immediately serve peak load against them. Nothing here is evidence about the service's
 capacity, and the healthy ~1.3k/s remains the local rehearsal regime (§3.17).
 
+### 3.21 The sustained runs decline smoothly, and it is not the cached-plan regime
+
+The 600 s qualification runs (G1 and G4, conditioned, `pool_max_conns=4`, 16 workers per group,
+ordinary measurement path) both fall monotonically for roughly the first 300 s and then hold a
+plateau for the rest of the window:
+
+| | slice 1 | slice 10 | ratio | spread |
+|---|---:|---:|---:|---:|
+| G1 | 1,200.8/s | 883.4/s | 0.74x | 1.41x |
+| G4 | 3,442.2/s | 2,612.9/s | 0.76x | 1.32x |
+
+**It is not §3.20's regime**, on three independent counts. That signature was a Seq Scan cached
+against an empty table: roughly 112x more logical buffer work per call (314 against 2.81), a
+timescale of tens of seconds, and a sharp recovery the moment an invalidation replaced the plan.
+These runs show buffer work per request rising about 3.7x at G1 and 2.6x at G4, over ~300 s, with
+no recovery anywhere in either window.
+
+What the retained evidence does support is **accumulated dataset growth**. `host_cpu_busy` is flat
+across both windows (2.3 -> 2.3 at G1, 7.8 -> 7.9 at G4) while Goodput falls, so each request is
+costing more CPU rather than the host having less to give; `pg_buffers_backend` rises against
+falling throughput; and the curve flattens as the marginal cost of further growth does. G1 adds
+566,651 rows to the mutation tables during its window and G4 adds 1,714,342. Both topologies
+decline by almost the same ratio, which is what a workload-intrinsic effect does and not what a
+topology-specific fault does.
+
+**Short cells cannot see it.** The 60 s runs of the same configuration reported 1,195/s at G1 and
+3,165/s at G4; the first slices of the 600 s runs report 1,200/s and 3,442/s. The short cells were
+measuring the opening minute and reporting it as the regime.
+
+**Retained for Analyse & Review, not resolved here** (maintainer instruction, 2026-08-18). The
+question the next iteration has to separate is which of these the benchmark should represent:
+
+- **production semantics in which transactional state genuinely grows without bound**, so capacity
+  is a function of dataset size and a declining trajectory is the honest answer; or
+- **a bounded hot-state lifecycle**, where archival or retention keeps the working set stationary
+  and a representative *mature-state* fixture would be the appropriate benchmark instead.
+
+The two imply different experiments and different meanings for a sustained number, and choosing
+between them is a requirements and workload-envelope decision rather than an implementation one.
+No workload or implementation change was made for it.
+
+**It also reaches §4.6.5's method.** If Goodput declines with accumulated rows, a 600 s average is
+a mean over a non-stationary trajectory, and two points at different worker levels differ partly
+because they reached different row counts rather than only because of load. That bears directly on
+S/H selection and is recorded here for the A&R rather than settled.
+
 ## 4. Open items
 
 - **Rung duration** stays open until §2.4's preflight derives it.

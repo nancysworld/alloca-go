@@ -41,13 +41,14 @@ change and the document benefits from preserving their shared history.
 |---|---|---|
 | [`ag-sept-pr1.md`](ag-sept-pr1.md) | measurement substrate and load harness | merged |
 | [`ag-sept-pr2.md`](ag-sept-pr2.md) | single-instance frontier | merged |
-| [`ag-sept-pr3.md`](ag-sept-pr3.md) | horizontal database authority Phase 1, across PR3a/3b/3c | in progress |
+| [`ag-sept-pr3.md`](ag-sept-pr3.md) | horizontal database authority Phase 1, across PR3a/3b/3c | merged |
+| [`ag-sept-pr4.md`](ag-sept-pr4.md) | independently provisioned shard-group capacity, across PR4a/4b | in progress |
 
-These three began as `docs/planning/ag-sept-pr*-scope.md` and moved here once the directory
-existed. They are named for the work unit, not the branch, and PR3's record spans three PRs
-because they implement one coherent scoped change.
+The first three began as `docs/planning/ag-sept-pr*-scope.md` and moved here once the directory
+existed. They are named for the work unit, not the branch, and PR3's and PR4's records each span
+several PRs because they implement one coherent scoped change.
 
-They still read as scope notes in places, because that is what they were written as. Sections
+Those three still read as scope notes in places, because that is what they were written as. Sections
 that state intent rather than what was built are the parts to revise as each is next materially
 updated — not a reason to rewrite their history.
 

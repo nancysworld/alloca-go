@@ -117,6 +117,38 @@ type Quotability struct {
 	BlockedBecause string `json:"blocked_because,omitempty"`
 }
 
+// unexpectedReplays refuses a capacity claim built on a fixture carried over from an earlier
+// run, and names the level it refuses at.
+//
+// Idempotency keys are scoped to the run (Client.key), so a workload that does not drive
+// replays deliberately cannot produce one within a single run: every key it mints is new. A
+// replay in such a run therefore means the *service* had a record for a key this run invented,
+// which happens when a previous run of the same shape reached the same seq — the reused-fixture
+// case — or when the run identity failed to vary. Either way the replayed requests committed
+// nothing, and goodput is short by exactly that population.
+//
+// **It gates at capacity, not at local.** A local claim is a reproducible observation of a
+// machine and a fully-replayed run is still honestly that; it is the *comparison* between
+// capacity points that the contamination corrupts, because a fixture reset before some rungs
+// and not others shifts one number and not the others. The disposition control is exempt by its
+// own declaration rather than by its name (Workload.IntendsReplays).
+//
+// alloca-seed's clean-start assertion remains required fixture preparation. This is the
+// structural half of the same guard: procedure catches the operator who forgets to re-seed,
+// this catches the run whose evidence would otherwise certify anyway (ag-sept-pr4.md §3.5).
+func unexpectedReplays(level Level, s Summary) string {
+	if level != LevelCapacity || s.ReplaysIntended || s.ReplayedMutations == 0 {
+		return ""
+	}
+	return fmt.Sprintf(
+		"%d of the run's mutations were replays, but workload %q does not drive replays: "+
+			"its idempotency keys are scoped to this run, so the service answered from records "+
+			"an earlier run wrote. Those requests committed nothing, and the reported goodput of "+
+			"%d is short by that population. Re-seed the fixture (test/scripts/itc-seed.sh, or "+
+			"alloca-seed -reset) and re-run before quoting a capacity point",
+		s.ReplayedMutations, s.Workload, s.Goodput)
+}
+
 // Certify decides what a run may back, from its manifest and its summary.
 //
 // Soundness is checked first and cannot be traded against provenance: a run whose responses
@@ -160,6 +192,9 @@ func Certify(m Manifest, s Summary) Quotability {
 				BlockedBecause: fmt.Sprintf("manifest is incomplete for a %s claim: %s",
 					want, strings.Join(missing, "; ")),
 			}
+		}
+		if because := unexpectedReplays(want, s); because != "" {
+			return Quotability{Level: reached, BlockedFrom: want, BlockedBecause: because}
 		}
 		reached = want
 	}

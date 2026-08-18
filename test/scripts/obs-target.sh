@@ -38,7 +38,8 @@ for host in "${candidates[@]}"; do
   {
     "targets": ["${host}:${PORT}"],
     "labels": {
-      "instance": "alloca-go-local"
+      "instance": "alloca-go-local",
+      "topology": "single-instance-local"
     }
   }
 ]

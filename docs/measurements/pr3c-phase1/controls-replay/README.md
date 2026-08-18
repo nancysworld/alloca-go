@@ -38,7 +38,7 @@ than to the topology, and it carries a forward pointer here rather than a correc
 
 ```sh
 make topo-up                                        # clean tree required
-make topo-deployment > test/results/deployment.json
+make topo-deployment > test/observed/deployment.json
 go build -o bin/alloca-load ./cmd/alloca-load       # both stamps must read vcs.modified=false
 go build -o bin/alloca-verify ./cmd/alloca-verify
 test/scripts/pr3c-experiments.sh controls

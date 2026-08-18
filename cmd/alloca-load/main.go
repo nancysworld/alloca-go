@@ -103,10 +103,31 @@ func run(args []string) error {
 				"single-authority and everything goes to -target")
 		workloadName = fs.String("workload", "dispersed",
 			"dispersed | hot-slot | hot-identity | replay | multi-org-dispersed | "+
-				"hot-organisation | cross-authority-control")
-		concurrency = fs.Int("concurrency", 10, "concurrent workers (closed loop)")
-		iterations  = fs.Int("n", 100, "logical units of work (mutually exclusive with -duration)")
-		duration    = fs.Duration("duration", 0,
+				"hot-organisation | cross-authority-control | wl-mut-disp-4")
+		concurrency     = fs.Int("concurrency", 10, "concurrent workers (closed loop), the run total")
+		workersPerGroup = fs.Int("workers-per-group", 0,
+			"drive each shard group from its own fixed worker pool of this size (Iteration C; "+
+				"wl-mut-disp-4 only). The run's total worker population is this times the number "+
+				"of groups the placement declares, so -workers-per-group 16 at G4 offers 64")
+		conditioning = fs.Bool("conditioning", false,
+			"run the conditioning phase instead of the measured one: drive the conditioning "+
+				"slot/identity/key namespace until the declared state target is reached, and "+
+				"write a conditioning report a later measured run begins from")
+		conditioningSlots = fs.Int("conditioning-slots", 0,
+			"slots per organisation reserved for the conditioning population (conditioning runs)")
+		conditioningTarget = fs.Int("conditioning-target", 0,
+			"fresh mutations per organisation the conditioning phase must commit; a state "+
+				"target rather than a duration, so every topology begins measurement at the "+
+				"same logical state (conditioning runs)")
+		conditionedBy = fs.String("conditioned-by", "",
+			"path to the conditioning run's report; the measured run derives its slot range "+
+				"and its measured-start baseline from it rather than being told them again")
+		poolRecycled = fs.Bool("pool-recycled", false,
+			"assert that the service pool was deterministically recycled between conditioning "+
+				"and this measured run, so no measured connection carries a plan prepared "+
+				"against empty mutation tables")
+		iterations = fs.Int("n", 100, "logical units of work (mutually exclusive with -duration)")
+		duration   = fs.Duration("duration", 0,
 			"run for this long instead of a fixed -n; required for sweep cells, whose rates "+
 				"are only comparable when every cell covers the same interval")
 		warmUp         = fs.Duration("warm-up", 0, "discard responses completing inside this window")
@@ -125,6 +146,9 @@ func run(args []string) error {
 		deployment = fs.String("deployment", "",
 			"path to a deployment record written by test/scripts/record-deployment.sh; supplies "+
 				"the image identity a containerised run must name (measurement-contract §11)")
+		declaration = fs.String("declaration", "",
+			"path to an operator-written declaration supplying the environment and topology "+
+				"facts no endpoint reports; required for a run to reach `capacity`")
 		out     = fs.String("out", "", "write the JSON report here (default stdout)")
 		confirm = fs.Bool("confirm", false, "dispersed: drive reserve→confirm")
 		require = fs.String("require", string(loadgen.LevelLocal),
@@ -161,6 +185,60 @@ func run(args []string) error {
 		return fmt.Errorf("-duration must not be negative")
 	case *duration == 0 && *iterations < 1:
 		return fmt.Errorf("-n must be at least 1")
+	case explicit["concurrency"] && explicit["workers-per-group"]:
+		// Refused rather than resolved, for the reason -n and -duration are. The two are
+		// different quantities — one total, one per group — and a run that offered 4× the
+		// intended demand because a flag was silently ignored is a measurement of something
+		// nobody asked for (validation plan §4.6.1).
+		return fmt.Errorf("-concurrency and -workers-per-group are mutually exclusive: " +
+			"-concurrency is the run's total worker population, -workers-per-group is the " +
+			"per-shard-group population Iteration C varies, and the total is then derived " +
+			"from the placement")
+	case *workersPerGroup < 0:
+		return fmt.Errorf("-workers-per-group must not be negative")
+	case *conditioning && *conditionedBy != "":
+		return fmt.Errorf("-conditioning and -conditioned-by are mutually exclusive: one " +
+			"establishes the starting state, the other begins from a state already established")
+	case *conditioning && (*conditioningSlots < 1 || *conditioningTarget < 1):
+		return fmt.Errorf("-conditioning needs -conditioning-slots and -conditioning-target: " +
+			"a conditioning phase without a predeclared, reproducible state target is warm-up " +
+			"with a different name (measurement-contract §5)")
+	case *conditioning && explicit["duration"]:
+		// Conditioning is bounded by the state it establishes, not by the clock. A
+		// duration-bounded phase leaves a different database on a fast topology than on a
+		// slow one, which is the comparison Iteration C is trying to make.
+		return fmt.Errorf("-conditioning is bounded by -conditioning-target, not -duration: " +
+			"a timed phase leaves each topology at a different logical state")
+	case *poolRecycled && *conditionedBy == "":
+		return fmt.Errorf("-pool-recycled describes the transition out of conditioning, so it " +
+			"belongs with -conditioned-by")
+	case *conditionedBy != "" && !*poolRecycled:
+		// **The relationship is reciprocal, and it was not.** A measured run could name a
+		// conditioning artifact, omit the recycle assertion, record `pool_recycled: false`, and
+		// still reach `capacity` — while serving on connections whose plans were prepared
+		// against the empty tables conditioning exists to leave behind. Nothing downstream
+		// refused it, because every other gate was satisfied.
+		//
+		// Refused rather than downgraded, because the recycle is a step of the method rather
+		// than a property of the result (ag-sept-validation-plan.md §4.6.2). A deliberately
+		// unrecycled conditioned run would be a *control*, and it should say so with its own
+		// flag rather than by leaving this one off.
+		return fmt.Errorf("-conditioned-by requires -pool-recycled: conditioning establishes the " +
+			"state and the recycle is what stops the measured connections carrying plans made " +
+			"before it, so a conditioned run without it measures the regime conditioning was " +
+			"added to remove (ag-sept-validation-plan.md §4.6.2)")
+	case *conditioning && !phaseAware(*workloadName):
+		// **Only a phase-aware workload can be conditioned.** The others ignore `Phase` and
+		// `ConditioningSlots` entirely, so they draw from the whole fixture in either phase —
+		// and the bound below, derived from the organisations the placement names, assumes a
+		// workload that cycles all of them. `-workload hot-organisation` sends every request to
+		// one organisation, so the declaration would record a per-organisation target four
+		// organisations wide that only one of them ever received, and `Shortfall()` would pass.
+		// The measured run then certifies against a starting state that was never established.
+		return fmt.Errorf("-conditioning needs a workload that implements the phase split, and "+
+			"%q does not: its population ignores the conditioning namespace, so the phase "+
+			"accounting would describe a split that did not happen. wl-mut-disp-4 implements it",
+			*workloadName)
 	}
 	want, err := loadgen.ParseLevel(*require)
 	if err != nil {
@@ -176,16 +254,54 @@ func run(args []string) error {
 		return rerr
 	}
 
-	workload, datasetSlots, werr := buildWorkload(*workloadName, workloadSpec{
+	spec := workloadSpec{
 		Router:  router,
 		Org:     domain.OrganisationID(*org),
 		SlotID:  domain.SlotID(*slotID),
 		UserID:  domain.UserID(*userID),
 		Slots:   *slots,
 		Confirm: *confirm,
-	})
+	}
+	// The conditioning relationship is settled before any load. A measured run that discovers
+	// after the fact that it began from a state it cannot describe has already spent the
+	// expensive part of the experiment.
+	var (
+		conditioningState     *loadgen.ConditioningDeclaration
+		conditioningShortfall error
+	)
+	switch {
+	case *conditioning:
+		spec.Phase = loadgen.PhaseConditioning
+		spec.ConditioningSlots = *conditioningSlots
+		conditioningState = &loadgen.ConditioningDeclaration{
+			SlotsPerOrganisation:           *conditioningSlots,
+			TargetMutationsPerOrganisation: *conditioningTarget,
+		}
+	case *conditionedBy != "":
+		var cerr error
+		conditioningState, cerr = readConditioning(*conditionedBy, *workloadName, *poolRecycled)
+		if cerr != nil {
+			return cerr
+		}
+		// Derived from the conditioning artifact, never supplied again here. The boundary
+		// between the two populations is declared once, by the phase that established it.
+		spec.ConditioningSlots = conditioningState.SlotsPerOrganisation
+	}
+
+	workload, datasetSlots, werr := buildWorkload(*workloadName, spec)
 	if werr != nil {
 		return werr
+	}
+
+	// The per-group streams are built alongside the single-pool workload rather than instead
+	// of it: both paths need the same dataset size for the manifest, and building the streams
+	// here means an unsupported -workers-per-group fails before any load rather than after.
+	var streams []loadgen.Stream
+	if *workersPerGroup > 0 {
+		streams, werr = buildStreams(*workloadName, spec)
+		if werr != nil {
+			return werr
+		}
 	}
 
 	// A run is interruptible and still reports: a truncated run that says what it did
@@ -199,6 +315,29 @@ func run(args []string) error {
 		Iterations:  *iterations,
 		Duration:    *duration,
 		WarmUp:      *warmUp,
+	}
+	if len(streams) > 0 {
+		// The total is derived from the placement rather than declared, so it cannot
+		// disagree with the topology the run actually drove. Both numbers reach the manifest
+		// and the summary; neither can be recovered from the other without the group count
+		// (measurement-contract §11).
+		opts.WorkersPerGroup = *workersPerGroup
+		opts.Concurrency = *workersPerGroup * len(streams)
+	}
+	if *conditioning {
+		// Conditioning's bound is derived from its state target rather than declared, and it
+		// is per stream because that is what the runner applies. Within a group the workload
+		// takes its organisations in turn, so a whole number of cycles gives each of them
+		// exactly the target — the same logical state at G1, G2 and G4, which is the property
+		// a timed phase cannot hold (validation plan §4.6.2).
+		organisations := len(slotsByOrgFor(spec))
+		perStream := organisations
+		if len(streams) > 0 {
+			perStream = organisations / len(streams)
+		}
+		opts.Iterations = *conditioningTarget * perStream
+		opts.Duration = 0
+		conditioningState.Organisations = organisations
 	}
 	if *duration > 0 {
 		// Clear the unused bound so nothing downstream reads -n's default as a request.
@@ -235,13 +374,66 @@ func run(args []string) error {
 		return derr
 	}
 
+	// Parsed here, beside the deployment record and for the same reason: it needs no network,
+	// so a malformed document fails before anything has been driven. What it cannot check
+	// locally — the units it describes — is reconciled below, once they have answered.
+	declared, declErr := preflightDeclaration(*declaration)
+	if declErr != nil {
+		return declErr
+	}
+
 	before, metaErr := loadgen.FetchTopologyMeta(ctx, targets, *timeout)
 	if metaErr != nil {
+		// A single-unit run continues: it can still describe what it measured, and a
+		// workstation run losing a minute is the cost of finding out afterwards.
+		//
+		// A multi-unit run does not. Its numbers are an aggregate over units, and one that
+		// cannot be read is one whose pool ceiling, telemetry mode and authority the report
+		// would be silent about while still summing its throughput — a run that certifies at
+		// no level, discovered after the load rather than before it. On metered infrastructure
+		// that difference is a rung nobody can quote.
+		//
+		// Not keyed on -require, deliberately: that flag sets the floor for the exit code, not
+		// a ceiling on what the report claims, so keying a gate to it disables the gate rather
+		// than the claim. That mistake reopened the deployment-record bypass in PR3b and was
+		// closed again in ce7cd66.
+		if len(targets) > 1 {
+			return fmt.Errorf("could not read /meta from every unit: %w\n"+
+				"a multi-authority run reports one aggregate over units it cannot describe, so "+
+				"this is refused before the load rather than at certification after it", metaErr)
+		}
 		fmt.Fprintln(os.Stderr, "alloca-load: could not read /meta from every unit:", metaErr)
 	}
 
-	client := loadgen.NewRoutedClient(router, *timeout, *validate)
-	summary := loadgen.NewRunner(client, opts).Run(ctx, workload)
+	if declared != nil {
+		if err := declared.ReconcileWith(before); err != nil {
+			return fmt.Errorf("declaration %s: %w", *declaration, err)
+		}
+	}
+
+	// The run's own identity, minted here and used for nothing but scoping idempotency keys.
+	//
+	// It is generated rather than derived from the clock or the workload so two runs started in
+	// the same second, or resumed after a crash, cannot collide. Without it a rerun replays the
+	// previous run's records instead of committing: the run reconciles cleanly, breaks no
+	// invariant, and reports a goodput short by the replayed population — which at a capacity
+	// point reads as scale efficiency (ag-sept-pr4.md §3.5).
+	runID, err := loadgen.NewRunID()
+	if err != nil {
+		return fmt.Errorf("minting a run id: %w", err)
+	}
+
+	client := loadgen.NewRoutedClient(router, *timeout, *validate).WithRunID(runID)
+	runner := loadgen.NewRunner(client, opts)
+	var summary loadgen.Summary
+	if len(streams) > 0 {
+		summary, err = runner.RunStreams(ctx, streams)
+		if err != nil {
+			return err
+		}
+	} else {
+		summary = runner.Run(ctx, workload)
+	}
 
 	// Read /meta again and compare. A pre-run read establishes only "the service behind the
 	// target when the run began" (DEBT-3); this is what turns that into a claim about the
@@ -289,6 +481,20 @@ func run(args []string) error {
 		router.Placement())
 	manifest.DatasetSlots = datasetSlots
 	manifest.ServiceIdentityDrift = drift
+	manifest.RunID = runID
+	manifest.Phase = spec.Phase
+	if conditioningState != nil {
+		// A conditioning run fills in what it actually committed. A measured run must not:
+		// its block is the *conditioning* phase's totals, read from that phase's artifact,
+		// and overwriting them with this run's own would replace the baseline with the thing
+		// the baseline exists to be subtracted from (measurement-contract §12.1).
+		if spec.Phase == loadgen.PhaseConditioning {
+			conditioningState.Goodput = summary.Goodput
+			conditioningState.Completed = summary.Completed
+			conditioningShortfall = conditioningState.Shortfall()
+		}
+		manifest.Conditioning = conditioningState
+	}
 
 	// The identity of the deployed artifact, established by the preflight above. Only the
 	// common image identity is carried: once the preflight has proved that every routed unit
@@ -299,6 +505,17 @@ func run(args []string) error {
 		manifest.ContainerDeployment = true
 		manifest.ImageID = observed.ImageID
 		manifest.ImageTag = observed.ImageTag
+	}
+
+	// The operator states only what nothing can be asked. Replica count and aggregate pool
+	// capacity are read back from the units the run addressed, so the two fields most likely
+	// to be typed from memory are not typed at all — and the one deployment where the replica
+	// count stops being observable has to say so in the declaration itself.
+	if declared != nil {
+		manifest.Environment = declared.Environment
+		manifest.DeploymentTopology = declared.DeploymentTopology
+		manifest.ReplicaCount = declared.ReplicaCount(len(targets))
+		manifest.AggregatePoolSize = declared.AggregatePoolSize(before)
 	}
 
 	report := loadgen.Report{Manifest: manifest, Summary: summary}
@@ -328,6 +545,14 @@ func run(args []string) error {
 	if q := report.Quotability; !q.Level.AtLeast(want) {
 		return fmt.Errorf("run reached level %q, below the required %q: %s",
 			q.Level, want, q.BlockedBecause)
+	}
+
+	// Checked after the report is written, for the same reason the level gate is: the
+	// operator needs to see what the phase actually established. A conditioning run that fell
+	// short is refused here rather than at the far more expensive measured step, where the
+	// same rule would refuse it anyway.
+	if conditioningShortfall != nil {
+		return conditioningShortfall
 	}
 	return nil
 }
@@ -390,7 +615,7 @@ func preflightDeployment(path string, targets []string) (*loadgen.Deployment, er
 				"artifact it measured. "+
 				"service_commit_sha does not cover that — the same code from a stale tag, or "+
 				"rebuilt on a different base layer, carries the same revision on every unit. "+
-				"Record it with `make topo-deployment > test/results/deployment.json`", len(targets))
+				"Record it with `make topo-deployment > test/observed/deployment.json`", len(targets))
 		}
 		return nil, nil
 	}
@@ -403,6 +628,24 @@ func preflightDeployment(path string, targets []string) (*loadgen.Deployment, er
 		return nil, fmt.Errorf("deployment record %s: %w", path, err)
 	}
 	return &observed, nil
+}
+
+// preflightDeclaration loads the operator's declaration, or reports that there is none.
+//
+// Unlike the deployment record, an absent declaration is not an error at any topology. It
+// supplies the fields `capacity` is gated on, so a run without one is reported at `local` and
+// says so through the level it reaches — which is the honest outcome for a run nobody intends
+// to quote as a capacity result. Refusing it outright would make every smoke run carry a
+// document written for a claim it is not making.
+func preflightDeclaration(path string) (*loadgen.Declaration, error) {
+	if path == "" {
+		return nil, nil
+	}
+	declared, err := loadgen.LoadDeclaration(path)
+	if err != nil {
+		return nil, err
+	}
+	return &declared, nil
 }
 
 // buildRouter settles how the run reaches the service: one target, or one endpoint per
@@ -449,6 +692,13 @@ type workloadSpec struct {
 	UserID  domain.UserID
 	Slots   int
 	Confirm bool
+	// Phase selects which population the workload drives.
+	Phase loadgen.Phase
+	// ConditioningSlots is the conditioning population's share of each organisation's seeded
+	// slots. It is set on *both* phases — one to claim that range, the other to avoid it —
+	// and the measured run takes it from the conditioning artifact rather than from a flag,
+	// so the boundary has one author.
+	ConditioningSlots int
 }
 
 // slotsFor generates the seeded slot references of one organisation.
@@ -518,10 +768,139 @@ func buildWorkload(name string, spec workloadSpec) (loadgen.Workload, int, error
 		}
 		return loadgen.CrossAuthorityControl{Groups: groups}, size, nil
 
+	case "wl-mut-disp-4":
+		populations, size, err := orgPopulations(spec)
+		if err != nil {
+			return nil, 0, err
+		}
+		// The dataset size stays the whole seeded fixture whichever phase this is: it is what
+		// was seeded, not what this phase may claim, and a manifest reporting the narrowed
+		// half would understate the fixture every headroom calculation is made against.
+		populations, err = populationsForPhase(spec, populations)
+		if err != nil {
+			return nil, 0, err
+		}
+		return loadgen.MutDisp4{Orgs: populations, Confirm: spec.Confirm, Phase: spec.Phase}, size, nil
+
 	default:
 		return nil, 0, fmt.Errorf("unknown workload %q: want dispersed, hot-slot, hot-identity, "+
-			"replay, multi-org-dispersed, hot-organisation or cross-authority-control", name)
+			"replay, multi-org-dispersed, hot-organisation, cross-authority-control or "+
+			"wl-mut-disp-4", name)
 	}
+}
+
+// orgPopulations derives WL-MUT-DISP-4's per-organisation datasets, seeding the same number of
+// slots for every organisation the routing places.
+//
+// It reads the *set* of organisations from the placement and nothing else. That set is fixed
+// across the Iteration C matrix — A, B, C and D participate at G1, G2 and G4 alike — while the
+// homes that map them onto authorities are exactly what the experiment varies, so taking the
+// set from the map is topology-independent in the way the assignment would not be.
+//
+// A single-target run is refused rather than degraded. WL-MUT-DISP-4 is defined over four
+// organisations, and an unsharded run has no map to name them from; reporting the catalog
+// workload against whatever -org happened to be set would name a shape the run never drove.
+// buildStreams builds one independent demand stream per shard group.
+//
+// Only `WL-MUT-DISP-4` has streams. The Iteration C capacity comparison is the reason the
+// per-group pool exists, and the other shapes are single-authority controls or correctness
+// coverage whose retained evidence means one shared pool; quietly giving them a per-group
+// pool would change what those runs measure (validation plan §4.6.1).
+// phaseAware reports whether a workload implements the conditioning phase split.
+//
+// **One predicate, because two callers must agree.** A workload that ignores `Phase` and
+// `ConditioningSlots` draws from the whole fixture whichever phase it is told it is in, so the
+// conditioning population is not disjoint from the measured one and the run's own accounting
+// describes a split that did not happen.
+func phaseAware(name string) bool {
+	return strings.ToLower(name) == "wl-mut-disp-4"
+}
+
+func buildStreams(name string, spec workloadSpec) ([]loadgen.Stream, error) {
+	if !phaseAware(name) {
+		return nil, fmt.Errorf("-workers-per-group drives the shard groups of wl-mut-disp-4, "+
+			"not %q: a per-group worker pool is only meaningful for the workload whose "+
+			"organisations the placement distributes across groups", name)
+	}
+
+	populations, _, err := orgPopulations(spec)
+	if err != nil {
+		return nil, err
+	}
+	populations, err = populationsForPhase(spec, populations)
+	if err != nil {
+		return nil, err
+	}
+	groups, err := loadgen.NewOrgGroups(spec.Router.Placement(), slotsByOrgFor(spec))
+	if err != nil {
+		return nil, err
+	}
+	return loadgen.NewMutDisp4Streams(populations, groups, spec.Confirm, spec.Phase)
+}
+
+// populationsForPhase narrows the seeded populations to the half this phase may claim.
+//
+// A run with no conditioning relationship keeps the whole fixture, which is what every
+// existing artifact means. Once conditioning is in play both phases must be narrowed: the
+// conditioning run to its own slots, and the measured run to everything conditioning did not
+// touch (measurement-contract §5, conditioning gate).
+func populationsForPhase(spec workloadSpec, populations []loadgen.OrgPopulation) ([]loadgen.OrgPopulation, error) {
+	if spec.ConditioningSlots == 0 {
+		return populations, nil
+	}
+	conditioning, measured, err := loadgen.SplitPopulationsForConditioning(populations, spec.ConditioningSlots)
+	if err != nil {
+		return nil, err
+	}
+	if spec.Phase == loadgen.PhaseConditioning {
+		return conditioning, nil
+	}
+	return measured, nil
+}
+
+// readConditioning loads the conditioning run's artifact the measured run begins from.
+func readConditioning(path, workload string, poolRecycled bool) (*loadgen.ConditioningDeclaration, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("opening the conditioning report: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	declaration, err := loadgen.ReadConditioning(f, strings.ToLower(workload), poolRecycled)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return declaration, nil
+}
+
+// slotsByOrgFor seeds the same per-organisation datasets orgPopulations does, so the streams
+// and the single-pool workload address one fixture rather than two views of it.
+func slotsByOrgFor(spec workloadSpec) map[domain.OrganisationID][]loadgen.Slot {
+	placement := spec.Router.Placement()
+	slotsByOrg := map[domain.OrganisationID][]loadgen.Slot{}
+	for _, authority := range placement.Authorities() {
+		for _, org := range placement.Organisations(authority) {
+			slotsByOrg[org] = slotsFor(org, spec.Slots)
+		}
+	}
+	return slotsByOrg
+}
+
+func orgPopulations(spec workloadSpec) ([]loadgen.OrgPopulation, int, error) {
+	placement := spec.Router.Placement()
+	if placement.IsZero() {
+		return nil, 0, fmt.Errorf("wl-mut-disp-4 needs -placement: the workload is defined over four " +
+			"named organisations, and a single-target run has no map to name them from")
+	}
+
+	slotsByOrg := slotsByOrgFor(spec)
+	dataset := len(slotsByOrg) * spec.Slots
+
+	populations, err := loadgen.NewOrgPopulations(slotsByOrg)
+	if err != nil {
+		return nil, 0, err
+	}
+	return populations, dataset, nil
 }
 
 // orgGroups derives the per-authority groups the §5.6 shapes draw from, seeding the same

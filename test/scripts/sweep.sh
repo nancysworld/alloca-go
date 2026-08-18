@@ -23,7 +23,11 @@ set -euo pipefail
 
 : "${DATABASE_URL:?set DATABASE_URL}"
 
-OUT="${OUT:-test/results/sweep-$(date -u +%Y%m%dT%H%M%SZ)}"
+# Grouped like the other runners (see itc-run.sh). This one defaults to its own name rather than
+# to a milestone: a sweep is a general instrument, and PR2 was simply its first caller. Set
+# RESULTS_GROUP when a sweep belongs to a specific milestone's evidence.
+RESULTS_GROUP="${RESULTS_GROUP:-sweep}"
+OUT="${OUT:-test/results/$RESULTS_GROUP/$(date -u +%Y%m%dT%H%M%SZ)}"
 WORKLOADS="${WORKLOADS:-dispersed hot-slot hot-identity}"
 CONCURRENCIES="${CONCURRENCIES:-4 8 16 32}"
 POOLS="${POOLS:-}"                       # empty = whatever DATABASE_URL already says
@@ -253,8 +257,18 @@ if export_ok == "yes":
         # These three panels have data in any cell whose service was scraped, whatever the
         # workload did; replay_rate legitimately has none outside the replay control, so the
         # rule names the panels that must be populated rather than forbidding empty ones.
+        #
+        # `pool_total`, not `pool_max`: the maximum was dropped from panels.json in PR4a because
+        # a per-unit constant plotted beside occupancy is what invited reading a ceiling as a
+        # population (§3.13.1). The population itself is the better gate anyway — it is present
+        # whenever the pool exists, and unlike a configured constant it is evidence that the pool
+        # was actually observed rather than merely described.
+        #
+        # A key named here that panels.json does not define fails closed: points.get returns 0 and
+        # the cell is refused. That is the correct direction, but it means this list and
+        # panels.json have to move together.
         points = {p["key"]: p["points"] for p in idx["panels"]}
-        empty = [k for k in ("throughput", "pool_max", "process_cpu") if points.get(k, 0) == 0]
+        empty = [k for k in ("throughput", "pool_total", "process_cpu") if points.get(k, 0) == 0]
         if empty:
             refusals.append(f"evidence export retained no samples for {sorted(empty)}: "
                             f"Prometheus was almost certainly not scraping this cell's service")

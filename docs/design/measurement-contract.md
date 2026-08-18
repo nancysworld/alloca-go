@@ -189,9 +189,10 @@ No experiment's numbers are quotable until it declares all of the following. Eac
 report reproduces this block.
 
 1. **Hypothesis** — the `[HYPOTHESIS]` under test and its accept/reject condition.
-2. **Inputs** — offered-load profile; closed-loop concurrency and/or open-loop
-   arrival rate; synchronized-release barrier if used; think time; connection count;
-   deadlines and retry policy; config values; and all random seeds.
+2. **Inputs** — offered-load profile; closed-loop concurrency/worker population and/or open-loop
+   arrival rate; synchronized-release barrier if used; think time; connection count; deadlines and
+   retry policy; config values; all random seeds; and, when used, the conditioning rule and target
+   that establish the measured starting state.
 3. **Outputs** — the metrics collected (§6 SLIs) and the **path to the machine-readable
    raw results**. Reports quote from raw artifacts, not from memory.
 4. **Validation** — how each response was checked: HTTP status *and* domain-outcome
@@ -208,10 +209,61 @@ report reproduces this block.
 7. **Separation** — the report separates `[MEASURED]` results, `[DERIVED]`
    calculations, interpretation, and limitations into distinct sections.
 
+**Explicit conditioning gate:** a stateful experiment may deliberately establish a representative
+pre-measurement state before the performance interval begins, but only when that phase is part of
+the declared experiment rather than discarded traffic. Conditioning must:
+
+- have a predeclared, reproducible **state target** (prefer state/count based over elapsed time when
+  the state itself is what matters);
+- retain its requests/outcomes separately from measured performance;
+- retain or reconstruct the persisted/counter baseline at the exact measured-start boundary;
+- leave its mutations visible to final reconciliation;
+- record any deterministic service/pool restart or other state-preserving transition between
+  conditioning and measurement; and
+- avoid logical interference with the measured population, for example by using a disjoint
+  conditioning identity/key/slot namespace in the same physical tables when the experiment needs
+  representative table state without consuming the measured identities.
+
+Conditioning is **not measured Goodput or measured latency**. It exists to establish the declared
+starting state. Conversely, an arbitrary warm-up whose requests mutate state and are then omitted
+from both the measurement and reconciliation populations remains inadmissible. A harness flag named
+`warm-up` does not become acceptable merely by renaming the traffic: the population boundary above
+is the contract.
+
 **Load-generator-as-bottleneck gate:** any published capacity claim must include
 generator CPU/memory/connection/network telemetry, a generator-capacity sweep, the
 under-provisioned negative control, and evidence that the selected generator
 configuration has headroom at the reported server operating point.
+
+**Useful-demand / fixture-headroom gate:** a **mutation-capacity** claim additionally requires
+evidence that the fixture still had work left to give. A mutation the domain refuses because the
+seeded state is spent — every slot full, every claimable row claimed — is a correct answer and a
+sound measurement, but it is not throughput the service could have delivered. The run measured the
+fixture's remaining headroom, not the system's capacity.
+
+The gate has two parts, and the second is the one that is easy to miss:
+
+- **An all-refusal run cannot back a mutation-capacity claim.** It may remain `measurement_sound`
+  and reach any provenance level its manifest supports — the run described itself honestly and the
+  outcome mix is in its totals. Provenance is not the question. It simply has no useful demand
+  behind it, so there is no capacity in it to quote.
+- **Partial exhaustion invalidates a mutation-capacity point too, and it invalidates the *rung
+  below* it.** A saturation argument selects an operating point by showing that a *higher* rung
+  produced no more sustained Goodput. If that higher rung was short of fresh mutations rather than
+  short of service, it demonstrates an exhausted fixture and says nothing about where the server's
+  frontier is — so the point beneath it was never established as the frontier at all. A capacity
+  point is only as good as the evidence of the rung that was supposed to exceed it.
+
+So a report quoting a mutation-capacity point must show that the selected point **and the rungs its
+selection rests on** retained enough clean fixture state to offer fresh mutations throughout. When
+a declared conditioning phase consumes the same finite fixture, its demand is part of that supply
+calculation too. The cheap discriminator is the outcome mix: an unexpected population of
+`business_refusal` attributable to spent fixture state, rather than to the contention the workload
+is designed to create, invalidates the point rather than describing it.
+
+This is an **evidence** gate, not a provenance one. §13's ladder is unchanged: such a run still
+certifies at whatever level its manifest earns, because what it lacks is useful demand rather than
+self-description.
 
 ---
 
@@ -482,8 +534,9 @@ The fields are:
 - PostgreSQL version and configuration identity;
 - pool size per replica and aggregate expected pool capacity;
 - workload and dataset parameters;
-- offered rate and/or concurrency;
-- duration and warm-up;
+- offered rate and/or closed-loop worker/concurrency population;
+- duration and, when used, the conditioning declaration/state target, the measured-start boundary,
+  and any legacy warm-up declaration;
 - timeout budget and reservation TTL;
 - generator location, resources, and utilisation;
 - deployment topology and timestamp;
@@ -518,17 +571,40 @@ Every measured run carries a self-check. At minimum it must reconcile:
 
 A run with unreconciled client totals, server totals, or persisted state is not quotable.
 
-**Ambiguity resolution extends one logical mutation across multiple HTTP attempts, but post-run
-resolution does not rewrite the performance history of the measured interval.** Two accounting
-populations are therefore distinct:
+### 12.1 Conditioning, measurement, and resolution are separate populations
 
+A stateful experiment may have three traffic populations around one persisted-state trajectory:
+
+- the **conditioning population** runs before the measured interval to establish the declared
+  starting state. Its requests, outcomes and logical mutations are retained separately; they do
+  not enter measured Goodput, latency, outcome rates or measured duration;
 - the **measurement population** is the requests completed inside the stated measurement interval.
   It owns measured `Completed`, `Goodput`, latency, terminal-outcome/timeout rates, replay counts,
   and every rate whose denominator is that interval;
-- the **reconciliation population** is the measurement population plus the post-run same-key
-  resolution attempts needed to establish final logical state. Resolution traffic is retained and
-  auditable so client observations can be compared with the final server scrape and persisted
-  state, but it is not folded indistinguishably into measured performance fields.
+- the **resolution population** is any post-run same-key traffic needed to settle
+  `unknown_replayable` outcomes after the measured interval. It belongs to recovery/reconciliation,
+  not measured performance.
+
+The final persisted state may contain mutations from all three. Therefore a conditioned experiment
+must retain the conditioning summary and the persisted/server-counter **baseline at measured start**,
+then reconcile measured and resolution deltas against that baseline. It is equally valid to retain
+a reconstructible conditioning state whose exact contribution can be proven at verification; what
+is not valid is to require an empty database at the end of conditioning or to omit conditioning
+mutations from the accounting because they occurred before the performance clock started.
+
+A deterministic pool/service recycle between conditioning and measurement is allowed when it
+preserves database state. Its occurrence and readiness boundary are retained as experiment facts.
+It must not reseed, truncate, or otherwise change the declared conditioned state invisibly.
+
+This is why explicit conditioning is not the same thing as discarded warm-up. **No request that
+mutates state may disappear from the populations needed to reconstruct final state.** The exact Go
+representation is an implementation choice; the contract requires the population boundary and
+starting-state baseline to be auditable.
+
+### 12.2 Ambiguous-mutation resolution
+
+Ambiguity resolution extends one logical mutation across multiple HTTP attempts, but post-run
+resolution does not rewrite the performance history of the measured interval.
 
 For an original measured request that returned `unknown_replayable`:
 
@@ -537,8 +613,8 @@ For an original measured request that returned `unknown_replayable`:
    successful outcome inside the measured interval;
 2. if same-key resolution returns `replay=true`, the idempotency record proves the original attempt
    committed. Reconciliation therefore counts exactly one final logical mutation for that key. The
-   resolution HTTP request is a replay in the reconciliation population, not a second logical
-   mutation and not measured-window Goodput;
+   resolution HTTP request is a replay in the resolution/reconciliation population, not a second
+   logical mutation and not measured-window Goodput;
 3. if same-key resolution returns `replay=false`, the original attempt did not leave a recorded
    mutation and the resolution request performs it after the measured interval. Reconciliation
    again counts exactly one final logical mutation for that key, while measured-window Goodput
@@ -553,9 +629,8 @@ needed. It must not report `0/2` or `1/2` as measured Goodput, because the secon
 the measured interval. Likewise, post-run resolution never changes the measured duration or
 retroactively changes measured terminal outcomes.
 
-The retained artifact must make both populations reconstructible. The exact Go representation is
-an implementation choice; the contract requires only that measured performance, resolution HTTP
-traffic, and final logical-mutation reconciliation cannot be confused or silently combined.
+The retained artifact must make conditioning (when present), measured performance, resolution HTTP
+traffic, and final logical-mutation reconciliation reconstructible without silently combining them.
 
 **Multiple authorities extend the contract, not the mechanism:**
 
@@ -566,8 +641,9 @@ traffic, and final logical-mutation reconciliation cannot be confused or silentl
    owns;
 3. **persisted and server totals are aggregated across authorities and compared once** with the
    run's reconciliation population — once, not per authority, because the client's totals are a
-   property of the run rather than of any one authority. Measured performance fields remain scoped
-   to the measurement population above;
+   property of the run rather than of any one authority. For a conditioned experiment this means
+   comparing the retained measured-start baseline plus measured/resolution deltas with final state;
+   measured performance fields remain scoped to the measurement population above;
 4. **each service unit's scrape pair is differenced independently before the sum is taken.**
    Differencing the sums instead would let one unit restarting mid-run vanish into another
    unit's counters, which is the one arithmetic error this contract exists to prevent;

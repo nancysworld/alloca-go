@@ -1,0 +1,17 @@
+timestamp,labels,value
+1786656791,"authority=authority-1,instance=service-1:9090,job=alloca-go,milestone=ag-sept,topology=single-instance-local,unit=1",1.9111479587650995
+1786656796,"authority=authority-1,instance=service-1:9090,job=alloca-go,milestone=ag-sept,topology=single-instance-local,unit=1",1.7264313946973497
+1786656801,"authority=authority-1,instance=service-1:9090,job=alloca-go,milestone=ag-sept,topology=single-instance-local,unit=1",0.9399728442745932
+1786656806,"authority=authority-1,instance=service-1:9090,job=alloca-go,milestone=ag-sept,topology=single-instance-local,unit=1",0.4556078432142872
+1786656791,"authority=authority-2,instance=service-2:9090,job=alloca-go,milestone=ag-sept,topology=single-instance-local,unit=2",0.6863929878510687
+1786656796,"authority=authority-2,instance=service-2:9090,job=alloca-go,milestone=ag-sept,topology=single-instance-local,unit=2",0.6532202985778619
+1786656801,"authority=authority-2,instance=service-2:9090,job=alloca-go,milestone=ag-sept,topology=single-instance-local,unit=2",0.48292631757143206
+1786656806,"authority=authority-2,instance=service-2:9090,job=alloca-go,milestone=ag-sept,topology=single-instance-local,unit=2",0.4558099556428609
+1786656791,"authority=authority-3,instance=service-3:9090,job=alloca-go,milestone=ag-sept,topology=single-instance-local,unit=3",0.0421183698277709
+1786656796,"authority=authority-3,instance=service-3:9090,job=alloca-go,milestone=ag-sept,topology=single-instance-local,unit=3",0.06319442671335695
+1786656801,"authority=authority-3,instance=service-3:9090,job=alloca-go,milestone=ag-sept,topology=single-instance-local,unit=3",0.13973930814285648
+1786656806,"authority=authority-3,instance=service-3:9090,job=alloca-go,milestone=ag-sept,topology=single-instance-local,unit=3",0.19927032864285668
+1786656791,"authority=authority-4,instance=service-4:9090,job=alloca-go,milestone=ag-sept,topology=single-instance-local,unit=4",0.07666044286428608
+1786656796,"authority=authority-4,instance=service-4:9090,job=alloca-go,milestone=ag-sept,topology=single-instance-local,unit=4",0.11512220360180486
+1786656801,"authority=authority-4,instance=service-4:9090,job=alloca-go,milestone=ag-sept,topology=single-instance-local,unit=4",0.31460431350000456
+1786656806,"authority=authority-4,instance=service-4:9090,job=alloca-go,milestone=ag-sept,topology=single-instance-local,unit=4",0.39487989792857137

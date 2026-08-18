@@ -38,12 +38,75 @@ scrape_configs:
     # write, federation, alerting — and are not attached to locally ingested samples. The
     # snapshot would not have carried them, while the config claimed it did.
     #
-    # Here rather than in the generated file_sd JSON because these are properties of the
-    # experiment, not of the machine: obs-target.sh owns the address, this file owns what the
-    # address means. The run manifest remains the authoritative environment identity — these
-    # labels make an orphaned snapshot self-describing, they do not replace it.
+    # Only `milestone` is set here, because it is the one fact that is true of every target this
+    # job will ever scrape. The run manifest remains the authoritative environment identity —
+    # this label makes an orphaned snapshot self-describing, it does not replace it.
+    #
+    # **`topology` is deliberately NOT set here, and must not be.** It was, unconditionally, as
+    # `single-instance-local` — and that silently mislabelled every Iteration C rehearsal sample
+    # as the PR2 single-instance experiment, because a static relabel cannot know which topology
+    # the discovered targets belong to. The retained G4 cells in
+    # docs/measurements/pr4a-rehearsal/ carry the wrong label for exactly this reason.
+    #
+    # Topology is a property of *which targets were discovered*, so the target document owns it:
+    # obs-target.sh stamps `single-instance-local` on the PR2 host target, itc-obs-targets.sh
+    # stamps `itc-g1`/`itc-g2`/`itc-g4` on the rehearsal units. A label that is true of some
+    # targets and not others belongs with the targets, never in a job-wide rule.
+    #
+    # test/scripts/itc-obs-targets-test.sh fails if this relabel comes back.
     relabel_configs:
       - target_label: milestone
         replacement: ag-sept
-      - target_label: topology
-        replacement: single-instance-local
+
+  # VAL-NEG-7's host sensor (ag-sept-pr4.md §2.1, §2.3). A separate job, not a second target on
+  # the one above, for two reasons that both bite silently if merged.
+  #
+  # **Cadence.** `alloca-go` is scraped at the 1s global interval because a sweep cell runs for
+  # tens of seconds and a coarser interval would alias the pool-pressure signal. That reasoning is
+  # about the service and does not transfer: node_exporter carries far more series per scrape, and
+  # 1s would multiply the retained snapshot for no diagnostic gain. 5s here, overriding the global.
+  #
+  # **Identity.** `process_*` and `go_*` are exported by every Prometheus-instrumented Go process,
+  # node_exporter included. Folded into `alloca-go`, its own runtime metrics would land under the
+  # service's job name and quietly widen every generic panel — which is exactly why those panels
+  # constrain `job=` (TestGenericMetricFamiliesAreScopedToTheirJob).
+  - job_name: node
+    scrape_interval: 5s
+    scrape_timeout: 4s
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          # Names the machine rather than the container. On the local rehearsal there is exactly
+          # one host and all four shard groups share it — which is the fact that makes these runs
+          # rehearsal evidence and not capacity evidence, so the label says so rather than
+          # implying a per-unit host that does not exist here.
+          host: rehearsal-workstation
+          # On the target, never in a relabel. Same rule as the service job, and stated the same
+          # way on purpose: a job-wide topology relabel is what stamped every Iteration C sample
+          # as the PR2 experiment, and the rule only holds if it holds everywhere.
+          topology: rehearsal-host
+    relabel_configs:
+      - target_label: milestone
+        replacement: ag-sept
+
+  # PostgreSQL's own view, one exporter per authority (ag-sept-pr4.md §3.16). What it adds that
+  # no other job can is `wait_event_type`/`wait_event` on `pg_stat_activity_count`: what a backend
+  # is blocked *on*, rather than that it is slow.
+  #
+  # **Its own target directory, not a second file beside the unit targets.** The alloca-go job
+  # discovers `targets/*.json` as a glob, so a postgres target written there would be scraped as
+  # a service unit and the run's scrape gate — which demands exactly the authorities the rung
+  # raises — would refuse every cell over a FOREIGN entry it was correct to report.
+  #
+  # 5s rather than the 1s the service job uses. These are catalogue views, not counters the
+  # workload moves between adjacent samples, and every scrape is a query against the database
+  # under test — the one instrument here whose collection lands on the measured thing.
+  - job_name: postgres
+    scrape_interval: 5s
+    scrape_timeout: 4s
+    file_sd_configs:
+      - files: ['/etc/prometheus/targets-postgres/*.json']
+        refresh_interval: 10s
+    relabel_configs:
+      - target_label: milestone
+        replacement: ag-sept

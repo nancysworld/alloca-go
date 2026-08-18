@@ -1,0 +1,19 @@
+fixture sizing for the PR4a sustained qualification
+derived 2026-08-18T16:15:54Z
+
+  measured G4 aggregate rate         3165 /s   (G4, 16 workers/group, pool 4, 60 s,
+                                                     ordinary measurement path)
+  allowance for a sustained regime   140%
+  peak aggregate assumed             4431 /s
+  measured duration                  600s
+  measured consumption per org       664650 mutations
+  conditioning per org               4000 mutations
+  explicit safety headroom           140%
+  required per org                   936110 mutations
+  capacity per slot                  20
+  slots per organisation             50000   (rounded up)
+  seeded supply                      4000000 mutations across 4 organisations
+  measured supply after conditioning 3984000 mutations
+
+The same per-organisation size is used at G1 and G4: the workload's fixture is fixed for a
+comparison, and resizing it per topology would change the workload as well as the topology.

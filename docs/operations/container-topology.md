@@ -53,32 +53,32 @@ seed 15434 org-d
 
 # 6. record what is running, then drive one bounded run                     (§6)
 go build -o bin/alloca-load ./cmd/alloca-load
-mkdir -p test/results
-make topo-deployment > test/results/deployment.json
-curl -sS http://localhost:9091/metrics > test/results/s1-baseline.prom
-curl -sS http://localhost:9092/metrics > test/results/s2-baseline.prom
+mkdir -p test/results/manual
+make topo-deployment > test/observed/deployment.json
+curl -sS http://localhost:9081/metrics > test/results/manual/s1-baseline.prom
+curl -sS http://localhost:9082/metrics > test/results/manual/s2-baseline.prom
 ./bin/alloca-load \
   -placement deploy/topology/placement.json \
   -endpoint authority-1=http://$S1 -endpoint authority-2=http://$S2 \
   -workload multi-org-dispersed \
-  -deployment test/results/deployment.json \
+  -deployment test/observed/deployment.json \
   -concurrency 32 -n 400 -slots 100 \
-  -out test/results/topo-run.json
+  -out test/results/manual/topo-run.json
 
 # 7. reconcile it against both authorities — after the run has exited       (§6.1)
-curl -sS http://localhost:9091/metrics > test/results/s1-after.prom
-curl -sS http://localhost:9092/metrics > test/results/s2-after.prom
+curl -sS http://localhost:9081/metrics > test/results/manual/s1-after.prom
+curl -sS http://localhost:9082/metrics > test/results/manual/s2-after.prom
 go build -o bin/alloca-verify ./cmd/alloca-verify
 ./bin/alloca-verify \
-  -run test/results/topo-run.json \
+  -run test/results/manual/topo-run.json \
   -placement deploy/topology/placement.json \
   -authority-db "authority-1=postgres://alloca:alloca@localhost:15433/alloca?sslmode=disable" \
   -authority-db "authority-2=postgres://alloca:alloca@localhost:15434/alloca?sslmode=disable" \
-  -authority-metrics authority-1=test/results/s1-after.prom \
-  -authority-metrics authority-2=test/results/s2-after.prom \
-  -authority-metrics-baseline authority-1=test/results/s1-baseline.prom \
-  -authority-metrics-baseline authority-2=test/results/s2-baseline.prom \
-  -out test/results/topo-verdict.json
+  -authority-metrics authority-1=test/results/manual/s1-after.prom \
+  -authority-metrics authority-2=test/results/manual/s2-after.prom \
+  -authority-metrics-baseline authority-1=test/results/manual/s1-baseline.prom \
+  -authority-metrics-baseline authority-2=test/results/manual/s2-baseline.prom \
+  -out test/results/manual/topo-verdict.json
 
 # 8. tear it down                                                           (§7)
 make topo-down
@@ -119,8 +119,8 @@ service addresses it actually published.
 | `alloca-authority-2-db` | PostgreSQL, authority 2 | `localhost:15434` |
 | `alloca-authority-1-migrate` | one-shot schema migration, must exit 0 first | — |
 | `alloca-authority-2-migrate` | one-shot schema migration, must exit 0 first | — |
-| `alloca-service-1` | service unit bound to authority 1 | `localhost:8081`, metrics `9091` |
-| `alloca-service-2` | service unit bound to authority 2 | `localhost:8082`, metrics `9092` |
+| `alloca-service-1` | service unit bound to authority 1 | `localhost:8081`, metrics `9081` |
+| `alloca-service-2` | service unit bound to authority 2 | `localhost:8082`, metrics `9082` |
 
 The placement document ([`../../deploy/topology/placement.json`](../../deploy/topology/placement.json))
 is routing version `pr3b-v1`:
@@ -247,6 +247,61 @@ exited:
 ```sh
 make topo-ps
 ```
+
+### The Iteration C topologies — 1, 2 or 4 shard groups
+
+`make topo-up` raises the two-authority PR3b topology and its `pr3b-v1` map, which is what
+every earlier report reproduces against. Iteration C compares the *same* workload at one, two
+and four shard groups ([`ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md)
+§4.6), so it has its own target:
+
+```sh
+make itc-up ITC_GROUPS=4      # 1, 2 or 4
+```
+
+That selects the Compose profile and the matching `deploy/topology/placement-itc-g<n>.json`
+together. **Do not mount a placement document by hand.** Only one direction of that mistake is
+safe: four units under a two-authority map refuse to boot, because units 3 and 4 are assigned
+no organisations. The other direction boots happily — one unit under the four-authority map
+serves `org-a` and routes `org-b`, `org-c` and `org-d` to authorities that are not running, so
+the run looks alive while measuring a quarter of its workload.
+
+The variable is `ITC_GROUPS`, not `GROUPS`. `GROUPS` is a bash built-in array of your group
+IDs and bash discards an assignment to it in silence, so the seeding script would receive your
+GID instead of the group count.
+
+Then seed the fixture. It is a separate step because the population is fixed for a comparison:
+sized once for the largest intended `G4` run and reused unchanged at every capacity point, since
+topology-specific resizing changes the workload rather than the topology.
+
+```sh
+ITC_GROUPS=4 SLOTS=200 ./test/scripts/itc-seed.sh
+```
+
+The script reads the same placement document and seeds each organisation into its own home
+authority. It resets **once per authority, not once per organisation** — `alloca-seed -reset`
+truncates `slots`, so resetting before each organisation would leave only the last one's fixture
+standing. That loss is silent and asymmetric: at `G4` each organisation has its own database and
+nothing is lost, while at `G1` all four share one and three of the four datasets vanish, which
+depresses `G1` in the same direction as a genuine super-linear result.
+
+Tear down every unit whichever profile raised it:
+
+```sh
+make itc-down
+```
+
+**Before a run whose numbers you intend to keep, prove the build is certifiable:**
+
+```sh
+git status --porcelain     # expect empty
+make image-provenance      # fails if a clean checkout stamped modified=true
+```
+
+`go build` derives `vcs.modified` from `git status --porcelain`, which lists untracked files, so one
+uncommitted scratch file stamps the binaries modified. `Manifest.Validate` refuses that at `local`
+— the floor of the ladder — so the run certifies at `none` and backs nothing, however sound the
+measurement was. The visible symptom is a `-dirty` suffix on the image tag.
 
 ### Changing ports — optional
 
@@ -459,17 +514,17 @@ routed by the same placement document the services enforce:
 ```sh
 go build -o bin/alloca-load ./cmd/alloca-load
 
-mkdir -p test/results   # git-ignored, and absent on a fresh clone
-make topo-deployment > test/results/deployment.json
+mkdir -p test/results/manual   # git-ignored, and absent on a fresh clone
+make topo-deployment > test/observed/deployment.json
 
 ./bin/alloca-load \
   -placement deploy/topology/placement.json \
   -endpoint authority-1=http://$S1 \
   -endpoint authority-2=http://$S2 \
   -workload multi-org-dispersed \
-  -deployment test/results/deployment.json \
+  -deployment test/observed/deployment.json \
   -concurrency 32 -n 400 -slots 100 \
-  -out test/results/topo-run.json
+  -out test/results/manual/topo-run.json
 ```
 
 **`-n 400`, not a duration, and the reason matters.** This is a smoke check of the topology, and
@@ -528,13 +583,24 @@ report cannot say which harness produced it.
 `-placement` and `-target` are mutually exclusive — the first routes each organisation to
 its own authority's endpoint, the second sends everything to one service.
 
-The three multi-organisation workloads:
+The four multi-organisation workloads:
 
 | `-workload` | What it drives |
 |---|---|
 | `multi-org-dispersed` | supported traffic across both authorities, mixing same-organisation and colocated cross-organisation bookings |
 | `hot-organisation` | one organisation carries the whole load, so one authority is busy and its peers are not — the shape the failure-isolation experiment needs |
 | `cross-authority-control` | the Phase 1 refusal, reported as its own evidence class and never mixed into the supported workload |
+| `wl-mut-disp-4` | the Iteration C capacity workload: four organisations, equal share, every user paired only with its **own** organisation's slots |
+
+**`wl-mut-disp-4` and `multi-org-dispersed` are not interchangeable, and the difference is the
+point.** `multi-org-dispersed` deliberately mixes colocated cross-organisation bookings in, so
+how many of its requests are same-organisation depends on how many organisations share an
+authority. Comparing `G1` against `G4` with it would change the workload and the topology at
+once, and the scale-efficiency figure would carry both. `wl-mut-disp-4` derives its pairs from
+the organisation's own population and never consults the placement map, so the same sequence
+number produces an identical request at every topology — which is what makes `E2` and `E4` a
+measurement of the architecture. Use `multi-org-dispersed` for Phase 1 correctness coverage and
+`wl-mut-disp-4` for anything compared across topologies.
 
 The report records what the run actually reached: `authority_count`, `routing_version`,
 `placement_assignment`, `placement_digest`, and `topology_disagreement` — empty when the
@@ -550,15 +616,15 @@ is that step, and it is what turns a run into evidence:
 
 ```sh
 ./bin/alloca-verify \
-  -run test/results/topo-run.json \
+  -run test/results/manual/topo-run.json \
   -placement deploy/topology/placement.json \
   -authority-db "authority-1=postgres://alloca:alloca@localhost:15433/alloca?sslmode=disable" \
   -authority-db "authority-2=postgres://alloca:alloca@localhost:15434/alloca?sslmode=disable" \
-  -authority-metrics authority-1=test/results/s1-after.prom \
-  -authority-metrics authority-2=test/results/s2-after.prom \
-  -authority-metrics-baseline authority-1=test/results/s1-baseline.prom \
-  -authority-metrics-baseline authority-2=test/results/s2-baseline.prom \
-  -out test/results/topo-verdict.json
+  -authority-metrics authority-1=test/results/manual/s1-after.prom \
+  -authority-metrics authority-2=test/results/manual/s2-after.prom \
+  -authority-metrics-baseline authority-1=test/results/manual/s1-baseline.prom \
+  -authority-metrics-baseline authority-2=test/results/manual/s2-baseline.prom \
+  -out test/results/manual/topo-verdict.json
 ```
 
 The verdict names every authority it read, carries each one's local safety checks — capacity,

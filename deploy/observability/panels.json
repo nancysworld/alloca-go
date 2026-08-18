@@ -14,6 +14,21 @@
     "The exporter records the value it used because a rate over 5s and a rate over 60s are",
     "different measurements, and a CSV that does not say which is not reproducible.",
     "",
+    "PER-AUTHORITY CARDINALITY. `per_authority` declares whether a query preserves one series",
+    "per shard-group authority. It is metadata rather than something inferred from the PromQL,",
+    "because inferring it needs a parser that is wrong at the edges \u2014 and the property is a",
+    "deliberate choice about what the panel is for, which the author knows and a parser guesses.",
+    "",
+    "  per_authority: true   -> the legend MUST expose {{authority}}; the generator renders it as",
+    "                           \"{{authority}} <legend>\" so the same unit reads identically across",
+    "                           every panel and can be correlated without relying on colour.",
+    "  per_authority absent  -> the query intentionally aggregates authorities, and a fixed legend",
+    "                           is correct. `outcomes` is the one that aggregates authorities while",
+    "                           still fanning out, over `outcome`, so it names that label itself.",
+    "",
+    "TestPerAuthorityPanelsExposeAuthority enforces the first, and",
+    "TestPerAuthorityMetadataMatchesTheQuery keeps the flag honest against the expression.",
+    "",
     "Scope is measurement-contract \u00a76's required indicators and nothing else."
   ],
   "panels": [
@@ -41,7 +56,7 @@
       "key": "latency_p50",
       "title": "Request latency p50",
       "unit": "s",
-      "_note": "Required by measurement-contract \u00a76, and it is an SLO gate (measurement-contract \u00a77: p50 <= 50ms). SLO-safe capacity is the highest goodput satisfying *all* latency gates, so a panel set without p50 cannot evaluate one of the three.",
+      "_note": "Required by measurement-contract \u00a76, and it is an SLO gate (measurement-contract \u00a77: p50 <= 50ms). SLO-safe capacity is the highest goodput satisfying *all* latency gates, so a panel set without p50 cannot evaluate one of the three. Deliberately aggregate: the gate is on the deployment, not on one unit.",
       "expr": "histogram_quantile(0.50, sum by (le) (rate(alloca_request_duration_seconds_bucket[$RANGE])))"
     },
     {
@@ -60,52 +75,205 @@
       "key": "outcomes",
       "title": "Outcomes",
       "unit": "req/s",
-      "_note": "Business refusals are a valid domain answer and are reported separately here, never folded into a failure rate (measurement-contract \u00a73).",
+      "legend": "{{outcome}}",
+      "_note": "Business refusals are a valid domain answer and are reported separately here, never folded into a failure rate (measurement-contract \u00a73). Aggregates authorities on purpose \u2014 the outcome mix is a property of the deployment \u2014 while fanning out over `outcome`, which it names itself.",
       "expr": "sum by (outcome) (rate(alloca_requests_total[$RANGE]))"
     },
     {
       "key": "pool_in_use",
       "title": "DB pool connections in use",
       "unit": "conns",
+      "per_authority": true,
+      "legend": "acquired",
       "expr": "alloca_db_pool_acquired_connections"
     },
     {
-      "key": "pool_max",
-      "title": "DB pool maximum",
+      "key": "pool_idle",
+      "title": "DB pool connections idle",
       "unit": "conns",
-      "expr": "alloca_db_pool_max_connections"
+      "per_authority": true,
+      "legend": "idle",
+      "_note": "Exported, not plotted. It is exactly `total - acquired`, so on a four-unit rung it added four more oscillating lines to the occupancy graph and no information \u2014 but the CSV still carries it, because it is the series \u00a73.13.1 reads: idle staying high while acquire cost rises is not pool exhaustion, and points at the acquire path instead.",
+      "expr": "alloca_db_pool_idle_connections",
+      "display": false
+    },
+    {
+      "key": "pool_total",
+      "title": "DB pool connections held",
+      "unit": "conns",
+      "per_authority": true,
+      "legend": "total",
+      "_note": "The pool's actual population. `alloca_db_pool_max_connections` is deliberately NOT plotted beside it: it is a per-unit constant, so on a four-unit rung it added four flat redundant lines, and plotting occupancy against a *ceiling* is what invited reading a ceiling as a population (AG-Sept PR4a \u00a73.13.1). The configured maximum is in each run's manifest as `aggregate_pool_size`, and the series is still in the TSDB snapshot.",
+      "expr": "alloca_db_pool_total_connections"
+    },
+    {
+      "key": "pool_constructing",
+      "title": "DB pool connections constructing",
+      "unit": "conns",
+      "per_authority": true,
+      "legend": "constructing",
+      "_note": "Exported, not plotted. Construction in flight at sample time; `pool_new_conns` covers the same question as a rate and is the one the \u00a73.13.1 discriminator names. Kept in the CSV because it is where PostgreSQL enters the acquire path \u2014 pgxpool's constructor calls pgx.ConnectConfig.",
+      "expr": "alloca_db_pool_constructing_connections",
+      "display": false
+    },
+    {
+      "key": "pool_new_conns",
+      "title": "DB pool connections established",
+      "unit": "conns/s",
+      "per_authority": true,
+      "legend": "new connections",
+      "_note": "Connection constructions started per second. Construction calls pgx.ConnectConfig, so this is real establishment against PostgreSQL \u2014 network, TLS and authentication. It is the series that separates the two things pool_empty_acquire_wait conflates, and the reason 'the symptom is in the acquire path' does not exclude PostgreSQL: construction is where PostgreSQL enters that path.",
+      "expr": "rate(alloca_db_pool_new_connections_total[$RANGE])"
+    },
+    {
+      "key": "pool_destroys",
+      "title": "DB pool connections destroyed",
+      "unit": "conns/s",
+      "per_authority": true,
+      "legend": "destroyed",
+      "_note": "Lifetime and idle destroys summed, because for churn the two answer the same question and four units already give four lines each. A flat `pool_total` with non-zero destroys here is a pool replacing connections underneath a steady population \u2014 the split is in the TSDB snapshot when it matters.",
+      "expr": "rate(alloca_db_pool_max_lifetime_destroys_total[$RANGE]) + rate(alloca_db_pool_max_idle_destroys_total[$RANGE])"
     },
     {
       "key": "pool_acquire_wait",
-      "title": "DB pool acquire wait",
+      "title": "DB pool acquire duration",
       "unit": "s/s",
-      "_note": "Seconds of wait accumulated per second. It crosses 1 when requests spend more time queueing for a connection than wall-clock elapses, which is the pool becoming the frontier rather than the database.",
+      "per_authority": true,
+      "legend": "acquire duration",
+      "_note": "Seconds of *total Acquire() duration* accumulated per second \u2014 NOT queueing time, despite the metric's name. pgxpool times the whole call, including constructing a new connection, so this rises when acquiring is slow for any reason. It does not license 'the pool is the frontier' on its own; read it with pool_empty_acquire_wait and pool_new_conns. It also confounds cost with volume, which is what pool_acquire_mean separates.",
       "expr": "rate(alloca_db_pool_acquire_wait_seconds_total[$RANGE])"
+    },
+    {
+      "key": "pool_empty_acquire_wait",
+      "title": "DB pool empty-acquire duration",
+      "unit": "s/s",
+      "per_authority": true,
+      "legend": "empty-acquire duration",
+      "_note": "Time on acquires that found no idle connection. NOT pure contention: puddle accumulates both waiting for a connection to be released AND constructing a new one here, and construction time is included in full. Separate them with pool_new_conns \u2014 rising together implicates construction/churn; empty-wait rising while new-conns stays flat means acquires waited on existing connections. pool_acquire_wait rising while this stays flat puts the delay elsewhere in the immediate acquire path.",
+      "expr": "rate(alloca_db_pool_empty_acquire_wait_seconds_total[$RANGE])"
+    },
+    {
+      "key": "pool_acquire_mean",
+      "title": "DB pool mean acquire duration",
+      "unit": "s",
+      "per_authority": true,
+      "legend": "mean acquire duration",
+      "_note": "Per-acquire cost, rate(duration)/rate(count). The aggregate rate confounds cost with acquire volume: a cell doing half the work at twice the cost can show an unchanged total. \u00a73.13.1's 16x rise between a healthy and a degraded cell is this series, not the aggregate, which is why it earns its own graph despite the scope cap.",
+      "expr": "rate(alloca_db_pool_acquire_wait_seconds_total[$RANGE]) / rate(alloca_db_pool_acquires_total[$RANGE])"
+    },
+    {
+      "key": "host_cpu_busy",
+      "title": "Host CPU busy",
+      "unit": "cores",
+      "range": "30s",
+      "_note": "VAL-NEG-7's primary host indicator (ag-sept-pr4.md \u00a72.1). Non-idle CPU across the whole machine, which is what distinguishes 'the service stopped being given CPU' from 'the service stopped asking for it' \u2014 the two the \u00a73.12 degraded cell could not tell apart. JOB-SCOPED to `node` for the same reason the process panels are scoped to `alloca-go`. RANGE 30s, not the default: the host job scrapes at 5s, and Grafana's $__rate_interval is computed from the datasource's single timeInterval (1s, matching the service job), so the macro resolves shorter than two host scrapes and rate() returns nothing \u2014 the panel reads 'No data' while the series is healthy. 30s is six scrapes.",
+      "expr": "sum(rate(node_cpu_seconds_total{job=\"node\",mode!=\"idle\"}[$RANGE]))"
+    },
+    {
+      "key": "host_cpu_steal",
+      "title": "Host CPU steal and iowait",
+      "unit": "cores",
+      "range": "30s",
+      "_note": "The two modes that mean the host was not running because something outside it decided so. `steal` is the hypervisor taking the CPU \u2014 the WSL2 candidate \u00a73.12 named and could not test; `iowait` is blocking on storage, the Docker Desktop storage-path candidate. Separated from host_cpu_busy because both are small next to total busy and would be invisible on a shared axis. RANGE 30s for the same reason as host_cpu_busy: the host job's 5s cadence needs a window the datasource-wide macro does not give it.",
+      "expr": "sum by (mode) (rate(node_cpu_seconds_total{job=\"node\",mode=~\"steal|iowait\"}[$RANGE]))",
+      "legend": "{{mode}}"
+    },
+    {
+      "key": "host_runqueue",
+      "title": "Host run queue (load average)",
+      "unit": "tasks",
+      "_note": "Runnable-plus-blocked tasks against this host's CPU count. It answers the \u00a73.12 question from the contention side rather than the consumption side: a host can be far from CPU-saturated and still have work waiting. This is the substitute for kernel PSI, which is the more direct instrument and is NOT available on the WSL2 kernel the rehearsal runs on \u2014 /proc/pressure does not exist there and the pressure collector reports success 0 (\u00a73.14). The AWS hosts are expected to carry PSI, at which point a pressure panel supersedes this one.",
+      "expr": "node_load1{job=\"node\"}"
+    },
+    {
+      "key": "host_memory_available",
+      "title": "Host memory available",
+      "unit": "bytes",
+      "_note": "Available rather than free: free excludes reclaimable page cache and reads as exhaustion on a healthy machine. Retained because per-unit RSS grew across the \u00a73.11 window and nothing said whether the host had room.",
+      "expr": "sum(node_memory_MemAvailable_bytes{job=\"node\"})"
     },
     {
       "key": "process_cpu",
       "title": "Process CPU",
       "unit": "cores",
-      "expr": "rate(process_cpu_seconds_total[$RANGE])"
+      "per_authority": true,
+      "legend": "CPU",
+      "_note": "JOB-SCOPED, and every panel below it for the same reason. process_* and go_* are exported by *every* Prometheus-instrumented Go process \u2014 node_exporter and Prometheus itself included \u2014 so an unscoped selector means \"the service\" only while exactly one job is scraped. Adding the host job would otherwise fold three processes into a panel titled for one, and nothing would report it: the CSV still exports, still carries rows, and still passes the populated-series gate.",
+      "expr": "rate(process_cpu_seconds_total{job=\"alloca-go\"}[$RANGE])"
     },
     {
       "key": "process_memory",
       "title": "Process resident memory",
       "unit": "bytes",
-      "expr": "process_resident_memory_bytes"
+      "per_authority": true,
+      "legend": "RSS",
+      "expr": "process_resident_memory_bytes{job=\"alloca-go\"}"
     },
     {
       "key": "go_goroutines",
       "title": "Goroutines",
       "unit": "count",
-      "expr": "go_goroutines"
+      "per_authority": true,
+      "legend": "goroutines",
+      "expr": "go_goroutines{job=\"alloca-go\"}"
     },
     {
       "key": "go_gc_pause",
       "title": "GC pause quantile",
       "unit": "s",
+      "per_authority": true,
+      "legend": "GC pause p75",
       "_note": "The Go collector exports this as a summary, so the series carries its own quantile label rather than needing histogram_quantile.",
-      "expr": "go_gc_duration_seconds{quantile=\"0.75\"}"
+      "expr": "go_gc_duration_seconds{job=\"alloca-go\",quantile=\"0.75\"}"
+    },
+    {
+      "key": "pg_wait_events",
+      "title": "PostgreSQL backends by wait event type",
+      "unit": "backends",
+      "legend": "{{authority}} {{wait_event_type}}",
+      "_note": "The instrument the \u00a73.12/\u00a73.15 diagnosis lacked. Every other instrument in this dashboard can say a backend was slow; `wait_event_type` says what it was blocked ON \u2014 Lock, LWLock, IO, BufferPin, Client, Timeout. Verified live against this topology: a deliberately blocked backend reports Lock/relation. Idle pool connections sit in Client/ClientRead and are excluded by state=active, because an idle pool is not a stall. No range: this is an instant selector over a gauge, so it keeps the whole measured window rather than being shifted by a rate window it does not have.",
+      "expr": "sum by (authority, wait_event_type) (pg_stat_activity_count{job=\"postgres\",state=\"active\"})"
+    },
+    {
+      "key": "pg_backends_active",
+      "title": "PostgreSQL active backends",
+      "unit": "backends",
+      "legend": "{{authority}}",
+      "_note": "Per authority, so one saturated database cannot hide behind three quiet ones \u2014 the \u00a73.13.1 lesson applied to the database side. Read against the service's own pool panels: the pool sits pegged at 4.0/4 in healthy and degraded cells alike, so the interesting question is how many of those connections the database is actually running rather than how many the service holds.",
+      "expr": "sum by (authority) (pg_stat_activity_count{job=\"postgres\",state=\"active\"})"
+    },
+    {
+      "key": "pg_checkpoints_timed",
+      "title": "PostgreSQL timed checkpoints (cumulative)",
+      "unit": "count",
+      "legend": "{{authority}} timed",
+      "_note": "Timed and requested are separate series, not a sum, because the trigger is the distinction that matters and summing them destroys it: at G4 checkpoints fire on the 300s timer, while at G1 one database absorbs all four organisations' writes, reaches max_wal_size first, and they become WAL-triggered. Both were refuted as the cause of the degraded regime (\u00a73.15), and plotting the split keeps that refutation re-derivable from a retained cell instead of from container logs. **The raw counter, not a rate.** A rate needs a range at least as long as the event's period, and a 60s range against a 60s measured window leaves no point free of pre-window samples \u2014 the export refuses it, correctly. Shorter ranges make a ~250s-period event a spike whose height is an artifact of the range. The cumulative counter has no range at all, so it keeps the full window and a checkpoint reads as an unmistakable step.",
+      "expr": "sum by (authority) (pg_stat_bgwriter_checkpoints_timed_total{job=\"postgres\"})"
+    },
+    {
+      "key": "pg_checkpoints_req",
+      "title": "PostgreSQL requested checkpoints (cumulative)",
+      "unit": "count",
+      "legend": "{{authority}} requested",
+      "_note": "The WAL-volume-triggered half of the pair above, plotted on the same graph and for the same reason a counter rather than a rate. A rung whose requested series steps at all is writing WAL faster than max_wal_size absorbs between timers, which is the G1 condition and not the G4 one.",
+      "expr": "sum by (authority) (pg_stat_bgwriter_checkpoints_req_total{job=\"postgres\"})"
+    },
+    {
+      "key": "pg_buffers_backend",
+      "title": "PostgreSQL buffers written by backends",
+      "unit": "buffers/s",
+      "range": "30s",
+      "legend": "{{authority}}",
+      "_note": "Backend-side flushing: a client backend forced to write a dirty buffer itself because the bgwriter and checkpointer did not keep up. It is one of the few database-side mechanisms that lengthens the time a connection is held without consuming host CPU or iowait, which is exactly the shape the degraded cells have (\u00a73.15) \u2014 so it is a candidate this dashboard can now rule in or out on sight.",
+      "expr": "sum by (authority) (rate(pg_stat_bgwriter_buffers_backend_total{job=\"postgres\"}[$RANGE]))"
+    },
+    {
+      "key": "pg_long_transactions",
+      "title": "PostgreSQL longest open transaction",
+      "unit": "s",
+      "legend": "{{authority}}",
+      "_note": "The degraded cells hold each connection about five times longer with no extra CPU and less I/O (\u00a73.15), and this is the most direct reading of that available from the database's own view. No dead-tuple panel sits beside it: n_dead_tup comes from the stat_user_tables collector, which hangs a scrape indefinitely under a table lock and is disabled for that reason (\u00a73.16).",
+      "expr": "max by (authority) (pg_stat_activity_max_tx_duration{job=\"postgres\"})"
     }
   ],
   "export_range": "15s",

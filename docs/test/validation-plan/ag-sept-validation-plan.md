@@ -299,12 +299,12 @@ not be the final rung merely because the sweep stopped there.
 
 For each topology:
 
-1. reset/reseed once, then run each concurrency rung as **one sustained closed-loop measured run**
-   far enough to establish its operating regime and the saturation region while preserving the
-   `measurement-contract.md` §3 capacity definition, §5 experiment/evidence gates, and §7
-   provisional SLO/outcome gates. Fine-grained time slices inside a sustained rung are analysis
-   windows showing evolution/stationarity; they are not independent repeat samples and are not
-   separated by destructive reseeds;
+1. for **each concurrency rung**, reset/reseed once and then run that rung as **one sustained
+   closed-loop measured run** far enough to establish its operating regime and the saturation
+   region while preserving the `measurement-contract.md` §3 capacity definition, §5
+   experiment/evidence gates, and §7 provisional SLO/outcome gates. Fine-grained time slices
+   inside that sustained rung are analysis windows showing evolution/stationarity; they are not
+   independent repeat samples and there is no destructive reseed between those slices;
 2. select the highest gated rung whose sustained Goodput is followed by at least one higher rung
    that either **does not produce higher sustained Goodput** or fails one of those gates — this is
    the operational saturation-knee/plateau point for `G1`, `G2`, or `G4`;
@@ -460,7 +460,7 @@ organisations happen to be colocated. Placement must not accidentally change the
 
 **Requirements:** REQ-COR-1, REQ-ROUTE-1.
 
-Run the refusal control in §3.5 and prove that Phase 1 creates no partial booking state.
+Run the refusal control in §3.5 and prove that Phase 1 creates no partial mutation.
 
 **Two cells discharge it, not one.** The refusal cell drives distinct keys throughout, which is
 what makes it a clean evidence class and also what makes it structurally unable to show §3.5's

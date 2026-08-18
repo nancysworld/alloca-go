@@ -58,6 +58,11 @@ type Response struct {
 	// window. Unexported: it is an internal coordinate of one run, meaningless in a
 	// summary that already reports the run's duration.
 	completedAt time.Time
+	// group is the shard group whose demand stream issued this request, empty in a
+	// single-pool run. Unexported and stamped by the runner rather than the client: which
+	// group offered the work is a property of the stream that issued it, while the client
+	// only knows which authority the placement routed it to.
+	group string
 }
 
 // body is the JSON shape every booking endpoint answers with. It mirrors httpapi's

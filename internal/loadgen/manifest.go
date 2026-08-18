@@ -127,8 +127,15 @@ type Manifest struct {
 	TelemetryMode string `json:"telemetry_mode,omitempty"`
 
 	// Workload and dataset.
-	Workload    string `json:"workload"`
-	Concurrency int    `json:"concurrency"`
+	Workload string `json:"workload"`
+	// Concurrency is the total closed-loop worker population.
+	Concurrency int `json:"concurrency"`
+	// WorkersPerGroup is Iteration C's declared experiment variable, omitted by single-pool
+	// runs. The contract requires the closed-loop worker population to be declared
+	// (measurement-contract.md §5 Inputs, §11), and for a multi-group run that is two
+	// numbers: a reader cannot derive either from the other without the topology, and the
+	// retained `c16`/`c32` cells mean the total.
+	WorkersPerGroup int `json:"workers_per_group,omitempty"`
 	// Exactly one of Iterations or Duration bounds the run, and the manifest records which.
 	// A duration-bounded sweep cell has no requested iteration count, so recording the flag
 	// default here would describe an experiment nobody asked for.
@@ -191,6 +198,7 @@ func NewManifest(target, workload string, opts Options, location string, svc Ser
 
 		Workload:            workload,
 		Concurrency:         opts.Concurrency,
+		WorkersPerGroup:     opts.WorkersPerGroup,
 		Iterations:          iterationsFor(opts),
 		Duration:            durationFor(opts),
 		WarmUp:              opts.WarmUp.String(),

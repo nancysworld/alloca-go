@@ -104,9 +104,13 @@ func run(args []string) error {
 		workloadName = fs.String("workload", "dispersed",
 			"dispersed | hot-slot | hot-identity | replay | multi-org-dispersed | "+
 				"hot-organisation | cross-authority-control | wl-mut-disp-4")
-		concurrency = fs.Int("concurrency", 10, "concurrent workers (closed loop)")
-		iterations  = fs.Int("n", 100, "logical units of work (mutually exclusive with -duration)")
-		duration    = fs.Duration("duration", 0,
+		concurrency     = fs.Int("concurrency", 10, "concurrent workers (closed loop), the run total")
+		workersPerGroup = fs.Int("workers-per-group", 0,
+			"drive each shard group from its own fixed worker pool of this size (Iteration C; "+
+				"wl-mut-disp-4 only). The run's total worker population is this times the number "+
+				"of groups the placement declares, so -workers-per-group 16 at G4 offers 64")
+		iterations = fs.Int("n", 100, "logical units of work (mutually exclusive with -duration)")
+		duration   = fs.Duration("duration", 0,
 			"run for this long instead of a fixed -n; required for sweep cells, whose rates "+
 				"are only comparable when every cell covers the same interval")
 		warmUp         = fs.Duration("warm-up", 0, "discard responses completing inside this window")
@@ -164,6 +168,17 @@ func run(args []string) error {
 		return fmt.Errorf("-duration must not be negative")
 	case *duration == 0 && *iterations < 1:
 		return fmt.Errorf("-n must be at least 1")
+	case explicit["concurrency"] && explicit["workers-per-group"]:
+		// Refused rather than resolved, for the reason -n and -duration are. The two are
+		// different quantities — one total, one per group — and a run that offered 4× the
+		// intended demand because a flag was silently ignored is a measurement of something
+		// nobody asked for (validation plan §4.6.1).
+		return fmt.Errorf("-concurrency and -workers-per-group are mutually exclusive: " +
+			"-concurrency is the run's total worker population, -workers-per-group is the " +
+			"per-shard-group population Iteration C varies, and the total is then derived " +
+			"from the placement")
+	case *workersPerGroup < 0:
+		return fmt.Errorf("-workers-per-group must not be negative")
 	}
 	want, err := loadgen.ParseLevel(*require)
 	if err != nil {
@@ -179,16 +194,28 @@ func run(args []string) error {
 		return rerr
 	}
 
-	workload, datasetSlots, werr := buildWorkload(*workloadName, workloadSpec{
+	spec := workloadSpec{
 		Router:  router,
 		Org:     domain.OrganisationID(*org),
 		SlotID:  domain.SlotID(*slotID),
 		UserID:  domain.UserID(*userID),
 		Slots:   *slots,
 		Confirm: *confirm,
-	})
+	}
+	workload, datasetSlots, werr := buildWorkload(*workloadName, spec)
 	if werr != nil {
 		return werr
+	}
+
+	// The per-group streams are built alongside the single-pool workload rather than instead
+	// of it: both paths need the same dataset size for the manifest, and building the streams
+	// here means an unsupported -workers-per-group fails before any load rather than after.
+	var streams []loadgen.Stream
+	if *workersPerGroup > 0 {
+		streams, werr = buildStreams(*workloadName, spec)
+		if werr != nil {
+			return werr
+		}
 	}
 
 	// A run is interruptible and still reports: a truncated run that says what it did
@@ -202,6 +229,14 @@ func run(args []string) error {
 		Iterations:  *iterations,
 		Duration:    *duration,
 		WarmUp:      *warmUp,
+	}
+	if len(streams) > 0 {
+		// The total is derived from the placement rather than declared, so it cannot
+		// disagree with the topology the run actually drove. Both numbers reach the manifest
+		// and the summary; neither can be recovered from the other without the group count
+		// (measurement-contract §11).
+		opts.WorkersPerGroup = *workersPerGroup
+		opts.Concurrency = *workersPerGroup * len(streams)
 	}
 	if *duration > 0 {
 		// Clear the unused bound so nothing downstream reads -n's default as a request.
@@ -288,7 +323,16 @@ func run(args []string) error {
 	}
 
 	client := loadgen.NewRoutedClient(router, *timeout, *validate).WithRunID(runID)
-	summary := loadgen.NewRunner(client, opts).Run(ctx, workload)
+	runner := loadgen.NewRunner(client, opts)
+	var summary loadgen.Summary
+	if len(streams) > 0 {
+		summary, err = runner.RunStreams(ctx, streams)
+		if err != nil {
+			return err
+		}
+	} else {
+		summary = runner.Run(ctx, workload)
+	}
 
 	// Read /meta again and compare. A pre-run read establishes only "the service behind the
 	// target when the run began" (DEBT-3); this is what turns that into a claim about the
@@ -619,6 +663,43 @@ func buildWorkload(name string, spec workloadSpec) (loadgen.Workload, int, error
 // A single-target run is refused rather than degraded. WL-MUT-DISP-4 is defined over four
 // organisations, and an unsharded run has no map to name them from; reporting the catalog
 // workload against whatever -org happened to be set would name a shape the run never drove.
+// buildStreams builds one independent demand stream per shard group.
+//
+// Only `WL-MUT-DISP-4` has streams. The Iteration C capacity comparison is the reason the
+// per-group pool exists, and the other shapes are single-authority controls or correctness
+// coverage whose retained evidence means one shared pool; quietly giving them a per-group
+// pool would change what those runs measure (validation plan §4.6.1).
+func buildStreams(name string, spec workloadSpec) ([]loadgen.Stream, error) {
+	if strings.ToLower(name) != "wl-mut-disp-4" {
+		return nil, fmt.Errorf("-workers-per-group drives the shard groups of wl-mut-disp-4, "+
+			"not %q: a per-group worker pool is only meaningful for the workload whose "+
+			"organisations the placement distributes across groups", name)
+	}
+
+	populations, _, err := orgPopulations(spec)
+	if err != nil {
+		return nil, err
+	}
+	groups, err := loadgen.NewOrgGroups(spec.Router.Placement(), slotsByOrgFor(spec))
+	if err != nil {
+		return nil, err
+	}
+	return loadgen.NewMutDisp4Streams(populations, groups, spec.Confirm)
+}
+
+// slotsByOrgFor seeds the same per-organisation datasets orgPopulations does, so the streams
+// and the single-pool workload address one fixture rather than two views of it.
+func slotsByOrgFor(spec workloadSpec) map[domain.OrganisationID][]loadgen.Slot {
+	placement := spec.Router.Placement()
+	slotsByOrg := map[domain.OrganisationID][]loadgen.Slot{}
+	for _, authority := range placement.Authorities() {
+		for _, org := range placement.Organisations(authority) {
+			slotsByOrg[org] = slotsFor(org, spec.Slots)
+		}
+	}
+	return slotsByOrg
+}
+
 func orgPopulations(spec workloadSpec) ([]loadgen.OrgPopulation, int, error) {
 	placement := spec.Router.Placement()
 	if placement.IsZero() {
@@ -626,14 +707,8 @@ func orgPopulations(spec workloadSpec) ([]loadgen.OrgPopulation, int, error) {
 			"named organisations, and a single-target run has no map to name them from")
 	}
 
-	slotsByOrg := map[domain.OrganisationID][]loadgen.Slot{}
-	dataset := 0
-	for _, authority := range placement.Authorities() {
-		for _, org := range placement.Organisations(authority) {
-			slotsByOrg[org] = slotsFor(org, spec.Slots)
-			dataset += spec.Slots
-		}
-	}
+	slotsByOrg := slotsByOrgFor(spec)
+	dataset := len(slotsByOrg) * spec.Slots
 
 	populations, err := loadgen.NewOrgPopulations(slotsByOrg)
 	if err != nil {

@@ -263,3 +263,66 @@ func endpointsFor(placement domain.Placement) map[domain.AuthorityID]string {
 	}
 	return endpoints
 }
+
+// Each shipped topology must yield exactly one independent demand stream per shard group.
+//
+// This is the coupling between the placement documents and the generator that nothing else
+// checks. A G4 run whose streams collapsed to one would offer a quarter of the intended
+// workers, drive four organisations from one pool, and report a `workers_per_group` its
+// demand never had — while every other check in the run still passed, because the requests
+// themselves would be identical (validation plan §4.6.1).
+func TestEveryShippedTopologyBuildsOneDemandStreamPerShardGroup(t *testing.T) {
+	for _, rung := range itcMatrix {
+		placement := itcPlacement(t, rung.groups)
+		router, err := loadgen.NewRouter(placement, endpointsFor(placement))
+		if err != nil {
+			t.Fatalf("G%d: building router: %v", rung.groups, err)
+		}
+
+		streams, err := buildStreams("wl-mut-disp-4", workloadSpec{Router: router, Slots: 40})
+		if err != nil {
+			t.Fatalf("G%d: building streams: %v", rung.groups, err)
+		}
+		if len(streams) != rung.groups {
+			t.Errorf("G%d builds %d demand streams, want one per shard group",
+				rung.groups, len(streams))
+			continue
+		}
+
+		groups := map[string]bool{}
+		for _, stream := range streams {
+			if groups[stream.Group] {
+				t.Errorf("G%d has two streams for group %q", rung.groups, stream.Group)
+			}
+			groups[stream.Group] = true
+		}
+		for _, authority := range rung.authorities {
+			if !groups[string(authority)] {
+				t.Errorf("G%d builds no demand stream for %q, so that capacity unit would "+
+					"be measured with no offered demand", rung.groups, authority)
+			}
+		}
+	}
+}
+
+// -workers-per-group is refused for every workload except the one whose groups it means.
+//
+// The other shapes are single-authority controls and Iteration B correctness coverage whose
+// retained evidence means one shared pool. Silently giving them a per-group pool would
+// multiply their offered demand by the group count and leave the artifacts comparable to
+// their predecessors in every field that would show it.
+func TestPerGroupWorkersAreRefusedForWorkloadsWithoutShardGroups(t *testing.T) {
+	placement := itcPlacement(t, 4)
+	router, err := loadgen.NewRouter(placement, endpointsFor(placement))
+	if err != nil {
+		t.Fatalf("building router: %v", err)
+	}
+
+	for _, workload := range []string{"dispersed", "hot-slot", "hot-identity", "replay",
+		"multi-org-dispersed", "hot-organisation", "cross-authority-control"} {
+		if _, err := buildStreams(workload, workloadSpec{Router: router, Slots: 40}); err == nil {
+			t.Errorf("%s accepted -workers-per-group; only wl-mut-disp-4 has shard groups "+
+				"for it to mean anything", workload)
+		}
+	}
+}

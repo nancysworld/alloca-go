@@ -116,9 +116,31 @@ type MutDisp4 struct {
 	// expires_at IS NULL and is never expiry-reaped, so a confirming run leaves permanent
 	// rows and needs the clean-start discipline the hot-identity control documents.
 	Confirm bool
+	// Group is the shard group whose independent stream drives this instance, empty for a
+	// single-pool run. It namespaces the idempotency keys and nothing else: the workload's
+	// identity, population and demand shape must not vary with the topology, which is what
+	// makes G1, G2 and G4 comparable at all.
+	Group string
 }
 
-func (MutDisp4) Name() string         { return "wl-mut-disp-4" }
+// Name is the catalog identity, deliberately independent of the group. It is what the
+// manifest records and what makes two runs the same experiment, so it must be `wl-mut-disp-4`
+// at every topology; the group belongs in the key namespace and the per-group accounting.
+func (MutDisp4) Name() string { return "wl-mut-disp-4" }
+
+// keyNamespace scopes minted idempotency keys to this instance's stream.
+//
+// Every stream numbers its own units from zero, so without the group two of them would mint
+// the same (workload, seq, step) key. The service would not report that: the keys reach
+// different authorities, and each sees each key exactly once. The damage is to the evidence —
+// a retained key could not be attributed to the stream that issued it, and a later analysis
+// joining client keys to persisted rows would find one key with two homes.
+func (m MutDisp4) keyNamespace() string {
+	if m.Group == "" {
+		return m.Name()
+	}
+	return m.Name() + "-" + m.Group
+}
 func (MutDisp4) IntendsReplays() bool { return false }
 
 func (m MutDisp4) Do(ctx context.Context, c *Client, seq int) []Response {
@@ -144,12 +166,12 @@ func (m MutDisp4) Do(ctx context.Context, c *Client, seq int) []Response {
 	// control's serialization on a single user row.
 	user := User{OrganisationID: population.Org, UserID: domain.UserID(fmt.Sprintf("u-%d", seq))}
 
-	reserved := c.Reserve(ctx, user, slot, c.key(m.Name(), seq, "reserve"))
+	reserved := c.Reserve(ctx, user, slot, c.key(m.keyNamespace(), seq, "reserve"))
 	out := []Response{reserved}
 	if !m.Confirm || reserved.ReservationID == "" {
 		return out
 	}
-	return append(out, c.Confirm(ctx, user, reserved.ReservationID, c.key(m.Name(), seq, "confirm")))
+	return append(out, c.Confirm(ctx, user, reserved.ReservationID, c.key(m.keyNamespace(), seq, "confirm")))
 }
 
 var _ Workload = MutDisp4{}

@@ -17,17 +17,30 @@
 # because it can take more would answer a different question — whether more connections plus more
 # demand goes faster, which nobody doubts.
 #
-#   ITC_POOL_ARMS="4 8" ./test/scripts/itc-pool-sensitivity.sh
+#   ITC_POOL_ARMS="4 8" ./test/scripts/itc-local-experiment.sh pool
 #
-# Each arm raises G1 from scratch, so each begins from the same declared state rather than from
-# whatever the previous arm left. That costs a topology restart per arm and is the only way the
-# two are comparable.
+# **What each arm resets, precisely.** The service unit is recreated with the new pool
+# configuration — Compose replaces a container whose environment changed — so the arm's
+# connections are new and the ceiling is the one the arm names. The logical fixture is then reset,
+# reseeded and reconditioned by the cell itself, so both arms begin from the same declared
+# database *state*.
+#
+# What is *not* torn down is PostgreSQL. The server process, its data directory, its shared
+# buffers and the host page cache survive between arms, because nothing in the arm changes the
+# database container's configuration and Compose therefore leaves it running. So the two arms are
+# comparable in pool ceiling and logical state, and share whatever the previous arm left in
+# physical storage and cache. That is a limitation to state when interpreting a small difference,
+# not a defect: fully recreating the database between arms would replace it with a different
+# incomparability — one arm reading a cold cache and the other a warm one.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
 ITC_POOL_ARMS="${ITC_POOL_ARMS:-4 8}"
-WORKERS="${ITC_WORKERS_PER_GROUP:-8}"
+# 16 workers per group by maintainer decision (2026-08-18): the arms have to be compared at a
+# worker level that actually presses on the connection ceiling, or a null result would say only
+# that neither pool was reached.
+WORKERS="${ITC_WORKERS_PER_GROUP:-16}"
 WINDOW="${WINDOW:-60s}"
 SLOTS="${SLOTS:-3200}"
 CAPACITY="${CAPACITY:-20}"
@@ -50,9 +63,10 @@ for arm in $ITC_POOL_ARMS; do
   out="test/results/$RESULTS_GROUP/pool-$arm-$STAMP"
   log "arm: pool_max_conns=$arm -> $out"
 
-  # Raised per arm, not reconfigured in place: a pool ceiling is read when the pool is opened, so
-  # a running service would keep the previous arm's ceiling while every artifact recorded the new
-  # one — the failure that looks like a null result.
+  # Re-raised per arm so Compose recreates the service unit with the new ceiling. Reconfiguring in
+  # place would not work: a pool ceiling is read when the pool is opened, so a running service
+  # would keep the previous arm's ceiling while every artifact recorded the new one — the failure
+  # that presents as a null result. The database container is unchanged by this and keeps running.
   ALLOCA_POOL_MAX_CONNS="$arm" ITC_GROUPS="$groups" \
     make --no-print-directory itc-rehearse \
     || fail "could not raise G$groups with pool_max_conns=$arm"

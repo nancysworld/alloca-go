@@ -498,7 +498,11 @@ scrape() {
 #  4. the measured baseline scrape is taken *after* the restart, because the counters it brackets
 #     start at zero there.
 conditioned_by=()
+conditioning_start=""
+conditioning_end=""
+recycle_end=""
 if [ "$CONDITIONING_TARGET" -gt 0 ]; then
+  conditioning_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   [ "$CONDITIONING_SLOTS" -gt 0 ] \
     || fail "CONDITIONING_TARGET=$CONDITIONING_TARGET needs CONDITIONING_SLOTS: the conditioning
   population has to own slots the measured population does not."
@@ -522,12 +526,15 @@ if [ "$CONDITIONING_TARGET" -gt 0 ]; then
   see $OUT/conditioning-output.txt. The measured interval would have opened against a state the
   experiment did not declare."
 
+  conditioning_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
   # Before the recycle. This is the only moment conditioning's server-side totals exist.
   scrape conditioned
 
   log "  recycling the service pool (restart, no reseed) so no measured connection carries a plan
   prepared against empty mutation tables"
   recycle_units
+  recycle_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   conditioned_by=(-conditioned-by "$OUT/conditioning.json" -pool-recycled)
 fi
 
@@ -641,6 +648,20 @@ status="${PIPESTATUS[0]}"
 [ "$status" -eq 0 ] || fail "the run failed or was refused below $REQUIRE; see $OUT/generator-output.txt"
 
 measured_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# **The phase boundaries are retained unconditionally.** They are what makes a server-side
+# observation attributable: a plan logged by `auto_explain`, an autovacuum, a checkpoint, all
+# carry a timestamp and nothing else says which phase of the cell they fell in. Until now these
+# instants were written only when `PG_STAT_STATEMENTS=1` happened to be set, so a cell driven
+# without that flag could not answer "was this executed before or after the pool recycle?" —
+# which is the whole question conditioning exists to settle (ag-sept-validation-plan.md §4.6.2).
+cat > "$OUT/phases.txt" <<EOF
+conditioning_start=$conditioning_start
+conditioning_end=$conditioning_end
+recycle_end=$recycle_end
+measured_start=$measured_start
+measured_end=$measured_end
+EOF
 
 # By PID, never `pkill -f`: the pattern would match this script's own command line and take the
 # run down with the probe.

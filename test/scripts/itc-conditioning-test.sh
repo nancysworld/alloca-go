@@ -50,8 +50,9 @@ cd "$work/repo"
 # The clone carries *committed* scripts, so the working tree's are laid over it. Without this the
 # test silently exercises the last commit rather than the change under review — which it did on
 # its first run, passing the cell through the unconditioned path and reporting the absence of
-# every step it exists to check.
-cp "$repo"/test/scripts/*.sh test/scripts/
+# every step it exists to check. The `.py` workers are copied for the same reason, and because a
+# new one is untracked until it is committed: without them the clone has no analyser at all.
+cp "$repo"/test/scripts/*.sh "$repo"/test/scripts/*.py test/scripts/
 
 # The run log is the transcript. The stubs report on stderr and the script logs on stdout, and
 # the cell is driven with both into one file, so the order in it is the order things happened —
@@ -289,6 +290,86 @@ if grep -q '^measured_mutation_supply=7200$' "$work/cell/fixture.txt"; then
   ok "the retained fixture accounting excludes the slots conditioning claimed"
 else
   bad "measured_mutation_supply is not (100-10)*20*4=7200: $(grep measured_mutation_supply "$work/cell/fixture.txt" || echo missing)"
+fi
+
+# --- the cell retains its phase boundaries -----------------------------------------------------
+#
+# Without these, nothing timestamped by the server — an executed plan, a checkpoint, an
+# autovacuum — can be attributed to a phase, and the conditioning question cannot be answered
+# from the cell at all.
+if [ -f "$work/cell/phases.txt" ]; then
+  missing=""
+  for key in conditioning_start conditioning_end recycle_end measured_start measured_end; do
+    grep -q "^$key=20" "$work/cell/phases.txt" || missing="$missing $key"
+  done
+  if [ -z "$missing" ]; then
+    ok "the cell retains all five phase boundaries"
+  else
+    bad "phases.txt is missing timestamps for:$missing"
+  fi
+else
+  bad "the cell retained no phases.txt, so no server-side observation in it is attributable"
+fi
+
+# --- the executed-plan classifier separates the phases ------------------------------------------
+#
+# The classifier is what turns "conditioning ran" into "the measured window executed no Seq Scan",
+# and it is pure text processing, so its own behaviour is checkable without a database. The case
+# that matters is the third: a Seq Scan during conditioning is expected and harmless, because the
+# tables really are empty then and those connections are discarded by the recycle. Counting it
+# against the measured window would fail every correctly conditioned cell.
+plancheck="$work/plans"
+mkdir -p "$plancheck"
+cat > "$plancheck/phases.txt" <<'PHASES'
+conditioning_start=2026-08-18T10:00:00Z
+conditioning_end=2026-08-18T10:01:00Z
+recycle_end=2026-08-18T10:01:30Z
+measured_start=2026-08-18T10:02:00Z
+measured_end=2026-08-18T10:03:00Z
+PHASES
+
+# A Seq Scan while the tables were empty, then Index Scans once measurement opened.
+cat > "$plancheck/clean.log" <<'LOG'
+2026-08-18 10:00:30.100 UTC [101] LOG:  duration: 0.400 ms  plan:
+	Query Text: SELECT outcome FROM idempotency_records WHERE scope_key = $1
+	Seq Scan on idempotency_records  (cost=0.00..0.00 rows=1 width=64)
+2026-08-18 10:02:30.200 UTC [102] LOG:  duration: 0.090 ms  plan:
+	Query Text: SELECT outcome FROM idempotency_records WHERE scope_key = $1
+	Index Only Scan using idempotency_records_pkey on idempotency_records
+LOG
+
+if ./test/scripts/itc-plan-evidence.py "$plancheck" "$plancheck/clean.log" >"$plancheck/clean.txt" 2>&1; then
+  ok "a Seq Scan confined to the conditioning phase is not counted against the measured window"
+else
+  bad "a correctly conditioned cell was reported as failed: $(tail -2 "$plancheck/clean.txt")"
+fi
+
+# The same plan, executed inside the measured window: the regime conditioning exists to remove.
+cat > "$plancheck/stale.log" <<'LOG'
+2026-08-18 10:02:30.200 UTC [102] LOG:  duration: 12.400 ms  plan:
+	Query Text: SELECT outcome FROM idempotency_records WHERE scope_key = $1
+	Seq Scan on idempotency_records  (cost=0.00..812.00 rows=1 width=64)
+LOG
+if ./test/scripts/itc-plan-evidence.py "$plancheck" "$plancheck/stale.log" >"$plancheck/stale.txt" 2>&1; then
+  bad "a Seq Scan executed inside the measured window was reported as qualified"
+else
+  grep -q "FAILED" "$plancheck/stale.txt" \
+    && ok "a Seq Scan executed inside the measured window fails the qualification" \
+    || bad "the measured-window Seq Scan was refused, but not for that reason: $(tail -2 "$plancheck/stale.txt")"
+fi
+
+# Silence is not success: auto_explain samples, so a window can retain no plan at all.
+cat > "$plancheck/empty.log" <<'LOG'
+2026-08-18 10:00:30.100 UTC [101] LOG:  duration: 0.400 ms  plan:
+	Query Text: SELECT outcome FROM idempotency_records WHERE scope_key = $1
+	Index Only Scan using idempotency_records_pkey on idempotency_records
+LOG
+if ./test/scripts/itc-plan-evidence.py "$plancheck" "$plancheck/empty.log" >"$plancheck/empty.txt" 2>&1; then
+  bad "a cell that captured no plan inside the measured window was reported as qualified"
+else
+  grep -q "INCONCLUSIVE" "$plancheck/empty.txt" \
+    && ok "a measured window with no captured plan is inconclusive, not clean" \
+    || bad "no-plan case refused for the wrong reason: $(tail -2 "$plancheck/empty.txt")"
 fi
 
 # --- a target without slots is refused --------------------------------------------------------

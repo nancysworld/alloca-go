@@ -200,6 +200,30 @@ build_generator() {
 ENV_WINDOW="${WINDOW-}"
 ENV_SLOTS="${SLOTS-}"
 
+# **The frozen Iteration C pool policy: `pool_max_conns=8`** (maintainer decision, 2026-08-18).
+#
+# One value for every shard group at G1, G2 and G4 — the capacity unit is meant to be the same
+# unit at each topology, and a per-topology pool would make the comparison one between two
+# different units.
+#
+# Chosen from three retained 600 s G1 runs at 16 workers per group, not from a preference:
+#
+#   pool=4    944.4/s   acquire 9.8->13.9 ms, pool 4.00/4, PG backends 2.18, run queue 4.03
+#   pool=8   1248.6/s   acquire 5.1->6.6 ms,  pool 8.00/8, PG backends 4.78, run queue 7.26
+#   pool=16  1046.6/s   acquire ~0.04 ms,     pool 15.5/16, PG backends 7.42, run queue 14.33
+#
+# 4 was an admission ceiling: doubling it returned 32% more sustained Goodput at unchanged host
+# CPU. 16 removed the admission queue *entirely* — no worker waits for a connection at all — and
+# converted it into contention: 55% more active backends, 55% more wait events, double the run
+# queue, p95 and p99 both 41% worse, and 16% *less* Goodput. So 8 is not an obviously removable
+# ceiling; past it the binding constraint has already moved off admission and onto one
+# authority's capacity to do concurrent work on two CPUs.
+#
+# Every run records what the service actually opened at /meta, so this variable is the request
+# and `pool_size_per_replica` in the manifest is the fact.
+ALLOCA_POOL_MAX_CONNS="${ALLOCA_POOL_MAX_CONNS:-8}"
+export ALLOCA_POOL_MAX_CONNS
+
 CONDITIONING_SLOTS="${CONDITIONING_SLOTS:-200}"
 CONDITIONING_TARGET="${CONDITIONING_TARGET:-4000}"
 SLOTS="${SLOTS:-3200}"
@@ -369,11 +393,6 @@ case "$stage" in
     export WINDOW="${ENV_WINDOW:-600s}"
     export CAPACITY="${CAPACITY:-20}"
     export REQUIRE="${REQUIRE:-capacity}"
-    # Pinned, not inherited. pool_max_conns=4 is the fixed PR4b capacity-unit policy (maintainer
-    # decision, 2026-08-18); leaving it to pgxpool's default would make it a function of the
-    # cpuset — 4 under the rehearsal partition, 16 unpinned — so the policy would hold by
-    # coincidence rather than by declaration.
-    export ALLOCA_POOL_MAX_CONNS="${ALLOCA_POOL_MAX_CONNS:-4}"
     export RESULTS_GROUP="${RESULTS_GROUP:-pr4a-sustained}"
 
     # --- fixture sizing, derived and recorded ---------------------------------------------

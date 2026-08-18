@@ -1,0 +1,32 @@
+alloca-authority-1-db
+autovacuum=on
+autovacuum_naptime=60 s
+checkpoint_completion_target=0.9
+checkpoint_timeout=300 s
+log_autovacuum_min_duration=600000 ms
+max_wal_size=1024 MB
+
+alloca-authority-2-db
+autovacuum=on
+autovacuum_naptime=60 s
+checkpoint_completion_target=0.9
+checkpoint_timeout=300 s
+log_autovacuum_min_duration=600000 ms
+max_wal_size=1024 MB
+
+alloca-authority-3-db
+autovacuum=on
+autovacuum_naptime=60 s
+checkpoint_completion_target=0.9
+checkpoint_timeout=300 s
+log_autovacuum_min_duration=600000 ms
+max_wal_size=1024 MB
+
+alloca-authority-4-db
+autovacuum=on
+autovacuum_naptime=60 s
+checkpoint_completion_target=0.9
+checkpoint_timeout=300 s
+log_autovacuum_min_duration=600000 ms
+max_wal_size=1024 MB
+

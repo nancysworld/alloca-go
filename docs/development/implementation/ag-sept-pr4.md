@@ -1631,6 +1631,79 @@ a mean over a non-stationary trajectory, and two points at different worker leve
 because they reached different row counts rather than only because of load. That bears directly on
 S/H selection and is recorded here for the A&R rather than settled.
 
+### 3.22 The pool policy is frozen at 8, and 16 is worse than 8
+
+Three retained 600 s G1 runs at 16 workers per group, conditioned, ordinary measurement path,
+everything else identical and driven through the same code path
+([`docs/measurements/pr4a-sustained/`](../../measurements/pr4a-sustained/)):
+
+| `pool_max_conns` | sustained | mean acquire | pool in-use | PG backends | PG waits | run queue | p95 / p99 |
+|---:|---:|---|---|---:|---:|---:|---|
+| 4 | 944.4/s | 9.8 -> 13.9 ms | 4.00/4 | 2.18 | 1.06 | 4.03 | 21.1 / 27.0 ms |
+| **8** | **1,248.6/s** | 5.1 -> 6.6 ms | 8.00/8 | 4.78 | 1.90 | 7.26 | 17.0 / 25.0 ms |
+| 16 | 1,046.6/s | ~0.04 ms | 15.5/16 | 7.42 | 2.94 | 14.33 | 24.0 / 35.3 ms |
+
+**4 was an admission ceiling.** Doubling it returned 32% more sustained Goodput at effectively
+unchanged host CPU (2.31 against 2.39 cores busy), with acquire wait halved and active backends
+doubled. Workers were queueing for a connection rather than being served.
+
+**16 removed the admission queue entirely and paid for it downstream.** Acquire wait collapses to
+about 0.04 ms — no worker waits for a connection at all — and every downstream measure worsens:
+55% more active backends, 55% more wait events, double the host run queue, p95 and p99 both 41%
+worse, tail max 39% worse, and **16% less sustained Goodput than 8**. Host CPU stays flat at
+roughly 2.4 cores across all three, so none of this is the host running out of compute. It is
+sixteen concurrent database users on a two-CPU authority queueing inside PostgreSQL instead of
+queueing at the pool.
+
+So **8 is not an obviously removable connection-admission ceiling**: past it the binding
+constraint has already moved off admission and onto one authority's capacity to do concurrent
+work. The trajectory agrees — 8 has both the highest sustained rate and the flattest shape
+(0.80x first-to-last slice, against 0.74x at 4 and 0.69x at 16).
+
+**G4 at the two ends**, as composed-topology evidence rather than as the policy experiment:
+2,857.1/s at pool=4 against 3,129.3/s at pool=16, so +9.5% aggregate — bought with a run queue
+rising from 17.0 to 54.2 and p99 from 39.5 to 50.6 ms. The four authorities behave *more* alike at
+16 (busiest/quietest 1.07x against 1.22x) and none starved. **There is no G4 run at pool=8**: the
+policy was decided on G1, where the variable is isolated, so the frozen value is applied at G2 and
+G4 without direct evidence at that value on those topologies.
+
+**Decision (maintainer, 2026-08-18): `pool_max_conns=8`, one value for every shard group at G1, G2
+and G4.** The capacity unit is meant to be the same unit at each topology, and a per-topology pool
+would make the comparison one between two different units. It is set as the Iteration C default in
+`itc-local-experiment.sh`; each run still records what the service actually opened at `/meta`, so
+the variable is the request and `pool_size_per_replica` is the fact.
+
+This closes §4.6.3 for PR4a. It is configuration qualification, not pool optimisation: no
+percentage threshold was applied and no attempt was made to find the best value, only a defensible
+one that is not obviously removable.
+
+### 3.23 What PR4a hands to PR4b
+
+The qualified configuration, all of it exercised end to end on the workstation:
+
+- **independent per-group demand** — one fixed worker pool, sequence and collector per shard
+  group, with group identity in the idempotency key, and `VAL-NEG-8`'s control failing against the
+  old shared-pool design (§3.21 note, `internal/loadgen/streams.go`);
+- **explicit conditioning** — a per-organisation mutation target rather than a duration, a disjoint
+  slot/identity/key namespace, a state-preserving service/pool recycle, and the measured run
+  beginning from the conditioning artifact rather than from a repeated flag;
+- **`pool_max_conns=8`**, frozen above;
+- **fixture sizing derived from a measured rate**, retained beside the runs;
+- **the 600 s shape** with ten contiguous 60 s slices, reported in order and never averaged
+  across;
+- **one host-executable entry point**, `itc-local-experiment.sh`, which PR4b's capacity stage
+  extends rather than replacing.
+
+**Not established by PR4a**, and owned by PR4b: saturation reconnaissance, `S`/`H` selection,
+the retained capacity comparison, and any efficiency figure. Nothing in
+[`docs/measurements/pr4a-sustained/`](../../measurements/pr4a-sustained/) may be promoted into one
+— each is a single unrepeated observation of a qualification run.
+
+**Carried forward unresolved**: the smooth decline of §3.21, which reaches §4.6.5's method
+directly. If Goodput falls with accumulated rows, a 600 s average is a mean over a non-stationary
+trajectory, and two points at different worker levels differ partly because they reached different
+row counts rather than only because of load.
+
 ## 4. Open items
 
 - **Rung duration** stays open until §2.4's preflight derives it.

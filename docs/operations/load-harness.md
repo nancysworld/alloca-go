@@ -11,6 +11,24 @@ ladder, and they measure different things:
 | the **PR1 single-service run** | §1–§8 | one service and one database on this host | a reproducible observation of this machine; establishes no capacity |
 | the **PR4a Iteration C rehearsal cell** | §9–§17 | 1, 2 or 4 shard groups pinned to disjoint CPU sets, with monitoring | rehearsal/diagnostic only; never a capacity, scale-efficiency or Tier-2 result |
 
+**One entry point drives the whole local experiment.**
+[`../../test/scripts/itc-local-experiment.sh`](../../test/scripts/itc-local-experiment.sh) composes
+the scripts below into the stages §4.6 requires, in the order it requires them, and is the single
+host-executable command the experiment needs:
+
+```sh
+./test/scripts/itc-local-experiment.sh preflight     # read-only: can this machine drive it?
+./test/scripts/itc-local-experiment.sh build         # generator, refused unless its stamp is clean
+./test/scripts/itc-local-experiment.sh sustained     # conditioned 600 s G1 and G4
+./test/scripts/itc-local-experiment.sh pool          # the bounded G1 pool sensitivity
+```
+
+The stages carry a dependency that is not a preference — qualify conditioning, freeze the pool,
+find the worker bracket, size the fixture — and each consumes the previous one's answer. `recon`,
+`fixture` and `capacity` are named and refuse until they are built, because a stage that silently
+did nothing would look like a stage that found nothing. The scripts below remain the workers and
+can still be driven directly.
+
 §9 onwards assumes §1–§8 rather than repeating it: what the manifest records, what each
 quotability level means (§4), and why both the service and the generator are built rather
 than `go run` (§3) are the same facts in both procedures.
@@ -804,7 +822,10 @@ All of these are environment variables read by
 |---|---|---|
 | `ITC_GROUPS` | `4` | the rung: 1, 2 or 4 shard groups |
 | `WORKLOAD` | `wl-mut-disp-4` | the workload; `WL-MUT-DISP-4` is the one topologies are compared with |
-| `CONCURRENCY` | `16` | closed-loop workers |
+| `CONCURRENCY` | `16` | closed-loop workers, the run **total** — historical `c16`/`c32` cells mean this |
+| `ITC_WORKERS_PER_GROUP` | unset | workers offered to **each** shard group; the run's total is this times the group count, so `16` at `G4` offers 64. Mutually exclusive with `CONCURRENCY`, which `alloca-load` refuses rather than resolving |
+| `CONDITIONING_SLOTS`, `CONDITIONING_TARGET` | `0`, `0` | the conditioning phase: slots per organisation it claims, and the fresh mutations per organisation it must commit. Both unset means an unconditioned cell, and the cell says so |
+| `ALLOCA_POOL_MAX_CONNS` | unset (pgxpool's own default) | the per-unit connection ceiling. **Iteration C's frozen policy is 8**, applied by `itc-local-experiment.sh`; unset here so existing recipes render unchanged |
 | `WINDOW` | `60s` | the measured window |
 | `SLOTS`, `CAPACITY` | `3200`, `20` | the per-organisation fixture, and so the fresh-mutation supply |
 | `REQUIRE` | `capacity` | the level below which the run exits non-zero |
@@ -819,9 +840,18 @@ and the cell prints admitted against it. `3200` is an interim value sized to one
 **not** PR4b's fixture size: that has to be derived from the deepest rung its ladder reaches
 and then held identical across `G1`, `G2` and `G4`.
 
-**Concurrency 16 is exactly `aggregate_pool_size` at `G4`** — four connections per unit — so
-16 workers can each hold a connection and the pool is precisely not a constraint. A ladder has
-to cross that boundary deliberately rather than discover it; `c=32` is the first rung past it.
+**`CONCURRENCY` and `ITC_WORKERS_PER_GROUP` are different quantities and a run records both.**
+The first is the total; the second is Iteration C's experiment variable. The retained `c16`/`c32`
+cells predate the distinction and mean 16 and 32 *total*, roughly 4 and 8 per group at `G4` — they
+must not be read as the new variable.
+
+**The pool ceiling is a declared policy, not pgxpool's default.** Left unset, pgxpool chooses
+`max(4, NumCPU)`, which under the rehearsal partition is 4 and unpinned is 16 — so the same recipe
+would measure two different units depending on how the containers were raised. Iteration C freezes
+it at **8** for every shard group at `G1`, `G2` and `G4`, from three retained 600 s `G1` runs:
+4 gave 944/s, 8 gave 1,249/s, and 16 gave 1,047/s while doubling the host run queue
+(`ag-sept-pr4.md` §3.22). Whatever is requested, the manifest's `pool_size_per_replica` records
+what the service actually opened.
 
 **`capacity` is the ceiling locally, not a conservative default.** The generator is co-resident
 with the units it drives, and co-residency blocks `publishable` outright however clean
@@ -830,7 +860,16 @@ rehearsal cannot fix.
 
 **There is no warm-up flag, deliberately.** `-warm-up` drops responses from the client totals
 while their rows stay in the database, which persisted-state reconciliation cannot square, so
-it refuses the run at `none` (§5). Warming is a separate invocation followed by a reseed.
+it refuses the run at `none` (§5).
+
+**Conditioning is what replaced it**, and it is not the same thing. A conditioning phase drives
+the real mutation path to a declared per-organisation state target, against its own disjoint
+slot/identity/key namespace, and writes its own retained artifact; the measured run then begins
+from that artifact rather than being told the boundary a second time. Its requests, outcomes and
+mutations stay in the reconciliation population — what they are not is measured performance
+(`measurement-contract.md` §5, §12.1). Between the two phases the service is restarted so no
+measured connection carries a plan prepared against empty mutation tables, and the cell retains
+`phases.txt` so any server-side observation can be attributed to a phase.
 
 ### The generator-headroom control
 

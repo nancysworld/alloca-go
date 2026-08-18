@@ -20,7 +20,7 @@ GOLANGCI_LINT_STAMP   := $(TOOLBIN)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 .PHONY: all ci fmt fmt-check vet lint build test test-race test-integration \
         db-up db-down migrate run dev dev-measured smoke obs-up obs-target obs-down tidy tools clean \
         image topo-up topo-down topo-ps itc-up itc-down itc-deployment \
-        itc-layout itc-layout-check itc-topology-check-test itc-obs-labels-check itc-rehearse obs-rehearse
+        itc-layout itc-layout-check itc-topology-check-test itc-conditioning-check itc-obs-labels-check itc-rehearse obs-rehearse
 
 # Integration tests need a real PostgreSQL: the properties they prove (capacity safety
 # under concurrent transactions, post-lock decision time, the scoped-key race) do not
@@ -130,7 +130,7 @@ ITC_CPUS_GENERATOR ?= 8-11
 all: ci
 
 ## ci: run the full local gate, identical to CI (fmt, vet, lint, build, test, race)
-ci: fmt-check vet lint build test test-race build-context-check itc-layout-check itc-topology-check-test itc-obs-labels-check
+ci: fmt-check vet lint build test test-race build-context-check itc-layout-check itc-topology-check-test itc-conditioning-check itc-obs-labels-check
 
 ## fmt: format all Go files
 fmt:
@@ -370,6 +370,15 @@ itc-layout-check:
 # G4 (ag-sept-pr4.md §3).
 itc-topology-check-test:
 	@./test/scripts/itc-topology-check-test.sh
+
+## itc-conditioning-check: prove a conditioned cell still sequences its phases correctly
+#
+# In `ci` because it needs no daemon: docker, curl, taskset and the generator are stubs and the
+# cell is driven inside a throwaway clone. It exists because the ordering is not observable from
+# a finished cell — every wrong order still completes, certifies and retains a full artifact set,
+# and only the phase boundaries move (ag-sept-validation-plan.md §4.6.2).
+itc-conditioning-check:
+	@./test/scripts/itc-conditioning-test.sh
 
 ## itc-obs-labels-check: prove a retained sample can say which topology produced it
 #

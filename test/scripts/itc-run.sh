@@ -71,6 +71,30 @@ WINDOW="${WINDOW:-60s}"
 # is not 200 any more because that value is now known to exhaust in about five seconds.
 SLOTS="${SLOTS:-3200}"
 CAPACITY="${CAPACITY:-20}"
+
+# --- conditioning (ag-sept-validation-plan.md §4.6.2) ------------------------------------------
+#
+# `TRUNCATE -> immediate peak load` opens the measured window against empty mutation tables, so
+# the pool's connections prepare their lookups against a relation with no pages and PostgreSQL
+# caches a Seq Scan that outlives the planner's own correction by tens of seconds (§3.20). The
+# canonical experiment therefore does not begin there: it drives an explicit conditioning phase to
+# a declared state target, recycles the pool so no measured connection carries a plan made against
+# an empty table, and only then opens the measured interval.
+#
+# **This is not `-warm-up`.** Conditioning's requests, outcomes and mutations are retained in their
+# own artifact and stay visible to reconciliation; what they are not is measured performance
+# (measurement-contract §5, §12.1). The distinction is the population boundary, not the name.
+#
+# **Off by default, and the cell says so.** The retained PR4a series is the untreated baseline the
+# conditioned shape is compared against, and silently changing what every cell does would destroy
+# that comparison rather than inform it — the same reasoning ANALYZE_AFTER_SEED carries below. A
+# canonical §4.6.5 capacity run sets these; an unconditioned cell is diagnostic evidence and its
+# artifacts record which it was.
+CONDITIONING_TARGET="${CONDITIONING_TARGET:-0}"
+# Slots per organisation the conditioning population claims. They are its own: conditioning spends
+# slot capacity, and drawing from the measured population's range would arrive at the measured
+# interval having already eaten the headroom the capacity point depends on.
+CONDITIONING_SLOTS="${CONDITIONING_SLOTS:-0}"
 PLACEMENT="${PLACEMENT:-deploy/topology/placement-itc-g${ITC_GROUPS}.json}"
 DEPLOYMENT="${DEPLOYMENT:-test/observed/deployment.json}"
 # One declaration per capacity point, not one per rehearsal: G1, G2 and G4 are different
@@ -287,6 +311,20 @@ for n in $(seq 1 "$ITC_GROUPS"); do
   endpoints+=(-endpoint "authority-${n}=http://localhost:${port}")
 done
 
+# --- worker population ------------------------------------------------------------------------
+#
+# `ITC_WORKERS_PER_GROUP` is Iteration C's experiment variable: workers offered to *each* shard
+# group, so the run's total is that times the group count (validation plan §4.6.1). `CONCURRENCY`
+# stays the run total, which is what the retained `c16`/`c32` cells mean — those were 16 and 32
+# total, about 4 and 8 per group at G4, and they must not be read as the new variable.
+#
+# Both are refused together by alloca-load rather than resolved by precedence here, so a cell that
+# meant one and set the other fails instead of silently offering four times the demand.
+workers=(-concurrency "$CONCURRENCY")
+if [ -n "${ITC_WORKERS_PER_GROUP:-}" ]; then
+  workers=(-workers-per-group "$ITC_WORKERS_PER_GROUP")
+fi
+
 # --- the cell ---------------------------------------------------------------------------------
 
 # Retained beside the artifacts because the partition is part of what the run means, and it is
@@ -305,11 +343,17 @@ ITC_CPUS_GENERATOR=$ITC_CPUS_GENERATOR
 nproc=$(nproc)
 EOF
 
+# The fixture as *split*, not merely as seeded. A conditioned cell's measured population owns
+# only the slots conditioning did not claim, and every headroom judgement about the cell is made
+# against that number rather than against the seeded total.
 cat > "$OUT/fixture.txt" <<EOF
 SLOTS=$SLOTS
 CAPACITY=$CAPACITY
 organisations=4
-fresh_mutation_supply=$((SLOTS * CAPACITY * 4))
+seeded_mutation_supply=$((SLOTS * CAPACITY * 4))
+conditioning_slots_per_organisation=$CONDITIONING_SLOTS
+conditioning_target_per_organisation=$CONDITIONING_TARGET
+measured_mutation_supply=$(((SLOTS - CONDITIONING_SLOTS) * CAPACITY * 4))
 EOF
 
 log "G$ITC_GROUPS cell -> $OUT"
@@ -374,11 +418,56 @@ if [ "$ANALYZE_AFTER_SEED" = "1" ]; then
   } > "$OUT/planner-stats.txt"
 fi
 
+# **The state-preserving recycle** (ag-sept-validation-plan.md §4.6.2 step 4).
+#
+# A restart of the service units, and nothing else. The databases keep running and nothing is
+# reseeded or truncated, so the state conditioning established survives exactly as declared —
+# what does not survive is the pool, which is the point: PostgreSQL caches a plan per connection,
+# and table growth alone does not invalidate one. Only a new connection, made against the
+# populated tables, plans the way the measured window needs (§3.20).
+#
+# Readiness is waited for rather than slept past. A measured window opened against a unit that is
+# still starting would attribute its startup to the service under test.
+recycle_units() {
+  local n port waited
+  for n in $(seq 1 "$ITC_GROUPS"); do
+    docker restart "alloca-service-${n}" >/dev/null \
+      || fail "could not restart alloca-service-${n}; the measured window would open on
+  connections still carrying plans prepared against empty mutation tables"
+  done
+
+  for n in $(seq 1 "$ITC_GROUPS"); do
+    case $n in
+      1) port="${SERVICE_1_PORT:-8081}" ;;
+      2) port="${SERVICE_2_PORT:-8082}" ;;
+      3) port="${SERVICE_3_PORT:-8083}" ;;
+      4) port="${SERVICE_4_PORT:-8084}" ;;
+    esac
+    waited=0
+    until curl -fsS -m 2 "http://localhost:${port}/readyz" >/dev/null 2>&1; do
+      waited=$((waited + 1))
+      [ "$waited" -le "${RECYCLE_READY_TIMEOUT:-60}" ] \
+        || fail "alloca-service-${n} did not become ready within ${RECYCLE_READY_TIMEOUT:-60}s
+  of the pool recycle; the conditioned state is intact but the cell cannot open a measured
+  window against a unit that is not serving"
+      sleep 1
+    done
+  done
+}
+
 # Bracketing scrapes. The service counters are cumulative and the units are deliberately left
 # running between cells, so only the delta across the measured window describes this cell —
 # a single scrape describes everything the process has ever done.
+#
+# A conditioned cell restarts its units between the `conditioned` and `baseline` scrapes, so the
+# measured pair brackets counters that start at zero. That is why the conditioning boundary is
+# scraped before the recycle rather than differenced out of the measured pair afterwards.
 scrape() {
   local when="$1" n port
+  # Announced, because a conditioned cell takes three of these at points whose *order* is the
+  # contract — and an operator watching a ten-minute run otherwise sees a long silence between
+  # the conditioning phase and the measured one.
+  log "  scrape: $when"
   for n in $(seq 1 "$ITC_GROUPS"); do
     case $n in
       1) port="${SERVICE_1_METRICS_PORT:-9081}" ;;
@@ -391,6 +480,56 @@ scrape() {
   delta for that unit, which is the evidence a report reads per authority"
   done
 }
+
+# --- conditioning phase, boundary scrape, and pool recycle ------------------------------------
+#
+# The order here is the contract's, and each step is where it is for a reason that is easy to get
+# wrong:
+#
+#  1. conditioning runs against its own slot/identity/key namespace, to a state target counted in
+#     committed mutations rather than elapsed time, so G1 and G4 open their measured windows at
+#     the same logical state instead of after the same number of seconds;
+#  2. the boundary is scraped *before* the recycle. A service restart takes its counters with it,
+#     so a scrape taken afterwards cannot describe what conditioning did, and §12.1 requires that
+#     baseline to be retained rather than reconstructed by subtraction;
+#  3. the recycle restarts the service units only. The databases keep running and nothing is
+#     reseeded, so the conditioned state survives exactly as declared while every connection the
+#     measured window uses is new and plans against populated tables;
+#  4. the measured baseline scrape is taken *after* the restart, because the counters it brackets
+#     start at zero there.
+conditioned_by=()
+if [ "$CONDITIONING_TARGET" -gt 0 ]; then
+  [ "$CONDITIONING_SLOTS" -gt 0 ] \
+    || fail "CONDITIONING_TARGET=$CONDITIONING_TARGET needs CONDITIONING_SLOTS: the conditioning
+  population has to own slots the measured population does not."
+
+  log "  conditioning to $CONDITIONING_TARGET mutations/organisation over $CONDITIONING_SLOTS slots/organisation"
+  taskset -c "$ITC_CPUS_GENERATOR" "$LOAD" \
+    -placement "$PLACEMENT" \
+    "${endpoints[@]}" \
+    -deployment "$DEPLOYMENT" \
+    -declaration "$DECLARATION" \
+    -workload "$WORKLOAD" \
+    "${workers[@]}" \
+    -conditioning \
+    -conditioning-slots "$CONDITIONING_SLOTS" \
+    -conditioning-target "$CONDITIONING_TARGET" \
+    -slots "$SLOTS" \
+    -require "$REQUIRE" \
+    -out "$OUT/conditioning.json" 2>&1 | tee "$OUT/conditioning-output.txt"
+  status="${PIPESTATUS[0]}"
+  [ "$status" -eq 0 ] || fail "conditioning failed or fell short of its declared state target;
+  see $OUT/conditioning-output.txt. The measured interval would have opened against a state the
+  experiment did not declare."
+
+  # Before the recycle. This is the only moment conditioning's server-side totals exist.
+  scrape conditioned
+
+  log "  recycling the service pool (restart, no reseed) so no measured connection carries a plan
+  prepared against empty mutation tables"
+  recycle_units
+  conditioned_by=(-conditioned-by "$OUT/conditioning.json" -pool-recycled)
+fi
 
 scrape baseline
 
@@ -461,7 +600,17 @@ if [ "$PLAN_PROBE" = "1" ]; then
   log "  planner-state probe every ${PLAN_PROBE_INTERVAL:-5}s -> $OUT/plan-probe.txt"
 fi
 
-log "  generator confined to CPUs $ITC_CPUS_GENERATOR ($WORKLOAD c=$CONCURRENCY window=$WINDOW require=$REQUIRE)"
+if [ -n "${ITC_WORKERS_PER_GROUP:-}" ]; then
+  demand="workers/group=$ITC_WORKERS_PER_GROUP total=$((ITC_WORKERS_PER_GROUP * ITC_GROUPS))"
+else
+  demand="c=$CONCURRENCY total"
+fi
+if [ "$CONDITIONING_TARGET" -gt 0 ]; then
+  phase="conditioned"
+else
+  phase="UNCONDITIONED — diagnostic only, not a §4.6.5 capacity point"
+fi
+log "  generator confined to CPUs $ITC_CPUS_GENERATOR ($WORKLOAD $demand window=$WINDOW require=$REQUIRE $phase)"
 
 # Bracket the measured phase for the panel export. A cell's headline scalars come from run.json,
 # but a scalar cannot show a *shape* — and this workload's rate is not flat within a window
@@ -479,7 +628,8 @@ taskset -c "$ITC_CPUS_GENERATOR" "$LOAD" \
   -deployment "$DEPLOYMENT" \
   -declaration "$DECLARATION" \
   -workload "$WORKLOAD" \
-  -concurrency "$CONCURRENCY" \
+  "${workers[@]}" \
+  "${conditioned_by[@]}" \
   -duration "$WINDOW" \
   -slots "$SLOTS" \
   -require "$REQUIRE" \
@@ -581,7 +731,11 @@ try:
 except Exception:
     print(-1)' "$OUT/run.json" 2>/dev/null)" || admitted=-1
 
-supply=$((SLOTS * CAPACITY * 4))
+# The *measured* population's supply, not the whole fixture's. Conditioning claims its slots and
+# spends their capacity, so a conditioned cell that used the seeded total here would credit itself
+# with headroom that another phase already consumed — and the fixture-headroom gate exists
+# precisely to catch a rung that ran out of state (measurement-contract §5).
+supply=$(((SLOTS - CONDITIONING_SLOTS) * CAPACITY * 4))
 if [ "${admitted:-0}" -ge "$supply" ] && [ "$supply" -gt 0 ]; then
   echo >&2
   echo "!! this cell exhausted its fixture: ${admitted} admitted against a supply of ${supply}." >&2

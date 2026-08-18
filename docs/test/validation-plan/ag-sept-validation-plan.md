@@ -403,9 +403,41 @@ Each 600 s run is analysed as ten contiguous **60 s time slices** for stationari
 slices are observations of one trajectory, **not ten independent samples**. No destructive reset
 occurs between slices.
 
+**The comparison quantity is the full-600 s horizon average** (maintainer decision, 2026-08-18).
+Every Iteration C number that enters a comparison — `S` against `H`, a point against its
+confirmation, one topology against another, and any efficiency derived from them — is the
+**fresh-mutation Goodput over the whole 600 s measured interval, from the same fixed conditioned
+starting state**. Nothing is read from a sub-interval.
+
+This is a definition, not a workaround, and it exists because the trajectory is not stationary
+within the window. PR4a measured both topologies declining and then plateauing across the 600 s
+(`ag-sept-pr4.md` §3.21), which leaves two ways to state a run's Goodput and only one of them
+comparable:
+
+- **the horizon average**, which asks what the topology delivers over a fixed horizon from a fixed
+  starting state — a question every arm answers the same way; or
+- **a later plateau**, which asks what it settles to — and cannot be compared across arms, because
+  each arm reaches its plateau at a different elapsed time and a different accumulated dataset
+  size, so the selection itself would carry the difference the comparison is trying to measure.
+
+**The slices therefore describe and disqualify; they never select.** They show evolution, expose a
+run whose shape says it belongs to an invalid regime, and let a reader see what the average
+averages. Reading a headline number from slices 6–10 because the trajectory looks flatter there is
+exactly the cherry-picking this rule forbids, and it would make the reported figure a function of
+where the reader chose to start.
+
+**Dataset state at both ends of the interval is part of the evidence**, not an incidental
+observation. A horizon average is only interpretable beside the state it began from and the state
+it reached: the conditioned starting state is fixed and declared, and the per-authority row and
+data volume at the start and end of the measured interval are retained under §4.6.6. Two arms whose
+starting states differ are not comparable however carefully their averages are computed.
+
+Whether an indefinitely growing dataset is the right thing for this benchmark to represent at all
+is a separate and open question, carried to Analyse & Review rather than settled here.
+
 `S` is selected only when the `S/H` relationship is reproducible: the deciding `H` run and its
-confirmation both fail to produce higher sustained Goodput than the corresponding selected-point
-runs, or reproducibly fail a legitimate load-induced SLO/system gate. A fixture, generator,
+confirmation both fail to produce higher sustained Goodput — the horizon average defined above —
+than the corresponding selected-point runs, or reproducibly fail a legitimate load-induced SLO/system gate. A fixture, generator,
 measurement-system, unrelated environment, or qualification failure at `H` cannot establish the
 knee. If the two `H` observations disagree materially, or either belongs to an unrelated invalid
 regime, the knee remains unresolved; investigate or move the bracket rather than averaging the

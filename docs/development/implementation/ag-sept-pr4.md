@@ -1626,15 +1626,22 @@ The two imply different experiments and different meanings for a sustained numbe
 between them is a requirements and workload-envelope decision rather than an implementation one.
 No workload or implementation change was made for it.
 
-**It also reaches §4.6.5's method.** If Goodput declines with accumulated rows, a 600 s average is
-a mean over a non-stationary trajectory, and two points at different worker levels differ partly
-because they reached different row counts rather than only because of load. That bears directly on
-S/H selection and is recorded here for the A&R rather than settled.
+**Its methodological half is now settled** (validation plan §4.6.5, 2026-08-18). Because the
+trajectory is not stationary within the window, the comparison quantity is defined as the full-600 s
+horizon-average fresh-mutation Goodput from the same fixed conditioned starting state. Every arm is
+then read the same way, and the slices describe evolution and disqualify invalid regimes rather than
+selecting a plateau — which is what would otherwise let the choice of sub-interval carry the very
+difference a comparison is trying to measure. Start and end dataset state travel with the number.
+
+**What that does not settle** is whether an indefinitely growing dataset is the right thing for the
+benchmark to represent at all. A definition makes the arms comparable; it does not make the question
+above go away, and it is carried to A&R.
 
 ### 3.22 The pool policy is frozen at 8, and 16 is worse than 8
 
 Three retained 600 s G1 runs at 16 workers per group, conditioned, ordinary measurement path,
-everything else identical and driven through the same code path
+driven through the same code path with the same declared experiment configuration and the same
+serving code
 ([`docs/measurements/pr4a-sustained/`](../../measurements/pr4a-sustained/)):
 
 | `pool_max_conns` | sustained | mean acquire | pool in-use | PG backends | PG waits | run queue | p95 / p99 |
@@ -1679,6 +1686,15 @@ supply, is the highest of any run in the set and still left headroom.
 So the frozen value is not a G1 result imposed on the composed topology: G4 prefers it too, and by
 8.9% over 16.
 
+**What "identical" does and does not cover.** The six arms were taken at four revisions — `79cd7f1`
+(both pool=4), `527a02f` (G1 pool=8), `33105ca` (G4 pool=8) and `a764901` (both pool=16) — each from
+a clean tree, each stamping `service_source_modified: false`. What is identical is the part that
+could move a number: `git diff 79cd7f1 2fb7a00 -- internal/ cmd/` is empty, so the serving binary
+and the generator are unchanged in content across the whole window, and the declared experiment
+configuration is the same at every arm. What differs is harness and documentation revisions —
+the four commits between them touched `test/scripts/` and `docs/` only. That is a weaker claim than
+"everything else identical", and it is the one the artifacts support.
+
 **Decision (maintainer, 2026-08-18): `pool_max_conns=8`, one value for every shard group at G1, G2
 and G4.** The capacity unit is meant to be the same unit at each topology, and a per-topology pool
 would make the comparison one between two different units. It is set as the Iteration C default in
@@ -1711,15 +1727,34 @@ the retained capacity comparison, and any efficiency figure. Nothing in
 [`docs/measurements/pr4a-sustained/`](../../measurements/pr4a-sustained/) may be promoted into one
 — each is a single unrepeated observation of a qualification run.
 
-**Carried forward unresolved**: the smooth decline of §3.21, which reaches §4.6.5's method
-directly. If Goodput falls with accumulated rows, a 600 s average is a mean over a non-stationary
-trajectory, and two points at different worker levels differ partly because they reached different
-row counts rather than only because of load.
+**Carried forward unresolved**: not the *method* — §4.6.5 now fixes the comparison quantity as the
+full-600 s horizon average from a fixed conditioned start, so the arms are comparable — but the
+*representation*. Whether a benchmark whose capacity depends on an indefinitely growing dataset is
+describing the system under test, or a fixture that ought to have a bounded hot-state lifecycle, is
+the §3.21 question and belongs to A&R.
 
 ## 4. Open items
 
-- **Rung duration** stays open until §2.4's preflight derives it.
-- **Within-window decay must be characterised before any ladder** (§3.11). Goodput falls ~2.5×
+> **Most of this list is superseded by the 2026-08-18 re-baseline and is kept as history.** It was
+> written when PR4a owned a full low-to-high ladder whose rung duration was undecided, and when the
+> PR4a/PR4b split ran through AWS. Neither is true now: §4.6.4–§4.6.5 of the validation plan
+> replaced the ladder with short adaptive reconnaissance plus two retained 600 s points and their
+> confirmations, PR4b is the **local** sustained characterisation, and independently provisioned
+> AWS verification is optional PR4c. Where an item below conflicts with §3.20–§3.23 or with the
+> owner documents, they win.
+>
+> Each superseded item carries its disposition inline. The rest are still open.
+
+- ~~**Rung duration** stays open until §2.4's preflight derives it.~~ **Settled**: 600 s, fixed as
+  an Iteration C experiment parameter (validation plan §4.6.5), and exercised at G1 and G4 (§3.21).
+- **Superseded, and partly answered.** The dependence this item names is real and was measured at
+  600 s (§3.21): both topologies decline and then plateau, and the decline is *not* §3.20's
+  cached-plan regime. What replaced the item is a definition rather than a fix — §4.6.5 now fixes
+  the comparison quantity as the full-600 s horizon average from a fixed conditioned start, so
+  window length is no longer a free variable and slices describe evolution rather than select a
+  plateau. Whether the underlying growth should be represented at all is carried to A&R in §3.21.
+  The original item follows.
+  **Within-window decay must be characterised before any ladder** (§3.11). Goodput falls ~2.5×
   inside a single 60 s cell, so a rung's reported average depends on how long it ran, and two
   rungs are not comparable until that dependence is quantified or removed. The 30 s / 60 s / 120 s
   experiment this item called for **has now been run and did not answer it** (§3.12): the cells
@@ -1734,22 +1769,31 @@ row counts rather than only because of load.
   two §3.11 cells predate the change and are retained at
   [`points/`](../../measurements/pr4a-rehearsal/points/) with bracketing scrapes only — which is
   why their decay is described from Grafana and is **not** re-derivable from a retained artifact.
-- **The saturation ladder** has not been run, and cannot be until the two items above are settled.
-  Concurrency 16 sits exactly at `aggregate_pool_size`, so the ladder must deliberately cross it;
-  `c=32` (§3.11.1) is the first rung past it and is recorded as an observation, not a rung.
-- **Final `SLOTS`** is still to be derived from the deepest rung that ladder reaches, then held
-  identical across `G1`, `G2` and `G4` (§3.10). 3200 is an interim value sized to one c=16 cell.
+- ~~**The saturation ladder** has not been run, and cannot be until the two items above are
+  settled.~~ **Superseded**: there is no full ladder. §4.6.4 replaced it with short, non-canonical
+  adaptive reconnaissance that only brackets `S` and `H`, and §4.6.5 gives the retained treatment
+  to those two points and their confirmations. It is PR4b's work, not PR4a's. The `aggregate_pool_size`
+  reasoning also no longer holds as written: the pool is frozen at 8 per group (§3.22), so 16
+  workers per group sit deliberately *above* it.
+- ~~**Final `SLOTS`** is still to be derived from the deepest rung that ladder reaches~~
+  **Done for the qualification, and the method is reusable**: sizing is derived from a measured
+  aggregate rate, the duration, the conditioning population and explicit headroom, retained as its
+  own arithmetic beside the runs, and held identical across topologies — 50,000 slots per
+  organisation, with worst-case consumption reaching 51.7% of measured supply
+  ([`docs/measurements/pr4a-sustained/fixture-sizing.txt`](../../measurements/pr4a-sustained/fixture-sizing.txt)).
+  PR4b re-derives it for whatever bracket its reconnaissance selects.
 - **The generator-headroom control** is runnable but should be taken against a stable high-useful-
   demand `G4` point after the degraded-regime qualification, so the control does not compare two
   different regimes by accident.
 - **Per-unit panel aggregation and the dashboard retitle** (§2.6) are not done. The units are
   scraped and labelled by `authority`, but the committed dashboard is still PR2's
   single-instance one.
-- **Generator currency is unchecked.** `itc-run.sh` verifies the generator binary exists, not that
-  it matches the tree, so a stale binary that still accepts its arguments would run and certify
-  while `generator_commit_sha` honestly records a revision that is not the one under test.
-  `sweep.sh` has the same shape. Whether a mismatch should refuse or warn is a measurement-contract
-  question.
+- ~~**Generator currency is unchecked.**~~ **Closed for the Iteration C path**: every driving stage
+  of `itc-local-experiment.sh` rebuilds the generator from the current tree and refuses a binary
+  stamped `vcs.modified=true`, so a stale or dirty binary cannot reach a run. The exact failure this
+  item predicted then happened for real — a run driven with a binary predating its own flags — which
+  is why the build moved into the entry point. `itc-run.sh` and `sweep.sh` driven directly still only
+  check existence, so the gap remains for those paths.
 - **Whether monitoring splits onto its own host** stays open until §2.2's preflight says whether it
   needs to.
 - ~~**`node_exporter` is no longer deferrable**~~ **Done** (§3.14). Built with a restricted
@@ -1767,7 +1811,12 @@ row counts rather than only because of load.
   from `ITC_GROUPS`, and a collector set cut to what does not block — `stat_user_tables` hangs a
   scrape indefinitely under a table lock, which would have blinded the instrument in exactly the
   situation it exists for.
-- **The degraded regime must be qualified before any ladder or PR4b** (§3.12–§3.13). Repeat
+- ~~**The degraded regime must be qualified before any ladder or PR4b**~~ **Closed by §3.20**: the
+  regime was root-caused to a Seq Scan cached against empty mutation tables, and the conditioning
+  plus state-preserving recycle procedure removes that starting state. The six retained 600 s runs
+  show no such regime. The original item, and the open questions it raised about reproducibility
+  rate and admission rules, follow — they no longer gate PR4b, but the reasoning is kept.
+  **The degraded regime must be qualified before any ladder or PR4b** (§3.12–§3.13). Repeat
   comparable cells enough to establish the discriminating signal; the goal is root cause/fix or a
   reliable exclusion/bounding rule, not an unlimited WSL investigation. Re-run the 120 s point only
   with a fixture that cannot bound it (`SLOTS=8000` gives 640,000). **Checkpoints and autovacuum
@@ -1780,7 +1829,12 @@ row counts rather than only because of load.
   meant to protect. The next measurement is a materially larger population than one ten-cell
   series, and it must not be spent varying knobs: a knob varied during a quiet period refutes
   nothing, which the `GAP` sequence demonstrated at the cost of two runs.
-- **The regime is a live threat to the PR4b rung comparison** (§3.15). It reproduces at G1, is
+- **Superseded as a threat, retained as reasoning.** With the regime's cause removed rather than
+  bounded, the admission rule this item calls for is no longer needed for it. The *shape* of the
+  concern outlived the cause, though, and §3.21 records its successor: a trajectory that is not
+  stationary within a window still makes two points comparable only if they are read the same way,
+  which is what §4.6.5's fixed comparison quantity settles. The original item follows.
+  **The regime is a live threat to the PR4b rung comparison** (§3.15). It reproduces at G1, is
   invisible in every host metric, and can be absent for hours, so a rung measured during a
   degrading period would be compared against one measured during a quiet period with nothing in
   the artifacts to say so. Whether each rung must carry enough cells to detect its own regime, and
@@ -1816,12 +1870,21 @@ quota already available if it removes AWS-specific uncertainty, but any such boo
 operational evidence only and never capacity evidence. Build genuine AWS usage/billing history and
 re-request the quota later; AG-Sept does not wait on that approval.
 
-PR4b therefore remains conditional on enough quota to instantiate the **complete** independently
-provisioned G1/G2/G4 environment. If that environment is still unavailable inside the AG-Sept
-timebox, PR4 records the AWS blocker, leaves aggregate capacity scaling and `VAL-SCALE-5` explicitly
-unproven, and proceeds to PR5. Neither the shared-workstation rehearsal nor a partial AWS topology
-is promoted as a substitute result.
+**Superseded by the 2026-08-18 re-baseline: PR4b does not depend on quota.** As written, this
+section made PR4b conditional on instantiating the complete independently provisioned G1/G2/G4
+environment. That dependency moved: PR4b is the **local** sustained characterisation under
+`VAL-SCALE-6`, which needs no cloud environment at all, and independently provisioned verification
+is optional **PR4c** under `VAL-SCALE-5`. The paragraph below is kept because the denial and its
+reasoning are history, and because the rule it states still governs PR4c.
 
-**Budget consequence:** none. The existing shared 4.0-day PR4a/PR4b envelope remains the scheduling
-owner; this denial changes the probability and likely size of the PR4b cloud pass, not the milestone
-budget or the validation rule.
+~~PR4b~~ **PR4c** therefore remains conditional on enough quota to instantiate the **complete**
+independently provisioned G1/G2/G4 environment. If that environment is still unavailable inside the
+AG-Sept timebox, PR4 records the AWS blocker, leaves aggregate capacity scaling and `VAL-SCALE-5`
+explicitly unproven, and proceeds to PR5. Neither the shared-workstation result nor a partial AWS
+topology is promoted as a substitute for it.
+
+**Budget consequence at the time: none.** The shared 4.0-day PR4a/PR4b envelope this refers to no
+longer exists — PR4a consumed it and PR4b is funded by a 1.0-day contingency draw
+([`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §2.1.3) — but the substantive point holds: the
+denial changed the probability and likely size of the cloud pass, not the milestone budget or the
+validation rule. PR4c remains unbudgeted.

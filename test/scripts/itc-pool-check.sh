@@ -86,6 +86,53 @@ else
   bad "rendering ALLOCA_POOL_MAX_CONNS=4 did not produce pool_max_conns=4 alone"
 fi
 
+# --- the evidence summary renders the ceiling it actually ran with ----------------------------
+#
+# It did not. The denominator was hard-coded to 4 -- the value every cell happened to use -- so
+# the first cell driven at a different policy rendered "8.0/8" as "8.0/4": a pool reported as
+# twice full. A reader checking whether the pool saturated would have drawn the opposite
+# conclusion from the one the numbers support, and every gate would still have passed.
+#
+# Checked against a synthetic cell at a non-4 ceiling, because a check built from a pool-4 cell
+# cannot distinguish a resolved denominator from the constant that used to be there.
+synthetic="$(mktemp -d)"
+trap 'rm -rf "$synthetic"' EXIT
+mkdir -p "$synthetic/panels"
+cat > "$synthetic/run.json" <<'JSON'
+{"manifest":{"unit_count":1,"pool_size_per_replica":16,"workload":"wl-mut-disp-4"},
+ "summary":{"successful_mutation_goodput":600,"duration_seconds":60.0,
+   "latency_ms":{"p50":1,"p95":2,"p99":3,"max":4},
+   "generator":{"cpu_utilisation_per_core":0.1},
+   "totals":[{"operation":"reserve","outcome":"admitted_success","count":600}]},
+ "quotability":{"level":"capacity"}}
+JSON
+{
+  echo "timestamp,labels,value"
+  for t in 10 20 30; do echo "$t,\"authority=authority-1,unit=1\",15.5"; done
+} > "$synthetic/panels/pool_in_use.csv"
+{
+  echo "timestamp,labels,value"
+  for t in 10 20 30; do echo "$t,\"authority=authority-1,unit=1\",16"; done
+} > "$synthetic/panels/pool_total.csv"
+# `throughput` is what establishes the cell's rate window, and every per-authority series is
+# read inside it. Without this panel the classifier reports "endpoints only" and never reaches
+# the occupancy column at all — which would make this check pass vacuously on a regression.
+{
+  echo "timestamp,labels,value"
+  for t in 10 20 30; do echo "$t,,600"; done
+} > "$synthetic/panels/throughput.csv"
+
+rendered="$(./test/scripts/itc-classify.py "$synthetic" 2>/dev/null || true)"
+if printf '%s' "$rendered" | grep -q '15.5/16'; then
+  ok "the occupancy column renders the resolved ceiling (15.5/16)"
+elif printf '%s' "$rendered" | grep -q '/4'; then
+  bad "the occupancy column rendered a pool-16 cell against a denominator of 4; the constant is
+        back and a saturated pool would read as impossible over-occupancy"
+else
+  bad "could not read an occupancy figure from the classifier for a pool-16 cell:
+        $(printf '%s' "$rendered" | tail -2)"
+fi
+
 echo
 echo "itc-pool-check: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

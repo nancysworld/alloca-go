@@ -160,6 +160,10 @@ def summarise(cell):
         row["level"] = run["quotability"]["level"]
         row["gen_cpu"] = summary["generator"]["cpu_utilisation_per_core"]
         row["units"] = manifest.get("unit_count", 0)
+        # The service's own resolved ceiling, from /meta. It is the fallback denominator for the
+        # occupancy column when the pool_total panel is absent, so that column can never fall
+        # back to a constant again.
+        row["pool_max_conns"] = manifest.get("pool_size_per_replica")
     except Exception as exc:  # a cell that cannot be read is reported, never skipped silently
         row["error"] = f"run.json unreadable: {exc}"
         return row
@@ -218,7 +222,27 @@ def summarise(cell):
         if means:
             hottest = max(means, key=means.get)
             peak = means[hottest]
-            row["busiest"] = f"{hottest.replace('authority-', 'a')} {peak:.1f}/4"
+            # **The denominator is that authority's own reported pool total, never a constant.**
+            # It was hard-coded to 4 — the ceiling every cell happened to run with — so the first
+            # cell driven at a different policy rendered "8.0/4", a pool reported as twice full.
+            # A reader checking whether the pool saturated would have drawn the opposite
+            # conclusion from the one the numbers support.
+            #
+            # Read per authority rather than from the manifest's single figure, because that is
+            # the shape that can disagree: one unit raised with a different ceiling is exactly
+            # the misconfiguration this column exists to expose, and a run-wide number would
+            # average it away.
+            totals = read_per_authority(cell, "pool_total")
+            capacity = None
+            if hottest in totals:
+                observed = [v for t, v in totals[hottest].items()
+                            if rate_window[0] <= t <= rate_window[-1]]
+                if observed:
+                    capacity = max(observed)
+            if capacity is None:
+                capacity = row.get("pool_max_conns")
+            ceiling = f"{capacity:.0f}" if capacity else "?"
+            row["busiest"] = f"{hottest.replace('authority-', 'a')} {peak:.1f}/{ceiling}"
             # Starvation is relative, not absolute. A unit holding a third of what the busiest
             # unit holds is not merely quieter — the generator is closed-loop and round-robins
             # the four organisations, so a stall on one authority stops the others being asked

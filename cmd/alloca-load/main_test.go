@@ -629,3 +629,67 @@ func TestRoutingFlagsAreRefusedWhenTheyContradict(t *testing.T) {
 		})
 	}
 }
+
+// Both flag relationships below were accepted, and each let a run certify against a starting
+// state it did not have. They are checked through `run` rather than against the validation
+// switch, because the defect was that the *combination* reached a real run at all.
+func TestConditioningFlagCombinationsThatMisdescribeTheStartingState(t *testing.T) {
+	// A conditioning report that is otherwise entirely valid, so each refusal below is the
+	// flag relationship failing rather than the artifact.
+	report := filepath.Join(t.TempDir(), "conditioning.json")
+	if err := os.WriteFile(report, []byte(`{
+	  "manifest":{"run_id":"c-1","workload":"wl-mut-disp-4","phase":"conditioning",
+	    "conditioning":{"slots_per_organisation":2,"target_mutations_per_organisation":1,
+	      "organisations":4}},
+	  "summary":{"measurement_sound":true,"successful_mutation_goodput":4,"completed_requests":4}}`), 0o600); err != nil {
+		t.Fatalf("writing the conditioning report: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		args  []string
+		wants string
+	}{
+		{
+			// The recycle is what stops measured connections carrying plans prepared before
+			// conditioning. Without it a conditioned run measures the regime conditioning was
+			// added to remove, and used to reach `capacity` doing so.
+			name:  "conditioned but not recycled",
+			args:  []string{"-conditioned-by", report},
+			wants: "requires -pool-recycled",
+		},
+		{
+			// hot-organisation ignores the phase split and sends every request to one
+			// organisation, so a four-organisation target would be recorded as met when three
+			// of them received nothing.
+			name: "conditioning a workload with no phase split",
+			args: []string{
+				"-conditioning", "-conditioning-slots", "1", "-conditioning-target", "1",
+				"-workload", "hot-organisation", "-org", "org-a",
+			},
+			wants: "phase split",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			one := newUnit(t, "authority-1", []string{"org-a", "org-c"}, "test-v1")
+			two := newUnit(t, "authority-2", []string{"org-b", "org-d"}, "test-v1")
+			args := append([]string{
+				"-placement", writePlacement(t, twoAuthorities),
+				"-endpoint", "authority-1=" + one.server.URL,
+				"-endpoint", "authority-2=" + two.server.URL,
+				"-deployment", writeDeploymentFor(t, one.server.URL, two.server.URL),
+				"-slots", "4", "-n", "4",
+				"-out", filepath.Join(t.TempDir(), "report.json"),
+			}, tc.args...)
+
+			err := run(args)
+			if err == nil {
+				t.Fatal("the run was accepted; it would have certified against a starting " +
+					"state its own accounting misdescribes")
+			}
+			if !strings.Contains(err.Error(), tc.wants) {
+				t.Errorf("refused for the wrong reason (want %q): %v", tc.wants, err)
+			}
+		})
+	}
+}

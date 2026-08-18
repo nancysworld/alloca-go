@@ -212,6 +212,33 @@ func run(args []string) error {
 	case *poolRecycled && *conditionedBy == "":
 		return fmt.Errorf("-pool-recycled describes the transition out of conditioning, so it " +
 			"belongs with -conditioned-by")
+	case *conditionedBy != "" && !*poolRecycled:
+		// **The relationship is reciprocal, and it was not.** A measured run could name a
+		// conditioning artifact, omit the recycle assertion, record `pool_recycled: false`, and
+		// still reach `capacity` — while serving on connections whose plans were prepared
+		// against the empty tables conditioning exists to leave behind. Nothing downstream
+		// refused it, because every other gate was satisfied.
+		//
+		// Refused rather than downgraded, because the recycle is a step of the method rather
+		// than a property of the result (ag-sept-validation-plan.md §4.6.2). A deliberately
+		// unrecycled conditioned run would be a *control*, and it should say so with its own
+		// flag rather than by leaving this one off.
+		return fmt.Errorf("-conditioned-by requires -pool-recycled: conditioning establishes the " +
+			"state and the recycle is what stops the measured connections carrying plans made " +
+			"before it, so a conditioned run without it measures the regime conditioning was " +
+			"added to remove (ag-sept-validation-plan.md §4.6.2)")
+	case *conditioning && !phaseAware(*workloadName):
+		// **Only a phase-aware workload can be conditioned.** The others ignore `Phase` and
+		// `ConditioningSlots` entirely, so they draw from the whole fixture in either phase —
+		// and the bound below, derived from the organisations the placement names, assumes a
+		// workload that cycles all of them. `-workload hot-organisation` sends every request to
+		// one organisation, so the declaration would record a per-organisation target four
+		// organisations wide that only one of them ever received, and `Shortfall()` would pass.
+		// The measured run then certifies against a starting state that was never established.
+		return fmt.Errorf("-conditioning needs a workload that implements the phase split, and "+
+			"%q does not: its population ignores the conditioning namespace, so the phase "+
+			"accounting would describe a split that did not happen. wl-mut-disp-4 implements it",
+			*workloadName)
 	}
 	want, err := loadgen.ParseLevel(*require)
 	if err != nil {
@@ -779,8 +806,18 @@ func buildWorkload(name string, spec workloadSpec) (loadgen.Workload, int, error
 // per-group pool exists, and the other shapes are single-authority controls or correctness
 // coverage whose retained evidence means one shared pool; quietly giving them a per-group
 // pool would change what those runs measure (validation plan §4.6.1).
+// phaseAware reports whether a workload implements the conditioning phase split.
+//
+// **One predicate, because two callers must agree.** A workload that ignores `Phase` and
+// `ConditioningSlots` draws from the whole fixture whichever phase it is told it is in, so the
+// conditioning population is not disjoint from the measured one and the run's own accounting
+// describes a split that did not happen.
+func phaseAware(name string) bool {
+	return strings.ToLower(name) == "wl-mut-disp-4"
+}
+
 func buildStreams(name string, spec workloadSpec) ([]loadgen.Stream, error) {
-	if strings.ToLower(name) != "wl-mut-disp-4" {
+	if !phaseAware(name) {
 		return nil, fmt.Errorf("-workers-per-group drives the shard groups of wl-mut-disp-4, "+
 			"not %q: a per-group worker pool is only meaningful for the workload whose "+
 			"organisations the placement distributes across groups", name)

@@ -98,8 +98,50 @@ stage="$1"; shift || true
 # project-level MCP configuration would live at exactly this path.
 SANDBOX_PLACEHOLDERS=".bash_profile .bashrc .gitconfig .gitmodules .idea .mcp.json .profile .ripgreprc .zprofile .zshrc"
 
+# exclude_sandbox_placeholders makes their presence harmless, which deleting them cannot.
+#
+# **Deleting is necessary but not sufficient, and the first sustained attempt proved it.** The
+# stage cleared them at 16:07:09 and `make image-provenance` refused at 16:07:18, because a
+# monitoring command — an ordinary `tail -f`, sandboxed like anything else — recreated all ten at
+# 16:07:16. Anything at all touching this repository during a run reopens the window, so a
+# cleanup that depends on nothing happening for the next few seconds is not a fix for a
+# twenty-five minute experiment.
+#
+# `.git/info/exclude` closes it: per-clone, never committed, never shared, and exactly the
+# mechanism git provides for files in a working tree that are not the project's. The repository's
+# own `.gitignore` stays untouched, so nothing about this leaks into what the project publishes.
+#
+# **What it costs.** A real file at one of these paths would no longer appear in `git status`.
+# That is a genuine loss and the reason clear_sandbox_placeholders still refuses to delete
+# anything tracked, non-empty, or a directory: a driving stage then fails loudly and names the
+# file, which is how a real `.mcp.json` gets noticed once git has stopped mentioning it.
+exclude_sandbox_placeholders() {
+  local exclude=".git/info/exclude" name added=0
+  [ -d .git ] || return 0
+  [ -f "$exclude" ] || : > "$exclude"
+
+  for name in $SANDBOX_PLACEHOLDERS; do
+    # Anchored with a leading slash so it applies to the repository root only, never to a file
+    # of the same name somewhere inside the tree.
+    grep -qxF "/$name" "$exclude" 2>/dev/null && continue
+    if [ "$added" -eq 0 ]; then
+      printf '\n# Agent sandbox mount points (test/scripts/itc-local-experiment.sh). Local only:\n' >> "$exclude"
+      printf '# this file is never committed. Remove these lines when the harness stops leaving\n' >> "$exclude"
+      printf '# zero-byte files at these paths.\n' >> "$exclude"
+    fi
+    printf '/%s\n' "$name" >> "$exclude"
+    added=$((added + 1))
+  done
+
+  if [ "$added" -gt 0 ]; then
+    log "excluded $added sandbox mount point(s) in .git/info/exclude (local, never committed),"
+    log "so a command run during a long experiment cannot dirty the tree under a gate"
+  fi
+}
+
 clear_sandbox_placeholders() {
   local removed=0 name
+  exclude_sandbox_placeholders
   for name in $SANDBOX_PLACEHOLDERS; do
     [ -e "$name" ] || continue
 

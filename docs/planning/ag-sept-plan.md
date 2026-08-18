@@ -72,7 +72,7 @@ Iteration B evidence -> Analyse & Review -> Iteration C Problem
 | Multi-authority correctness and failure-isolation evidence | PR3c | merged #16 |
 | Iteration B Analyse & Review | review step, PR #17 | merged; Iteration B closed and Iteration C Problem selected |
 | Iteration C planning | PR #18 | complete in #18; closes Requirements → Design → Validation → Schedule |
-| Iteration C experiment preparation and measurement qualification | PR4a | in progress; all mandatory preparation, no canonical scaling result |
+| Iteration C experiment preparation and measurement qualification | PR4a | complete in #19; final review/merge pending, no canonical scaling result |
 | Iteration C local sustained capacity and scale characterisation | PR4b | mandatory next evidence work unit after PR4a |
 | Iteration C independently provisioned AWS verification | PR4c | **optional; quota-conditional; not opened/scheduled until complete environment is provisionable** |
 | Iteration C A&R and AG-Sept conclusion | PR5 | not started; follows PR4b and optional PR4c if it executes in time |
@@ -194,10 +194,12 @@ recorded differently from §2.1.1, whose day funded work that has no work-unit r
 visible only as contingency spend.
 
 **What it costs in slack.** 2.0 days of contingency remain, and they are now backing a mandatory
-work unit as well as reruns and review. PR4b at 1.0 day is a *bounded execution* budget: the method
-is qualified and the runs are scripted, so the day covers driving the retained S/H points and their
-confirmations, not further method work. Method work reappearing inside PR4b is the signal to stop
-and re-plan rather than to draw again.
+work unit as well as reruns and review. PR4b at 1.0 day is a **bounded experiment-execution budget**.
+The measurement method and underlying run primitives are qualified; the day covers the thin
+orchestration needed for adaptive reconnaissance, S/H bracket selection and final fixture sizing,
+then the retained S/H + confirm-S/confirm-H runs across G1/G2/G4, analysis and reporting. New
+methodology work or another diagnostic investigation is the signal to stop and re-plan rather than
+to draw again automatically.
 
 ### 2.2 Review depth is the throughput control
 
@@ -268,6 +270,13 @@ PR4b — execute and analyse the full sustained experiment locally
 PR4c — optionally verify on independently provisioned AWS capacity when the environment exists
 ```
 
+PR4a qualifies the reusable measurement method and run primitives; it does **not** have to discover
+the final saturation bracket or build the final capacity orchestration. PR4b owns the thin
+experiment-specific orchestration needed for adaptive reconnaissance, actual S/H selection, final
+fixture sizing for that bracket, and the retained G1/G2/G4 capacity runs. This keeps preparation
+separate from the evidence-producing comparison without forcing PR4a to implement wrappers that
+only PR4b uses.
+
 This does **not** weaken the Iteration C Problem or `REQ-SCALE-4`. Local scheduler partitioning and
 independent provisioning remain different evidence classes. PR4b is now a first-class quantitative
 result about the recorded local environment (`VAL-SCALE-6`); only optional PR4c can discharge
@@ -336,7 +345,7 @@ weakening those owners.
 PR4a answers one question: **can the experiment be trusted?** It produces no canonical G1/G2/G4
 capacity result.
 
-It owns all preparation needed before the expensive sustained measurements:
+It owns the reusable method and run primitives needed before the evidence-producing comparison:
 
 - replace the shared global closed-loop worker pool with independent
   **`workers_per_group`** streams, including per-group sequence/accounting, aggregate summaries,
@@ -344,20 +353,15 @@ It owns all preparation needed before the expensive sustained measurements:
 - implement the explicit conditioning contract from `measurement-contract.md` §5/§12: fixed
   state-based target, retained conditioning population, measured-start baseline, state-preserving
   service/pool recycle, and no reseed between conditioning and measurement;
-- run a **bounded G1 pool-sensitivity preflight** against the current shard-group shape: begin with
-  the observed pool ceiling 4 versus 8 at the same useful worker pressure; extend to 16 only if the
-  8-connection result still moves materially enough that the fixed policy remains ambiguous. This
-  is configuration qualification, not a pool × worker optimisation matrix;
-- choose and then freeze one pool policy for the G1/G2/G4 comparisons;
-- run short **adaptive `workers_per_group` reconnaissance** to locate an approximate saturation
-  bracket; 16 is a plausible probe, not an upper bound, and the search may move to 32/64 or downward
-  as evidence requires;
-- size one fixed per-organisation fixture for conditioning plus the deepest intended retained
-  bracket over a 600 s measured interval with safety headroom;
-- support the validation plan's retained shape: 600 s selected point `S`, 600 s deciding higher
-  point `H`, and independent 600 s confirmations of **both**, each with a fresh
-  reset/reseed/conditioning sequence; retain ten 60 s analysis slices per sustained run without
-  treating them as independent samples;
+- run a **bounded G1 pool-sensitivity preflight** against the current shard-group shape, then freeze
+  one pool policy for the later G1/G2/G4 comparison; this is configuration qualification, not a
+  pool × worker optimisation matrix;
+- establish and exercise the fixture-sizing mechanism and headroom checks using the retained
+  qualification fixture, while leaving the **final** PR4b fixture size to the deepest actual S/H
+  bracket PR4b selects;
+- qualify the canonical 600 s run primitive end to end, including fresh reset/reseed/conditioning,
+  the state-preserving recycle, ten retained 60 s analysis slices, artifact-intent checks,
+  observability and reconciliation;
 - qualify generator headroom and the resource/observability/reconciliation path at the range the
   local experiment intends to quote;
 - demonstrate that the cached-plan regime PR4a root-caused is removed from the measured starting
@@ -372,18 +376,23 @@ provisioning/smoke, AWS chrony/security-group proof, metered teardown execution,
 capacity readiness is required. PR4a must leave the method portable; it does not need to deploy the
 provider it currently cannot provision.
 
-**Gate:** the complete method is implemented, discriminating controls pass, the fixed pool policy,
-conditioning target, retained worker bracket and fixture size are justified, generator/resource
-evidence is qualified, and the experiment can enter a 600 s retained run without the known
-measurement-fixture planner artefact or cross-group demand coupling.
+**Gate:** the reusable measurement method and 600 s run primitives are qualified; discriminating
+controls pass; the conditioning target, fixed pool policy, fixture-sizing mechanism,
+generator/resource evidence and reconciliation path are justified; and the experiment can enter a
+retained 600 s run without the known measurement-fixture planner artefact or cross-group demand
+coupling. Final reconnaissance, S/H selection, final fixture sizing and capacity orchestration are
+PR4b work.
 
 ### PR4b — Local sustained capacity and scale characterisation
 
 PR4b answers: **what does the qualified experiment show on the scheduler-partitioned workstation?**
-It is the mandatory evidence-producing PR4 work unit.
+It is the mandatory evidence-producing PR4 work unit, with a **1.0-day bounded experiment-execution
+budget** from §2.1.3.
 
-Run the full `WL-MUT-DISP-4` G1/G2/G4 method under the declared local partition. For each topology,
-use short reconnaissance only as needed to finalize the bracket, then retain:
+PR4b adds only the thin orchestration the final comparison needs: run short adaptive
+`workers_per_group` reconnaissance, select the actual S/H bracket for each topology, derive one
+final per-organisation fixture size from the deepest retained bracket and then hold it fixed across
+G1/G2/G4. It then retains, for each topology:
 
 ```text
 S          600 s
@@ -402,6 +411,10 @@ PR4b derives and reports **`G1_local`, `G2_local`, `G4_local`, `E2_local`, `E4_l
 trajectory, and the shared-host limitations. This is `VAL-SCALE-6`: a genuine quantitative result
 about the explicitly recorded local environment, not merely a rehearsal and not independently
 provisioned capacity evidence.
+
+The qualified method is not reopened merely because PR4b needs small wrappers around its existing
+primitives. If execution exposes a new experiment-integrity defect or requires methodology redesign,
+stop and re-plan rather than automatically drawing more contingency.
 
 After the closed-loop result is secure, a bounded `VAL-LOAD-1` open-loop comparison is strongly
 desirable if the remaining PR4 envelope permits it. Its offered rates are chosen from the measured
@@ -518,11 +531,12 @@ external project-level capacity claim is admissible.
 For Iteration C the mandatory path is now independent of AWS quota:
 
 - stable `WL-MUT-DISP-4` request semantics and fixed per-organisation fixture populations;
-- PR4a's qualified method: independent `workers_per_group`, `VAL-NEG-8`, explicit conditioning and
-  measured-start accounting, fixed pool policy, adaptive bracket reconnaissance, 600 s S/H + both
-  confirmations, fixture headroom, generator/resource controls;
-- PR4b's **full local G1/G2/G4 sustained capacity/scale characterisation** under the declared
-  scheduler partition, with `E2_local`/`E4_local`, limiting-resource analysis and honest shared-host
+- PR4a's qualified method and reusable primitives: independent `workers_per_group`, `VAL-NEG-8`,
+  explicit conditioning and measured-start accounting, fixed pool policy, fixture-sizing/headroom
+  mechanism, qualified 600 s run shape, and generator/resource/reconciliation controls;
+- PR4b's **full local G1/G2/G4 sustained capacity/scale characterisation**: adaptive bracket
+  reconnaissance, actual S/H selection, one final fixture size held across the comparison, retained
+  S/H + both confirmations, `E2_local`/`E4_local`, limiting-resource analysis and honest shared-host
   limitations;
 - correctness/reconciliation and provenance/resource evidence required for every quoted local
   result;
@@ -677,13 +691,14 @@ explicitly recorded as unproven.
 
 Before PR5 can close Iteration C and judge the AG-Sept Goal:
 
-- PR4a has qualified the method defined by the validation plan: independent `workers_per_group`,
-  explicit conditioning with auditable population boundaries, one fixed pool policy, adequate
-  fixture/generator/resource headroom, adaptive bracket selection, and the 600 s S/H + confirmation
-  machinery without the known benchmark-induced cached-plan regime;
-- PR4b has executed the full local G1/G2/G4 sustained method and retained an admissible
-  `VAL-SCALE-6` result or an explicit unresolved local verdict, with `E2_local`/`E4_local` reported
-  only when the evidence supports them;
+- PR4a has qualified the reusable method and run primitives defined by the validation plan:
+  independent `workers_per_group`, explicit conditioning with auditable population boundaries, one
+  fixed pool policy, fixture-sizing/headroom checks, generator/resource/reconciliation evidence,
+  and the canonical 600 s run shape without the known benchmark-induced cached-plan regime;
+- PR4b has performed adaptive bracket selection and final fixture sizing, then executed the full
+  local G1/G2/G4 S/H + confirmation method and retained an admissible `VAL-SCALE-6` result or an
+  explicit unresolved local verdict, with `E2_local`/`E4_local` reported only when the evidence
+  supports them;
 - if optional PR4c was scheduled, the complete independent environment is reproducible with
   equivalent non-burstable capacity-unit hosts and separate generator compute, and the strongest
   Tier-1/Tier-2 evidence it supports is retained;

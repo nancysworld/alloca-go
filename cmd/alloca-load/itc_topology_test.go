@@ -326,3 +326,72 @@ func TestPerGroupWorkersAreRefusedForWorkloadsWithoutShardGroups(t *testing.T) {
 		}
 	}
 }
+
+// The two phases must claim disjoint slots at every topology, driven through the same path
+// the CLI uses rather than through the splitter directly.
+//
+// This is the check that the flags, the spec and the split agree. Each of them is individually
+// correct in a way that would still let the measured run book slots conditioning had already
+// spent — and the resulting refusals would look like contention, which is exactly what the
+// workload is designed to produce.
+func TestConditioningAndMeasuredPhasesClaimDisjointSlots(t *testing.T) {
+	const conditioningSlots = 10
+
+	for _, rung := range itcMatrix {
+		placement := itcPlacement(t, rung.groups)
+		router, err := loadgen.NewRouter(placement, endpointsFor(placement))
+		if err != nil {
+			t.Fatalf("G%d: building router: %v", rung.groups, err)
+		}
+
+		// Keyed on the pair, not the slot id. Every organisation is seeded its own `slot-0`
+		// upward, so a map keyed on the id alone reports four organisations' distinct slots
+		// as one slot claimed four times — which is what this test did on its first run.
+		claimed := map[loadgen.Slot]loadgen.Phase{}
+		for _, phase := range []loadgen.Phase{loadgen.PhaseConditioning, loadgen.PhaseMeasured} {
+			streams, err := buildStreams("wl-mut-disp-4", workloadSpec{
+				Router:            router,
+				Slots:             40,
+				Phase:             phase,
+				ConditioningSlots: conditioningSlots,
+			})
+			if err != nil {
+				t.Fatalf("G%d %s: building streams: %v", rung.groups, phase, err)
+			}
+
+			var slots int
+			for _, stream := range streams {
+				workload, ok := stream.Workload.(loadgen.MutDisp4)
+				if !ok {
+					t.Fatalf("G%d: stream %q does not drive wl-mut-disp-4", rung.groups, stream.Group)
+				}
+				for _, population := range workload.Orgs {
+					for _, slot := range population.Slots {
+						if owner, taken := claimed[slot]; taken {
+							t.Errorf("G%d: slot %v is claimed by both the %s and %s phases",
+								rung.groups, slot, phaseName(owner), phaseName(phase))
+						}
+						claimed[slot] = phase
+						slots++
+					}
+				}
+			}
+
+			want := conditioningSlots * 4
+			if phase == loadgen.PhaseMeasured {
+				want = (40 - conditioningSlots) * 4
+			}
+			if slots != want {
+				t.Errorf("G%d %s phase drives %d slots, want %d", rung.groups, phase, slots, want)
+			}
+		}
+	}
+}
+
+// phaseName renders the measured phase's empty zero value readably in a failure message.
+func phaseName(p loadgen.Phase) string {
+	if p == loadgen.PhaseMeasured {
+		return "measured"
+	}
+	return string(p)
+}

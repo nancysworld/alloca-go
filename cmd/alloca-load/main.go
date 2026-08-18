@@ -109,6 +109,23 @@ func run(args []string) error {
 			"drive each shard group from its own fixed worker pool of this size (Iteration C; "+
 				"wl-mut-disp-4 only). The run's total worker population is this times the number "+
 				"of groups the placement declares, so -workers-per-group 16 at G4 offers 64")
+		conditioning = fs.Bool("conditioning", false,
+			"run the conditioning phase instead of the measured one: drive the conditioning "+
+				"slot/identity/key namespace until the declared state target is reached, and "+
+				"write a conditioning report a later measured run begins from")
+		conditioningSlots = fs.Int("conditioning-slots", 0,
+			"slots per organisation reserved for the conditioning population (conditioning runs)")
+		conditioningTarget = fs.Int("conditioning-target", 0,
+			"fresh mutations per organisation the conditioning phase must commit; a state "+
+				"target rather than a duration, so every topology begins measurement at the "+
+				"same logical state (conditioning runs)")
+		conditionedBy = fs.String("conditioned-by", "",
+			"path to the conditioning run's report; the measured run derives its slot range "+
+				"and its measured-start baseline from it rather than being told them again")
+		poolRecycled = fs.Bool("pool-recycled", false,
+			"assert that the service pool was deterministically recycled between conditioning "+
+				"and this measured run, so no measured connection carries a plan prepared "+
+				"against empty mutation tables")
 		iterations = fs.Int("n", 100, "logical units of work (mutually exclusive with -duration)")
 		duration   = fs.Duration("duration", 0,
 			"run for this long instead of a fixed -n; required for sweep cells, whose rates "+
@@ -179,6 +196,22 @@ func run(args []string) error {
 			"from the placement")
 	case *workersPerGroup < 0:
 		return fmt.Errorf("-workers-per-group must not be negative")
+	case *conditioning && *conditionedBy != "":
+		return fmt.Errorf("-conditioning and -conditioned-by are mutually exclusive: one " +
+			"establishes the starting state, the other begins from a state already established")
+	case *conditioning && (*conditioningSlots < 1 || *conditioningTarget < 1):
+		return fmt.Errorf("-conditioning needs -conditioning-slots and -conditioning-target: " +
+			"a conditioning phase without a predeclared, reproducible state target is warm-up " +
+			"with a different name (measurement-contract §5)")
+	case *conditioning && explicit["duration"]:
+		// Conditioning is bounded by the state it establishes, not by the clock. A
+		// duration-bounded phase leaves a different database on a fast topology than on a
+		// slow one, which is the comparison Iteration C is trying to make.
+		return fmt.Errorf("-conditioning is bounded by -conditioning-target, not -duration: " +
+			"a timed phase leaves each topology at a different logical state")
+	case *poolRecycled && *conditionedBy == "":
+		return fmt.Errorf("-pool-recycled describes the transition out of conditioning, so it " +
+			"belongs with -conditioned-by")
 	}
 	want, err := loadgen.ParseLevel(*require)
 	if err != nil {
@@ -202,6 +235,32 @@ func run(args []string) error {
 		Slots:   *slots,
 		Confirm: *confirm,
 	}
+	// The conditioning relationship is settled before any load. A measured run that discovers
+	// after the fact that it began from a state it cannot describe has already spent the
+	// expensive part of the experiment.
+	var (
+		conditioningState     *loadgen.ConditioningDeclaration
+		conditioningShortfall error
+	)
+	switch {
+	case *conditioning:
+		spec.Phase = loadgen.PhaseConditioning
+		spec.ConditioningSlots = *conditioningSlots
+		conditioningState = &loadgen.ConditioningDeclaration{
+			SlotsPerOrganisation:           *conditioningSlots,
+			TargetMutationsPerOrganisation: *conditioningTarget,
+		}
+	case *conditionedBy != "":
+		var cerr error
+		conditioningState, cerr = readConditioning(*conditionedBy, *workloadName, *poolRecycled)
+		if cerr != nil {
+			return cerr
+		}
+		// Derived from the conditioning artifact, never supplied again here. The boundary
+		// between the two populations is declared once, by the phase that established it.
+		spec.ConditioningSlots = conditioningState.SlotsPerOrganisation
+	}
+
 	workload, datasetSlots, werr := buildWorkload(*workloadName, spec)
 	if werr != nil {
 		return werr
@@ -237,6 +296,21 @@ func run(args []string) error {
 		// (measurement-contract §11).
 		opts.WorkersPerGroup = *workersPerGroup
 		opts.Concurrency = *workersPerGroup * len(streams)
+	}
+	if *conditioning {
+		// Conditioning's bound is derived from its state target rather than declared, and it
+		// is per stream because that is what the runner applies. Within a group the workload
+		// takes its organisations in turn, so a whole number of cycles gives each of them
+		// exactly the target — the same logical state at G1, G2 and G4, which is the property
+		// a timed phase cannot hold (validation plan §4.6.2).
+		organisations := len(slotsByOrgFor(spec))
+		perStream := organisations
+		if len(streams) > 0 {
+			perStream = organisations / len(streams)
+		}
+		opts.Iterations = *conditioningTarget * perStream
+		opts.Duration = 0
+		conditioningState.Organisations = organisations
 	}
 	if *duration > 0 {
 		// Clear the unused bound so nothing downstream reads -n's default as a request.
@@ -380,6 +454,20 @@ func run(args []string) error {
 		router.Placement())
 	manifest.DatasetSlots = datasetSlots
 	manifest.ServiceIdentityDrift = drift
+	manifest.RunID = runID
+	manifest.Phase = spec.Phase
+	if conditioningState != nil {
+		// A conditioning run fills in what it actually committed. A measured run must not:
+		// its block is the *conditioning* phase's totals, read from that phase's artifact,
+		// and overwriting them with this run's own would replace the baseline with the thing
+		// the baseline exists to be subtracted from (measurement-contract §12.1).
+		if spec.Phase == loadgen.PhaseConditioning {
+			conditioningState.Goodput = summary.Goodput
+			conditioningState.Completed = summary.Completed
+			conditioningShortfall = conditioningState.Shortfall()
+		}
+		manifest.Conditioning = conditioningState
+	}
 
 	// The identity of the deployed artifact, established by the preflight above. Only the
 	// common image identity is carried: once the preflight has proved that every routed unit
@@ -430,6 +518,14 @@ func run(args []string) error {
 	if q := report.Quotability; !q.Level.AtLeast(want) {
 		return fmt.Errorf("run reached level %q, below the required %q: %s",
 			q.Level, want, q.BlockedBecause)
+	}
+
+	// Checked after the report is written, for the same reason the level gate is: the
+	// operator needs to see what the phase actually established. A conditioning run that fell
+	// short is refused here rather than at the far more expensive measured step, where the
+	// same rule would refuse it anyway.
+	if conditioningShortfall != nil {
+		return conditioningShortfall
 	}
 	return nil
 }
@@ -569,6 +665,13 @@ type workloadSpec struct {
 	UserID  domain.UserID
 	Slots   int
 	Confirm bool
+	// Phase selects which population the workload drives.
+	Phase loadgen.Phase
+	// ConditioningSlots is the conditioning population's share of each organisation's seeded
+	// slots. It is set on *both* phases — one to claim that range, the other to avoid it —
+	// and the measured run takes it from the conditioning artifact rather than from a flag,
+	// so the boundary has one author.
+	ConditioningSlots int
 }
 
 // slotsFor generates the seeded slot references of one organisation.
@@ -643,7 +746,14 @@ func buildWorkload(name string, spec workloadSpec) (loadgen.Workload, int, error
 		if err != nil {
 			return nil, 0, err
 		}
-		return loadgen.MutDisp4{Orgs: populations, Confirm: spec.Confirm}, size, nil
+		// The dataset size stays the whole seeded fixture whichever phase this is: it is what
+		// was seeded, not what this phase may claim, and a manifest reporting the narrowed
+		// half would understate the fixture every headroom calculation is made against.
+		populations, err = populationsForPhase(spec, populations)
+		if err != nil {
+			return nil, 0, err
+		}
+		return loadgen.MutDisp4{Orgs: populations, Confirm: spec.Confirm, Phase: spec.Phase}, size, nil
 
 	default:
 		return nil, 0, fmt.Errorf("unknown workload %q: want dispersed, hot-slot, hot-identity, "+
@@ -680,11 +790,50 @@ func buildStreams(name string, spec workloadSpec) ([]loadgen.Stream, error) {
 	if err != nil {
 		return nil, err
 	}
+	populations, err = populationsForPhase(spec, populations)
+	if err != nil {
+		return nil, err
+	}
 	groups, err := loadgen.NewOrgGroups(spec.Router.Placement(), slotsByOrgFor(spec))
 	if err != nil {
 		return nil, err
 	}
-	return loadgen.NewMutDisp4Streams(populations, groups, spec.Confirm, loadgen.PhaseMeasured)
+	return loadgen.NewMutDisp4Streams(populations, groups, spec.Confirm, spec.Phase)
+}
+
+// populationsForPhase narrows the seeded populations to the half this phase may claim.
+//
+// A run with no conditioning relationship keeps the whole fixture, which is what every
+// existing artifact means. Once conditioning is in play both phases must be narrowed: the
+// conditioning run to its own slots, and the measured run to everything conditioning did not
+// touch (measurement-contract §5, conditioning gate).
+func populationsForPhase(spec workloadSpec, populations []loadgen.OrgPopulation) ([]loadgen.OrgPopulation, error) {
+	if spec.ConditioningSlots == 0 {
+		return populations, nil
+	}
+	conditioning, measured, err := loadgen.SplitPopulationsForConditioning(populations, spec.ConditioningSlots)
+	if err != nil {
+		return nil, err
+	}
+	if spec.Phase == loadgen.PhaseConditioning {
+		return conditioning, nil
+	}
+	return measured, nil
+}
+
+// readConditioning loads the conditioning run's artifact the measured run begins from.
+func readConditioning(path, workload string, poolRecycled bool) (*loadgen.ConditioningDeclaration, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("opening the conditioning report: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	declaration, err := loadgen.ReadConditioning(f, strings.ToLower(workload), poolRecycled)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return declaration, nil
 }
 
 // slotsByOrgFor seeds the same per-organisation datasets orgPopulations does, so the streams

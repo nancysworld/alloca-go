@@ -126,6 +126,13 @@ type Manifest struct {
 	// could tell the two apart.
 	TelemetryMode string `json:"telemetry_mode,omitempty"`
 
+	// RunID is the identity every idempotency key this run minted is scoped to.
+	//
+	// Recorded because the keys carry it into the database and nothing else did: without it
+	// a persisted record can be traced to *a* run but not to its artifact, and the two halves
+	// of a conditioned experiment cannot be rejoined after the fact.
+	RunID string `json:"run_id,omitempty"`
+
 	// Workload and dataset.
 	Workload string `json:"workload"`
 	// Concurrency is the total closed-loop worker population.
@@ -144,6 +151,16 @@ type Manifest struct {
 	WarmUp       string `json:"warm_up"`
 	DatasetSlots int    `json:"dataset_slots,omitempty"`
 	DatasetUsers int    `json:"dataset_users,omitempty"`
+
+	// Phase names which population this run drove, omitted by a run that has no conditioning
+	// relationship at all. A conditioning artifact and a measured artifact are the same shape
+	// and must never be read as the same kind of evidence.
+	Phase Phase `json:"phase,omitempty"`
+	// Conditioning is the declared starting state a measured run began from, present only on
+	// a conditioned measured run. Everything a reader needs to reconstruct the population
+	// boundary is here: what conditioning did, and what the persisted state was at the
+	// instant the measured interval opened (measurement-contract.md §5, §12.1).
+	Conditioning *ConditioningDeclaration `json:"conditioning,omitempty"`
 
 	// Generator side.
 	GeneratorLocation   string `json:"generator_location"`

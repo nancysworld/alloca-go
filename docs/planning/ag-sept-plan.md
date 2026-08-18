@@ -663,7 +663,7 @@ external provisioning prevents its test.
 PR5 then records the required Analyse & Review outcome and closes the **AG-Sept** engineering loop.
 It does not start the next Alloca iteration. Any continuation after AG-Sept begins with a separate
 kickoff that chooses the next Goal and Problem from the evidence, roadmap, and priorities current at
-the time.
+that time.
 
 **After PR5 and before the repository is made public**, complete §7's pre-publication documentation
 pass. This is a public-readiness gate, not a new technical iteration: it improves how the settled

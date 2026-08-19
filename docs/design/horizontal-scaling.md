@@ -304,6 +304,30 @@ This is stronger than merely running the generator as another process: if genera
 groups compete for the same fixed CPU/network/storage resource, the result cannot distinguish
 server scaling from measurement-system contention.
 
+### 12.3 Independent does not mean variance-free
+
+Independent provisioning removes **coupling between capacity-unit resource envelopes**. It does
+not guarantee that two nominally equivalent units produce identical throughput, nor that one unit
+reproduces tightly across time. Storage service time, VM scheduling, network delivery and other
+provider/environment effects may still vary within the declared resource shape.
+
+That distinction matters to a scale-efficiency denominator. A noisy single `G1` observation does
+not become precise merely because `G2` or `G4` uses independent hosts. Evidence must first show what
+variation exists at the unit level, then decide whether the intended comparison can resolve the
+architecture signal at the claimed precision.
+
+A useful pre-capacity diagnostic may therefore measure several equivalent units **individually**
+before composing those same units. For two units A and B at one common probe load, comparing
+`g2_AB` with `g1_A + g1_B` asks whether the actual provisioned units compose roughly in line with
+what they each demonstrated separately. That paired diagnostic controls one source of arbitrary
+baseline selection, but it is not itself a capacity efficiency: saturation, repetition and the
+measurement contract's capacity gates still belong to the full validation method.
+
+The current Iteration C probe design is
+[`independent-capacity-probe.md`](independent-capacity-probe.md). Its result may determine how much
+baseline replication a later capacity experiment needs; the architecture does not choose that
+sample count before observing the independent environment.
+
 ## 13. Workload and placement envelope
 
 Capacity is always conditional on a workload. A shard group's numeric result therefore names the
@@ -348,6 +372,11 @@ The concrete AG-Sept validations for this architecture are owned by
 [`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md).
 For Iteration C that plan selects `WL-MUT-DISP-4` and fixes the 1/2/4-shard-group comparison needed
 to obtain `G1`, `G2`, `G4`, their derived efficiencies, and the limiting-resource evidence.
+
+PR4c may precede that full comparison with the bounded independent-unit diagnostic defined by
+[`../test/validation-plan/ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md).
+The diagnostic can justify or reject further AWS measurement; it does not substitute for the
+complete `VAL-SCALE-5` family.
 
 Earlier validation meanings for service-replica scaling, connection-budget controls,
 multi-authority correctness, routing/refusal, and failure isolation remain valid where cited; they

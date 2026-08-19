@@ -1,16 +1,15 @@
 # AG-Sept PR4c — AWS independent-unit probe
 
 **Status:** Scheduled diagnostic validation for PR4c.  
-**Purpose:** obtain the smallest useful independent-provisioning result before committing AG-Sept
-time or quota to any different or larger experiment.  
+**Purpose:** obtain the smallest useful independent-provisioning result before AG-Sept closeout.  
 **Design:** [`../../design/independent-capacity-probe.md`](../../design/independent-capacity-probe.md).  
 **Governing validation plan:** [`ag-sept-validation-plan.md`](ag-sept-validation-plan.md) §4.6,
 `VAL-SCALE-5`, `VAL-NEG-7`, `VAL-NEG-8`.  
 **Measurement contract:** [`../../design/measurement-contract.md`](../../design/measurement-contract.md).
 
 This is a **diagnostic probe, not a new route to `VAL-SCALE-5`**. A partial AWS topology remains a
-partial topology. PR4c may provide evidence that a different future experiment would be worthwhile;
-it cannot be renamed Tier 1 or Tier 2 because its result looks good.
+partial topology. A strong result may identify a post-AG-Sept follow-up candidate; it cannot be
+renamed Tier 1 or Tier 2 because its result looks good.
 
 Capacity units use numeric identities **CU1/CU2** throughout this probe. Organisations retain the
 established letter identities **A/B/C/D**. Those namespaces must not be reused for each other in run
@@ -172,11 +171,12 @@ aggregate. A balanced sum and an asymmetric sum are different architecture evide
 
 There is no numerical pass/fail threshold. PR4c records one of three explicit decisions:
 
-### PROCEED
+### CARRY FORWARD
 
 Use when CU1/CU2 behaviour is sufficiently intelligible and the G2 composition signal is
-sufficiently clear that a different, longer or repeated independent measurement **may** be worth
-proposing. `PROCEED` creates no follow-on stage, budget or execution commitment.
+sufficiently clear that a fuller independent-capacity experiment is worth recording as a
+**post-AG-Sept follow-up candidate**. `CARRY FORWARD` creates no follow-on stage, budget or execution
+commitment inside AG-Sept.
 
 ### BOUNDED REPEAT
 
@@ -194,7 +194,7 @@ Retain the result and leave `VAL-SCALE-5` unproven.
 The decision compares the **size of the composition signal with the observed unit/environment
 variation**, rather than forcing both through an arbitrary precision threshold.
 
-## 9. Relationship to existing validation IDs
+## 9. Relationship to existing validation IDs and quota
 
 - **`VAL-NEG-8`** is reused, not reopened: the independent per-group demand-stream property is
   already mutation-proved. PR4c observes its deployed accounting but does not need a new slow-group
@@ -205,6 +205,9 @@ variation**, rather than forcing both through an arbitrary precision threshold.
   complete independently provisioned Tier-1 method can discharge it.
 - **Tier 2 does not apply** to this probe. Tier 2 requires a complete G4 environment that exists but
   is measurement-limited; current quota preventing G4 is a provisioning limit, not a Tier-2 trigger.
+- At the current 2-vCPU serving-unit shape, complete G4 plus separate generator compute needs about
+  **9 vCPU or more**, while the account currently has **5 vCPU**. Even a very good PR4c result
+  therefore cannot turn directly into the full Tier-1 experiment under the current quota.
 
 ## 10. Scope guard
 
@@ -220,4 +223,6 @@ most one hypothesis-driven bounded repeat if the first result specifically requi
 - `VAL-LOAD-1` open-loop work;
 - investigation of the local VHDX mechanism carried as `DEBT-8`.
 
-Any of those requires a new decision after PR4c evidence exists; none is a predeclared next stage.
+Any of those requires a new decision after PR4c evidence exists. In the expected AG-Sept closeout
+path, a fuller independent-capacity experiment is considered only in post-milestone planning after
+sufficient AWS quota is available.

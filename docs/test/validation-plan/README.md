@@ -53,6 +53,6 @@ lead to a different next validation while the governing goal remains stable.
   single-authority frontier, Phase 1 multi-authority correctness/failure isolation, and Iteration C
   shard-group capacity method including `VAL-SCALE-5`/`VAL-SCALE-6`;
 - [`ag-sept-pr4c-aws-probe.md`](ag-sept-pr4c-aws-probe.md) — the deliberately bounded PR4c
-  `G1-CU1`/`G1-CU2`/`G2-CU1+CU2` diagnostic on independently provisioned AWS units. It decides
-  whether any different independent-capacity experiment is worth proposing and **does not** itself
-  discharge `VAL-SCALE-5`.
+  `G1-CU1`/`G1-CU2`/`G2-CU1+CU2` diagnostic on independently provisioned AWS units. It closes the
+  AG-Sept AWS probe at the strongest evidence the current quota supports; a strong result may be
+  carried forward as a post-AG-Sept candidate but **does not** itself discharge `VAL-SCALE-5`.

@@ -58,8 +58,13 @@ usage: ./test/scripts/itc-local-experiment.sh <stage>
                         bracket saturation per topology and propose S and H. Not capacity
                         evidence, and nothing it produces may be quoted as a rate
 
-  fixture               fixture sizing for a 600 s retained bracket (§4.6.6)    [not yet built]
-  capacity              the retained S/H + confirmations, PR4b (§4.6.5)         [not yet built]
+  fixture               derive the one per-organisation fixture size the retained comparison uses
+                        (§4.6.6), from the deepest bracket reconnaissance selected. Reads the
+                        recon reports; writes the sizing and the value the capacity stage consumes
+
+  capacity              the retained comparison (§4.6.5): per topology, four 600 s runs — the
+                        selected point, the deciding higher point, and each again as an
+                        independent confirmation — then the knee decision and E2_local/E4_local
 
 Knobs travel through the environment to the workers unchanged, e.g.
   ITC_WORKERS_PER_GROUP=16 CONDITIONING_TARGET=4000 ./test/scripts/itc-local-experiment.sh pool
@@ -839,12 +844,234 @@ print('%.1f' % (s['successful_mutation_goodput'] / s['duration_seconds']))" "${c
     log "deepest selected bracket next: ./test/scripts/itc-local-experiment.sh fixture"
     ;;
 
-  fixture|capacity)
-    # Named and refused rather than absent. A stage that silently did nothing would look like a
-    # stage that found nothing, and the dependency order is the point: each of these consumes the
-    # answer the previous one produced.
-    fail "the '$stage' stage is not built yet. The order is qualify-conditioning -> pool ->
-  recon -> fixture -> capacity, and each consumes the previous answer (§4.6)."
+  fixture)
+    # **One fixture size for the whole comparison, derived from the deepest point it must survive**
+    # (ag-sept-validation-plan.md §4.6.6). The retained runs are S, H and both confirmations at
+    # G1, G2 and G4, and the *same* per-organisation size is reused unchanged across all of them:
+    # resizing per topology would change the workload as well as the topology, and the comparison
+    # would no longer be between two arrangements of one experiment.
+    #
+    # It reads reconnaissance rather than re-deriving a rate, because §4.6.6 asks for an expected
+    # maximum useful rate and reconnaissance has just measured one at every level it probed. The
+    # deepest *intended* bracket is the highest H across the topologies — an H run is retained too,
+    # so the fixture has to carry it.
+    recon_group="${ITC_RECON_RESULTS_GROUP:-pr4b-recon}"
+    out_group="${RESULTS_GROUP:-pr4b-capacity}"
+    seconds="${ITC_WINDOW_SECONDS:-600}"
+    safety="${ITC_FIXTURE_SAFETY:-140}"
+
+    reports="$(ls -1 test/results/$recon_group/recon-G*.txt 2>/dev/null || true)"
+    [ -n "$reports" ] || fail "no reconnaissance reports under test/results/$recon_group/. The
+  order is recon -> fixture -> capacity and each consumes the previous answer: sizing the fixture
+  before the bracket is known is how PR4a's first attempt sized one for a rate it never measured.
+      ./test/scripts/itc-local-experiment.sh recon"
+
+    # The deepest level and the fastest observed probe, taken across every topology's report. Both
+    # are read out of the retained artifacts rather than passed in by hand, so the sizing can be
+    # re-derived from the same files a reader has.
+    deepest_level=0
+    max_rate=0
+    covered=""
+    for report in $reports; do
+      groups="$(basename "$report" | sed 's/^recon-G//; s/\.txt$//')"
+      s_level="$(awk '/^  selected S/{print $NF}' "$report")"
+      h_level="$(awk '/^  deciding H/{print $NF}' "$report")"
+      [ -n "$s_level" ] && [ -n "$h_level" ] \
+        || fail "$report names no selected S or deciding H, so it is not a completed
+  reconnaissance. Re-run recon for G$groups before sizing the fixture."
+
+      # The retained points are S and H only. A probe taken above H is not retained and must not
+      # inflate the fixture; a probe below S is not retained either.
+      for level in "$s_level" "$h_level"; do
+        rate="$(awk -v l="$level" '$1==l && $2 ~ /^[0-9.]+$/ {print $2}' "$report" | head -1)"
+        [ -n "$rate" ] || fail "$report selects level $level but retains no probe rate for it"
+        max_rate="$(awk -v a="$max_rate" -v b="$rate" 'BEGIN{print (b>a)?b:a}')"
+      done
+      [ "$h_level" -le "$deepest_level" ] || deepest_level="$h_level"
+      covered="$covered G$groups(S=$s_level,H=$h_level)"
+    done
+
+    # **A 120 s probe rate over-estimates 600 s consumption, and that is the direction to err in.**
+    # Every PR4a run declined across its window, so the horizon average of a retained run is below
+    # the early rate a probe reads. Sizing from the probe therefore buys headroom rather than
+    # spending it, and the safety factor sits on top of that.
+    peak_aggregate="$(printf '%.0f' "$max_rate")"
+    per_org=$(( peak_aggregate * seconds / 4 ))
+    required_per_org=$(( (per_org + CONDITIONING_TARGET) * safety / 100 ))
+    slots_per_org=$(( (required_per_org + CAPACITY - 1) / CAPACITY ))
+    slots_per_org=$(( (slots_per_org / 5000 + 1) * 5000 ))
+
+    mkdir -p "test/results/$out_group"
+    sizing="test/results/$out_group/fixture-sizing.txt"
+    cat > "$sizing" <<SIZING
+retained fixture sizing for the PR4b capacity comparison
+(ag-sept-validation-plan.md §4.6.6)
+derived $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+  reconnaissance read               test/results/$recon_group/
+  brackets covered                 $covered
+  deepest retained level            $deepest_level workers/group
+  fastest retained probe            $max_rate /s aggregate, over ${ITC_RECON_SECONDS:-120}s
+
+  A 120 s probe reads the early, high part of a trajectory that PR4a measured declining to ~0.75x
+  by 600 s, so this rate is above the 600 s horizon average the retained runs will report. Sizing
+  from it buys headroom rather than spending it.
+
+  measured duration                 ${seconds}s
+  measured consumption per org      $per_org mutations
+  conditioning per org              $CONDITIONING_TARGET mutations
+  explicit safety headroom          ${safety}%
+  required per org                  $required_per_org mutations
+  capacity per slot                 $CAPACITY
+  slots per organisation            $slots_per_org   (rounded up)
+  seeded supply                     $(( slots_per_org * CAPACITY * 4 )) mutations across 4 organisations
+  measured supply after conditioning $(( (slots_per_org - CONDITIONING_SLOTS) * CAPACITY * 4 )) mutations
+  worst-case consumption            $(awk -v c="$per_org" -v s="$(( (slots_per_org - CONDITIONING_SLOTS) * CAPACITY ))" \
+                                        'BEGIN{printf "%.1f%%", 100*c/s}') of measured supply per org
+
+The same per-organisation size is used at G1, G2 and G4. Resizing it per topology would change
+the workload as well as the topology, and the comparison would not be between two arrangements
+of one experiment.
+SIZING
+
+    # The machine-readable half, so the capacity stage consumes this answer rather than re-deriving
+    # it from the same inputs and possibly disagreeing. A stage that recomputed would be a second
+    # definition of the fixture, and nothing would notice the two drifting apart.
+    printf 'SLOTS=%s\nDEEPEST_LEVEL=%s\nDERIVED_FROM=%s\n' \
+      "$slots_per_org" "$deepest_level" "$sizing" \
+      > "test/results/$out_group/retained-fixture.env"
+
+    log "retained fixture sizing -> $sizing"
+    sed 's/^/    /' "$sizing"
+    log "capacity stage inputs -> test/results/$out_group/retained-fixture.env"
+    log "drive the retained comparison next: ./test/scripts/itc-local-experiment.sh capacity"
+    ;;
+
+  capacity)
+    # **The retained comparison** (ag-sept-validation-plan.md §4.6.5). Per topology, four 600 s runs
+    # in this order: the selected point, the deciding higher point, then each again as an
+    # independent confirmation. Each begins from its own reset/reseed/conditioning sequence, which
+    # is what itc-run.sh does per cell — so a run is a cell, and the four are four cells rather than
+    # one series analysed four ways.
+    #
+    # The order is §4.6.5's own and is not an implementation preference: S then H then the
+    # confirmations means a bracket that turns out to be wrong is visible after two runs rather
+    # than after four.
+    #
+    # **The ordinary measurement path**, unset explicitly so an exported value from an earlier
+    # diagnostic shell cannot instrument the runs that carry the result.
+    unset PLAN_PROBE PG_AUTO_EXPLAIN PG_STAT_STATEMENTS PG_LOG_AUTOVACUUM PG_AUTO_EXPLAIN_SAMPLE
+
+    recon_group="${ITC_RECON_RESULTS_GROUP:-pr4b-recon}"
+    out_group="${RESULTS_GROUP:-pr4b-capacity}"
+    export RESULTS_GROUP="$out_group"
+    export WINDOW="${ENV_WINDOW:-600s}"
+    export REQUIRE="${REQUIRE:-capacity}"
+    seconds="${ITC_WINDOW_SECONDS:-600}"
+
+    fixture_env="test/results/$out_group/retained-fixture.env"
+    [ -f "$fixture_env" ] || fail "$fixture_env does not exist, so the one fixture size §4.6.6
+  fixes for this comparison has not been derived. Every arm must be seeded identically and the
+  size must come from the deepest selected bracket:
+      ./test/scripts/itc-local-experiment.sh fixture"
+    # shellcheck disable=SC1090
+    . "$fixture_env"
+    export SLOTS="${ENV_SLOTS:-$SLOTS}"
+    log "retained fixture: $SLOTS slots/organisation at capacity $CAPACITY (from $DERIVED_FROM)"
+
+    for groups in ${ITC_CAPACITY_GROUPS:-1 2 4}; do
+      report="test/results/$recon_group/recon-G${groups}.txt"
+      [ -f "$report" ] || fail "no reconnaissance report at $report, so G$groups has no selected
+  bracket. §4.6.4 discovers the bracket; this stage only measures it."
+      S="$(awk '/^  selected S/{print $NF}' "$report")"
+      H="$(awk '/^  deciding H/{print $NF}' "$report")"
+      [ -n "$S" ] && [ -n "$H" ] || fail "$report names no selected S or deciding H"
+      # A reconnaissance whose lower-side check failed proposes no bracket. Reading S out of it
+      # anyway would spend four 600 s runs on a level its own report refused to stand behind.
+      grep -q '^  lower-side check    pass' "$report" \
+        || fail "$report did not pass the lower-side check, so S=$S is not a proposed selection.
+  Re-run reconnaissance around the level below it before spending four retained runs here."
+
+      log ""
+      log "=== G$groups retained comparison: S=$S, H=$H, ${WINDOW} each, four runs"
+
+      for role in s h s-confirm h-confirm; do
+        case "$role" in
+          s|s-confirm) level="$S" ;;
+          h|h-confirm) level="$H" ;;
+        esac
+
+        run_dir="test/results/$out_group/g${groups}-${role}"
+        if [ -f "$run_dir/cell-01/run.json" ]; then
+          log "G$groups $role already retained at $run_dir — keeping it"
+          continue
+        fi
+
+        log ""
+        log "G$groups $role: $level workers/group, ${WINDOW}, pool_max_conns=$ALLOCA_POOL_MAX_CONNS"
+
+        # **SERIES names the destination, so the cell lands where the result lives.** The
+        # alternative was driving into a timestamped series and copying the cell afterwards, which
+        # duplicates every retained panel export and creates a second copy that can drift from the
+        # first.
+        clear_sandbox_placeholders
+        SERIES="$run_dir" ITC_WORKERS_PER_GROUP="$level" \
+          ./test/scripts/itc-series.sh "$groups" 1 \
+          || fail "the G$groups $role run did not complete. Stop here and diagnose this run rather
+  than adding shorter runs or controls around it: §4.6.5 needs this exact point, and a bracket
+  missing one of its four observations establishes nothing."
+
+        cell="$run_dir/cell-01"
+        [ -f "$cell/run.json" ] || fail "G$groups $role produced no cell at $cell"
+
+        # **Check the artifact against the intent.** Every gate inside a cell judges the run that
+        # happened; none of them knows which run was asked for. PR4a's first sustained attempt ran
+        # 60 s cells on the wrong fixture and passed everything.
+        ran_seconds="$(python3 -c "
+import json,sys
+print(int(round(json.load(open(sys.argv[1]))['summary']['duration_seconds'])))" "$cell/run.json")"
+        ran_workers="$(python3 -c "
+import json,sys
+print(json.load(open(sys.argv[1]))['summary'].get('workers_per_group'))" "$cell/run.json")"
+        ran_slots="$(grep '^SLOTS=' "$cell/fixture.txt" | cut -d= -f2)"
+
+        [ "$ran_workers" = "$level" ] \
+          || fail "G$groups $role was asked for $level workers/group and ran at $ran_workers. It is
+  a sound run of a different point, which is the hardest kind of wrong to notice later."
+        [ "$ran_seconds" -ge $(( seconds * 95 / 100 )) ] \
+          || fail "G$groups $role measured ${ran_seconds}s against ${seconds}s. §4.6.5's comparison
+  quantity is the full-600 s horizon average; a shorter run answers a different question."
+        [ "$ran_slots" = "$SLOTS" ] \
+          || fail "G$groups $role ran on $ran_slots slots/org, not the $SLOTS this comparison
+  fixed. Two arms seeded differently are not comparable however carefully their averages are
+  computed (§4.6.5)."
+        log "G$groups $role ran ${ran_seconds}s at $ran_workers workers/group on $ran_slots slots/org"
+
+        log "G$groups $role slices -> $cell/slices.txt"
+        ./test/scripts/itc-slices.py "$cell" | tee "$cell/slices.txt"
+      done
+    done
+
+    log ""
+    log "retained runs complete. Deciding the knee and deriving the efficiencies:"
+    log ""
+    # **The status is read out of PIPESTATUS, not off the pipeline.** `cmd | tee` reports tee's
+    # status, so `|| ...` on the pipeline would never fire and an unresolved knee would be
+    # announced as a completed result — the failure mode this whole stage exists to avoid.
+    set +e
+    ./test/scripts/itc-capacity-result.py "test/results/$out_group" \
+      | tee "test/results/$out_group/capacity-result.txt"
+    result_status="${PIPESTATUS[0]}"
+    set -e
+
+    log ""
+    log "result -> test/results/$out_group/capacity-result.txt"
+    if [ "$result_status" -ne 0 ]; then
+      log "!! the result is incomplete: a knee is unresolved or a topology is missing runs. That is"
+      log "!! the absence of a capacity result, not a low one — read the output above before"
+      log "!! quoting anything from it, and do not promote a withheld figure."
+      exit "$result_status"
+    fi
     ;;
 
   *)

@@ -130,7 +130,7 @@ ITC_CPUS_GENERATOR ?= 8-11
 all: ci
 
 ## ci: run the full local gate, identical to CI (fmt, vet, lint, build, test, race)
-ci: fmt-check vet lint build test test-race build-context-check itc-layout-check itc-topology-check-test itc-conditioning-check itc-pool-check itc-obs-labels-check itc-recon-walk-check
+ci: fmt-check vet lint build test test-race build-context-check itc-layout-check itc-topology-check-test itc-conditioning-check itc-pool-check itc-obs-labels-check itc-recon-walk-check itc-capacity-result-check
 
 ## fmt: format all Go files
 fmt:
@@ -411,6 +411,16 @@ itc-obs-labels-check:
 # whether it still refuses a ladder end or still checks the lower side of its own candidate.
 itc-recon-walk-check:
 	@./test/scripts/itc-recon-walk-test.sh
+
+## itc-capacity-result-check: prove the knee decision still refuses what it cannot establish
+#
+# In `ci` because it needs no daemon: the cases write the manifests the analysis reads, so they
+# test the §4.6.5 rule and the §4.6.7 arithmetic rather than a cell. It exists because the rule has
+# four independent ways to fail and each means something different from a low capacity number — a
+# defect does not produce an obviously wrong answer, it produces a plausible efficiency no reader
+# can distinguish from a real one (ag-sept-validation-plan.md §4.6.5, §4.6.7).
+itc-capacity-result-check:
+	@./test/scripts/itc-capacity-result-test.sh
 
 ## image: build the production-shaped service image, tagged with the current commit
 #

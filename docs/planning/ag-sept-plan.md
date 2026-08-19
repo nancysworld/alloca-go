@@ -45,20 +45,22 @@ AG-Sept's governing goal, its iteration history, and the currently open problem 
   Review in PR #17. The Phase 1 authority model is established as a correctness/composition result,
   not a capacity multiplier.
 - **Iteration C — shard-group capacity, with independent provisioning as the strongest evidence
-  layer.** The Problem and requirements are unchanged. The validation method now builds evidence in
-  stages: PR4a qualifies the method; PR4b runs the complete sustained G1/G2/G4 experiment on the
-  scheduler-partitioned workstation; optional PR4c repeats the qualified method on independently
-  provisioned equivalent capacity units when the complete environment can actually be provisioned.
-  Only PR4c can discharge `VAL-SCALE-5` and derive independently provisioned `E2_aws`/`E4_aws`.
+  layer.** The Problem and requirements are unchanged. PR4a qualified the method; PR4b ran the
+  complete sustained G1/G2/G4 experiment on the scheduler-partitioned workstation; PR4c now starts
+  with a **small independent-unit AWS probe** before deciding whether the complete G1/G2/G4 Tier-1
+  campaign is worth its quota and time. The Stage-0 probe uses G1-A, G1-B and G2(A+B) on the same two
+  independently provisioned serving units plus separate generator compute. It is diagnostic only.
+  **Only a later complete PR4c Tier-1 run can discharge `VAL-SCALE-5` and derive independently
+  provisioned `E2_aws`/`E4_aws`; Stage 0 cannot.**
 
   **PR4b executed on 2026-08-19 and did not derive `E2_local`/`E4_local`.** `G4_local` resolved;
   `G1` and `G2` did not, and `G1_local` is the denominator of both efficiencies. The evidence
   localises the limit to the shared write path rather than to `alloca-go` — without proving the
-  mechanism, since the killing test was not run — so the local tier turned out to be unable to
-  produce the efficiency figures this paragraph originally promised, and `VAL-SCALE-6` is executed
-  but not discharged. That strengthens rather than weakens the case for PR4c: independently provisioned
-  per-unit storage is exactly the condition that removes the limit. `VAL-SCALE-5` remains reported
-  explicitly unproven.
+  mechanism, since the killing test was not run — so the local tier could not produce the
+  efficiency figures originally intended. `VAL-SCALE-6` is executed but not discharged. That
+  empirically justifies the independent-resource requirement while also warning that independent
+  provisioning need not eliminate per-unit variance. The probe-first PR4c shape is the resulting
+  scheduling decision.
 
 The decision order has now reached Schedule:
 
@@ -78,10 +80,10 @@ Iteration B evidence -> Analyse & Review -> Iteration C Problem
 | Multi-authority correctness and failure-isolation evidence | PR3c | merged #16 |
 | Iteration B Analyse & Review | review step, PR #17 | merged; Iteration B closed and Iteration C Problem selected |
 | Iteration C planning | PR #18 | complete in #18; closes Requirements → Design → Validation → Schedule |
-| Iteration C experiment preparation and measurement qualification | PR4a | complete in #19; final review/merge pending, no canonical scaling result |
-| Iteration C local sustained capacity and scale characterisation | PR4b | executed; gate met on the "explicitly unresolved" branch. `G4_local` resolved, `G1`/`G2` unresolved, efficiencies withheld, `VAL-SCALE-6` **not discharged** |
-| Iteration C independently provisioned AWS verification | PR4c | **optional; quota-conditional; not opened/scheduled until complete environment is provisionable** |
-| Iteration C A&R and AG-Sept conclusion | PR5 | not started; follows PR4b and optional PR4c if it executes in time |
+| Iteration C experiment preparation and measurement qualification | PR4a | merged #19; no canonical scaling result |
+| Iteration C local sustained capacity and scale characterisation | PR4b | merged #20; gate met on the "explicitly unresolved" branch. `G4_local` resolved, `G1`/`G2` unresolved, efficiencies withheld, `VAL-SCALE-6` **not discharged** |
+| Iteration C independently provisioned AWS verification | PR4c | **planning opened 2026-08-19; Stage 0 is the bounded G1-A/G1-B/G2 probe under the current quota. Metered execution still requires the explicit budget decision in §2.1.4; full G1/G2/G4 remains probe- and quota-conditional** |
+| Iteration C A&R and AG-Sept conclusion | PR5 | not started; follows PR4b and whatever bounded PR4c evidence is actually executed in time |
 
 Validation status is owned by the validation plan's own status table, not duplicated here.
 
@@ -101,7 +103,7 @@ granularity is false precision that invites its own overrun (Nancy's call, 2026-
 | Iteration C planning | PR #18 | 0.5 | 0.5 | 0.0 | complete; hard planning cap met |
 | Iteration C method preparation and measurement qualification | PR4a | 4.0 | 4.0 | 0.0 | complete; consumed the whole former PR4a/PR4b envelope (§2.1.3) |
 | Iteration C local sustained capacity characterisation | PR4b | 1.0 | 1.0 | 0.0 | complete; funded by the 1.0-day contingency draw (§2.1.3). Gate met on the "explicitly unresolved" branch; no further draw |
-| Iteration C optional independent verification | PR4c | **0.0** | **0.0** | **0.0** | unscheduled and unbudgeted; requires quota + an explicit budget decision before opening |
+| Iteration C independent verification | PR4c | **0.0** | **0.0** | **0.0** | Stage-0 planning opened; AWS execution remains unfunded until §2.1.4's explicit allocation is accepted. Focused plan recommends 1.0 day |
 | Iteration C A&R and AG-Sept conclusion | PR5 | 1.5 | 0.0 | 1.5 | not started |
 | **Allocated development budget** | | **16.5** | **15.0** | **1.5** | |
 | Contingency | | **3.0** | **1.0** | **2.0** | 1.0 drawn by §2.1.1; 1.0 reallocated to PR4b by §2.1.3 |
@@ -111,12 +113,12 @@ granularity is false precision that invites its own overrun (Nancy's call, 2026-
 row. Completed work that returned unused allocation is shown at its current allocation; **Status**
 keeps the historical context, not the accounting.
 
-**PR4a consumed the whole former 4.0-day PR4a/PR4b envelope**, and PR4b is funded by a separate
-1.0-day draw on contingency (§2.1.3). Adding the name PR4c still does **not** create an allocation.
-PR4c is optional and unscheduled until the complete independently provisioned environment can be
-built; if it becomes executable inside AG-Sept, its budget must be chosen explicitly from remaining
-contingency, a deliberate reallocation, or the separate rerun/review reserve where appropriate.
-Merely receiving quota does not silently spend it.
+**PR4c planning has started, but the budget row has deliberately not moved.** Nancy's 2026-08-19
+instruction opened the probe-first planning work; it did not choose an amount from contingency. The
+focused PR4c plan recommends **1.0 day** because the measured cells are short but first-time AWS
+bootstrap, remote-harness adaptation, evidence retention and teardown are not plausibly a half-day
+scope. Metered execution begins only after the maintainer accepts an allocation and this table is
+updated. A later complete Tier-1 campaign would require its **own** post-probe budget decision.
 
 **A contingency draw that funds a work unit is a transfer, not a second entry.** PR4b's day appears
 once, as that row's allocation, and the contingency pool falls by the same day — which is why the
@@ -125,9 +127,10 @@ against PR4b, would count it twice and break `Allocated = Spent + Left`. §2.1.1
 differently because it funded work that has no work-unit row at all, so it is visible only as
 contingency spend.
 
-If quota never arrives inside the milestone timebox, nothing in the 4.0-day mandatory envelope is
-left waiting for AWS: PR4b still produces the complete local sustained result, and PR5 records the
-strongest established evidence plus `VAL-SCALE-5` explicitly unproven.
+If the complete G4 AWS environment never becomes available inside the milestone timebox, nothing in
+the mandatory local path waits for it. PR4b already produced the strongest local result; PR4c Stage
+0 may still contribute bounded independent-node evidence, and PR5 records `VAL-SCALE-5` explicitly
+unproven unless the complete Tier-1 validation actually runs.
 
 A further **2–3 days** are reserved beyond the development budget for rerunning decisive
 experiments, validating negative controls, reviewing measurements and interpretations, correcting
@@ -145,9 +148,8 @@ incidental complexity.
 ### 2.1 How the contingency is spent
 
 **Completed work returns unused allocation to contingency rather than to scope.** PR3a came in at
-1.0 against 3.0 and returned 2.0; PR3c came in at 1.5 against 2.0 and returned 0.5 (§2.1.2). The
-figures recorded are conservative under the half-day rule rather than attempts to account for
-hours precisely.
+1.0 against 3.0 and returned 2.0; PR3c came in at 1.5 against 2.0 (§2.1.2). The figures recorded are
+conservative under the half-day rule rather than attempts to account for hours precisely.
 
 The gain is **not** an invitation to widen Iteration C. Contingency is held for reruns, an
 investigation that does not resolve on the first attempt, or another hard problem established by
@@ -155,11 +157,9 @@ evidence.
 
 **Every PR is funded at what its scope costs.** No PR carries a deliberate shortfall.
 
-**PR4b is the first mandatory work unit that depends on contingency to be reachable**, which was
-not true when this section was written: PR4a consumed the whole shared envelope, so PR4b's day
-comes from the reserve (§2.1.3). That is contingency doing its job rather than a shortfall — but it
-does mean the remaining 2.0 days are now carrying a mandatory work unit as well as reruns, and §5's
-descope order is correspondingly closer.
+PR4b was the first mandatory work unit that depended on contingency to be reachable. It is now
+complete. The remaining 2.0 days are available for bounded evidence-driven follow-up, including
+PR4c only after an explicit transfer, and are not silently consumed merely because a branch exists.
 
 **Contingency is not scope.** It is drawn on before §5's descope order. After PR3c's 0.5-day return
 and PR4b's 1.0-day reallocation, contingency is **3.0 total**: **1.0 is drawn** (§2.1.1) and
@@ -185,8 +185,8 @@ The milestone total stays **19.5 days**; the return changes allocation, not the 
 ### 2.1.3 PR4a is charged at 4.0 days, and PR4b draws 1.0 from contingency
 
 **Nancy's decision, 2026-08-18:** PR4a is charged at **4.0 days actual**, consuming the whole
-former PR4a/PR4b shared envelope. **PR4b is allocated 1.0 day, drawn from contingency.** PR4c
-remains unbudgeted and its allocation is deferred.
+former PR4a/PR4b shared envelope. **PR4b is allocated 1.0 day, drawn from contingency.** PR4c was
+left unbudgeted at that point.
 
 PR4a absorbed the envelope because the re-baseline moved work into it rather than because it
 overran its own scope: independent per-group demand streams, the explicit conditioning contract and
@@ -199,13 +199,27 @@ row's allocation, so the milestone total stays **19.5 days** exactly as PR3c's r
 recorded differently from §2.1.1, whose day funded work that has no work-unit row and is therefore
 visible only as contingency spend.
 
-**What it costs in slack.** 2.0 days of contingency remain, and they are now backing a mandatory
-work unit as well as reruns and review. PR4b at 1.0 day is a **bounded experiment-execution budget**.
-The measurement method and underlying run primitives are qualified; the day covers the thin
-orchestration needed for adaptive reconnaissance, S/H bracket selection and final fixture sizing,
-then the retained S/H + confirm-S/confirm-H runs across G1/G2/G4, analysis and reporting. New
-methodology work or another diagnostic investigation is the signal to stop and re-plan rather than
-to draw again automatically.
+**What it cost in slack.** 2.0 days of contingency remain after PR4b. PR4b's budget was deliberately
+bounded: new methodology work or another diagnostic investigation was a stop/re-plan signal rather
+than an automatic second draw. PR4b followed that rule and closed once the local shared-write-path
+limit was established strongly enough to withhold the unsupported efficiencies.
+
+### 2.1.4 PR4c starts probe-first; the execution allocation remains explicit
+
+**Nancy's decision, 2026-08-19:** start PR4c planning now, but start the AWS evidence with the
+smallest useful independent-node experiment rather than the full retained capacity matrix. Under
+the current quota the planned first shape is two equivalent serving units plus separate generator
+compute, measuring G1-A, G1-B and then G2(A+B). The first result decides whether further AWS work is
+worth doing.
+
+This decision changes the **sequence**, not the budget arithmetic. No amount was specified when the
+planning branch was opened. [`ag-sept-pr4c.md`](ag-sept-pr4c.md) recommends **1.0 day from the
+remaining contingency** for Stage 0, including first-time AWS bootstrap, minimal harness adaptation,
+three short probes, evidence/reporting and teardown. That recommendation must be accepted explicitly
+before metered execution, at which point the table above and contingency balance move together.
+
+A full Tier-1 G1/G2/G4 attempt is not included in that recommendation. If Stage 0 says `PROCEED`,
+quota, experiment shape and budget are reconsidered from the evidence then available.
 
 ### 2.2 Review depth is the throughput control
 
@@ -257,41 +271,44 @@ That decision expanded PR4a from machinery rehearsal to measurement qualificatio
 of the scheduling history; §2.5 records the later evidence-driven re-cut after the root cause was
 demonstrated and the workstation's usefulness became clearer.
 
-### 2.5 PR4 is re-cut as preparation → local evidence → optional independent verification
+### 2.5 PR4 is re-cut as preparation → local evidence → probe-first independent verification
 
-**Nancy's decision, 2026-08-18:** the PR boundary follows purpose rather than environment.
+**Nancy's decisions, 2026-08-18 and 2026-08-19:** the PR boundary follows purpose rather than
+environment, and independent verification is staged by evidence rather than by the original full
+matrix.
 
-Two facts changed the earlier schedule. First, the workstation exposes enough CPU to exercise the
-complete G1/G2/G4 topology and is unmetered, so limiting it to a rehearsal would throw away useful
-controlled evidence. Second, the new AWS account's default Standard On-Demand quota cannot
-instantiate the intended complete environment and the quota increase was declined, so making AWS
-the mandatory evidence-producing work unit couples progress to an external account-maturity
-constraint.
+Two facts changed the earlier schedule. First, the workstation exposed enough CPU to exercise the
+complete G1/G2/G4 topology and was unmetered, so limiting it to a rehearsal would have thrown away
+useful controlled evidence. Second, the new AWS account's default Standard On-Demand quota could
+not instantiate the intended complete environment, so making AWS the mandatory evidence-producing
+work unit coupled progress to an external account-maturity constraint.
 
-The new boundary is:
+PR4b then added a third fact: the local G1 denominator varied materially because the shard groups
+still shared the host write path. That both justified independent provisioning and warned against
+assuming that a cloud capacity unit would be variance-free.
+
+The current boundary is therefore:
 
 ```text
 PR4a — prepare and qualify the experiment
 PR4b — execute and analyse the full sustained experiment locally
-PR4c — optionally verify on independently provisioned AWS capacity when the environment exists
+PR4c Stage 0 — probe two independent AWS units separately and together
+PR4c later stage — only if justified, attempt fuller retained independent verification
 ```
 
-PR4a qualifies the reusable measurement method and run primitives; it does **not** have to discover
-the final saturation bracket or build the final capacity orchestration. PR4b owns the thin
-experiment-specific orchestration needed for adaptive reconnaissance, actual S/H selection, final
-fixture sizing for that bracket, and the retained G1/G2/G4 capacity runs. This keeps preparation
-separate from the evidence-producing comparison without forcing PR4a to implement wrappers that
-only PR4b uses.
+PR4a qualified the reusable measurement method and run primitives. PR4b applied them locally and
+closed on the honest unresolved branch. PR4c Stage 0 keeps the qualified workload/accounting model
+but deliberately relaxes **claim depth**, not integrity: three short diagnostic cells answer whether
+the independent environment is promising enough for more expensive measurement. They do not enter
+`E2_aws`, `E4_aws` or `VAL-SCALE-5`.
 
 This does **not** weaken the Iteration C Problem or `REQ-SCALE-4`. Local scheduler partitioning and
-independent provisioning remain different evidence classes. PR4b is now a first-class quantitative
-result about the recorded local environment (`VAL-SCALE-6`); only optional PR4c can discharge
-`VAL-SCALE-5`.
+independent provisioning remain different evidence classes. The complete G1/G2/G4 Tier-1 method
+remains the only way this milestone can discharge `VAL-SCALE-5`; Stage 0 exists to decide whether
+pursuing it is rational.
 
-Mandatory PR4a and PR4b remain funded: PR4a at the 4.0 days it consumed, PR4b at 1.0 day drawn from
-contingency (§2.1.3). PR4c carries no implicit budget. If quota arrives only after AG-Sept closes,
-the same independent-provisioning verification can be run later as a separate follow-up; it does
-not silently reopen the milestone.
+Mandatory PR4a and PR4b remain funded as completed work. PR4c Stage 0 carries no implicit allocation
+until §2.1.4 is accepted; any later Tier-1 expansion is a separate budget decision.
 
 ## 3. PR sequence
 
@@ -346,136 +363,102 @@ rather than a threshold, the fixed 1/2/4 placement family, and the stronger inde
 envelope requirement. Later PR4 evidence has refined **how** the experiment is scheduled without
 weakening those owners.
 
-### PR4a — Iteration C experiment preparation and measurement qualification
+### PR4a — Iteration C experiment preparation and measurement qualification — merged #19
 
-PR4a answers one question: **can the experiment be trusted?** It produces no canonical G1/G2/G4
+PR4a answered one question: **can the experiment be trusted?** It produced no canonical G1/G2/G4
 capacity result.
 
-It owns the reusable method and run primitives needed before the evidence-producing comparison:
+It delivered the reusable method and run primitives needed before the evidence-producing comparison:
 
-- replace the shared global closed-loop worker pool with independent
-  **`workers_per_group`** streams, including per-group sequence/accounting, aggregate summaries,
-  disjoint idempotency-key identity, and the discriminating `VAL-NEG-8` slow-group control;
-- implement the explicit conditioning contract from `measurement-contract.md` §5/§12: fixed
-  state-based target, retained conditioning population, measured-start baseline, state-preserving
-  service/pool recycle, and no reseed between conditioning and measurement;
-- run a **bounded G1 pool-sensitivity preflight** against the current shard-group shape, then freeze
-  one pool policy for the later G1/G2/G4 comparison; this is configuration qualification, not a
-  pool × worker optimisation matrix;
-- establish and exercise the fixture-sizing mechanism and headroom checks using the retained
-  qualification fixture, while leaving the **final** PR4b fixture size to the deepest actual S/H
-  bracket PR4b selects;
-- qualify the canonical 600 s run primitive end to end, including fresh reset/reseed/conditioning,
-  the state-preserving recycle, ten retained 60 s analysis slices, artifact-intent checks,
-  observability and reconciliation;
-- qualify generator headroom and the resource/observability/reconciliation path at the range the
-  local experiment intends to quote;
-- demonstrate that the cached-plan regime PR4a root-caused is removed from the measured starting
-  state by the conditioning + deterministic recycle procedure.
+- independent **`workers_per_group`** streams with per-group sequence/accounting and the
+  discriminating `VAL-NEG-8` control;
+- explicit state-based conditioning, retained conditioning population, measured-start baseline and
+  state-preserving service/pool recycle;
+- the bounded pool sensitivity and frozen `pool_max_conns=8` policy;
+- fixture-sizing/headroom machinery;
+- the canonical 600 s run primitive, retained 60 s slices, observability and reconciliation;
+- the host evidence needed to diagnose CPU/memory/storage behaviour;
+- removal of the benchmark-induced cached-plan regime from the measured start state.
 
-The older short repeated cells remain diagnostic evidence. They are not the retained capacity
-method and their old `c16`/`c32` labels keep their historical meaning: total workers, not the new
-`workers_per_group` variable.
+AWS-specific execution was deliberately removed from its exit gate once the local environment
+proved useful enough to qualify the method without spending quota.
 
-**AWS-specific execution is no longer a PR4a exit gate.** No `t2.micro` bootstrap, EC2
-provisioning/smoke, AWS chrony/security-group proof, metered teardown execution, or AWS-specific
-capacity readiness is required. PR4a must leave the method portable; it does not need to deploy the
-provider it currently cannot provision.
+### PR4b — Local sustained capacity and scale characterisation — merged #20
 
-**Gate:** the reusable measurement method and 600 s run primitives are qualified; discriminating
-controls pass; the conditioning target, fixed pool policy, fixture-sizing mechanism,
-generator/resource evidence and reconciliation path are justified; and the experiment can enter a
-retained 600 s run without the known measurement-fixture planner artefact or cross-group demand
-coupling. Final reconnaissance, S/H selection, final fixture sizing and capacity orchestration are
-PR4b work.
-
-### PR4b — Local sustained capacity and scale characterisation
-
-PR4b answers: **what does the qualified experiment show on the scheduler-partitioned workstation?**
-It is the mandatory evidence-producing PR4 work unit, with a **1.0-day bounded experiment-execution
+PR4b answered: **what does the qualified experiment show on the scheduler-partitioned workstation?**
+It was the mandatory evidence-producing PR4 work unit, with a **1.0-day bounded experiment-execution
 budget** from §2.1.3.
 
-PR4b adds only the thin orchestration the final comparison needs: run short adaptive
-`workers_per_group` reconnaissance, select the actual S/H bracket for each topology, derive one
-final per-organisation fixture size from the deepest retained bracket and then hold it fixed across
-G1/G2/G4. It then retains, for each topology:
+It drove adaptive reconnaissance, fixed the common 12/16 S/H bracket, derived one final fixture and
+retained the full S/H + confirm-S/confirm-H 600 s comparison across G1/G2/G4.
 
-```text
-S          600 s
-H          600 s
-confirm S  600 s
-confirm H  600 s
-```
-
-Each sustained run has its own reset/reseed/conditioning sequence. The 60 s slices inside it are
-analysis windows, not repeated experiments. Both `S` and the deciding `H` must reproduce; a bad
-fixture, generator limitation, unrelated regime or inconsistent higher point leaves the knee
-unresolved rather than lowering it by accident.
-
-PR4b derives and reports **`G1_local`, `G2_local`, `G4_local`, `E2_local`, `E4_local`**, the
-`workers_per_group` saturation brackets, resource/bottleneck interpretation, per-authority data
-trajectory, and the shared-host limitations. This is `VAL-SCALE-6`: a genuine quantitative result
-about the explicitly recorded local environment, not merely a rehearsal and not independently
-provisioned capacity evidence.
-
-The qualified method is not reopened merely because PR4b needs small wrappers around its existing
-primitives. If execution exposes a new experiment-integrity defect or requires methodology redesign,
-stop and re-plan rather than automatically drawing more contingency.
-
-After the closed-loop result is secure, a bounded `VAL-LOAD-1` open-loop comparison is strongly
-desirable if the remaining PR4 envelope permits it. Its offered rates are chosen from the measured
-closed-loop result; it keeps an explicit max-in-flight bound/deadline/unlaunched-arrival accounting
-and never redefines closed-loop capacity.
-
-**Gate:** `VAL-SCALE-6` is established or explicitly unresolved from retained, reconciled evidence;
-local scale efficiencies and limiting mechanisms are reported with the shared-workstation and
-per-organisation/per-authority co-variables stated; no result is promoted into `VAL-SCALE-5`.
-
-**Met 2026-08-19 on the "explicitly unresolved" branch, at the allocated 1.0 day and with no
+**Gate met 2026-08-19 on the "explicitly unresolved" branch, at the allocated 1.0 day and with no
 further contingency draw.** All twelve retained runs were driven and reconciled. `G4_local` resolved
 at 3493.9/s; `G1` and `G2` did not, so `G1_local`, `G2_local`, `E2_local` and `E4_local` are
-withheld. The limiting mechanism *is* reported, and it is the shared storage path rather than
-`alloca-go`: Goodput tracks delivered write bandwidth at a near-constant 65–72 mutations per MiB,
-and `G1`'s run-to-run spread is 25.1% across four *identical* runs while mutations per MiB moves
-1.0%. Whether reproducibility improves *because* more authorities issue I/O concurrently is a
-reading of the evidence rather than a result established by it — the control `G1` received was not
-driven at `G2` or `G4`. Nothing
-was promoted into `VAL-SCALE-5`, and `VAL-LOAD-1` was not attempted because the closed-loop result
-it depends on was not secured. Maintainer decision, 2026-08-19: stop execution rather than draw
-contingency to pursue `G1`. Evidence and analysis are owned by the validation plan's status table
-and `ag-sept-pr4.md` §3.28–§3.31.
+withheld. Four identical G1 runs then measured 25.1% spread and refuted run position as the
+explanation. Goodput covaries with delivered write bandwidth at broadly stable mutations/MiB, which
+localises the limiting variation to the shared write path without proving the deeper VHDX mechanism.
+Nothing was promoted into `VAL-SCALE-5`, and `VAL-LOAD-1` was not attempted because the closed-loop
+result it depends on was not secured.
 
-### PR4c — Optional independently provisioned AWS verification
+### PR4c — Probe-first independently provisioned AWS verification
 
-PR4c answers: **does the locally observed scaling behaviour survive genuinely independent resource
-envelopes?** It is optional and quota-conditional.
+PR4c now answers two questions **in sequence**, not one large question up front.
 
-Do **not** open PR4c merely to wait for quota. It becomes schedulable only when the complete
-equivalent non-burstable G1/G2/G4 environment plus separate generator compute can actually be
-provisioned and an explicit budget decision funds the work.
+#### Stage 0 — what do two genuinely independent units look like?
 
-When it runs, AWS is verification rather than first-use experiment discovery. Apply the qualified
-PR4a method and the PR4b-informed worker bracket under equivalent independent capacity units,
-retaining the same S/H + confirmations required by validation-plan §4.6. Tier 1 derives
-`E2_aws`/`E4_aws` and may discharge `VAL-SCALE-5`; Tier 2 is available only when the complete
-environment exists but a demonstrated residual measurement-system limit prevents Tier 1.
+Use the current small quota for the first independent-node evidence rather than waiting for the full
+G4 allowance. Subject to the explicit budget decision in §2.1.4, provision:
 
-Compare local and AWS efficiency where both exist, but never mix points across environments in one
-formula. A materially different AWS result is evidence to analyse, not a reason to rewrite the
-local run.
+```text
+capacity unit A     equivalent serving shape
+capacity unit B     equivalent serving shape
+generator/monitor   separate compute
+```
 
-If quota remains unavailable, skip PR4c and proceed to PR5 with the AWS denial retained as an
-external blocker and `VAL-SCALE-5` explicitly unproven. If quota arrives only after AG-Sept closes,
-run the same verification later as a separate follow-up rather than reopening the milestone
-silently.
+The target quota fit is 2 + 2 + 1 vCPU if compatible instance families are available. Drive the
+three-cell probe defined by
+[`ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md):
 
-**Gate:** if executed, the strongest admissible independently provisioned Tier-1/Tier-2 evidence is
-retained and bounded to what it establishes. If not executed, there is no PR4c gate to wait on.
+```text
+G1-A
+G1-B
+G2-A+B
+```
+
+at one common 120 s `workers_per_group=12` probe level, with the qualified conditioning,
+reconciliation, provenance and resource evidence retained. Report raw rates, the A/B unit
+difference and `R2_probe = g2_AB / (g1_A + g1_B)`.
+
+**The boundary is load-bearing:** these are diagnostic observations, not `G1_aws`, `G2_aws` or
+`E2_aws`; Stage 0 cannot discharge `VAL-SCALE-5` and Tier 2 does not apply. Its exit gate is a first-
+result decision: `PROCEED`, `BOUNDED REPEAT`, or `STOP / DEFER`.
+
+Design: [`../design/independent-capacity-probe.md`](../design/independent-capacity-probe.md). Focused
+execution plan: [`ag-sept-pr4c.md`](ag-sept-pr4c.md).
+
+#### Later stage — only if Stage 0 earns it
+
+If Stage 0 gives an intelligible independent-resource result, use that evidence to decide the next
+smallest useful experiment. A full Tier-1 attempt remains conditional on sufficient quota for the
+complete equivalent G1/G2/G4 family, generator headroom, and a **new explicit budget decision**.
+
+If it runs, Tier 1 applies the governing validation plan's retained 600 s method and may derive
+`E2_aws`/`E4_aws` and discharge `VAL-SCALE-5`. Tier 2 remains available only when the **complete G4
+environment exists** but a demonstrated residual measurement-system limit prevents Tier 1; quota
+preventing G4 is not a Tier-2 trigger.
+
+A materially different AWS result is evidence to analyse, not a reason to rewrite PR4b. Local and
+AWS points are never mixed in one efficiency formula.
+
+**Gate:** Stage 0 retains the strongest honest three-cell diagnostic the current quota supports and
+records the explicit next decision. Any later Tier-1/Tier-2 work has its own gate and cannot start by
+scope inertia.
 
 ### PR5 — Iteration C Analyse & Review + AG-Sept conclusion
 
-**Budget:** 1.5 development days, following mandatory PR4b and optional PR4c only if PR4c was
-actually scheduled in time.
+**Budget:** 1.5 development days, following mandatory PR4b and any bounded PR4c evidence actually
+executed in time.
 
 PR5 consumes the strongest retained Iteration C evidence and closes both the final iteration and
 the AG-Sept milestone. It records the Analyse & Review outcome required by
@@ -513,69 +496,72 @@ The Iteration C closeout path is:
 ```mermaid
 flowchart TD
     A[PR4a: prepare + qualify method] --> B[PR4b: full local sustained G1/G2/G4 evidence]
-    B --> C{Complete independent AWS environment<br/>available + explicitly funded in time?}
-    C -->|Yes| D[PR4c optional: independently provisioned verification]
-    C -->|No| E[Retain AWS blocker<br/>VAL-SCALE-5 unproven]
-    D --> F[PR5: Iteration C A&R + AG-Sept conclusion]
-    E --> F
-    F --> G[Pre-publication documentation pass]
-    G --> H[Public release]
-    H --> I[AG-Sept closed]
+    B --> C[PR4c Stage 0: independent G1-A / G1-B / G2 probe]
+    C --> D{First result worth extending?}
+    D -->|No| E[Retain bounded AWS result<br/>VAL-SCALE-5 unproven]
+    D -->|One ambiguity| F[One bounded discriminating repeat]
+    D -->|Yes + complete quota + budget| G[Optional full Tier-1 G1/G2/G4]
+    F --> H[Record strongest result]
+    G --> H
+    E --> H
+    H --> I[PR5: Iteration C A&R + AG-Sept conclusion]
+    I --> J[Pre-publication documentation pass]
+    J --> K[Public release]
+    K --> L[AG-Sept closed]
 ```
 
 ## 4. Manifest and reconciliation staging
 
 The rules are `measurement-contract.md` §11–§13. PR3b established multi-authority topology/image
-identity. PR4a extends the harness so conditioning, `workers_per_group`, per-group demand identity,
+identity. PR4a extended the harness so conditioning, `workers_per_group`, per-group demand identity,
 measured-start baselines, fixed pool policy and the 600 s retained run shape are explicit and
-auditable. PR4b applies that machinery to every quoted local G1/G2/G4 point. Optional PR4c, if it
-runs, records the independent resource envelope and applies the same method without changing its
-accounting semantics.
+auditable. PR4b applied that machinery to every quoted local G1/G2/G4 point.
+
+PR4c Stage 0 reuses the same population/accounting/provenance semantics on remote independent hosts,
+but its 120 s cells are intentionally **diagnostic**, not capacity points. It additionally records
+the per-unit EC2/storage resource envelope and generator separation needed to interpret independence.
+If a later full Tier-1 experiment runs, it returns to the canonical retained 600 s method rather
+than promoting the probe cells.
 
 Reconciliation: PR1 established the single-authority self-check; PR3b extended it to multiple
-authorities; PR3c exercised it against deliberate failure. PR4a adds the conditioning/measurement/
-resolution population boundary; PR4b exercises it on the full local sustained result; PR4c reuses
-it if independent verification occurs.
+authorities; PR3c exercised it against deliberate failure. PR4a added the conditioning/measurement/
+resolution population boundary; PR4b exercised it on the full local sustained result; PR4c reuses
+it for every interpreted AWS cell.
 
-**Quotability target:** a local PR4b run can be a valid `capacity`-level result about its explicitly
-recorded topology/environment while remaining blocked from `publishable` by co-resident generator
-compute and, more importantly for Iteration C, blocked from `VAL-SCALE-5` by the shared-host resource
-envelope. Provenance level and validation meaning remain separate. If PR4c runs, its independently
-provisioned result must satisfy the appropriate §13 provenance plus §5 evidence gates before an
-external project-level capacity claim is admissible.
+**Quotability target:** provenance level and validation meaning remain separate. A Stage-0 run may
+carry complete capacity-grade provenance while still being diagnostic by experiment purpose. No
+external project-level capacity claim follows until the governing validation/evidence gates for that
+claim are satisfied.
 
 ## 5. Priority and descope
 
 ### 5.1 P0 — required
 
-For Iteration C the mandatory path is now independent of AWS quota:
+For Iteration C the mandatory path remains independent of AWS quota:
 
 - stable `WL-MUT-DISP-4` request semantics and fixed per-organisation fixture populations;
 - PR4a's qualified method and reusable primitives: independent `workers_per_group`, `VAL-NEG-8`,
   explicit conditioning and measured-start accounting, fixed pool policy, fixture-sizing/headroom
   mechanism, qualified 600 s run shape, and generator/resource/reconciliation controls;
-- PR4b's **full local G1/G2/G4 sustained capacity/scale characterisation**: adaptive bracket
-  reconnaissance, actual S/H selection, one final fixture size held across the comparison, retained
-  S/H + both confirmations, limiting-resource analysis and honest shared-host limitations.
-  **Delivered 2026-08-19 without `E2_local`/`E4_local`**: `G4_local` resolved, `G1` and `G2` did
-  not, and the efficiencies are withheld because their denominator cannot be measured to better
-  than ~25% on this environment. The limiting-resource analysis is the deliverable that carries the
-  result, and it localises the limit to the shared write path — without proving the mechanism, since
-  the killing test was not run;
-- correctness/reconciliation and provenance/resource evidence required for every quoted local
-  result;
-- if PR4c is not executed, the retained AWS provisioning limitation and explicit
-  `VAL-SCALE-5`-unproven conclusion.
+- PR4b's **full local G1/G2/G4 sustained capacity/scale characterisation**, delivered 2026-08-19 on
+  the explicit unresolved branch: `G4_local` resolved, `G1`/`G2` did not, and unsupported
+  efficiencies were withheld;
+- correctness/reconciliation and provenance/resource evidence required for every quoted result;
+- `VAL-SCALE-5` explicitly unproven unless the complete independent Tier-1 family actually runs.
 
-Optional PR4c is a stronger evidence opportunity, not P0. The older service-replica VAL-SCALE-1/2
-path is not Iteration C scope.
+PR4c Stage 0 is now selected as a bounded evidence opportunity, but successful AWS capacity
+measurement remains outside the P0 completion gate. The older service-replica VAL-SCALE-1/2 path is
+not Iteration C scope.
 
 ### 5.2 P1 — strongly desirable
 
 Only after the P0 local result is secure:
 
-- `VAL-LOAD-1` bounded open-loop characterisation around the measured closed-loop frontier;
-- a deliberately constrained resource control (`VAL-NEG-5`) if it materially strengthens the
+- the **PR4c Stage-0 independent-unit probe**, once explicitly funded, because PR4b directly
+  established the shared-resource limitation it discriminates;
+- `VAL-LOAD-1` bounded open-loop characterisation only after a secure closed-loop result exists in
+  the environment being characterised;
+- a deliberately constrained resource control (`VAL-NEG-5`) if it materially strengthens a
   limiting-resource diagnosis;
 - polished charts beyond the minimum needed to communicate the result;
 - extra diagnostic reruns requested by A&R.
@@ -597,27 +583,29 @@ EKS; RDS; Kubernetes; a service mesh; autoscaling; a broker solely to claim even
 architecture; complete production authentication/authorization; eliminating hot-authority
 serialization; and reproducing a full commercial workload.
 
-**Narrow AWS exception:** EC2 remains the selected bounded mechanism for optional PR4c independent
-capacity verification when quota and an explicit budget permit it. AWS deployment machinery is not
-P0 PR4a preparation merely because PR4c might later exist.
+**Narrow AWS exception:** EC2 remains the selected bounded mechanism for PR4c independent-resource
+evidence. Stage 0 uses only two serving units plus separate measurement compute; a later full
+G1/G2/G4 attempt remains conditional on probe evidence, quota and a new budget decision. No cloud-
+production conclusion follows from either.
 
 ### 5.5 Descope order
 
 If time slips, remove work in this order:
 
-1. optional PR4b open-loop depth beyond the minimum useful `VAL-LOAD-1` comparison, or the whole
-   open-loop round if the closed-loop local result itself is at risk;
-2. optional resource-limit control beyond the evidence already needed for diagnosis;
-3. chart/dashboard polish beyond the diagnostic minimum;
-4. extra confirmation/rerun work beyond the retained S/H confirmations the validation method
-   requires, unless A&R needs it to resolve material variation;
-5. PR5 presentation/chart polish beyond what the milestone conclusion requires.
+1. **all PR4c depth beyond the three Stage-0 cells** — including a full Tier-1 matrix — unless the
+   first result makes one bounded repeat decisive for A&R;
+2. optional open-loop depth or the whole `VAL-LOAD-1` round when no secure closed-loop result exists;
+3. optional resource-limit control beyond the evidence already needed for diagnosis;
+4. chart/dashboard polish beyond the diagnostic minimum;
+5. extra confirmation/rerun work beyond what the active validation method requires, unless A&R
+   needs it to resolve material variation;
+6. PR5 presentation/chart polish beyond what the milestone conclusion requires.
 
 **Do not descope:** stable `WL-MUT-DISP-4` semantics/fixtures; PR4a measurement qualification;
 independent per-group demand; explicit conditioning/accounting; the fixed pool policy; PR4b's full
-local G1/G2/G4 S/H + confirmation evidence; response validation; reconciliation; provenance/resource
-capture; or honest evidence labelling. PR4c itself is optional, but if it is scheduled its selected
-Tier-1/Tier-2 evidence rule is not weakened to fit time.
+local evidence; response validation; reconciliation; provenance/resource capture; or honest evidence
+labelling. If PR4c Stage 0 is funded and driven, do not weaken its separation/resource/evidence gates
+to fit time; stop before a cell rather than reinterpret a compromised one.
 
 Contingency is drawn before weakening any mandatory evidence gate.
 
@@ -649,29 +637,35 @@ conditional AWS deployment. PR2's measured result changed the order:
    than the unmetered workstation even though it remains the stronger **evidence class** for
    independent resource envelopes;
 8. on 2026-08-18 the work was therefore re-cut by purpose: PR4a qualifies, PR4b measures locally,
-   and PR4c independently verifies only if it becomes executable.
+   and PR4c independently verifies only if useful;
+9. PR4b then measured the local shared-write-path limitation directly enough to withhold the
+   efficiencies, while its identical G1 control showed that independent provisioning should not be
+   assumed variance-free. On 2026-08-19 PR4c was therefore opened **probe-first**: use the current
+   quota for G1-A/G1-B/G2, inspect the first result, then decide whether a larger campaign is worth
+   buying.
 
-### 6.3 The original AWS path remains withdrawn; PR4c is only minimal verification
+### 6.3 The original AWS path remains withdrawn; PR4c is only bounded verification
 
 The v0.4 AWS plan — ECR/EKS/RDS/load-balancing path plus separate EC2 generator and its larger
-matrix — remains withdrawn. Optional PR4c does **not** restore it.
+matrix — remains withdrawn. PR4c does **not** restore it.
 
 The evidence path is now:
 
 ```text
 qualified method
-    -> full local scheduler-partitioned capacity characterisation
-    -> optional equivalent independent EC2 capacity-unit verification
+    -> full local scheduler-partitioned characterisation
+    -> three-cell independent-unit AWS probe
+    -> only if justified, fuller independent G1/G2/G4 verification
     -> never mix local and AWS points in one efficiency calculation
 ```
 
-No EKS, RDS, managed-database, service-mesh, or cloud-production conclusion follows. If PR4c runs,
-its baseline and scale-out points all come from the same independent environment.
+No EKS, RDS, managed-database, service-mesh, or cloud-production conclusion follows. The Stage-0
+probe has its own diagnostic ratio and is never promoted into a canonical capacity efficiency.
 
 ### 6.4 The PR2 deferral register
 
 - **Overload question:** broad overload mechanism work remains outside AG-Sept; `VAL-LOAD-1` is a
-  bounded characterisation attached to the already-selected capacity experiment, not a new
+  bounded characterisation attached to an already-secured capacity result, not a new
   admission-control design problem.
 - **Instrumentation:** the old PostgreSQL/node-exporter choices are no longer schedule owners. The
   durable obligations are the evidence needed to identify/bound each quoted result's frontier and
@@ -690,11 +684,10 @@ The public-ready milestone should leave:
 4. aggregated service/runtime/resource evidence sufficient for the claims made;
 5. the single-instance frontier report;
 6. the multi-authority correctness/failure-isolation report;
-7. the PR4a measurement-qualification record and the PR4b **local sustained G1/G2/G4 capacity/scale
-   report** — delivered with `G4_local` established and `E2_local`/`E4_local` withheld, the
-   unresolved `G1`/`G2` knees and their storage-path cause reported in place of them; if optional
-   PR4c runs, a separate independently provisioned verification result with `E2_aws`/`E4_aws`,
-   otherwise an explicit `VAL-SCALE-5`-unproven result;
+7. the PR4a measurement-qualification record and PR4b local sustained result — delivered with
+   `G4_local` established and `E2_local`/`E4_local` withheld — plus any PR4c evidence actually
+   executed: at minimum the Stage-0 diagnostic if funded, and only if a later complete Tier-1 run
+   occurs, independently provisioned `E2_aws`/`E4_aws`; otherwise `VAL-SCALE-5` stays explicit;
 8. current and intended architecture diagrams;
 9. authority and bottleneck analysis across the scaling axes actually measured, with unmeasured
    axes named explicitly;
@@ -717,32 +710,29 @@ explicitly recorded as unproven.
 
 Before PR5 can close Iteration C and judge the AG-Sept Goal:
 
-- PR4a has qualified the reusable method and run primitives defined by the validation plan:
-  independent `workers_per_group`, explicit conditioning with auditable population boundaries, one
-  fixed pool policy, fixture-sizing/headroom checks, generator/resource/reconciliation evidence,
-  and the canonical 600 s run shape without the known benchmark-induced cached-plan regime;
-- PR4b has performed adaptive bracket selection and final fixture sizing, then executed the full
-  local G1/G2/G4 S/H + confirmation method and retained an admissible `VAL-SCALE-6` result or an
-  explicit unresolved local verdict, with `E2_local`/`E4_local` reported only when the evidence
-  supports them;
-- if optional PR4c was scheduled, the complete independent environment is reproducible with
-  equivalent non-burstable capacity-unit hosts and separate generator compute, and the strongest
-  Tier-1/Tier-2 evidence it supports is retained;
-- if PR4c was not scheduled because the complete environment remained unavailable, the AWS quota/
-  provisioning limitation is retained, no local or partial-AWS result is promoted into independent
-  capacity evidence, and `VAL-SCALE-5` is explicitly unproven;
+- PR4a has qualified the reusable method and run primitives defined by the validation plan;
+- PR4b has executed the full local G1/G2/G4 S/H + confirmation method and retained the explicit
+  unresolved `VAL-SCALE-6` verdict without manufacturing `E2_local`/`E4_local`;
+- if PR4c Stage 0 is funded and executed, its G1-A/G1-B/G2 cells are retained as **diagnostic**
+  independent-resource evidence with the first-result decision explicit and no promotion into
+  `G1_aws`/`E2_aws`;
+- if PR4c later escalates to full Tier 1, the complete independent environment is reproducible with
+  equivalent capacity-unit hosts and separate generator compute, and the canonical retained method
+  supports the `VAL-SCALE-5` claim;
+- if the complete G4 environment remains unavailable or the probe does not justify escalation,
+  `VAL-SCALE-5` is explicitly unproven and no local or partial-AWS result substitutes for it;
 - response validation, conditioning-aware reconciliation, provenance and applicable resource
   controls are demonstrated for every result actually quoted;
-- outcomes and persisted state reconcile on every participating authority for quoted runs;
+- outcomes and persisted state reconcile on every participating authority for interpreted runs;
 - measured facts, calculations, interpretation, and limitations are separated;
 - architecture reflects evidence rather than desired presentation;
 - the repository remains suitable for public review under the disclosure policy.
 
 **Successful AWS capacity measurement is not an Iteration C exit gate.** PR4b's complete local
-characterisation is the mandatory evidence-producing path; PR4c is optional strengthening of the
-independent-provisioning claim. The exit gate is an honest, reviewable result at the strongest
-actually available evidence level, with the stronger requirement left explicitly unproven when
-external provisioning prevents its test.
+characterisation remains the mandatory evidence-producing path; PR4c strengthens the independent-
+provisioning story only to the level actually supported. The exit gate is an honest, reviewable
+result at the strongest evidence level reached, with the stronger requirement left explicitly
+unproven when provisioning or measurement prevents its test.
 
 PR5 then records the required Analyse & Review outcome and closes the **AG-Sept** engineering loop.
 It does not start the next Alloca iteration. Any continuation after AG-Sept begins with a separate

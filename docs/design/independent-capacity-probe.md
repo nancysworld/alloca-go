@@ -39,16 +39,18 @@ matrix is justified:
 The result determines what, if anything, is worth proposing afterwards. No later experiment is part
 of this design by default.
 
-## 2. Probe topology
+## 2. Probe topology and naming
 
 The smallest useful topology is two equivalent capacity-unit hosts plus generator/measurement
-compute outside both units:
+compute outside both units. Capacity units use **numeric `CU*` identities** while organisations keep
+the established **letter identities A/B/C/D**. The namespaces are deliberately distinct so topology
+notation cannot be confused with organisation placement.
 
 ```text
                  generator / measurement host
                          /             \
                         v               v
-             capacity unit A      capacity unit B
+                capacity CU1       capacity CU2
              +-------------+      +-------------+
              | alloca-go   |      | alloca-go   |
              | PostgreSQL  |      | PostgreSQL  |
@@ -87,10 +89,10 @@ fabric, or underlying storage fleet. This experiment does not claim physical iso
 cloud provider. Those provider layers are part of the recorded environment and are bounded through
 per-host evidence when they become plausible explanations.
 
-The storage **shape** must be equivalent across A and B: same volume class, size and any explicit
+The storage **shape** must be equivalent across CU1 and CU2: same volume class, size and any explicit
 IOPS/throughput configuration. Whether PostgreSQL uses a dedicated data volume or the instance's own
-root-volume set is an implementation choice for PR4c, but the choice must be identical for A and B
-and each unit's storage allocation must remain separate.
+root-volume set is an implementation choice for PR4c, but the choice must be identical for CU1 and
+CU2 and each unit's storage allocation must remain separate.
 
 ## 4. Use the same two units separately, then together
 
@@ -100,14 +102,14 @@ third host.
 The three measured probes are:
 
 ```text
-G1-A      unit A alone, one authority owns organisations A/B/C/D
-G1-B      unit B alone, one authority owns organisations A/B/C/D
-G2-A+B    unit A owns A/B; unit B owns C/D
+G1-CU1        CU1 alone; one authority owns organisations A/B/C/D
+G1-CU2        CU2 alone; one authority owns organisations A/B/C/D
+G2-CU1+CU2    CU1 owns organisations A/B; CU2 owns C/D
 ```
 
-`G1-A` and `G1-B` are two observations of the **capacity-unit design on two independent units**, not
-two repeated runs of one host. `G2-A+B` then composes exactly those two units. Placement is reset
-between cells; persisted state is not carried from one topology into another.
+`G1-CU1` and `G1-CU2` are two observations of the **capacity-unit design on two independent units**,
+not two repeated runs of one host. `G2-CU1+CU2` then composes exactly those two units. Placement is
+reset between cells; persisted state is not carried from one topology into another.
 
 This paired shape answers a stronger diagnostic question than `G2 / (2 x one arbitrary G1)` because
 one unusually fast or slow baseline host cannot silently become the denominator for both units.
@@ -146,7 +148,7 @@ an environment result:
 
 - run manifest, source revision, deployed image identity and placement assignment;
 - EC2 instance shape, vCPU count and memory allocation;
-- storage class/configuration and the fact that A/B use separate allocations;
+- storage class/configuration and the fact that CU1/CU2 use separate allocations;
 - host CPU, memory, disk throughput/utilisation/queueing and network counters for each serving unit;
 - service/runtime, pool and PostgreSQL panels per authority;
 - conditioning boundary and start/end persisted-state evidence;
@@ -162,22 +164,25 @@ reproducibility and are not committed.
 For the common probe level `P`, report the three full-window fresh-mutation Goodput observations:
 
 ```text
-g1_A(P)
-g1_B(P)
-g2_AB(P)
+g1_CU1(P)
+g1_CU2(P)
+g2_CU1_CU2(P)
 ```
 
-Report the two-unit baseline difference explicitly, for example as the symmetric relative spread:
+Report the two-unit baseline difference explicitly as the symmetric relative spread:
 
 ```text
-U1_probe = |g1_A - g1_B| / mean(g1_A, g1_B)
+D_unit_probe = |g1_CU1 - g1_CU2| / mean(g1_CU1, g1_CU2)
 ```
 
 and derive the paired composition ratio:
 
 ```text
-R2_probe = g2_AB(P) / (g1_A(P) + g1_B(P))
+R2_probe = g2_CU1_CU2(P) / (g1_CU1(P) + g1_CU2(P))
 ```
+
+`D_unit_probe` describes only the observed difference between CU1 and CU2 in this pass. It is not a
+run-to-run variance estimate or confidence interval.
 
 `R2_probe` is **diagnostic only**. It is not `E2_aws`, does not establish saturation, does not
 establish a capacity multiplier, and cannot discharge `VAL-SCALE-5`. The raw per-unit values are
@@ -189,18 +194,18 @@ cannot hide one constrained unit behind another.
 ## 8. There is no precision target for the probe
 
 PR4b demonstrated why precision must not be assumed from one environment. PR4c therefore has no
-5%, 10%, or other pass threshold for `U1_probe` or `R2_probe`.
+5%, 10%, or other pass threshold for `D_unit_probe` or `R2_probe`.
 
 The decision is architectural and prospective:
 
-- **clear composition signal + intelligible A/B behaviour** → a different independent experiment
+- **clear composition signal + intelligible CU1/CU2 behaviour** → a different independent experiment
   may be worth proposing;
-- **large A/B variation** → first decide whether repeated baselines or a better-controlled AWS
+- **large CU1/CU2 variation** → first decide whether repeated baselines or a better-controlled AWS
   resource shape could resolve the denominator; do not manufacture precision by averaging an
   unplanned population;
-- **G2 materially below what A+B suggest** → inspect per-unit resource and workload evidence before
-  deciding whether the architecture, storage/network environment, generator, or configuration is
-  responsible;
+- **G2 materially below what CU1+CU2 suggest** → inspect per-unit resource and workload evidence
+  before deciding whether the architecture, storage/network environment, generator, or
+  configuration is responsible;
 - **generator/provenance/reconciliation failure** → the probe is uninterpretable, regardless of its
   throughput number.
 

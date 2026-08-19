@@ -250,6 +250,18 @@ export ALLOCA_POOL_MAX_CONNS
 # settle a knee.
 recon_margin="${ITC_RECON_MARGIN:-5}"
 
+# recon_level reads a selected level out of a reconnaissance report: $1 the report, $2 the label.
+#
+# **One reader, because two readers of the same line drifted.** Both `fixture` and `capacity` parsed
+# these lines with `awk '{print $NF}'`. When the report gained a parenthetical after each level —
+# "selected S 12 (lowest level on the discovered plateau)" — `capacity` was corrected and `fixture`
+# was not, so `fixture` went looking for a probe rate for level "plateau)". Nothing tied the two
+# together, and `make ci` had nothing to say about it: the coupling was two similar lines in one
+# file with no shared definition.
+recon_level() {
+  sed -n "s/^  $2  *\([0-9][0-9]*\).*/\1/p" "$1"
+}
+
 CONDITIONING_SLOTS="${CONDITIONING_SLOTS:-200}"
 CONDITIONING_TARGET="${CONDITIONING_TARGET:-4000}"
 SLOTS="${SLOTS:-3200}"
@@ -949,8 +961,8 @@ print('%.1f' % (s['successful_mutation_goodput'] / s['duration_seconds']))" "${c
     covered=""
     for report in $reports; do
       groups="$(basename "$report" | sed 's/^recon-G//; s/\.txt$//')"
-      s_level="$(awk '/^  selected S/{print $NF}' "$report")"
-      h_level="$(awk '/^  deciding H/{print $NF}' "$report")"
+      s_level="$(recon_level "$report" 'selected S')"
+      h_level="$(recon_level "$report" 'deciding H')"
       [ -n "$s_level" ] && [ -n "$h_level" ] \
         || fail "$report names no selected S or deciding H, so it is not a completed
   reconnaissance. Re-run recon for G$groups before sizing the fixture."
@@ -1058,8 +1070,8 @@ SIZING
       report="test/results/$recon_group/recon-G${groups}.txt"
       [ -f "$report" ] || fail "no reconnaissance report at $report, so G$groups has no selected
   bracket. §4.6.4 discovers the bracket; this stage only measures it."
-      S="$(sed -n 's/^  selected S  *\([0-9][0-9]*\).*/\1/p' "$report")"
-      H="$(sed -n 's/^  deciding H  *\([0-9][0-9]*\).*/\1/p' "$report")"
+      S="$(recon_level "$report" 'selected S')"
+      H="$(recon_level "$report" 'deciding H')"
       [ -n "$S" ] && [ -n "$H" ] || fail "$report names no selected S or deciding H"
       # A reconnaissance whose lower-side check failed proposes no bracket. Reading S out of it
       # anyway would spend four 600 s runs on a level its own report refused to stand behind.

@@ -1,15 +1,17 @@
 # AG-Sept PR4c — probe-first AWS independent verification
 
-**Status:** Proposed execution plan — design/validation ready for review before AWS implementation.  
+**Status:** Scheduled — bounded AWS independent-capacity probe.  
 **Milestone:** AG-Sept, Iteration C.  
 **Predecessor:** PR4b (#20), merged 2026-08-19.  
+**Budget:** **1.0 development day**, transferred from AG-Sept contingency by maintainer decision on
+2026-08-19.  
 **Design:** [`../design/independent-capacity-probe.md`](../design/independent-capacity-probe.md).  
 **Validation:** [`../test/validation-plan/ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md).  
 **Milestone schedule/budget owner:** [`ag-sept-plan.md`](ag-sept-plan.md).
 
-This is a focused PR4c execution plan. It does not replace the milestone plan's accounting or the
-governing `VAL-SCALE-5` definition. The milestone plan must receive the final budget/status update
-before metered AWS execution begins.
+This is the focused PR4c execution plan. It does not replace the milestone plan's accounting or the
+governing `VAL-SCALE-5` definition. PR4c is **the bounded AWS probe described here**; no subsequent
+phase, larger matrix, or additional contingency draw is scheduled by implication.
 
 ## 1. Why PR4c changed shape
 
@@ -31,16 +33,17 @@ small independent G1/G2 probe
         v
 first result + environment evidence
         |
-        +--> stop/defer
-        +--> one bounded discriminating repeat
-        +--> justify fuller retained AWS experiment
+        +--> enough to conclude / defer
+        +--> one bounded discriminating repeat, only if a specific ambiguity demands it
+        +--> record that a different future experiment may be worthwhile
 ```
 
-The first result decides the second spend.
+The first result decides whether any further experiment should even be proposed. **No fuller AWS
+campaign is currently planned.**
 
-## 2. Stage 0 — the scheduled first experiment
+## 2. The scheduled experiment
 
-Stage 0 is deliberately small:
+PR4c is deliberately small:
 
 ```text
 G1-A      one independent serving unit A
@@ -58,7 +61,7 @@ The first measured pass is three **120 s diagnostic cells** at the validation pl
 `workers_per_group=12`, after the normal explicit conditioning/recycle sequence. These are not the
 canonical 600 s capacity points.
 
-## 3. Stage-0 implementation scope
+## 3. Implementation scope
 
 Only build what the three-cell probe requires:
 
@@ -78,7 +81,7 @@ Only build what the three-cell probe requires:
    - route the existing independent `workers_per_group` streams to remote targets;
    - retain per-host/per-authority metrics and environment/provenance evidence;
    - reuse explicit conditioning, state-preserving recycle, response validation and reconciliation.
-5. **Drive the three Stage-0 cells**
+5. **Drive the three probe cells**
    - G1-A, G1-B, then G2-A+B;
    - retain raw rates, per-unit resource evidence and the diagnostic `U1_probe`/`R2_probe` derivation.
 6. **Stop and decide**
@@ -86,7 +89,7 @@ Only build what the three-cell probe requires:
    - do not begin a 600 s matrix in the same execution session merely because the first result looks
      promising.
 
-## 4. What Stage 0 deliberately does not build
+## 4. What PR4c deliberately does not build
 
 - G4 under the current quota;
 - the full Tier-1 S/H + both-confirmations matrix;
@@ -96,12 +99,13 @@ Only build what the three-cell probe requires:
 - the local off-VHDX `DEBT-8` killing test;
 - `VAL-LOAD-1` open-loop work.
 
-The full AWS capacity campaign remains a **second decision**, not hidden scope in this PR4c starting
-plan.
+A fuller AWS capacity campaign is **not part of the current plan**. If this probe produces evidence
+that makes a different experiment worth considering, that is a new planning decision made after
+PR4c evidence exists.
 
 ## 5. Evidence and result boundary
 
-Stage 0 reports:
+PR4c reports:
 
 ```text
 g1_A(12)
@@ -117,30 +121,26 @@ It does **not** report `G1_aws`, `G2_aws`, `E2_aws`, or discharge `VAL-SCALE-5`.
 precisely because it can be cheap without pretending to have the precision or saturation evidence
 of the full method.
 
-A positive Stage-0 result supports the architecture statement that independently provisioned shard
+A positive probe result supports the architecture statement that independently provisioned shard
 groups can compose useful capacity under the observed workload/environment. The strength of that
 statement is bounded by one short observation per cell and the observed A/B variation.
 
-## 6. Budget decision before execution
+## 6. Budget
 
-The milestone plan currently allocates **0.0 days** to PR4c and retains **2.0 days of contingency**.
-Starting the planning branch does not silently change that accounting.
+**Allocated: 1.0 day from the remaining AG-Sept contingency** (maintainer decision, 2026-08-19).
+The milestone plan records the transfer; this is a funded work unit, not an implicit draw.
 
-**Recommended allocation for Stage 0: 1.0 day from contingency.** That funds the first AWS bootstrap,
-minimal remote-harness adaptation, the three short probes, evidence retention, analysis/reporting and
-normal review/fix margin. First-time cloud setup makes 0.5 day a deliberate shortfall even though the
-measured cells themselves are short.
+The day covers the first AWS bootstrap, minimal remote-harness adaptation, three short probes,
+evidence retention, analysis/reporting, normal review/fix margin and—only if the first result leaves
+one sharply stated ambiguity—a bounded discriminating repeat that still fits the same day.
 
-The recommendation is intentionally **Stage-0 only**. If the first result justifies a full retained
-Tier-1 attempt, its scope and budget are decided separately after the evidence exists. No remaining
-contingency is pre-committed to it here.
+The allocation does **not** pre-fund a complete G1/G2/G4 Tier-1 campaign or any other follow-on
+experiment. If PR4c indicates that such work may be worthwhile, the proposal competes for budget
+only after this PR's evidence is reviewed.
 
-No metered AWS execution should begin until the maintainer accepts a budget and the milestone plan's
-numeric accounting is updated.
+## 7. Exit gate
 
-## 7. Stage-0 exit gate
-
-Stage 0 is complete when:
+PR4c is complete when:
 
 - the independent A/B + separate-generator topology is reproducibly bootstrap/teardown-able;
 - all three requested cells ran with the intended topology/configuration or are explicitly refused;
@@ -148,26 +148,24 @@ Stage 0 is complete when:
   per-host evidence checks;
 - raw G1-A/G1-B/G2 observations and `U1_probe`/`R2_probe` are retained with their diagnostic label;
 - the first-result decision is recorded as `PROCEED`, `BOUNDED REPEAT`, or `STOP / DEFER`;
-- `VAL-SCALE-5` remains explicitly unproven unless a later, separately planned Tier-1 experiment
-  actually discharges it;
-- AWS resources are torn down after the bounded session unless a documented immediate follow-up
-  requires them.
+- `VAL-SCALE-5` remains explicitly unproven because this bounded probe is not the complete Tier-1
+  validation;
+- AWS resources are torn down after the bounded session unless a documented immediate corrective
+  action inside this same funded scope requires them.
 
-## 8. If Stage 0 says PROCEED
+## 8. What `PROCEED` means
 
-Do **not** assume the next step is automatically the original twelve-run G1/G2/G4 matrix. Use the
-probe to choose the smallest next experiment that can change the architecture conclusion.
+`PROCEED` is **not a scheduled next stage**. It means only that this probe found independent-unit
+behaviour sufficiently intelligible that a later experiment could be worth proposing.
 
-Questions Stage 0 may answer first include:
+Questions the probe may answer include:
 
-- are A and B close enough that one canonical G1 denominator is defensible, or should a fuller AWS
-  method baseline multiple units individually?;
-- is generator capacity adequate for G2 and likely G4, or must it be resized before any retained
-  capacity attempt?;
-- does per-unit storage behave reproducibly enough that the 5% materiality resolution is realistic,
-  or should the final claim target coarser architecture discrimination rather than precision?;
-- does G2 expose a new bottleneck that makes G4 premature even if quota arrives?
+- are A and B close enough that one canonical G1 denominator might be defensible, or would a future
+  method need to baseline multiple units individually?;
+- is generator capacity adequate for G2 and plausibly larger topologies, or is measurement compute
+  already the practical boundary?;
+- does per-unit storage behave reproducibly enough that the 5% materiality resolution looks
+  realistic, or should any future claim target coarser architecture discrimination instead?;
+- does G2 expose a new bottleneck that makes a larger topology irrelevant to the current question?
 
-Only after those are answered do we choose whether to wait for the requested quota increase and
-attempt complete G1/G2/G4 Tier 1, run one bounded repeat, or close Iteration C with the strongest
-available evidence.
+Those are inputs to a **future decision**, not placeholders for predeclared PR4c stages.

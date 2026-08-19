@@ -103,6 +103,8 @@ capacity evidence.
 | **Host CPU stolen and blocked (cores)** | was the host prevented from running? | `steal` is the hypervisor taking the CPU — the WSL2 candidate; `iowait` is blocking on storage — the Docker Desktop storage-path candidate. Both are small next to total busy, which is why they have their own graph |
 | **Host run queue (load average)** | is work waiting rather than being done? | `node_load1` against the CPU count. **A one-minute average cannot resolve a stall inside a 60 s cell** — it is still filling for most of one |
 | **Host memory available** | did the host have room? | *available*, not free: free excludes reclaimable page cache and reads as exhaustion on a healthy machine |
+| **Host disk throughput** | how many bytes is the storage path actually accepting? | written and read per second, host-wide. PR4b's local capacity result turned on this: Goodput tracked delivered write bandwidth at a near-constant 65–72 mutations per MiB, so a run that fell 25% short had been given 25% fewer bytes, not asked for less work (`ag-sept-pr4.md` §3.30) |
+| **Host disk utilisation and queue depth** | is the device busy, or is it *full*? | **read them together — either alone misleads.** Utilisation is the fraction of wall time with at least one I/O in flight, so ~1.0 means *never idle*, **not** saturated: PR4b measured ~1.0 at G1, G2 and G4 while G4 extracted three times G1's write bandwidth at three to four times the queue depth. Queue depth is what separates them |
 
 **PSI is missing, and it is the instrument this view actually wants.** `/proc/pressure` does not
 exist on the WSL2 kernel, so `node_scrape_collector_success{collector="pressure"}` reads 0 and the

@@ -23,10 +23,12 @@ repository. It was caught by the maintainer asking where the figures came from.
 `host_disk_write_bytes` — so every future cell retains them at run time and needs no backfill. This
 directory exists only because these sixteen runs predate that fix.
 
-They are `display: false`: **exported, not plotted.** The dashboard is capped at 20 graphs by a test
-whose comment says adding one is a scope decision rather than a tidy-up, and closing this evidence
-gap does not require plotting anything. Whether the storage series should also appear on the
-dashboard is left as a maintainer decision (`gen-dashboard.py`, host section).
+They are also **plotted**, as two graphs in the dashboard's host section (maintainer decision,
+2026-08-19, recorded at the graph bound in `internal/observability/panels_test.go`). Defining the
+panels would have closed the retention gap on its own; plotting them closes the other half that
+bound's comment names — an unplotted series is *recoverable*, not *noticed*, and the storage path
+is now the leading candidate behind an unresolved local knee that a future degraded cell would need
+to read without knowing to look for it.
 
 ## Provenance of these files
 

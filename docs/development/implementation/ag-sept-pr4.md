@@ -1953,10 +1953,17 @@ Three separate faults, and only the first is about storage:
   per-point pairing it inverts. That is the shape of a result found by choosing comparisons rather
   than by making them.
 
-The durable fixes are upstream: four disk panels are now defined in `panels.json` and plotted, so
-every future cell retains them at run time. The sixteen runs that predate the fix carry a
-`disk-io-backfill/` directory whose README states that the series were recovered from the surviving
-TSDB after the fact, with the queries used.
+The durable fixes are upstream: four disk panels are now defined in `panels.json`, so every future
+cell retains them at run time, and they are **plotted** as two graphs in the dashboard's host
+section (maintainer decision, 2026-08-19, recorded at the graph bound in
+`internal/observability/panels_test.go`). Defining them closes the retention half on its own;
+plotting closes the half that bound's own comment names, that an unplotted series is *recoverable*
+but not *noticed* — which is the condition a future degraded cell would be read under. Utilisation
+and queue depth share one graph because either alone misleads: utilisation sat at ~1.0 at every
+topology while the device was demonstrably not saturated.
+
+The sixteen runs that predate the fix carry a `disk-io-backfill/` directory whose README states
+that the series were recovered from the surviving TSDB after the fact, with the queries used.
 
 `G1_local` is the denominator of both efficiencies and is the least reproducible quantity in the
 experiment. **On this environment neither `E2_local` nor `E4_local` can be derived to a 5% margin,

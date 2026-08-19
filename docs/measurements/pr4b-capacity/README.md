@@ -44,17 +44,23 @@ supply.
 Rates are the full-600 s horizon average of fresh-mutation Goodput from a fixed conditioned start,
 which is §4.6.5's comparison quantity. No number is read from a sub-interval.
 
-| topology | S (12) | H (16) | S confirm | H confirm | S reproduces | H reproduces | H beats S |
+The final column is §4.6.5's pairwise upper-side test: **no `H` observation may materially exceed
+any `S` observation**, which is `max(H)` against `min(S)`. A "yes" means the bracket failed it.
+
+| topology | S (12) | H (16) | S confirm | H confirm | S reproduces | H reproduces | any H beats any S |
 |---|---:|---:|---:|---:|---|---|---|
-| G1 | 1080.1 | 1032.6 | 1094.0 | 1193.8 | yes, 1.3% | **no, 15.6%** | **yes, 9.1%** |
-| G2 | 2259.0 | 2323.1 | 2450.8 | 2477.7 | **no, 8.5%** | **no, 6.7%** | no |
-| G4 | 3494.8 | 3509.5 | 3492.9 | 3543.5 | yes, 0.1% | yes, 1.0% | no |
+| G1 | 1080.1 | 1032.6 | 1094.0 | 1193.8 | yes, 1.3% | **no, 15.6%** | **yes, 10.5%** |
+| G2 | 2259.0 | 2323.1 | 2450.8 | 2477.7 | **no, 8.5%** | **no, 6.7%** | **yes, 9.7%** |
+| G4 | 3494.8 | 3509.5 | 3492.9 | 3543.5 | yes, 0.1% | yes, 1.0% | no, 1.4% |
 
 **`G4_local` = 3493.9/s** — the mean of two selected-point observations agreeing to 0.1%, with a
 deciding higher point that reproduces to 1.0% and does not beat it. This is the one resolved knee.
 
 **G1 and G2 are explicitly unresolved.** At G1 the two `H` observations disagree by 15.6% and the
-higher exceeds the best `S` by 9.1%; at G2 neither point reproduces within the 5% margin.
+best `H` exceeds the weakest `S` by 10.5%; at G2 neither point reproduces within the 5% margin
+**and** the upper-side test fails at 9.7%. Both figures are the pairwise comparison §4.6.5 defines;
+an earlier version of this table compared extreme against extreme, which understated G1 as 9.1% and
+recorded G2 as passing a test it does not (`ag-sept-pr4.md` §3.32).
 
 [`capacity-result.txt`](capacity-result.txt) is re-derivable from the runs' own manifests and states
 the threshold it applied:

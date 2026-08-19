@@ -9,15 +9,16 @@ sequence, the same ordinary measurement path. They differ only in when they ran.
 ## Why it was driven
 
 The retained comparison ([`../pr4b-capacity/`](../pr4b-capacity/)) left G1's knee unresolved: the two
-`H` observations disagreed by 15.6% and the higher one exceeded the best `S` by 9.1%. Two
+`H` observations disagreed by 15.6% and the best `H` exceeded the weakest `S` by 10.5%. Two
 explanations fit that equally well from the comparison alone, and they call for opposite responses.
 
 The first was **run position**. §4.6.5 prescribes the order `S`, `H`, `S`-confirmation,
 `H`-confirmation, so `S` always occupies positions 1 and 3 of a series and `H` always 2 and 4. The
 observed rates rose with position — G2 monotonically at +0.0%, +2.8%, +8.5%, +9.7%, and G1's
-position-4 run was its highest at +10.5% — which is on its own enough to manufacture a 9.1% "H beats
-S" with no difference between 12 and 16 workers existing at all. Had that been the cause, the method
-was at fault and the remedy was to counterbalance the order.
+position-4 run was its highest at +10.5% — which is on its own enough to manufacture the upper-side
+failure with no difference between 12 and 16 workers existing at all. The two figures coincide
+because they are the same pair of runs: the weakest `S` is position 1 and the best `H` is position 4.
+Had that been the cause, the method was at fault and the remedy was to counterbalance the order.
 
 The second was that **G1 simply does not reproduce at 600 s**, in which case no run order helps.
 

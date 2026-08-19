@@ -1840,17 +1840,25 @@ against the run that was *asked for* rather than the run that happened. All twel
 reconciled.
 
 ```text
-              S      H   S-conf  H-conf    S repro   H repro   H beats S
-  G1     1080.1 1032.6   1094.0  1193.8       1.3%     15.6%      yes, 9.1%
-  G2     2259.0 2323.1   2450.8  2477.7       8.5%      6.7%      no
-  G4     3494.8 3509.5   3492.9  3543.5       0.1%      1.0%      no
+              S      H   S-conf  H-conf    S repro   H repro   any H beats any S
+  G1     1080.1 1032.6   1094.0  1193.8       1.3%     15.6%      yes, 10.5%
+  G2     2259.0 2323.1   2450.8  2477.7       8.5%      6.7%      yes,  9.7%
+  G4     3494.8 3509.5   3492.9  3543.5       0.1%      1.0%      no,   1.4%
 ```
 
 **`G4_local` = 3493.9/s**, the mean of two selected-point observations agreeing to 0.1%, with a
 deciding higher point that reproduces to 1.0% and does not beat it.
 
 **`G1` and `G2` are explicitly unresolved**, so `G1_local` and `G2_local` are withheld and, because
-`G1_local` is the denominator of both, `E2_local` and `E4_local` with them.
+`G1_local` is the denominator of both, `E2_local` and `E4_local` with them. `G1` fails on `H`'s
+reproducibility and on the upper-side test; `G2` fails on both points' reproducibility *and* the
+upper-side test. Only `G4` passes all three.
+
+The upper-side figures above are §4.6.5's pairwise comparison — `max(H)` against `min(S)` — which
+§3.32 records as a correction: the original implementation compared extreme against extreme, which
+understated `G1` and recorded `G2` as passing a test it does not. Neither topology's disposition
+changes, because both were already unresolved on reproducibility; what changes is the accuracy of
+the reason given.
 
 No retained resource signal distinguishes `G1`'s four runs: host CPU busy 2.3–2.4%, memory available
 within 0.2%, run queue 7.4–8.0, active backends 4.4–5.0, wait events 1.8–2.0, and all four took
@@ -1863,8 +1871,12 @@ rather than diverging part-way.
 §4.6.5 prescribes `S`, `H`, `S`-confirmation, `H`-confirmation, so `S` always occupies positions 1
 and 3 of a series and `H` always 2 and 4. The observed rates rose with position — `G2` monotonically
 at +0.0%, +2.8%, +8.5%, +9.7%, and `G1`'s position-4 run highest at +10.5% — which is on its own
-enough to manufacture the 9.1% "H beats S" that left `G1` unresolved, with no difference between 12
-and 16 workers existing at all. That was recorded as the leading hypothesis and the remedy would have
+enough to manufacture the upper-side failure that left `G1` unresolved, with no difference between
+12 and 16 workers existing at all. Under §4.6.5's pairwise rule the two are not merely similar in
+size, they are **the same comparison**: `G1`'s weakest `S` is `g1-s` at position 1 and its best `H`
+is `g1-h-confirm` at position 4, so "best `H` exceeds weakest `S` by 10.5%" and "position 4 exceeded
+position 1 by 10.5%" are one measurement read two ways. That is what made the hypothesis worth a
+control rather than an argument. That was recorded as the leading hypothesis and the remedy would have
 been to counterbalance the order.
 
 **Four identical 600 s `G1` runs at 12 workers refuted it**

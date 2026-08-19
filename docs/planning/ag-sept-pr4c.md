@@ -38,11 +38,10 @@ first result + environment evidence
         |
         +--> enough to conclude / defer
         +--> one bounded discriminating repeat, only if a specific ambiguity demands it
-        +--> record that a different future experiment may be worthwhile
+        +--> carry a fuller experiment forward as a post-AG-Sept candidate
 ```
 
-The first result decides whether any further experiment should even be proposed. **No fuller AWS
-campaign is currently planned.**
+The probe result completes PR4c. **No fuller AWS campaign is currently planned inside AG-Sept.**
 
 ## 2. The scheduled experiment
 
@@ -63,6 +62,11 @@ architecture.
 The first measured pass is three **120 s diagnostic cells** at the validation plan's common
 `workers_per_group=12`, after the normal explicit conditioning/recycle sequence. These are not the
 canonical 600 s capacity points.
+
+At the selected two-vCPU serving-unit shape, a complete G4 environment plus separate generator
+compute needs approximately **9 vCPU or more**. The current quota therefore cannot support the full
+Tier-1 family even if the probe result is excellent. A larger experiment waits for sufficient quota
+and a separate post-AG-Sept planning decision.
 
 ## 3. Implementation scope
 
@@ -89,7 +93,7 @@ Only build what the three-cell probe requires:
    - retain raw rates, per-unit resource evidence and the diagnostic `D_unit_probe`/`R2_probe`
      derivation.
 6. **Stop and decide**
-   - report one of `PROCEED`, `BOUNDED REPEAT`, `STOP / DEFER` from the validation plan;
+   - report one of `CARRY FORWARD`, `BOUNDED REPEAT`, `STOP / DEFER` from the validation plan;
    - do not begin a 600 s matrix in the same execution session merely because the first result looks
      promising.
 
@@ -103,9 +107,9 @@ Only build what the three-cell probe requires:
 - the local off-VHDX `DEBT-8` killing test;
 - `VAL-LOAD-1` open-loop work.
 
-A fuller AWS capacity campaign is **not part of the current plan**. If this probe produces evidence
-that makes a different experiment worth considering, that is a new planning decision made after
-PR4c evidence exists.
+A fuller AWS capacity campaign is **not part of AG-Sept's current plan**. If this probe produces
+evidence that makes one worthwhile, PR5 records it as a post-milestone candidate rather than
+scheduling it by momentum.
 
 ## 5. Evidence and result boundary
 
@@ -139,8 +143,8 @@ evidence retention, analysis/reporting, normal review/fix margin and—only if t
 one sharply stated ambiguity—a bounded discriminating repeat that still fits the same day.
 
 The allocation does **not** pre-fund a complete G1/G2/G4 Tier-1 campaign or any other follow-on
-experiment. If PR4c indicates that such work may be worthwhile, the proposal competes for budget
-only after this PR's evidence is reviewed.
+experiment. A promising result is carried into post-AG-Sept planning rather than competing for an
+implicit continuation of this allocation.
 
 ## 7. Exit gate
 
@@ -152,18 +156,19 @@ PR4c is complete when:
   per-host evidence checks;
 - raw `G1-CU1`/`G1-CU2`/`G2-CU1+CU2` observations and `D_unit_probe`/`R2_probe` are retained with
   their diagnostic label;
-- the first-result decision is recorded as `PROCEED`, `BOUNDED REPEAT`, or `STOP / DEFER`;
+- the result decision is recorded as `CARRY FORWARD`, `BOUNDED REPEAT`, or `STOP / DEFER`;
 - `VAL-SCALE-5` remains explicitly unproven because this bounded probe is not the complete Tier-1
   validation;
 - AWS resources are torn down after the bounded session unless a documented immediate corrective
   action inside this same funded scope requires them.
 
-## 8. What `PROCEED` means
+## 8. What `CARRY FORWARD` means
 
-`PROCEED` is **not a scheduled next stage**. It means only that this probe found independent-unit
-behaviour sufficiently intelligible that a later experiment could be worth proposing.
+`CARRY FORWARD` means only that this probe found independent-unit behaviour sufficiently intelligible
+that the fuller independent-capacity question is worth recording as a **post-AG-Sept candidate**.
+It is not a scheduled next stage and carries no budget or execution commitment.
 
-Questions the probe may answer include:
+Questions the probe may leave for that future work include:
 
 - are CU1 and CU2 close enough that one canonical G1 denominator might be defensible, or would a
   future method need to baseline multiple units individually?;
@@ -173,4 +178,5 @@ Questions the probe may answer include:
   realistic, or should any future claim target coarser architecture discrimination instead?;
 - does G2 expose a new bottleneck that makes a larger topology irrelevant to the current question?
 
-Those are inputs to a **future decision**, not placeholders for predeclared PR4c stages.
+Those questions are inputs to a later kickoff after AG-Sept, not placeholders for predeclared PR4c
+stages.

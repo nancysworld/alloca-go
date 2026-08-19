@@ -13,6 +13,9 @@ This is the focused PR4c execution plan. It does not replace the milestone plan'
 governing `VAL-SCALE-5` definition. PR4c is **the bounded AWS probe described here**; no subsequent
 phase, larger matrix, or additional contingency draw is scheduled by implication.
 
+Capacity units use numeric identities **CU1/CU2**. Organisations retain **A/B/C/D**. This distinction
+is carried through probe names, placement, manifests and reports.
+
 ## 1. Why PR4c changed shape
 
 PR4b was originally expected to be only a local rehearsal before AWS. It did more than that: the
@@ -46,9 +49,9 @@ campaign is currently planned.**
 PR4c is deliberately small:
 
 ```text
-G1-A      one independent serving unit A
-G1-B      one equivalent independent serving unit B
-G2-A+B    the same two units composed
+G1-CU1        independent capacity unit CU1 alone
+G1-CU2        equivalent capacity unit CU2 alone
+G2-CU1+CU2    those same two units composed
 ```
 
 A separate generator/measurement instance drives all three. Under the account's current **5-vCPU
@@ -73,7 +76,7 @@ Only build what the three-cell probe requires:
    - prove teardown is deterministic so metered resources are not left running accidentally.
 2. **Per-unit independent storage**
    - each serving unit receives its own storage allocation/path with the same declared shape;
-   - no filesystem/volume is shared between A and B.
+   - no filesystem/volume is shared between CU1 and CU2.
 3. **Deploy the existing shard-group design**
    - same Alloca-Go image and PostgreSQL configuration on both serving units;
    - per-authority migration, explicit placement, readiness and provenance checks before load.
@@ -82,8 +85,9 @@ Only build what the three-cell probe requires:
    - retain per-host/per-authority metrics and environment/provenance evidence;
    - reuse explicit conditioning, state-preserving recycle, response validation and reconciliation.
 5. **Drive the three probe cells**
-   - G1-A, G1-B, then G2-A+B;
-   - retain raw rates, per-unit resource evidence and the diagnostic `U1_probe`/`R2_probe` derivation.
+   - `G1-CU1`, `G1-CU2`, then `G2-CU1+CU2`;
+   - retain raw rates, per-unit resource evidence and the diagnostic `D_unit_probe`/`R2_probe`
+     derivation.
 6. **Stop and decide**
    - report one of `PROCEED`, `BOUNDED REPEAT`, `STOP / DEFER` from the validation plan;
    - do not begin a 600 s matrix in the same execution session merely because the first result looks
@@ -108,10 +112,10 @@ PR4c evidence exists.
 PR4c reports:
 
 ```text
-g1_A(12)
-g1_B(12)
-g2_AB(12)
-U1_probe
+g1_CU1(12)
+g1_CU2(12)
+g2_CU1_CU2(12)
+D_unit_probe
 R2_probe
 ```
 
@@ -123,7 +127,7 @@ of the full method.
 
 A positive probe result supports the architecture statement that independently provisioned shard
 groups can compose useful capacity under the observed workload/environment. The strength of that
-statement is bounded by one short observation per cell and the observed A/B variation.
+statement is bounded by one short observation per cell and the observed CU1/CU2 difference.
 
 ## 6. Budget
 
@@ -142,11 +146,12 @@ only after this PR's evidence is reviewed.
 
 PR4c is complete when:
 
-- the independent A/B + separate-generator topology is reproducibly bootstrap/teardown-able;
+- the independent CU1/CU2 + separate-generator topology is reproducibly bootstrap/teardown-able;
 - all three requested cells ran with the intended topology/configuration or are explicitly refused;
 - interpreted cells pass response validation, conditioning/reconciliation, provenance and required
   per-host evidence checks;
-- raw G1-A/G1-B/G2 observations and `U1_probe`/`R2_probe` are retained with their diagnostic label;
+- raw `G1-CU1`/`G1-CU2`/`G2-CU1+CU2` observations and `D_unit_probe`/`R2_probe` are retained with
+  their diagnostic label;
 - the first-result decision is recorded as `PROCEED`, `BOUNDED REPEAT`, or `STOP / DEFER`;
 - `VAL-SCALE-5` remains explicitly unproven because this bounded probe is not the complete Tier-1
   validation;
@@ -160,8 +165,8 @@ behaviour sufficiently intelligible that a later experiment could be worth propo
 
 Questions the probe may answer include:
 
-- are A and B close enough that one canonical G1 denominator might be defensible, or would a future
-  method need to baseline multiple units individually?;
+- are CU1 and CU2 close enough that one canonical G1 denominator might be defensible, or would a
+  future method need to baseline multiple units individually?;
 - is generator capacity adequate for G2 and plausibly larger topologies, or is measurement compute
   already the practical boundary?;
 - does per-unit storage behave reproducibly enough that the 5% materiality resolution looks

@@ -1,0 +1,8 @@
+PR4b diagnostic probes, G1 — NO BRACKET IS SELECTED
+driven 2026-08-19T09:49:51Z
+
+These are individual 120s probes at named levels, driven to answer a question about
+the measurement rather than to bracket saturation. No S, no H, no capacity claim.
+
+  workers     probe/s  shape    spread  cell
+  16           1444.7  flat       1.19  test/results/pr4b-drift/repeat-20260819T094622Z/cell-01/

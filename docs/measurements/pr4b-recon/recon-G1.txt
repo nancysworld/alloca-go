@@ -1,0 +1,26 @@
+PR4b reconnaissance, G1 (ag-sept-validation-plan.md §4.6.4)
+driven 2026-08-19T08:45:56Z
+
+NOT CAPACITY EVIDENCE. These are short non-canonical probes. No rate below may be
+quoted, entered into E2/E4, or compared with a 600 s horizon average: a probe reads
+the early part of a trajectory that PR4a measured declining to ~0.75x by 600 s.
+Their only output is the two levels named at the bottom.
+
+  probe duration      120s
+  pool_max_conns      8
+  slots/organisation  15000 at capacity 20
+  conditioning        4000 mutations/org
+  margin              5%  (twice the 2.6% agreement of ten identical healthy
+                      G4 cells, docs/measurements/pr4a-rehearsal/repeats/)
+  ladder              2 4 8 12 16 24 32 48 64 96 128
+  start               16
+
+  workers     probe/s  shape    spread  cell
+  8            1342.8  flat       1.28  test/results/pr4b-recon/repeat-20260819T084235Z/cell-01/
+  12           1411.9  flat       1.28  test/results/pr4b-recon/repeat-20260819T083910Z/cell-01/
+  16           1307.0  flat       1.20  test/results/pr4b-recon/repeat-20260819T083159Z/cell-01/
+  24           1225.9  flat       1.25  test/results/pr4b-recon/repeat-20260819T083541Z/cell-01/
+
+  selected S          12   (lowest level on the discovered plateau)
+  deciding H          16   (higher, and not materially better than S)
+  lower-side check    pass — 12 beats 8 by more than 5%

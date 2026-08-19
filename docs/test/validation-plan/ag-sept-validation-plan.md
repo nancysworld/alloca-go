@@ -808,6 +808,20 @@ composition, does not satisfy REQ-SCALE-4's strongest claim, and does not discha
 The point of the validation is to retain useful controlled evidence without laundering shared-host
 partitioning into independent provisioning.
 
+**Executed 2026-08-19 and NOT discharged.** The method ran end to end and its gates held; the
+environment did not support the result. `G4_local` resolved at 3493.9/s, but `G1`'s run-to-run
+spread is 25.1% under identical conditions — five times this plan's own 5% margin — so `G1_local`
+and `G2_local` are withheld, and with them both efficiencies. Reproducibility scales with the
+number of authorities issuing I/O concurrently (25.1% at G1, 8.5% at G2, 1.0% at G4) and Goodput
+tracks delivered write bandwidth, which places the limit on the shared storage path rather than on
+`alloca-go`. Status, evidence and the maintainer's decision to stop execution are recorded in §9 and
+in `ag-sept-pr4.md` §3.28–§3.30.
+
+**The reproducibility requirement is the part that failed, and it is not negotiable.** A single
+admissible `G1` reading exists; what does not exist is evidence that it describes the topology
+rather than one draw from a 25%-wide distribution. Widening the margin to admit it would make the
+validation pass by redefining the standard it is meant to enforce.
+
 ### VAL-LOAD-1 — Bounded open-loop load-response characterisation
 
 After the closed-loop capacity result is established for the environment being characterised,
@@ -906,8 +920,8 @@ key rather than minting the same logical key in several streams.
 | Phase 1 correctness and failure isolation | established for Iteration B | PR3c report and retained artifacts; VAL-COR-1..3, VAL-COR-5, VAL-COR-6 and VAL-FAIL-1 |
 | cross-authority refusal (VAL-COR-4) | established for Iteration B | all four §3.5 clauses now hold on the deployed topology: the refusal and absence of partial booking state by the PR3c passes, and **same-key replay** by control 3b, retained in [`../../measurements/pr3c-phase1/controls-replay/`](../../measurements/pr3c-phase1/controls-replay/) |
 | database-authority composition (VAL-SCALE-3) | established as architecture/correctness evidence | PR3c; explicitly **not** a capacity multiplier on the co-resident workstation |
-| Iteration C measurement method | **defined; implementation qualification in progress** | §4.6: explicit conditioning, fixed pool policy, independent `workers_per_group`, adaptive reconnaissance, retained 600 s S/H + confirmation of both, 60 s analysis slices |
-| Iteration C local capacity (VAL-SCALE-6) | **defined; not yet executed** | PR4b will run the full qualified G1/G2/G4 method locally and derive bounded `E2_local`/`E4_local` |
+| Iteration C measurement method | **defined and executed end to end** | §4.6: explicit conditioning, fixed pool policy, independent `workers_per_group`, adaptive reconnaissance, retained 600 s S/H + confirmation of both, 60 s analysis slices. PR4b drove all twelve retained runs; the method held and its gates refused what they should |
+| Iteration C local capacity (VAL-SCALE-6) | **executed; NOT discharged** | PR4b drove the full G1/G2/G4 method locally. `G4_local` = 3493.9/s resolved (S reproduces to 0.1%, H to 1.0%, H does not beat S); **`G1` and `G2` are explicitly unresolved** and `G1_local`, `G2_local`, `E2_local` and `E4_local` are all withheld. `G1`'s run-to-run spread is **25.1%** under identical conditions — five times the margin — so its knee is not resolvable on this environment by any run order. The cause is the shared storage path, not `alloca-go`: Goodput tracks delivered write bandwidth, and reproducibility improves with the number of authorities issuing I/O concurrently (25.1% at G1, 8.5% at G2, 1.0% at G4). Evidence: [`../../measurements/pr4b-capacity/`](../../measurements/pr4b-capacity/), [`../../measurements/pr4b-drift-g1/`](../../measurements/pr4b-drift-g1/); analysis in `ag-sept-pr4.md` §3.28–§3.30 |
 | Iteration C independently provisioned capacity (VAL-SCALE-5) | **defined; externally blocked at present** | optional PR4c only when the complete equivalent environment can actually be provisioned; Tier 1 derives `E2_aws`/`E4_aws`; otherwise remains explicitly unproven |
 | Iteration C per-group demand independence (VAL-NEG-8) | **defined; not yet executed** | PR4a generator work must prove one slow group cannot throttle healthy groups; control must fail against shared global closed-loop workers |
 | Iteration C resource-envelope control (VAL-NEG-7) | **defined; not yet executed** | applies to independently provisioned `VAL-SCALE-5`; local resource evidence does not satisfy the independent-host premise |

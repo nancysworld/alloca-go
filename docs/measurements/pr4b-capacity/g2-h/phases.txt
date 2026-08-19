@@ -1,0 +1,5 @@
+conditioning_start=2026-08-19T11:00:45Z
+conditioning_end=2026-08-19T11:00:49Z
+recycle_end=2026-08-19T11:00:52Z
+measured_start=2026-08-19T11:00:52Z
+measured_end=2026-08-19T11:10:53Z

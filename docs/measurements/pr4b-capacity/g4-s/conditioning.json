@@ -1,0 +1,200 @@
+{
+  "manifest": {
+    "service_commit_sha": "4a668d53b7e592f4998fba9af42203a8d1d0f302",
+    "service_source_modified": false,
+    "service_go_version": "go1.26.5",
+    "image_id": "sha256:406c292cf4a4972059d4c93e0eb93b38e6ba418a448fb93b07c800cd811efda2",
+    "image_tag": "alloca-go:4a668d5",
+    "container_deployment": true,
+    "generator_commit_sha": "4a668d53b7e592f4998fba9af42203a8d1d0f302",
+    "generator_source_modified": false,
+    "generator_go_version": "go1.26.5",
+    "replica_count": 4,
+    "deployment_topology": "4 shard groups: one alloca-go service and one PostgreSQL authority per group, each pair sharing that group's two-CPU set, one organisation homed on each authority",
+    "environment": "local WSL2/Docker Desktop workstation; 16 logical CPUs exposed; scheduler-partitioned rehearsal; shared host/kernel/storage, not independently provisioned capacity evidence",
+    "authority_count": 4,
+    "routing_version": "itc-g4",
+    "placement_assignment": {
+      "authority-1": [
+        "org-a"
+      ],
+      "authority-2": [
+        "org-b"
+      ],
+      "authority-3": [
+        "org-c"
+      ],
+      "authority-4": [
+        "org-d"
+      ]
+    },
+    "placement_digest": "7dca7b185fcbf6cadbb6f803048b2e21d0788e2f638ced2b20307c23c98d700c",
+    "unit_count": 4,
+    "server_gomaxprocs": 2,
+    "timeout_budget": "admission_cap=250ms client_deadline=6s db_acquire_cap=500ms lock_timeout=2s server_deadline=5s statement_timeout=3s txn_budget=3.5s",
+    "reservation_ttl": "2m0s",
+    "postgres_version": "16.14",
+    "pool_size_per_replica": 8,
+    "aggregate_pool_size": 32,
+    "telemetry_mode": "full",
+    "run_id": "d6918738bb4ad788",
+    "workload": "wl-mut-disp-4",
+    "concurrency": 48,
+    "workers_per_group": 12,
+    "iterations": 4000,
+    "warm_up": "0s",
+    "dataset_slots": 180000,
+    "phase": "conditioning",
+    "conditioning": {
+      "run_id": "",
+      "slots_per_organisation": 200,
+      "target_mutations_per_organisation": 4000,
+      "organisations": 4,
+      "achieved_mutations": 16000,
+      "conditioning_requests": 16000,
+      "pool_recycled": false
+    },
+    "generator_location": "local",
+    "generator_gomaxprocs": 4,
+    "generator_num_cpu": 4,
+    "target": "http://localhost:8081,http://localhost:8082,http://localhost:8083,http://localhost:8084",
+    "timestamp": "2026-08-19T11:38:30.191721956Z"
+  },
+  "summary": {
+    "workload": "wl-mut-disp-4",
+    "replays_intended": false,
+    "concurrency": 48,
+    "workers_per_group": 12,
+    "iterations": 4000,
+    "completed_iterations": 16000,
+    "duration_seconds": 3.659163197,
+    "warm_up_seconds": 0,
+    "warm_up_discarded": 0,
+    "totals": [
+      {
+        "operation": "reserve",
+        "outcome": "admitted_success",
+        "replay": false,
+        "count": 16000
+      }
+    ],
+    "groups": [
+      {
+        "group": "authority-1",
+        "workers": 12,
+        "completed_iterations": 4000,
+        "completed_requests": 4000,
+        "successful_mutation_goodput": 4000,
+        "replayed_mutations": 0,
+        "invalid_responses": 0,
+        "totals": [
+          {
+            "operation": "reserve",
+            "outcome": "admitted_success",
+            "replay": false,
+            "count": 4000
+          }
+        ],
+        "latency_ms": {
+          "p50": 8.950251,
+          "p95": 16.656464,
+          "p99": 27.343283,
+          "max": 63.079247
+        }
+      },
+      {
+        "group": "authority-2",
+        "workers": 12,
+        "completed_iterations": 4000,
+        "completed_requests": 4000,
+        "successful_mutation_goodput": 4000,
+        "replayed_mutations": 0,
+        "invalid_responses": 0,
+        "totals": [
+          {
+            "operation": "reserve",
+            "outcome": "admitted_success",
+            "replay": false,
+            "count": 4000
+          }
+        ],
+        "latency_ms": {
+          "p50": 9.993015,
+          "p95": 18.428128,
+          "p99": 26.060517,
+          "max": 87.031126
+        }
+      },
+      {
+        "group": "authority-3",
+        "workers": 12,
+        "completed_iterations": 4000,
+        "completed_requests": 4000,
+        "successful_mutation_goodput": 4000,
+        "replayed_mutations": 0,
+        "invalid_responses": 0,
+        "totals": [
+          {
+            "operation": "reserve",
+            "outcome": "admitted_success",
+            "replay": false,
+            "count": 4000
+          }
+        ],
+        "latency_ms": {
+          "p50": 9.839482,
+          "p95": 17.739391,
+          "p99": 23.993688,
+          "max": 70.137384
+        }
+      },
+      {
+        "group": "authority-4",
+        "workers": 12,
+        "completed_iterations": 4000,
+        "completed_requests": 4000,
+        "successful_mutation_goodput": 4000,
+        "replayed_mutations": 0,
+        "invalid_responses": 0,
+        "totals": [
+          {
+            "operation": "reserve",
+            "outcome": "admitted_success",
+            "replay": false,
+            "count": 4000
+          }
+        ],
+        "latency_ms": {
+          "p50": 9.666971,
+          "p95": 17.225561,
+          "p99": 21.642462,
+          "max": 75.805024
+        }
+      }
+    ],
+    "completed_requests": 16000,
+    "successful_mutation_goodput": 16000,
+    "replayed_mutations": 0,
+    "latency_ms": {
+      "p50": 9.573826,
+      "p95": 17.543588,
+      "p99": 24.825912,
+      "max": 87.031126
+    },
+    "generator": {
+      "gomaxprocs": 4,
+      "goroutines": 107,
+      "cpu_seconds": 1.844244,
+      "cpu_utilisation_per_core": 0.12600175919401607,
+      "num_cpu": 4
+    },
+    "response_validation_enabled": true,
+    "invalid_responses": 0,
+    "measurement_sound": true
+  },
+  "quotability": {
+    "level": "capacity",
+    "blocked_from": "publishable",
+    "blocked_because": "manifest is incomplete for a publishable claim: generator_location is \"local\": measurement-contract §13.1 requires the generator on compute separate from the service for a publishable claim"
+  }
+}

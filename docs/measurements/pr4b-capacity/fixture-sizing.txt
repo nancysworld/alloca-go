@@ -1,0 +1,27 @@
+retained fixture sizing for the PR4b capacity comparison
+(ag-sept-validation-plan.md §4.6.6)
+derived 2026-08-19T09:51:00Z
+
+  reconnaissance read               test/results/pr4b-recon/
+  brackets covered                  G1(S=12,H=16) G2(S=8,H=12) G4(S=12,H=16)
+  deepest retained level            16 workers/group
+  fastest retained probe            3827.7 /s aggregate, over 120s
+
+  A 120 s probe reads the early, high part of a trajectory that PR4a measured declining to ~0.75x
+  by 600 s, so this rate is above the 600 s horizon average the retained runs will report. Sizing
+  from it buys headroom rather than spending it.
+
+  measured duration                 600s
+  measured consumption per org      574200 mutations
+  conditioning per org              4000 mutations
+  explicit safety headroom          140%
+  required per org                  809480 mutations
+  capacity per slot                 20
+  slots per organisation            45000   (rounded up)
+  seeded supply                     3600000 mutations across 4 organisations
+  measured supply after conditioning 3584000 mutations
+  worst-case consumption            64.1% of measured supply per org
+
+The same per-organisation size is used at G1, G2 and G4. Resizing it per topology would change
+the workload as well as the topology, and the comparison would not be between two arrangements
+of one experiment.

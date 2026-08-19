@@ -73,7 +73,7 @@ Iteration B evidence -> Analyse & Review -> Iteration C Problem
 | Iteration B Analyse & Review | review step, PR #17 | merged; Iteration B closed and Iteration C Problem selected |
 | Iteration C planning | PR #18 | complete in #18; closes Requirements → Design → Validation → Schedule |
 | Iteration C experiment preparation and measurement qualification | PR4a | complete in #19; final review/merge pending, no canonical scaling result |
-| Iteration C local sustained capacity and scale characterisation | PR4b | mandatory next evidence work unit after PR4a |
+| Iteration C local sustained capacity and scale characterisation | PR4b | executed; gate met on the "explicitly unresolved" branch. `G4_local` resolved, `G1`/`G2` unresolved, efficiencies withheld, `VAL-SCALE-6` **not discharged** |
 | Iteration C independently provisioned AWS verification | PR4c | **optional; quota-conditional; not opened/scheduled until complete environment is provisionable** |
 | Iteration C A&R and AG-Sept conclusion | PR5 | not started; follows PR4b and optional PR4c if it executes in time |
 
@@ -94,12 +94,12 @@ granularity is false precision that invites its own overrun (Nancy's call, 2026-
 | Multi-authority correctness and failure-isolation evidence | PR3c | 1.5 | 1.5 | 0.0 | merged; originally 2.0, with 0.5 returned to contingency |
 | Iteration C planning | PR #18 | 0.5 | 0.5 | 0.0 | complete; hard planning cap met |
 | Iteration C method preparation and measurement qualification | PR4a | 4.0 | 4.0 | 0.0 | complete; consumed the whole former PR4a/PR4b envelope (§2.1.3) |
-| Iteration C local sustained capacity characterisation | PR4b | 1.0 | 0.0 | 1.0 | funded by a 1.0-day contingency draw (§2.1.3) |
+| Iteration C local sustained capacity characterisation | PR4b | 1.0 | 1.0 | 0.0 | complete; funded by the 1.0-day contingency draw (§2.1.3). Gate met on the "explicitly unresolved" branch; no further draw |
 | Iteration C optional independent verification | PR4c | **0.0** | **0.0** | **0.0** | unscheduled and unbudgeted; requires quota + an explicit budget decision before opening |
 | Iteration C A&R and AG-Sept conclusion | PR5 | 1.5 | 0.0 | 1.5 | not started |
-| **Allocated development budget** | | **16.5** | **14.0** | **2.5** | |
+| **Allocated development budget** | | **16.5** | **15.0** | **1.5** | |
 | Contingency | | **3.0** | **1.0** | **2.0** | 1.0 drawn by §2.1.1; 1.0 reallocated to PR4b by §2.1.3 |
-| **Total milestone budget** | | **19.5** | **15.0** | **4.5** | |
+| **Total milestone budget** | | **19.5** | **16.0** | **3.5** | |
 
 **The numeric columns are the accounting source of truth:** `Allocated = Spent + Left` on every
 row. Completed work that returned unused allocation is shown at its current allocation; **Status**
@@ -425,6 +425,17 @@ and never redefines closed-loop capacity.
 local scale efficiencies and limiting mechanisms are reported with the shared-workstation and
 per-organisation/per-authority co-variables stated; no result is promoted into `VAL-SCALE-5`.
 
+**Met 2026-08-19 on the "explicitly unresolved" branch, at the allocated 1.0 day and with no
+further contingency draw.** All twelve retained runs were driven and reconciled. `G4_local` resolved
+at 3493.9/s; `G1` and `G2` did not, so `G1_local`, `G2_local`, `E2_local` and `E4_local` are
+withheld. The limiting mechanism *is* reported, and it is the shared storage path rather than
+`alloca-go`: Goodput tracks delivered write bandwidth, and reproducibility improves with the number
+of authorities issuing I/O concurrently — 25.1% run-to-run spread at G1 against 1.0% at G4. Nothing
+was promoted into `VAL-SCALE-5`, and `VAL-LOAD-1` was not attempted because the closed-loop result
+it depends on was not secured. Maintainer decision, 2026-08-19: stop execution rather than draw
+contingency to pursue `G1`. Evidence and analysis are owned by the validation plan's status table
+and `ag-sept-pr4.md` §3.28–§3.30.
+
 ### PR4c — Optional independently provisioned AWS verification
 
 PR4c answers: **does the locally observed scaling behaviour survive genuinely independent resource
@@ -536,8 +547,11 @@ For Iteration C the mandatory path is now independent of AWS quota:
   mechanism, qualified 600 s run shape, and generator/resource/reconciliation controls;
 - PR4b's **full local G1/G2/G4 sustained capacity/scale characterisation**: adaptive bracket
   reconnaissance, actual S/H selection, one final fixture size held across the comparison, retained
-  S/H + both confirmations, `E2_local`/`E4_local`, limiting-resource analysis and honest shared-host
-  limitations;
+  S/H + both confirmations, limiting-resource analysis and honest shared-host limitations.
+  **Delivered 2026-08-19 without `E2_local`/`E4_local`**: `G4_local` resolved, `G1` and `G2` did
+  not, and the efficiencies are withheld because their denominator cannot be measured to better
+  than ~25% on this environment. The limiting-resource analysis is the deliverable that carries the
+  result, and it identifies the shared storage path;
 - correctness/reconciliation and provenance/resource evidence required for every quoted local
   result;
 - if PR4c is not executed, the retained AWS provisioning limitation and explicit
@@ -667,8 +681,10 @@ The public-ready milestone should leave:
 5. the single-instance frontier report;
 6. the multi-authority correctness/failure-isolation report;
 7. the PR4a measurement-qualification record and the PR4b **local sustained G1/G2/G4 capacity/scale
-   report** with `E2_local`/`E4_local`; if optional PR4c runs, a separate independently provisioned
-   verification result with `E2_aws`/`E4_aws`, otherwise an explicit `VAL-SCALE-5`-unproven result;
+   report** — delivered with `G4_local` established and `E2_local`/`E4_local` withheld, the
+   unresolved `G1`/`G2` knees and their storage-path cause reported in place of them; if optional
+   PR4c runs, a separate independently provisioned verification result with `E2_aws`/`E4_aws`,
+   otherwise an explicit `VAL-SCALE-5`-unproven result;
 8. current and intended architecture diagrams;
 9. authority and bottleneck analysis across the scaling axes actually measured, with unmeasured
    axes named explicitly;

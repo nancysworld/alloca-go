@@ -256,7 +256,23 @@ func TestDashboardIsDeliberatelySmall(t *testing.T) {
 	// they do not yet know what they are looking for. §3.13.1's precedent says an unplotted series
 	// is *recoverable*; it does not say it is noticed. The bound stays a bound, and the next graph
 	// after these is a decision someone makes and records here, exactly as this one was.
-	if graphs > 20 {
+	//
+	// Raised 20 -> 22 for the two host disk graphs. **Maintainer decision, 2026-08-19**, and it is
+	// the §3.16 argument arriving a second time with the evidence to settle it. PR4b's local
+	// capacity result turned on delivered write bandwidth; diskstats was collected throughout and
+	// plotted nowhere, so no cell retained the series and the numbers behind the conclusion were
+	// quoted from a live Prometheus query instead of from an artifact (ag-sept-pr4.md §3.31).
+	//
+	// Defining the panels fixes the retention half by itself — `display: false` would have been
+	// enough for that, and was the state this landed in first. What it would not fix is the half
+	// this comment already names: an unplotted series is recoverable, not noticed. The storage
+	// path is now the leading candidate mechanism behind an unresolved local knee, and the next
+	// degraded cell has to be read by someone who does not yet know that. Two graphs rather than
+	// one because utilisation and queue depth must be read together — utilisation sat at ~1.0 at
+	// every topology while the device was demonstrably not saturated, so utilisation alone
+	// supports the wrong conclusion — and bandwidth carries a different unit and cannot share
+	// their axis.
+	if graphs > 22 {
 		t.Errorf("dashboard has %d graphs; the diagnostic view is meant to stay compact. "+
 			"Adding one is a scope decision, not a tidy-up", graphs)
 	}

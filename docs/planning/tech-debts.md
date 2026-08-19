@@ -41,6 +41,7 @@ code comment or a PR description can cite one and still be right in a year.
 | [**DEBT-5**](#7-debt-5--no-automated-line-length-guardrail) | Nothing in CI bounds line length, so declarations grow until a human notices; ~104 code lines exceed 110 columns, the longest at 205 | tooling, readability | 2026-08-05, AG-Sept PR3a | open |
 | [**DEBT-6**](#8-debt-6--res-denotes-three-unrelated-types) | `res` names a Reservation, a Result and a Response in different files, and the obvious mechanical rename is wrong in three separate ways | naming, readability | 2026-08-05, AG-Sept PR3a | open |
 | [**DEBT-7**](#9-debt-7--implementation-records-that-still-read-as-scope-notes) | The three per-PR records were moved and re-headed, not rewritten; they still present planned scope in a form indistinguishable from a record of what shipped | documentation taxonomy | 2026-08-07, AG-Sept PR3b | open |
+| [**DEBT-8**](#10-debt-8--the-storage-path-behind-an-unresolved-knee-is-localised-not-proven) | PR4b localised `G1`'s 25.1% irreproducibility to the shared write path but did not run the test that would prove it, so a mechanism sits in the record supported by correlation only | measurement environment | 2026-08-19, AG-Sept PR4b | open |
 
 ## 3. DEBT-1 — no reaper for abandoned schedule claims
 
@@ -706,3 +707,71 @@ Raised 2026-08-07 during AG-Sept PR3b review, in the change that moved the recor
 `docs/planning/`. The move was mechanical and verified by resolving every relative link in
 `docs/`; the conversion was deliberately not attempted in the same change, and this entry
 records that as a decision rather than leaving it to be rediscovered as an inconsistency.
+
+## 10. DEBT-8 — the storage path behind an unresolved knee is localised, not proven
+
+### What it is
+
+PR4b left `VAL-SCALE-6` undischarged because `G1` reproduces to only 25.1% across four identical
+600 s runs. The record attributes that to the shared write path — Docker Desktop's default VHDX —
+on correlation that is strong but indirect: Goodput tracks delivered write bandwidth at a
+near-constant 65–72 mutations per MiB across all sixteen runs, reads are at most ~2% of I/O volume,
+and the run that beat its selected point is the run that obtained the most bandwidth.
+
+**The test that would settle it was not run.** Driving `G1` with its data directory off the VHDX,
+and observing whether the spread collapses, converts the leading mechanism into a demonstrated
+cause. Everything downstream — `ag-sept-pr4.md` §3.30, the `VAL-SCALE-6` status, the case for PR4c —
+currently rests on the weaker statement.
+
+### Why it is this way
+
+Budget. PR4b was allocated 1.0 day, drawn from contingency, and had spent it. The maintainer's
+decision on 2026-08-19 was to stop execution rather than draw further: establish `G4`, withhold the
+`G1`/`G2`-derived efficiencies, document the limitation, and leave the mechanism explicitly
+unproven. That was the right call — the alternative buys a mechanism for a local result that is not
+the milestone's target evidence anyway.
+
+### Why it is acceptable today
+
+Because nothing currently claims more than the evidence supports. The wording is uniformly
+"localises the limit to the shared write path", the killing test is named as unrun everywhere the
+mechanism appears, and no efficiency is derived from the affected point. A localisation is enough
+to justify PR4c's premise — independently provisioned per-unit storage removes whatever the shared
+path contributes, whether or not its mechanism is understood.
+
+### Trigger — when it stops being acceptable
+
+Any of:
+
+- **a local capacity result is wanted again.** The next attempt at `VAL-SCALE-6` on this
+  workstation faces the same 25.1%, and running the killing test first is cheaper than another
+  twelve retained runs that cannot resolve `G1`;
+- **PR4c executes and its `G1` reproduces well.** That is consistent with the storage explanation
+  but does not confirm it, since an independently provisioned host changes several things at once;
+  the local test is what isolates the variable;
+- **the mechanism starts being cited as established** anywhere — a report, an A&R conclusion, or a
+  design decision that assumes storage is the constraint. This entry exists to make that citation
+  fail a lookup.
+
+### What a fix must preserve
+
+The retained runs are evidence and must not be re-interpreted by a later diagnostic: a
+tmpfs/off-VHDX run measures a *different environment* and cannot be mixed with the sixteen runs
+under [`../measurements/pr4b-capacity/`](../measurements/pr4b-capacity/) or compared with
+`G4_local`. It is a diagnostic of the environment, not a replacement measurement, and
+`environment.md` would need the second environment recorded exactly as the 10-vCPU/16-vCPU split is.
+
+### Related
+
+`ag-sept-pr4.md` §3.30 owns the analysis and §3.31 the reason the supporting series had to be
+recovered after the fact. [`../measurements/pr4b-drift-g1/`](../measurements/pr4b-drift-g1/) is the
+control that measured the spread; [`../measurements/pr4b-capacity/disk-io-backfill/`](../measurements/pr4b-capacity/disk-io-backfill/)
+holds the disk series. DEBT-3 is the neighbouring case of provenance that is declared rather than
+proven.
+
+### Evidence
+
+Raised 2026-08-19 during the AG-Sept PR4b pre-merge audit. The gap was already recorded in the
+implementation record and the validation plan; this entry exists because those describe a *result*,
+and what is owed is a *test* — with a condition and a trigger, which is what makes it a debt rather
+than a limitation someone has to rediscover.

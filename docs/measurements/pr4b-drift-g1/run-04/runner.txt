@@ -1,0 +1,26 @@
+rehearsal CPU partition for G1 (machine has 16 CPUs: 0-15)
+  capacity unit A    0-1      (2 CPUs)
+  generator/monitor  8-11     (4 CPUs)
+topology check: G1 — exactly 2 containers running, as selected
+topology check: all 1 units serving routing version itc-g1
+rehearsal cpusets for G1 (expecting generator/monitor on 8-11)
+  alloca-service-1         0,1
+  alloca-authority-1-db    0,1
+  alloca-prometheus        8,9,10,11
+  alloca-grafana           8,9,10,11
+  alloca-node-exporter     8,9,10,11
+14:06:18  prometheus scraping 1 units: authority-1
+14:06:18  G1 cell -> test/results/pr4b-drift-g1/run-04/cell-01
+14:06:18    reseeding: 45000 slots x 20 capacity per organisation (3600000 fresh mutations)
+14:08:18    conditioning to 4000 mutations/organisation over 200 slots/organisation
+14:08:29    scrape: conditioned
+14:08:29    recycling the service pool (restart, no reseed) so no measured connection carries a plan
+  prepared against empty mutation tables
+14:08:30    scrape: baseline
+14:08:30    generator confined to CPUs 8-11 (wl-mut-disp-4 workers/group=12 total=12 window=600s require=capacity conditioned)
+14:18:31    scrape: after
+export: window 2026-08-19T14:08:30Z .. 2026-08-19T14:18:31Z, rate range [15s], step 5s
+  note: replay_rate returned no data in this window
+export: 30 panels -> test/results/pr4b-drift-g1/run-04/cell-01/panels/
+export: tsdb snapshot 20260819T141831Z-7a79bfd2fa097a9f -> test/results/pr4b-drift-g1/run-04/cell-01/tsdb-snapshot
+14:18:31  cell complete -> test/results/pr4b-drift-g1/run-04/cell-01/run.json  (767854 admitted of 3584000 supplied)

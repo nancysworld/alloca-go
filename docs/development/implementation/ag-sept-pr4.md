@@ -1733,6 +1733,330 @@ full-600 s horizon average from a fixed conditioned start, so the arms are compa
 describing the system under test, or a fixture that ought to have a bounded hot-state lifecycle, is
 the §3.21 question and belongs to A&R.
 
+### 3.24 The environment document had not received the machine it describes
+
+[`environment.md`](../../measurements/environment.md) recorded `processors=10` and `nproc=10` from
+its 2026-08-04 capture. Every run since 2026-08-13 has been taken on 16, and the retained PR4a
+artifacts say so directly: `g4-pool8/observed-cpusets.txt` records `nproc=16` and the manifest's
+`environment` field reads "16 logical CPUs exposed".
+
+The fact was never unrecorded — §2.14 owns both the reconfiguration and its comparability
+consequence, and ruled at the time that the two allocations are separate environments rather than a
+before and after. What had not happened is the propagation: the document that owns the measurement
+environment still described the previous machine, so the owning source and the retained evidence
+disagreed.
+
+**Why this was a PR4b blocker rather than tidying.** `VAL-SCALE-6` is by construction a claim about
+*the explicitly recorded local environment*. A result whose environment record names the wrong CPU
+allocation is not a smaller claim; it is a claim about a machine that did not run it.
+
+Two further statements there were false rather than stale. It asserted that every run on this
+workstation is `quotability.level: local` "by construction" and "refuses the `capacity` level by
+name", which the six PR4a sustained runs contradict — all six certify `capacity`. And it named a
+node exporter as the instrument that would settle PR2's excursions, which §3.14 has since added; the
+correct statement is that Iteration C runs carry host evidence and PR2's do not, so those excursions
+remain unresolved rather than retrospectively answerable.
+
+The document now records both allocations and which runs belong to each, and states that only the
+CPU allocation changed: `memory=12GB` is unchanged and the guest still sees 11 GiB.
+
+### 3.25 A single 120 s probe cannot resolve a 5% difference on this machine
+
+Reconnaissance compares probes at neighbouring worker levels with "materially" set at 5% — twice the
+2.6% agreement of the ten identical healthy `G4` cells at
+[`pr4a-rehearsal/repeats/`](../../measurements/pr4a-rehearsal/repeats/). That figure was measured on
+60 s cells driven back to back within one session, and it does not transfer.
+
+`G1` at 16 workers per group was probed four times across 2026-08-19 under identical configuration:
+1383.0, 1395.2, 1307.0 and 1444.7/s. Range 10.5%, coefficient of variation roughly 4%, falling and
+then rising. **The 5% margin is therefore approximately one standard deviation of a single probe.**
+
+The consequence was observed rather than predicted: two reconnaissance passes over `G1` disagreed
+about the *ordering* of 12 and 16, the first measuring 16 above 12 by 7.0% and selecting S=16, the
+second measuring 12 above 16 by 8.0% and selecting S=12. Both were "flat" in shape and both passed
+every gate.
+
+**The readings are noise, not drift**, and that was measured rather than assumed. The rival
+explanation was accumulated host state over a working morning; a drift would be monotonic, and these
+fall and then rise with the highest last. The diagnostic is a re-probe of an already-probed level,
+which is what `ITC_RECON_ONLY` exists for: it drives named levels, selects nothing, and writes
+`probe-G<n>.txt` rather than `recon-G<n>.txt` so it cannot be read as a bracket.
+
+Reconnaissance therefore brackets a region rather than locating a point, and any distinction it
+draws inside 5% is a coin-toss. That is now a stated limitation of `VAL-SCALE-6`.
+
+### 3.26 The selection rule was one-sided, and the plateau it missed is the local shape
+
+§4.6.5 as written tests only the upper side: `S` is selected when `H` and its confirmation fail to
+produce materially higher sustained Goodput. Nothing in it tests that `S` beats a *lower* level, so a
+candidate sitting past the peak passes unchallenged, and every efficiency dividing it inherits the
+error in the direction that understates capacity.
+
+**Maintainer decision, 2026-08-19:** reconnaissance must also show the level below its candidate to
+be materially worse. It fired on its first real use. `G2` measured 16 at 2637.3/s against 12 at
+2581.3/s — 2.2% apart — and the check refused to spend four retained 600 s runs at 16 on a difference
+the machine cannot distinguish from noise; `G4` refused at 2.0% for the same reason.
+
+That refusal exposed a definitional gap the plan did not settle: when throughput is flat across
+several levels, which one is `S`? **Maintainer decision, 2026-08-19:** the lowest level on the
+discovered plateau, its immediately lower level materially worse, and `H` a higher level that is not
+materially better. Every level on a plateau delivers the same Goodput and the lowest does it with the
+least queueing, so selecting a higher one attributes capacity to workers that bought nothing.
+
+Both decisions live in `ag-sept-validation-plan.md` §4.6.4, which owns the method; the code cites the
+plan rather than defining the rule.
+
+### 3.27 One bracket for every arm, because the per-topology difference was not real
+
+With the plateau rule applied, reconnaissance selected S=12 at `G1`, S=8 at `G2` and S=12 at `G4`,
+and 12 is the measured throughput maximum at all three:
+
+```text
+workers      G1        G2        G4
+   4          -    2056.7         -
+   8     1342.8    2596.7    3603.5
+  12     1411.9    2617.8    3827.7      <- maximum at every topology
+  16     1307.0    2559.0    3657.5
+  24     1225.9    2567.8    3588.6
+```
+
+`G2` dissented only because its 8 read within **0.8%** of its own 12, while `G1`'s read 5.1% below
+and `G4`'s 6.2% below. Against §3.25's ~4% single-probe noise, 0.8% is not a discrimination.
+
+**Maintainer decision, 2026-08-19:** every arm runs at S=12, H=16. `E2` and `E4` compare topologies,
+so arms measured at different demand-per-group would carry that difference into the efficiency
+itself, which validation-plan §2.3 forbids.
+
+`ITC_CAPACITY_S`/`ITC_CAPACITY_H` express the decision and are the one way to move the retained
+operating point by hand, so the capacity stage validates them against each topology's own probes: a
+level the topology never probed is refused, and so is one it measured materially below its own best.
+The accepted bracket is logged with the rate it was checked against.
+
+### 3.28 The retained comparison: `G4` resolved, `G1` and `G2` did not
+
+Twelve retained 600 s runs, each from its own reset/reseed/conditioning sequence and each checked
+against the run that was *asked for* rather than the run that happened. All twelve certified
+`capacity`, ran the full 600 s at the intended worker level on the intended 45,000-slot fixture, and
+reconciled.
+
+```text
+              S      H   S-conf  H-conf    S repro   H repro   any H beats any S
+  G1     1080.1 1032.6   1094.0  1193.8       1.3%     15.6%      yes, 10.5%
+  G2     2259.0 2323.1   2450.8  2477.7       8.5%      6.7%      yes,  9.7%
+  G4     3494.8 3509.5   3492.9  3543.5       0.1%      1.0%      no,   1.4%
+```
+
+**`G4_local` = 3493.9/s**, the mean of two selected-point observations agreeing to 0.1%, with a
+deciding higher point that reproduces to 1.0% and does not beat it.
+
+**`G1` and `G2` are explicitly unresolved**, so `G1_local` and `G2_local` are withheld and, because
+`G1_local` is the denominator of both, `E2_local` and `E4_local` with them. `G1` fails on `H`'s
+reproducibility and on the upper-side test; `G2` fails on both points' reproducibility *and* the
+upper-side test. Only `G4` passes all three.
+
+The upper-side figures above are §4.6.5's pairwise comparison — `max(H)` against `min(S)` — which
+§3.32 records as a correction: the original implementation compared extreme against extreme, which
+understated `G1` and recorded `G2` as passing a test it does not. Neither topology's disposition
+changes, because both were already unresolved on reproducibility; what changes is the accuracy of
+the reason given.
+
+No retained resource signal distinguishes `G1`'s four runs: host CPU busy 2.3–2.4%, memory available
+within 0.2%, run queue 7.4–8.0, active backends 4.4–5.0, wait events 1.8–2.0, and all four took
+exactly four requested checkpoints. Every run at every topology is a "dip" in shape, so none belongs
+to a visibly different regime, and `G1`'s outlier sits above the other three at all ten of its slices
+rather than diverging part-way.
+
+### 3.29 Run position was the wrong explanation, and the control refuted it
+
+§4.6.5 prescribes `S`, `H`, `S`-confirmation, `H`-confirmation, so `S` always occupies positions 1
+and 3 of a series and `H` always 2 and 4. The observed rates rose with position — `G2` monotonically
+at +0.0%, +2.8%, +8.5%, +9.7%, and `G1`'s position-4 run highest at +10.5% — which is on its own
+enough to manufacture the upper-side failure that left `G1` unresolved, with no difference between
+12 and 16 workers existing at all. Under §4.6.5's pairwise rule the two are not merely similar in
+size, they are **the same comparison**: `G1`'s weakest `S` is `g1-s` at position 1 and its best `H`
+is `g1-h-confirm` at position 4, so "best `H` exceeds weakest `S` by 10.5%" and "position 4 exceeded
+position 1 by 10.5%" are one measurement read two ways. That is what made the hypothesis worth a
+control rather than an argument. That was recorded as the leading hypothesis and the remedy would have
+been to counterbalance the order.
+
+**Four identical 600 s `G1` runs at 12 workers refuted it**
+([`pr4b-drift-g1/`](../../measurements/pr4b-drift-g1/)): 1255.9, 1023.1, 1202.1, 1279.7 — not
+monotonic, with the deep outlier at position 2. `G2`'s monotonic appearance was coincidence.
+
+What the control established instead is stronger and worse: **`G1`'s run-to-run spread is 25.1%
+under identical conditions**, five times the margin. The 15.6% disagreement that left its knee
+unresolved sits comfortably inside that, so the `G1` knee was never resolvable at this margin by any
+run order.
+
+The hypothesis was recorded before its killing test rather than after, and the test was named in the
+same edit that recorded it. That is the only reason it cost one control run rather than a
+counterbalanced re-drive of eight.
+
+### 3.30 The cause is the storage path, and it is why `VAL-SCALE-6` is not discharged
+
+**The evidence for this section had to be recovered after the runs, and that is a finding in its own
+right — see §3.31.** Every figure below now comes from
+[`pr4b-capacity/disk-io-backfill/`](../../measurements/pr4b-capacity/disk-io-backfill/).
+
+Reads are 0.01–1.07 MiB/s against 15–49 MiB/s written, at most ~2% of I/O volume, so the measured
+interval is essentially cache-resident on the read side and this is a write-path story.
+
+**Goodput tracks delivered write bandwidth, and the ratio barely moves.** Mutations per MiB written
+is 65.2–72.7 across all sixteen runs and every topology. Within `G1` it holds run by run while
+Goodput does not — the run that "beat" its selected point obtained the most write bandwidth (16.17,
+15.39, 16.78 and **17.86** MiB/s against 1080.1, 1032.6, 1094.0 and **1193.8**/s, at 66.8, 67.1,
+65.2 and 66.8 mutations per MiB). The control is sharper still: across four *identical* runs Goodput
+spans 25.1% while mutations per MiB spans **1.0%**. The work done per byte written is constant; what
+varies is how many bytes the device accepted.
+
+The device is never idle at any topology — `host_disk_util` ≈1.0 everywhere — but it is **not
+saturated**, which the topologies establish against each other. Each row is the same quantity: the
+min–max of that topology's four retained runs.
+
+```text
+topology  authorities  disk queue depth   write MiB/s   spread over 4 retained runs
+  G1           1         0.94 - 1.37      15.39-17.86            15.6%
+  G2           2         3.31 - 4.44      31.67-36.18             9.7%
+  G4           4         4.52 - 5.00      48.30-48.93             1.4%
+```
+
+`G4` extracts roughly three times `G1`'s write bandwidth from the same device at three to four times
+the queue depth. Utilisation alone would have supported the opposite conclusion, which is why
+`host_disk_util` and `host_disk_queue` are now defined as panels and plotted on one graph.
+
+**What the spread column does and does not support.** Each topology's four runs span two worker
+levels, so it is the range of a retained population rather than four repetitions of one point, and
+G2's and G4's figures rest on four observations each — too few to bound a distribution. The
+per-point pairing says something different and is *not* monotonic: S-vs-S-confirm is 1.3% at `G1`,
+8.5% at `G2`, 0.1% at `G4`. `G1`'s 1.3% is precisely what prompted the drift control, and it was
+luck — four identical runs spread 25.1%.
+
+So `G1`'s poor reproducibility is measured and not in doubt, and `G4`'s tightness is consistent with
+a much better-behaved distribution without being a measurement of one. **That reproducibility
+improves *because* more authorities issue I/O concurrently is a reading of the queue-depth and
+bandwidth columns beside those spreads, not a result established by them.** Confirming it needs the
+control `G1` received, driven at `G2` and `G4` as well; it was not, and the maintainer closed
+execution before it could be.
+
+### 3.31 A load-bearing number was quoted from a live query, not from an artifact
+
+The storage figures above were originally read out of a running Prometheus by `docker exec` and
+written straight into this record and the measurements README. No cell under `docs/measurements/`
+contained a disk series, so none of those numbers had a retained artifact —
+`measurement-contract.md` §5's requirement — and the tables looked exactly like every other
+evidence-backed table in the repository. **It was caught by the maintainer asking where the figures
+came from**, not by any gate.
+
+Three separate faults, and only the first is about storage:
+
+- **`--collector.diskstats` was enabled but `panels.json` defined no disk panel**, so
+  `export-panels.sh` retained none. The comment in `gen-dashboard.py` justifying a wide collector
+  set — "collect broadly, panel narrowly: the snapshot retains everything scraped" — was true and
+  insufficient. The *cell's* panels are what a report cites, and the TSDB snapshots that would have
+  justified these numbers are 123 MB per run and are not promoted. The rule needs its second half:
+  promote a series to a panel the moment a claim rests on it.
+- **The ad-hoc queries did not use the repository's own aggregation.** They took a 60 s rate range
+  at a 30–60 s step rather than the 30 s range and 5 s step every retained panel uses, so the
+  figures were not comparable with any other series here and shifted by up to 5% when re-derived
+  correctly. The corrected values supersede them throughout.
+- **The spread column compared three different quantities** — four identical runs at `G1`, an
+  S-vs-S-confirm pair at `G2`, an H-vs-H-confirm pair at `G4` — assembled after the fact into a
+  monotonic-looking column. Computed consistently the monotonic reading weakens, and on the
+  per-point pairing it inverts. That is the shape of a result found by choosing comparisons rather
+  than by making them.
+
+The durable fixes are upstream: four disk panels are now defined in `panels.json`, so every future
+cell retains them at run time, and they are **plotted** as two graphs in the dashboard's host
+section (maintainer decision, 2026-08-19, recorded at the graph bound in
+`internal/observability/panels_test.go`). Defining them closes the retention half on its own;
+plotting closes the half that bound's own comment names, that an unplotted series is *recoverable*
+but not *noticed* — which is the condition a future degraded cell would be read under. Utilisation
+and queue depth share one graph because either alone misleads: utilisation sat at ~1.0 at every
+topology while the device was demonstrably not saturated.
+
+The sixteen runs that predate the fix carry a `disk-io-backfill/` directory whose README states
+that the series were recovered from the surviving TSDB after the fact, with the queries used.
+
+`G1_local` is the denominator of both efficiencies and is the least reproducible quantity in the
+experiment. **On this environment neither `E2_local` nor `E4_local` can be derived to a 5% margin,
+because their denominator cannot be measured to better than ~25%.** That is a property of the
+environment rather than of `alloca-go`, and it lands on exactly the term
+[`environment.md`](../../measurements/environment.md) names as the one the instruments cannot see —
+Docker Desktop's default VHDX on the Windows host — where PR2's unexplained excursions also live.
+Independently provisioned per-unit storage is the condition that removes it, which is a direct input
+to the case for PR4c.
+
+**Recorded as a limitation, not a diagnosis.** That low queue depth is the *mechanism* by which the
+storage path's variability reaches `G1`'s throughput is consistent with every measurement above and
+is not proven. The killing test — driving `G1` with its data directory off the VHDX and observing
+whether the spread collapses — was deliberately **not** run.
+
+**Maintainer decision, 2026-08-19: stop experiment execution.** No further PR4b capacity runs, no
+additional contingency draw. Preserve the drift control, document the storage-path limitation,
+establish `G4` only, withhold the `G1`/`G2`-derived efficiencies, and mark `VAL-SCALE-6` unresolved
+and not discharged.
+
+### 3.32 Review found two gates that would have admitted a wrong result
+
+Independent review of the PR raised seven findings. Four were `P1`, and two of those are defects in
+gates that had tests, passed them, and were wrong anyway.
+
+**The knee rule was weaker than §4.6.5, not conservative.** `decide()` compared the best `H`
+observation against the best `S` observation, with a comment asserting that using `S`'s better
+reading made the rule harder to pass. It makes it easier. The reviewer's counterexample: `S` =
+100/105 and `H` = 110/105, where both points reproduce inside the margin and best-`H` is under 5%
+above best-`S`, so the knee resolved — while the first `H` stands **10% above** the first `S`, which
+is what §4.6.5 forbids. The rule is pairwise: no `H` observation may materially exceed *any* `S`
+observation, which is `max(H)` against `min(S)`. The reasoning in the comment was backwards, and no
+test caught it because every case in the suite had its extremes on the same side as its pairs.
+
+**A retained cell was accepted on resume without any intent check.** The capacity stage validated
+duration, worker level and fixture for a cell it had just driven, and kept an existing
+`cell-01/run.json` on sight. Resume exists so an interrupted fourteen-run sequence need not restart —
+but the cell it keeps is from an *earlier* invocation, which is exactly when the bracket or fixture
+may have changed. A 600 s `S` at the old level, sound and `capacity`-certified, would then have been
+mixed with confirmations from the new one. Both reviewers found this independently, and the
+bracket self-test **demonstrated** the hole rather than catching it: its accepted case pre-created
+every role at 12 workers while `H` was 16, and the stage was content.
+
+The fix is one `assert_cell_intent` used by the driving path, the resume path and the drift stage,
+so there is no path that judges a cell more loosely than another. `itc-capacity-result.py` also now
+enforces §4.6.5's 600 s horizon and cross-checks that the four runs are one comparison — a point and
+its confirmation at the same level, `H` above `S` — because that script is documented as runnable
+directly against any retained directory and must not depend on having been reached through the
+stage.
+
+**The margin's rationale was falsified by this milestone's own evidence.** §4.6.5 called 5%
+"derived" from the 2.6% agreement of ten identical `G4` cells and said a difference must exceed
+"what this machine can distinguish from noise". PR4b then measured four identical `G1` runs spanning
+25.1%. The correction is a distinction rather than a new number: **5% is a preselected engineering
+materiality margin, and reproducibility is a separate admissibility gate.** Materiality asks whether
+a difference is large enough to matter; reproducibility asks whether the environment can measure the
+point at all. Read that way `G1`'s failure strengthens the method — the margin did not fail, the
+environment failed the admissibility gate, and the rule withheld a number rather than reporting one
+it could not support.
+
+**The common bracket was a maintainer decision the validation plan did not own.** §3.27 recorded it;
+§4.6.4 still said reconnaissance selects per topology and defined `S` as the lowest plateau level,
+so for `G2` — measured at 12/16 where its reconnaissance selected 8/12 — the claim that the defined
+method ran end to end was not literally true. §4.6.4 now owns the exception, with three conditions
+the stage already enforced and a fourth it did not: the comparison must *record* that it ran at a
+common bracket, which `common-bracket.txt` now does beside the runs.
+
+Two smaller findings: the storage wording was stronger in the plan and status table than the
+mechanism paragraph it summarised, and is now uniformly "localises the limit to the shared write
+path" with the unrun killing test named; and `VAL-NEG-8`'s status row still read "not yet executed"
+though PR4a implemented and mutation-proved it, which matters because it is a prerequisite for
+interpreting `VAL-SCALE-6`.
+
+**What this says about the gates rather than the findings.** Both `P1` defects were in code with
+passing discriminating tests. The knee rule's tests all placed their extremes on the same side as
+their pairs, so a rule about pairs was never exercised as one; the resume path's test asserted the
+outcome it wanted while constructing a fixture that could only reach it through the hole. Mutation
+testing does not help here — mutating a rule that the suite never distinguishes from its weaker form
+produces a passing mutation, which reads as evidence the rule is unnecessary. What found these was a
+reader reasoning about the rule's *intent* against a counterexample of their own construction.
+
 ## 4. Open items
 
 > **Most of this list is superseded by the 2026-08-18 re-baseline and is kept as history.** It was

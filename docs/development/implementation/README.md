@@ -42,7 +42,7 @@ change and the document benefits from preserving their shared history.
 | [`ag-sept-pr1.md`](ag-sept-pr1.md) | measurement substrate and load harness | merged |
 | [`ag-sept-pr2.md`](ag-sept-pr2.md) | single-instance frontier | merged |
 | [`ag-sept-pr3.md`](ag-sept-pr3.md) | horizontal database authority Phase 1, across PR3a/3b/3c | merged |
-| [`ag-sept-pr4.md`](ag-sept-pr4.md) | independently provisioned shard-group capacity, across PR4a/4b | in progress |
+| [`ag-sept-pr4.md`](ag-sept-pr4.md) | independently provisioned shard-group capacity, across PR4a/4b | PR4a merged; PR4b executed and reported, `VAL-SCALE-6` not discharged |
 
 The first three began as `docs/planning/ag-sept-pr*-scope.md` and moved here once the directory
 existed. They are named for the work unit, not the branch, and PR3's and PR4's records each span

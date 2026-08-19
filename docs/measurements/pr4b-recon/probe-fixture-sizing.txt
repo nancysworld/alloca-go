@@ -1,0 +1,19 @@
+probe fixture sizing for PR4b reconnaissance (ag-sept-validation-plan.md §4.6.4)
+derived 2026-08-19T08:31:58Z
+
+  measured G4 aggregate rate         3436 /s   (G4, 16 workers/group, pool 8, 600 s,
+                                                     docs/measurements/pr4a-sustained/g4-pool8)
+  headroom for a deeper probe        200%
+  peak aggregate assumed             6872 /s
+  probe duration                     120s
+  probe consumption per org          206160 mutations
+  conditioning per org               4000 mutations
+  explicit safety headroom           140%
+  required per org                   294224 mutations
+  capacity per slot                  20
+  slots per organisation             15000   (rounded up)
+  seeded supply                      1200000 mutations across 4 organisations
+  measured supply after conditioning 1184000 mutations
+
+This is the *probe* fixture and is not the retained one. §4.6.6 sizes the retained fixture from
+the deepest bracket this stage selects, which is not known until it has run.

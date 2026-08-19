@@ -193,6 +193,38 @@
       "expr": "sum(node_memory_MemAvailable_bytes{job=\"node\"})"
     },
     {
+      "key": "host_disk_write_bytes",
+      "title": "Host disk written",
+      "unit": "Bps",
+      "range": "30s",
+      "_note": "The term PR4b's result turned on, and the one no panel exported until it did (ag-sept-pr4.md \u00a73.30). Goodput tracks delivered write bandwidth at 65-79 mutations per MiB across every topology, and within G1 it does so run by run. `--collector.diskstats` was already enabled, so the series existed and was reachable in Prometheus while being absent from every retained cell \u2014 which is how a load-bearing number came to be quoted from a live query rather than from an artifact. JOB-SCOPED and RANGE 30s for the same reasons as host_cpu_busy.",
+      "expr": "sum(rate(node_disk_written_bytes_total{job=\"node\"}[$RANGE]))"
+    },
+    {
+      "key": "host_disk_read_bytes",
+      "title": "Host disk read",
+      "unit": "Bps",
+      "range": "30s",
+      "_note": "Retained to establish what the write panel alone cannot: that the measured interval is cache-resident. PR4b measured 0.01-0.16 MiB/s here against 15-47 MiB/s written, which is what makes the storage finding a write-path statement rather than a working-set one.",
+      "expr": "sum(rate(node_disk_read_bytes_total{job=\"node\"}[$RANGE]))"
+    },
+    {
+      "key": "host_disk_queue",
+      "title": "Host disk average queue depth",
+      "unit": "none",
+      "range": "30s",
+      "_note": "Weighted I/O time per second, which is average queue depth. It separates 'the device is busy' from 'the device is saturated': PR4b measured utilisation ~1.0 at every topology while G4 extracted 2.5x G1's bandwidth at three times this figure, so utilisation alone would have supported the wrong conclusion. Read beside host_disk_util; either alone misleads.",
+      "expr": "sum(rate(node_disk_io_time_weighted_seconds_total{job=\"node\"}[$RANGE]))"
+    },
+    {
+      "key": "host_disk_util",
+      "title": "Host disk utilisation",
+      "unit": "none",
+      "range": "30s",
+      "_note": "Fraction of wall time with at least one I/O in flight. Near 1.0 means never idle, NOT saturated \u2014 see host_disk_queue's note. Retained so the distinction is available to a reader rather than having to be rediscovered.",
+      "expr": "sum(rate(node_disk_io_time_seconds_total{job=\"node\"}[$RANGE]))"
+    },
+    {
       "key": "process_cpu",
       "title": "Process CPU",
       "unit": "cores",

@@ -1,16 +1,16 @@
 # AG-Sept PR4c — AWS independent-unit probe
 
-**Status:** Proposed — Stage 0 diagnostic validation for PR4c.  
+**Status:** Scheduled diagnostic validation for PR4c.  
 **Purpose:** obtain the smallest useful independent-provisioning result before committing AG-Sept
-time or quota to the full Tier-1 G1/G2/G4 capacity method.  
+time or quota to any different or larger experiment.  
 **Design:** [`../../design/independent-capacity-probe.md`](../../design/independent-capacity-probe.md).  
 **Governing validation plan:** [`ag-sept-validation-plan.md`](ag-sept-validation-plan.md) §4.6,
 `VAL-SCALE-5`, `VAL-NEG-7`, `VAL-NEG-8`.  
 **Measurement contract:** [`../../design/measurement-contract.md`](../../design/measurement-contract.md).
 
 This is a **diagnostic probe, not a new route to `VAL-SCALE-5`**. A partial AWS topology remains a
-partial topology. Stage 0 may justify or reject further independent-capacity work; it cannot be
-renamed Tier 1 or Tier 2 because its result looks good.
+partial topology. PR4c may provide evidence that a different future experiment would be worthwhile;
+it cannot be renamed Tier 1 or Tier 2 because its result looks good.
 
 ## 1. Question
 
@@ -45,7 +45,7 @@ a low capacity observation.
 
 ## 3. Common probe configuration
 
-The first Stage-0 pass fixes:
+The first pass fixes:
 
 ```text
 workload                 WL-MUT-DISP-4
@@ -131,8 +131,8 @@ A cell is **uninterpretable** when any of these fails:
   intended capacity-unit shape.
 
 The probe does **not** require the 5% PR4b reproducibility gate because it contains one observation
-per unit/topology and does not claim capacity. The absence of that gate is exactly why no Stage-0
-rate may be promoted to `G1_aws`, `G2_aws` or `E2_aws`.
+per unit/topology and does not claim capacity. The absence of that gate is exactly why no probe rate
+may be promoted to `G1_aws`, `G2_aws` or `E2_aws`.
 
 ## 7. Derived diagnostic quantities
 
@@ -165,26 +165,26 @@ A balanced sum and an asymmetric sum are different architecture evidence.
 
 ## 8. Interpretation and decision after the first result
 
-There is no numerical pass/fail threshold. Stage 0 ends with one of three explicit decisions:
+There is no numerical pass/fail threshold. PR4c records one of three explicit decisions:
 
 ### PROCEED
 
 Use when A/B behaviour is sufficiently intelligible and the G2 composition signal is sufficiently
-clear that longer/repeated independent measurement has a reasonable chance of answering the
-Iteration C question. The next step is planned **after** seeing this evidence; it is not pre-funded
-by Stage 0.
+clear that a different, longer or repeated independent measurement **may** be worth proposing.
+`PROCEED` creates no follow-on stage, budget or execution commitment.
 
 ### BOUNDED REPEAT
 
 Use when one small repeat can discriminate a specific ambiguity — for example whether a surprising
 A/B difference repeats, or whether the one-vCPU generator was the limiter. Name the hypothesis and
-the killing observation before the repeat. Do not start a generic replication campaign.
+the killing observation before the repeat. Do not start a generic replication campaign. The repeat
+must remain inside PR4c's existing 1.0-day allocation.
 
 ### STOP / DEFER
 
 Use when the AWS units themselves are too variable, the generator/environment is inadequate, the
-composition signal is not interpretable, or the remaining quota cannot support the next useful
-experiment. Retain the result and leave `VAL-SCALE-5` unproven.
+composition signal is not interpretable, or the remaining quota cannot support a useful conclusion.
+Retain the result and leave `VAL-SCALE-5` unproven.
 
 The decision compares the **size of the composition signal with the observed unit/environment
 variation**, rather than forcing both through an arbitrary precision threshold.
@@ -192,19 +192,20 @@ variation**, rather than forcing both through an arbitrary precision threshold.
 ## 9. Relationship to existing validation IDs
 
 - **`VAL-NEG-8`** is reused, not reopened: the independent per-group demand-stream property is
-  already mutation-proved. Stage 0 observes its deployed accounting but does not need a new slow-
-  group proof unless the generator implementation changes.
+  already mutation-proved. PR4c observes its deployed accounting but does not need a new slow-group
+  proof unless the generator implementation changes.
 - **`VAL-NEG-7`** is exercised in miniature for A/B equivalence and per-host evidence, but is not
   discharged for `VAL-SCALE-5`: the complete G1/G2/G4 family has not run.
 - **`VAL-SCALE-5`** remains unproven regardless of `R2_probe`. Only the governing validation plan's
   complete independently provisioned Tier-1 method can discharge it.
-- **Tier 2 does not apply** to Stage 0. Tier 2 requires a complete G4 environment that exists but is
-  measurement-limited; current quota preventing G4 is a provisioning limit, not a Tier-2 trigger.
+- **Tier 2 does not apply** to this probe. Tier 2 requires a complete G4 environment that exists but
+  is measurement-limited; current quota preventing G4 is a provisioning limit, not a Tier-2 trigger.
 
 ## 10. Scope guard
 
-The first PR4c execution pass is three short measured cells plus the bootstrap/smoke needed to make
-them trustworthy. It does **not** include:
+PR4c is three short measured cells plus the bootstrap/smoke needed to make them trustworthy, with at
+most one hypothesis-driven bounded repeat if the first result specifically requires it. It does
+**not** include:
 
 - a G4 topology under the current quota;
 - a 600 s S/H + S/H-confirm matrix;
@@ -214,4 +215,4 @@ them trustworthy. It does **not** include:
 - `VAL-LOAD-1` open-loop work;
 - investigation of the local VHDX mechanism carried as `DEBT-8`.
 
-Any of those requires a separate post-probe decision.
+Any of those requires a new decision after PR4c evidence exists; none is a predeclared next stage.

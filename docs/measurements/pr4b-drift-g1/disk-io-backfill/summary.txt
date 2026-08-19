@@ -1,0 +1,9 @@
+Mean over each run's measured interval, from the CSVs beside this file.
+Goodput/s is the run's own horizon average from run.json; mut/MiB is their ratio.
+
+run              util   queue  read MiB/s  write MiB/s  Goodput/s  mut/MiB
+--------------------------------------------------------------------------
+run-01           1.00    1.67       0.012        18.62     1255.9     67.4
+run-02           1.00    0.96       0.010        15.33     1023.1     66.7
+run-03           1.00    1.59       0.068        18.01     1202.1     66.7
+run-04           1.00    1.75       0.148        19.12     1279.7     66.9

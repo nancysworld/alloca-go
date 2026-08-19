@@ -66,37 +66,61 @@ the threshold it applied:
 **This is the substantive finding of PR4b, and it is a property of the environment rather than of
 `alloca-go`.**
 
-Reads during the measured interval are effectively zero (0.01–0.16 MiB/s), so the working set is
-cache-resident and this is a write-path story. Goodput tracks *delivered write bandwidth* at a
-near-constant 65–79 mutations per MiB across every topology, and within G1 it does so run by run:
+Every figure in this section comes from [`disk-io-backfill/`](disk-io-backfill/), which also records
+why those series had to be recovered after the runs rather than exported with them.
 
-| G1 run | write MiB/s | Goodput/s |
-|---|---:|---:|
-| `g1-s` | 15.30 | 1080.1 |
-| `g1-h` | 15.07 | 1032.6 |
-| `g1-s-confirm` | 15.32 | 1094.0 |
-| `g1-h-confirm` | **18.28** | **1193.8** |
+Reads are 0.01–1.07 MiB/s against 15–49 MiB/s written — at most ~2% of I/O volume — so the measured
+interval is essentially cache-resident on the read side and this is a write-path story.
 
-The run that "beat" its selected point is the run that obtained 19% more write bandwidth.
+**Goodput tracks delivered write bandwidth, and the ratio barely moves.** Mutations per MiB written
+is 65.2–72.7 across all sixteen runs and every topology. Within G1 it holds run by run while Goodput
+does not:
 
-Across topologies, the device is never idle at any of them — `node_disk_io_time` utilisation is
-≈1.0 everywhere — but it is **not saturated**: G4 extracts 2.5× G1's bandwidth from the same device
-at roughly three times the queue depth.
+| G1 run | write MiB/s | Goodput/s | mut/MiB |
+|---|---:|---:|---:|
+| `g1-s` | 16.17 | 1080.1 | 66.8 |
+| `g1-h` | 15.39 | 1032.6 | 67.1 |
+| `g1-s-confirm` | 16.78 | 1094.0 | 65.2 |
+| `g1-h-confirm` | **17.86** | **1193.8** | 66.8 |
 
-| topology | authorities | disk queue depth | write MiB/s | run-to-run spread |
+The run that "beat" its selected point is the run that obtained the most write bandwidth. The
+control makes the point more sharply still: across four *identical* runs, Goodput spans 25.1% while
+mutations per MiB spans **1.0%**. The work done per byte written is constant; what varies is how
+many bytes the device accepted.
+
+Across topologies the device is never idle — `host_disk_util` is ≈1.0 everywhere — but it is **not
+saturated**: G4 extracts roughly three times G1's write bandwidth from the same device at three to
+four times the queue depth. Utilisation alone would have supported the opposite conclusion, which is
+why the two panels are now defined and plotted together.
+
+All four columns below are the same quantity across the row: the spread is max/min over that
+topology's **four retained runs**, and the disk figures are the min–max of each run's mean over its
+own measured interval, from [`disk-io-backfill/`](disk-io-backfill/).
+
+| topology | authorities | disk queue depth | write MiB/s | spread over 4 retained runs |
 |---|---|---|---|---|
-| G1 | 1 | 0.87–1.26 | 15.07–18.28 | **25.1%** (four identical runs) |
-| G2 | 2 | 2.96–4.01 | 30.46–35.97 | 8.5% |
-| G4 | 4 | 3.89–4.86 | 44.64–47.18 | **1.0%** |
+| G1 | 1 | 0.94–1.37 | 15.39–17.86 | **15.6%** |
+| G2 | 2 | 3.31–4.44 | 31.67–36.18 | 9.7% |
+| G4 | 4 | 4.52–5.00 | 48.30–48.93 | **1.4%** |
 
-**Reproducibility improves sharply with the number of authorities issuing I/O concurrently.** G1
-drives one write stream at queue depth ≈1: per-I/O service-time variation on the storage path passes
-straight through to throughput with no concurrency to average it out. G4's four independent streams
-smooth the same variation.
+**Read the spread column with its caveat.** Each topology's four runs span two worker levels (12 and
+16), so this is not four repetitions of one point — it is the range of a topology's retained
+population. It is the only like-for-like comparison the retained runs support, and G2's and G4's
+figures rest on four observations each, which cannot bound a distribution.
 
-The G1 spread is measured directly rather than inferred from the comparison — see
-[`../pr4b-drift-g1/`](../pr4b-drift-g1/), four *identical* 600 s runs at 12 workers that came out
-1255.9, 1023.1, 1202.1 and 1279.7/s.
+A per-point pairing is available and says something different: S-vs-S-confirm is 1.3% at G1, 8.5% at
+G2 and 0.1% at G4 — **not** monotonic. G1's 1.3% is the reason the drift control was driven, and it
+turned out to be luck: **four *identical* G1 runs at 12 workers spread 25.1%** (1255.9, 1023.1,
+1202.1, 1279.7 — see [`../pr4b-drift-g1/`](../pr4b-drift-g1/)). Two observations of a 25%-wide
+distribution agreeing to 1.3% is not evidence of stability, and no comparable control was driven at
+G2 or G4.
+
+**What is therefore established, and what is not.** G1's poor reproducibility is measured directly
+and is not in doubt. G4's four runs all sit within 1.4% and its S pair within 0.1%, which is
+consistent with a much tighter distribution but is not a measurement of one. The proposition that
+reproducibility improves *because* more authorities issue I/O concurrently is a reading of the
+queue-depth and bandwidth columns beside those spreads — coherent with every measurement here, and
+not established by them. Confirming it needs the control G1 received, driven at G2 and G4 as well.
 
 **The consequence for `VAL-SCALE-6`.** `G1_local` is the denominator of both efficiencies and is the
 least reproducible quantity in the experiment. On this environment neither `E2_local` nor `E4_local`

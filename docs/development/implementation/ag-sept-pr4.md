@@ -1882,27 +1882,81 @@ counterbalanced re-drive of eight.
 
 ### 3.30 The cause is the storage path, and it is why `VAL-SCALE-6` is not discharged
 
-Reads during the measured interval are effectively zero, so the working set is cache-resident and
-this is a write-path story. Goodput tracks *delivered write bandwidth* at a near-constant 65–79
-mutations per MiB across every topology, and within `G1` it does so run by run — the run that "beat"
-its selected point is the run that obtained 19% more write bandwidth (15.30, 15.07, 15.32 and
-**18.28** MiB/s against 1080.1, 1032.6, 1094.0 and **1193.8**/s).
+**The evidence for this section had to be recovered after the runs, and that is a finding in its own
+right — see §3.31.** Every figure below now comes from
+[`pr4b-capacity/disk-io-backfill/`](../../measurements/pr4b-capacity/disk-io-backfill/).
 
-The device is never idle at any topology — `node_disk_io_time` utilisation ≈1.0 everywhere — but it
-is **not saturated**, which the topologies establish against each other:
+Reads are 0.01–1.07 MiB/s against 15–49 MiB/s written, at most ~2% of I/O volume, so the measured
+interval is essentially cache-resident on the read side and this is a write-path story.
+
+**Goodput tracks delivered write bandwidth, and the ratio barely moves.** Mutations per MiB written
+is 65.2–72.7 across all sixteen runs and every topology. Within `G1` it holds run by run while
+Goodput does not — the run that "beat" its selected point obtained the most write bandwidth (16.17,
+15.39, 16.78 and **17.86** MiB/s against 1080.1, 1032.6, 1094.0 and **1193.8**/s, at 66.8, 67.1,
+65.2 and 66.8 mutations per MiB). The control is sharper still: across four *identical* runs Goodput
+spans 25.1% while mutations per MiB spans **1.0%**. The work done per byte written is constant; what
+varies is how many bytes the device accepted.
+
+The device is never idle at any topology — `host_disk_util` ≈1.0 everywhere — but it is **not
+saturated**, which the topologies establish against each other. Each row is the same quantity: the
+min–max of that topology's four retained runs.
 
 ```text
-topology  authorities  disk queue depth   write MiB/s   run-to-run spread
-  G1           1         0.87 - 1.26      15.07-18.28        25.1%
-  G2           2         2.96 - 4.01      30.46-35.97         8.5%
-  G4           4         3.89 - 4.86      44.64-47.18         1.0%
+topology  authorities  disk queue depth   write MiB/s   spread over 4 retained runs
+  G1           1         0.94 - 1.37      15.39-17.86            15.6%
+  G2           2         3.31 - 4.44      31.67-36.18             9.7%
+  G4           4         4.52 - 5.00      48.30-48.93             1.4%
 ```
 
-`G4` extracts 2.5× `G1`'s bandwidth from the same device at roughly three times the queue depth.
-**Reproducibility improves sharply with the number of authorities issuing I/O concurrently**: `G1`
-drives one write stream at queue depth ≈1, where per-I/O service-time variation passes straight
-through to throughput with no concurrency to average it out, while `G4`'s four independent streams
-smooth the same variation.
+`G4` extracts roughly three times `G1`'s write bandwidth from the same device at three to four times
+the queue depth. Utilisation alone would have supported the opposite conclusion, which is why
+`host_disk_util` and `host_disk_queue` are now defined as panels and plotted on one graph.
+
+**What the spread column does and does not support.** Each topology's four runs span two worker
+levels, so it is the range of a retained population rather than four repetitions of one point, and
+G2's and G4's figures rest on four observations each — too few to bound a distribution. The
+per-point pairing says something different and is *not* monotonic: S-vs-S-confirm is 1.3% at `G1`,
+8.5% at `G2`, 0.1% at `G4`. `G1`'s 1.3% is precisely what prompted the drift control, and it was
+luck — four identical runs spread 25.1%.
+
+So `G1`'s poor reproducibility is measured and not in doubt, and `G4`'s tightness is consistent with
+a much better-behaved distribution without being a measurement of one. **That reproducibility
+improves *because* more authorities issue I/O concurrently is a reading of the queue-depth and
+bandwidth columns beside those spreads, not a result established by them.** Confirming it needs the
+control `G1` received, driven at `G2` and `G4` as well; it was not, and the maintainer closed
+execution before it could be.
+
+### 3.31 A load-bearing number was quoted from a live query, not from an artifact
+
+The storage figures above were originally read out of a running Prometheus by `docker exec` and
+written straight into this record and the measurements README. No cell under `docs/measurements/`
+contained a disk series, so none of those numbers had a retained artifact —
+`measurement-contract.md` §5's requirement — and the tables looked exactly like every other
+evidence-backed table in the repository. **It was caught by the maintainer asking where the figures
+came from**, not by any gate.
+
+Three separate faults, and only the first is about storage:
+
+- **`--collector.diskstats` was enabled but `panels.json` defined no disk panel**, so
+  `export-panels.sh` retained none. The comment in `gen-dashboard.py` justifying a wide collector
+  set — "collect broadly, panel narrowly: the snapshot retains everything scraped" — was true and
+  insufficient. The *cell's* panels are what a report cites, and the TSDB snapshots that would have
+  justified these numbers are 123 MB per run and are not promoted. The rule needs its second half:
+  promote a series to a panel the moment a claim rests on it.
+- **The ad-hoc queries did not use the repository's own aggregation.** They took a 60 s rate range
+  at a 30–60 s step rather than the 30 s range and 5 s step every retained panel uses, so the
+  figures were not comparable with any other series here and shifted by up to 5% when re-derived
+  correctly. The corrected values supersede them throughout.
+- **The spread column compared three different quantities** — four identical runs at `G1`, an
+  S-vs-S-confirm pair at `G2`, an H-vs-H-confirm pair at `G4` — assembled after the fact into a
+  monotonic-looking column. Computed consistently the monotonic reading weakens, and on the
+  per-point pairing it inverts. That is the shape of a result found by choosing comparisons rather
+  than by making them.
+
+The durable fixes are upstream: four disk panels are now defined in `panels.json` and plotted, so
+every future cell retains them at run time. The sixteen runs that predate the fix carry a
+`disk-io-backfill/` directory whose README states that the series were recovered from the surviving
+TSDB after the fact, with the queries used.
 
 `G1_local` is the denominator of both efficiencies and is the least reproducible quantity in the
 experiment. **On this environment neither `E2_local` nor `E4_local` can be derived to a 5% margin,

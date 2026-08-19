@@ -71,10 +71,29 @@ SECTIONS = [
     # busy is a rounding error on a shared axis, and it is the series that would say whether the
     # host was descheduled.
     #
-    # The collector set is deliberately wider than these panels (diskstats, netdev, filesystem are
+    # The collector set is deliberately wider than these panels (netdev and filesystem are
     # collected and not plotted). Collect broadly, panel narrowly: the snapshot retains everything
     # scraped, so a series nobody thought to plot is still recoverable — which is exactly how the
     # pool population question was answered without re-running a cell (§3.13.1).
+    #
+    # **The four diskstats panels are exported and deliberately not plotted**, which is why they do
+    # not appear below. PR4b's local capacity result turned on delivered write bandwidth, and the
+    # gap that exposed was not in the collector set: the series was scraped and reachable in
+    # Prometheus the whole time, so "recoverable from the snapshot" held — but the *cell's* retained
+    # panels are what a report cites, and a series absent from them gets quoted from a live query
+    # instead. That is what happened (ag-sept-pr4.md §3.31), and `display: false` closes it: every
+    # future cell retains the CSVs whether or not anyone plots them.
+    #
+    # So the rule needs its second half stated: collect broadly, panel narrowly — and *export* a
+    # series the moment a claim rests on it, because a snapshot nobody ships is not evidence a
+    # reader can check.
+    #
+    # **Whether they should also be plotted is a maintainer decision that has not been made.** This
+    # dashboard is capped at 20 graphs by TestDashboardIsDeliberatelySmall, whose own comment says
+    # an unplotted series is recoverable but not *noticed* — and the storage path is now a known
+    # candidate mechanism a future degraded cell would want to read without knowing to look for it.
+    # Plotting them means raising that bound and adding "Bps" and "none" to GRAFANA_UNIT; the
+    # generator refuses a panel it has no unit for, so it will say so.
     ("Host (the machine every unit shares)", [
         ("Host CPU busy (cores)", ["host_cpu_busy"]),
         ("Host CPU stolen and blocked (cores)", ["host_cpu_steal"]),

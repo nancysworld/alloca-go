@@ -262,6 +262,29 @@ recon_level() {
   sed -n "s/^  $2  *\([0-9][0-9]*\).*/\1/p" "$1"
 }
 
+# **Readers for the probe table, scoped to the table itself.** A report is not only its table: it
+# opens with a configuration block whose lines look enough like probe rows to be read as one. The
+# first version matched any line whose second field was numeric, which found
+# `slots/organisation  15000 at capacity 20` and concluded the topology's best observed rate was
+# 15,000/s — so a valid bracket was refused for sitting "materially below" a fixture parameter.
+#
+# The table is delimited by its own header and the blank line after it, so that is what these read.
+# They are shared for the same reason recon_level is: two copies of a parse drifted once already.
+recon_probe_rate() {
+  awk -v want="$2" '
+    /^  workers/ { inside = 1; next }
+    /^ *$/       { inside = 0 }
+    inside && $1 == want && $2 ~ /^[0-9.]+$/ { print $2; exit }' "$1"
+}
+
+recon_best_rate() {
+  awk '
+    /^  workers/ { inside = 1; next }
+    /^ *$/       { inside = 0 }
+    inside && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9.]+$/ { if ($2 + 0 > best) best = $2 + 0 }
+    END { print best }' "$1"
+}
+
 CONDITIONING_SLOTS="${CONDITIONING_SLOTS:-200}"
 CONDITIONING_TARGET="${CONDITIONING_TARGET:-4000}"
 SLOTS="${SLOTS:-3200}"
@@ -970,7 +993,7 @@ print('%.1f' % (s['successful_mutation_goodput'] / s['duration_seconds']))" "${c
       # The retained points are S and H only. A probe taken above H is not retained and must not
       # inflate the fixture; a probe below S is not retained either.
       for level in "$s_level" "$h_level"; do
-        rate="$(awk -v l="$level" '$1==l && $2 ~ /^[0-9.]+$/ {print $2}' "$report" | head -1)"
+        rate="$(recon_probe_rate "$report" "$level")"
         [ -n "$rate" ] || fail "$report selects level $level but retains no probe rate for it"
         max_rate="$(awk -v a="$max_rate" -v b="$rate" 'BEGIN{print (b>a)?b:a}')"
       done
@@ -1095,8 +1118,8 @@ SIZING
         common_h="${ITC_CAPACITY_H:?ITC_CAPACITY_S was set without ITC_CAPACITY_H; a selected point
   without its deciding point cannot resolve a knee (§4.6.5)}"
 
-        s_rate="$(awk -v l="$common_s" '$1==l && $2 ~ /^[0-9.]+$/ {print $2}' "$report" | head -1)"
-        h_rate="$(awk -v l="$common_h" '$1==l && $2 ~ /^[0-9.]+$/ {print $2}' "$report" | head -1)"
+        s_rate="$(recon_probe_rate "$report" "$common_s")"
+        h_rate="$(recon_probe_rate "$report" "$common_h")"
         [ -n "$s_rate" ] || fail "G$groups reconnaissance never probed $common_s workers/group, so
   ITC_CAPACITY_S=$common_s is a level this topology has no evidence about. Probe it first:
       ITC_RECON_ONLY='$common_s' ITC_RECON_GROUPS=$groups ./test/scripts/itc-local-experiment.sh recon"
@@ -1112,7 +1135,7 @@ SIZING
         # separate check could never fire, and a check that cannot fire is worse than none, because
         # it reads as protection. The self-test established this rather than inspection: a case
         # written to exercise it kept refusing one line earlier.
-        best_rate="$(awk '$2 ~ /^[0-9.]+$/ {if ($2+0 > m) m = $2+0} END {print m}' "$report")"
+        best_rate="$(recon_best_rate "$report")"
         awk -v best="$best_rate" -v s="$s_rate" -v m="$recon_margin" \
           'BEGIN { exit !(best > s * (1 + m/100)) }' \
           && fail "G$groups measured $common_s workers/group at $s_rate/s against its own best of

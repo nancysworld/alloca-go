@@ -36,9 +36,29 @@ bad() { printf '  !!    %s\n' "$*"; fail=$((fail + 1)); }
 RECON="test/results/${GROUP}-recon"
 mkdir -p "$RECON" "test/results/$GROUP"
 
-# A reconnaissance report in the shape the stage reads: G1's real 2026-08-19 probe table.
+# **A byte-for-byte realistic report, header block included.** The first version of this fixture
+# held only the probe table and the selection lines, and that omission hid a defect the stage then
+# hit on its first real invocation: the best-rate parse matched any line with a numeric second field,
+# found `slots/organisation  45000 at capacity 20`, and refused a valid bracket for sitting
+# "materially below" a fixture parameter. A test fixture cleaner than the artifact it stands for
+# tests a report that is never written.
 cat > "$RECON/recon-G1.txt" <<'REPORT'
 PR4b reconnaissance, G1 (ag-sept-validation-plan.md §4.6.4)
+driven 2026-08-19T08:45:56Z
+
+NOT CAPACITY EVIDENCE. These are short non-canonical probes. No rate below may be
+quoted, entered into E2/E4, or compared with a 600 s horizon average: a probe reads
+the early part of a trajectory that PR4a measured declining to ~0.75x by 600 s.
+Their only output is the two levels named at the bottom.
+
+  probe duration      120s
+  pool_max_conns      8
+  slots/organisation  15000 at capacity 20
+  conditioning        4000 mutations/org
+  margin              5%  (twice the 2.6% agreement of ten identical healthy
+                      G4 cells, docs/measurements/pr4a-rehearsal/repeats/)
+  ladder              2 4 8 12 16 24 32 48 64 96 128
+  start               16
 
   workers     probe/s  shape    spread  cell
   8            1342.8  flat       1.28  x/
@@ -100,6 +120,13 @@ printf '\n--- H materially better than S is the bracket not being found --------
 # with it. G2's synthetic table has 16 well above 12, so S=12/H=16 is exactly that shape.
 cat > "$RECON/recon-G2.txt" <<'REPORT'
 PR4b reconnaissance, G2 (ag-sept-validation-plan.md §4.6.4)
+driven 2026-08-19T09:02:56Z
+
+  probe duration      120s
+  pool_max_conns      8
+  slots/organisation  15000 at capacity 20
+  ladder              2 4 8 12 16 24 32 48 64 96 128
+  start               16
 
   workers     probe/s  shape    spread  cell
   8            1000.0  flat       1.10  x/
@@ -147,6 +174,12 @@ grep -q 'common bracket S=12 H=16' "$CAP_OUT" \
 grep -q 'this topology probed 12 at 1411.9/s against its own best 1411.9/s' "$CAP_OUT" \
   && ok "and it quotes this topology's own probe rate, not the override" \
   || bad "the log does not show the evidence the override was checked against"
+# The regression this case exists for: the best rate must come from the probe table, never from the
+# configuration block above it. 15000 is the slots/organisation line, and reading it as a rate is
+# what refused a valid bracket on the stage's first real invocation.
+grep -q 'own best 15000' "$CAP_OUT" \
+  && bad "the best rate was read from the configuration block, not the probe table" \
+  || ok "the best rate came from the probe table, not the slots/organisation line"
 grep -q 'tearing down the topology' "$CAP_OUT" \
   && bad "a topology was raised despite every run already being retained" \
   || ok "no cell was driven: the resume branch skipped all four"

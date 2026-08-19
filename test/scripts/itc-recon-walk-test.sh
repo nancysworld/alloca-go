@@ -77,8 +77,14 @@ run_case() {
 
 # selected reads the decision out of the retained report rather than out of the log, because the
 # report is what a person acts on.
-selected() { grep -h '^  selected S' "test/results/selftest-$1/recon-G1.txt" 2>/dev/null | awk '{print $NF}'; }
-deciding() { grep -h '^  deciding H' "test/results/selftest-$1/recon-G1.txt" 2>/dev/null | awk '{print $NF}'; }
+#
+# **The field is extracted by position from the label, not as the last field on the line.** These
+# read `$NF` until the report gained a parenthetical after each level ("selected S 12 (lowest level
+# on the discovered plateau)"), at which point every assertion started comparing against `plateau)`
+# and eight cases failed at once. A report is allowed to explain itself; a test that reads it must
+# not depend on the explanation being absent.
+selected() { sed -n 's/^  selected S  *\([0-9][0-9]*\).*/\1/p' "test/results/selftest-$1/recon-G1.txt" 2>/dev/null; }
+deciding() { sed -n 's/^  deciding H  *\([0-9][0-9]*\).*/\1/p' "test/results/selftest-$1/recon-G1.txt" 2>/dev/null; }
 probed()   { awk '/^  workers/{f=1;next} /^$/{f=0} f{print $1}' \
                "test/results/selftest-$1/recon-G1.txt" 2>/dev/null | sort -n | tr '\n' ' '; }
 
@@ -115,24 +121,6 @@ case " $(probed peak-at-start) " in
   *) bad "12 was never probed: [$(probed peak-at-start)]" ;;
 esac
 
-printf '\n--- S never has an unobserved lower side ------------------------------------\n'
-# **Stated as an invariant over every case rather than checked once.** Mutation testing showed the
-# single-case version above passing for the wrong reason: deleting the explicit lower-side probe
-# from the stage changed nothing, because each direction of the walk already measures the level
-# below its own best. That makes "the lower neighbour is always in the table" a property of the
-# search, and a property is worth asserting where it can catch a future walk that stops holding it.
-lower_of() {
-  local ladder="$2" s; s="$(selected "$1")"
-  awk -v s="$s" '{for(i=1;i<=NF;i++) if($i==s && i>1){print $(i-1); exit}}' <<< "$ladder"
-}
-for case_name in peak-above peak-at-start peak-below; do
-  case " $(probed "$case_name") " in
-    *" $(lower_of "$case_name" "$LADDER") "*)
-      ok "$case_name: the level below S=$(selected "$case_name") was probed" ;;
-    *) bad "$case_name: S=$(selected "$case_name") was proposed with its lower side unobserved" ;;
-  esac
-done
-
 printf '\n--- peak below the start -----------------------------------------------------\n'
 # The frontier is at 8. The walk must descend 16 -> 12 -> 8, stop at 4, and select 8.
 run_case peak-below "2:400 4:700 8:1400 12:1150 16:1000 24:900" "$LADDER" 16
@@ -142,17 +130,73 @@ if [ "$CASE_STATUS" -eq 0 ]; then ok "the walk completed"; else bad "exit $CASE_
 [ "$(deciding peak-below)" = "12" ] \
   && ok "deciding H=12" || bad "deciding H=$(deciding peak-below), expected 12"
 
-printf '\n--- the margin is not a tiebreak --------------------------------------------\n'
-# 16 beats 12 by 2%, inside the environment's own demonstrated reproducibility. Selecting it would
-# claim a frontier the machine cannot distinguish from noise, so the lower-side check must refuse
-# and the stage must exit non-zero rather than hand back a bracket.
-run_case margin-tie "8:900 12:1225 16:1250 24:1240 32:1100" "$LADDER" 16
+printf '\n--- a plateau selects its lowest level ---------------------------------------\n'
+# 16 reads 2% above 12, inside the environment's own demonstrated reproducibility, so the two are
+# one plateau. S must be 12: both deliver the same Goodput and the lower does it with less
+# queueing, so quoting 16 would attribute capacity to four workers that bought nothing.
+run_case plateau "8:900 12:1225 16:1250 24:1240 32:1100" "$LADDER" 16
+if [ "$CASE_STATUS" -eq 0 ]; then ok "the walk completed"; else bad "exit $CASE_STATUS; see $CASE_OUT"; fi
+[ "$(selected plateau)" = "12" ] \
+  && ok "selected S=12, the bottom of the plateau, not the 1250 reading at 16" \
+  || bad "selected S=$(selected plateau), expected 12"
+[ "$(deciding plateau)" = "16" ] \
+  && ok "deciding H=16, higher and not materially better" || bad "deciding H=$(deciding plateau), expected 16"
+grep -q '^  lower-side check    pass' "test/results/selftest-plateau/recon-G1.txt" \
+  && ok "lower-side passes: 12 beats 8 materially" || bad "lower-side did not pass"
+# 8 must have been driven: it is what establishes that 12 is the *bottom* of the plateau rather
+# than a point part-way down it.
+case " $(probed plateau) " in
+  *" 8 "*) ok "8 was probed, establishing where the plateau ends" ;;
+  *) bad "8 was never probed: [$(probed plateau)]" ;;
+esac
+
+printf '\n--- the observed G2/G4 shape, as a regression case --------------------------\n'
+# The real 2026-08-19 G2 reconnaissance: 12 -> 2581.3, 16 -> 2637.3 (2.2% apart), 24 -> 2431.7.
+# Under the first rule this refused its own candidate; under the plateau rule it must select 12.
+# Retained as a case so the finding cannot be undone silently.
+run_case g2-observed "8:2100 12:2581.3 16:2637.3 24:2431.7" "$LADDER" 16
+if [ "$CASE_STATUS" -eq 0 ]; then ok "the walk completed"; else bad "exit $CASE_STATUS; see $CASE_OUT"; fi
+[ "$(selected g2-observed)" = "12" ] \
+  && ok "G2's observed shape selects S=12" || bad "selected S=$(selected g2-observed), expected 12"
+[ "$(deciding g2-observed)" = "16" ] \
+  && ok "and H=16" || bad "deciding H=$(deciding g2-observed), expected 16"
+
+printf '\n--- S never has an unobserved lower side ------------------------------------\n'
+# **Stated as an invariant over every resolving case rather than checked once.** Mutation testing
+# showed the single-case version passing for the wrong reason: deleting the explicit lower-side probe
+# from the stage changed nothing, because every direction of the walk already measures the level
+# below its own candidate. That makes "the lower neighbour is always in the table" a property of the
+# search, worth asserting where it can catch a future walk that stops holding it.
+#
+# **It runs here, below every case it names.** It was originally placed above three of them, where
+# `selected` returned empty, `lower_of` returned empty, and the `case` matched the empty string
+# inside a padded list — so it reported five passes while testing nothing. An assertion that cannot
+# fail is worse than a missing one, because it reads as coverage.
+lower_of() {
+  local ladder="$2" s; s="$(selected "$1")"
+  [ -n "$s" ] || { printf 'NO-SELECTION' ; return; }
+  awk -v s="$s" '{for(i=1;i<=NF;i++) if($i==s && i>1){print $(i-1); exit}}' <<< "$ladder"
+}
+for case_name in peak-above peak-at-start peak-below plateau g2-observed; do
+  lower="$(lower_of "$case_name" "$LADDER")"
+  if [ "$lower" = "NO-SELECTION" ] || [ -z "$lower" ]; then
+    bad "$case_name: no selected S in the report, so this invariant tested nothing"
+    continue
+  fi
+  case " $(probed "$case_name") " in
+    *" $lower "*) ok "$case_name: S=$(selected "$case_name") has its lower neighbour $lower probed" ;;
+    *) bad "$case_name: S=$(selected "$case_name") proposed with lower side $lower unobserved" ;;
+  esac
+done
+
+printf '\n--- a plateau running off the bottom is refused ------------------------------\n'
+# Flat all the way down a short ladder: nothing below is materially worse, so no level satisfies
+# the lower-side condition and the frontier is outside the range. Refusing is the honest answer.
+run_case plateau-off-bottom "8:1240 12:1225 16:1250 24:1100" "8 12 16 24" 16
 [ "$CASE_STATUS" -ne 0 ] \
-  && ok "refused: exit $CASE_STATUS" || bad "exit 0 — a 2% difference was accepted as a frontier"
-grep -q '^  lower-side check    FAIL' "test/results/selftest-margin-tie/recon-G1.txt" \
-  && ok "the report records the lower-side failure" || bad "the report does not record the failure"
-grep -q 'past the peak' "$CASE_OUT" \
-  && ok "the refusal names why: S could be past the peak" || bad "the refusal does not explain itself"
+  && ok "refused: exit $CASE_STATUS" || bad "exit 0 — a ladder-bottom plateau was reported as a frontier"
+grep -q "ITC_RECON_LADDER='1 " "$CASE_OUT" \
+  && ok "the refusal names how to extend downward" || bad "the refusal does not say how to extend"
 
 printf '\n--- the walk may not report a ladder end as a frontier ----------------------\n'
 # Monotonic to the top of a short ladder. §4.6.4 sets no maximum, so the honest answer is that the

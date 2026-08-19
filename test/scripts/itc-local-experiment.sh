@@ -698,7 +698,19 @@ print('%.1f' % (s['successful_mutation_goodput'] / s['duration_seconds']))" "${c
       done
       return 1
     }
-    ladder_at() { printf '%s\n' "$ladder" | tr ' ' '\n' | sed -n "$(( $1 + 1 ))p"; }
+    # Refuses an out-of-range index rather than returning empty. An empty level silently becomes an
+    # unset array subscript two lines later, and the walk then dies on `unbound variable` instead of
+    # on the ladder-end refusal that was supposed to explain itself — which is what removing that
+    # refusal actually produced under mutation.
+    ladder_at() {
+      local value
+      [ "$1" -ge 0 ] || fail "ladder index $1 is below the ladder; the walk should have refused at
+  its bottom end before asking for this"
+      value="$(printf '%s\n' "$ladder" | tr ' ' '\n' | sed -n "$(( $1 + 1 ))p")"
+      [ -n "$value" ] || fail "ladder index $1 is past the top of [$ladder]; the walk should have
+  refused at its top end before asking for this"
+      printf '%s\n' "$value"
+    }
     ladder_size() { printf '%s\n' "$ladder" | wc -w; }
 
     for groups in $recon_groups; do
@@ -733,62 +745,84 @@ print('%.1f' % (s['successful_mutation_goodput'] / s['duration_seconds']))" "${c
       log ""
       log "=== reconnaissance at G$groups: start $recon_start, margin ${recon_margin}%, ladder [$ladder]"
 
-      probe_once "$groups" "$start_idx"
-      best_idx="$start_idx"
+      # rate_of reads a probed level's rate by ladder index. The nested expansion it replaces was
+      # correct and unreadable, and this walk is the part of the stage a person most needs to follow.
+      rate_of() { printf '%s\n' "${rate_at[$(ladder_at "$1")]}"; }
 
-      # **Walk up first, because the question is where the frontier stops rising.** The direction
-      # is decided by one probe rather than assumed: if the level above the start does not beat it
-      # by the margin, the start is already at or past the frontier and the walk turns around.
+      probe_once "$groups" "$start_idx"
+      peak_idx="$start_idx"
+
+      # **Climb while a higher level is materially better.** The direction is decided by one probe
+      # rather than assumed: if the level above the start does not beat it by the margin, the start
+      # is already at or above the frontier's throughput and there is nothing above to find.
       if [ "$start_idx" -lt "$last_idx" ]; then
         probe_once "$groups" $(( start_idx + 1 ))
-        if better_than "${rate_at[$(ladder_at $(( start_idx + 1 )))]}" "${rate_at[$(ladder_at "$start_idx")]}"; then
-          best_idx=$(( start_idx + 1 ))
-          while [ "$best_idx" -lt "$last_idx" ]; do
-            probe_once "$groups" $(( best_idx + 1 ))
-            better_than "${rate_at[$(ladder_at $(( best_idx + 1 )))]}" "${rate_at[$(ladder_at "$best_idx")]}" || break
-            best_idx=$(( best_idx + 1 ))
+        if better_than "$(rate_of $(( start_idx + 1 )))" "$(rate_of "$start_idx")"; then
+          peak_idx=$(( start_idx + 1 ))
+          while [ "$peak_idx" -lt "$last_idx" ]; do
+            probe_once "$groups" $(( peak_idx + 1 ))
+            better_than "$(rate_of $(( peak_idx + 1 )))" "$(rate_of "$peak_idx")" || break
+            peak_idx=$(( peak_idx + 1 ))
           done
         fi
       fi
 
-      # Turn around only if going up bought nothing at all: the start is then a candidate whose
-      # lower side has never been observed, which is exactly what the check below needs.
-      if [ "$best_idx" -eq "$start_idx" ]; then
-        while [ "$best_idx" -gt 0 ]; do
-          probe_once "$groups" $(( best_idx - 1 ))
-          better_than "${rate_at[$(ladder_at $(( best_idx - 1 )))]}" "${rate_at[$(ladder_at "$best_idx")]}" || break
-          best_idx=$(( best_idx - 1 ))
-        done
-      fi
+      # **Then descend through the plateau, because S is the lowest level that reaches the
+      # frontier's throughput and not the level that happens to read highest** (maintainer decision,
+      # 2026-08-19). Where throughput is flat across several levels, every one of them delivers the
+      # same Goodput and the lowest does it with the least queueing, so quoting a higher one
+      # attributes capacity to workers that bought nothing.
+      #
+      # This is what G2 and G4 turned out to need. Both were flat from 12 to 16 — 2.2% and 2.0%
+      # apart, inside the margin — so the earlier rule, which descended only while a lower level was
+      # materially *better*, stopped at 16 and then had to refuse its own candidate. G1 was not
+      # flat there (16 beat 12 by 7.0%) and is unaffected: the descent breaks immediately.
+      #
+      # **The descent runs unconditionally, and that is equivalent to gating it on the climb having
+      # found nothing — not broader.** Mutation testing established this rather than reasoning
+      # asserting it: re-adding the gate changed no case. The reason is that climbing from one level
+      # to the next requires the higher to be materially better, so after any climb the level below
+      # the peak is already known to be materially worse and the descent breaks on its first test.
+      # A plateau therefore cannot be traversed above the start, and the unconditional form is kept
+      # only because it is one less condition to read, not because it reaches more cases.
+      s_idx="$peak_idx"
+      while [ "$s_idx" -gt 0 ]; do
+        probe_once "$groups" $(( s_idx - 1 ))
+        # Stop at the bottom of the plateau: the level below is materially worse, so it is off it.
+        if better_than "$(rate_of "$s_idx")" "$(rate_of $(( s_idx - 1 )))"; then break; fi
+        s_idx=$(( s_idx - 1 ))
+      done
 
-      S="$(ladder_at "$best_idx")"
+      S="$(ladder_at "$s_idx")"
 
-      [ "$best_idx" -lt "$last_idx" ] || fail "G$groups: the walk reached the top of the ladder at
-  $S workers/group and each level was still better than the one below it. §4.6.4 sets no maximum,
-  so this is a bracket outside the starting range rather than a limit. Extend and re-run:
+      [ "$peak_idx" -lt "$last_idx" ] || fail "G$groups: the climb reached the top of the ladder at
+  $(ladder_at "$peak_idx") workers/group and each level was still materially better than the one
+  below it. §4.6.4 sets no maximum, so this is a bracket outside the starting range rather than a
+  limit. Extend and re-run:
       ITC_RECON_LADDER='$ladder 192 256' ./test/scripts/itc-local-experiment.sh recon"
-      [ "$best_idx" -gt 0 ] || fail "G$groups: the walk reached the bottom of the ladder at $S
-  workers/group. The frontier is below the starting range; extend downward and re-run:
+      [ "$s_idx" -gt 0 ] || fail "G$groups: the plateau reached the bottom of the ladder at $S
+  workers/group, so no level below it was measured to be materially worse and the frontier is
+  below the starting range. Extend downward and re-run:
       ITC_RECON_LADDER='1 $ladder' ./test/scripts/itc-local-experiment.sh recon"
 
-      H="$(ladder_at $(( best_idx + 1 )))"
-      L="$(ladder_at $(( best_idx - 1 )))"
+      H="$(ladder_at $(( s_idx + 1 )))"
+      L="$(ladder_at $(( s_idx - 1 )))"
 
-      # **The lower-side check** (maintainer decision, 2026-08-19). §4.6.5's selection rule tests
+      # **The lower-side condition, asserted rather than discovered.** §4.6.5's selection rule tests
       # only that H fails to beat S, which confirms S is not *below* the frontier and says nothing
-      # about S sitting past the peak — and a too-high S would understate capacity at every
-      # topology while passing the rule unchallenged. Recon is where that costs one short probe
-      # rather than four retained 600 s runs, so S is proposed only when it beats the level below
-      # it by the same margin.
+      # about S sitting past it — and a too-high S would understate capacity at every topology while
+      # passing that rule unchallenged. The plateau descent above is what prevents it, so by the
+      # time control reaches here the condition already holds: the descent stops precisely when the
+      # level below is materially worse, which is what this tests.
       #
-      # **The probe below is a guard, not the source of the data, and mutation testing is how that
-      # was established** rather than assumed. Every path through the walk above has already
-      # measured `best_idx - 1`: the upward walk passed through it, the turnaround probed it to
-      # decide it was not better, and a downward walk exits precisely when it fails to beat the
-      # level above. So this call is idempotent in all three cases — deleting it changes no
-      # current behaviour, and it is kept only so that a future change to the walk cannot leave the
-      # check reading a level nothing observed.
-      probe_once "$groups" $(( best_idx - 1 ))
+      # It is kept, and labelled honestly, for two reasons. It states the property S must satisfy in
+      # the retained report, where a reader can see it rather than having to reconstruct it from a
+      # probe table. And it is the assertion that fails if a future change to the descent stops
+      # holding the invariant — which is the same reason the probe below is kept: every path through
+      # the walk has already measured `s_idx - 1`, so the call is idempotent today and exists so a
+      # later walk cannot leave the condition reading a level nothing observed. Mutation testing
+      # established both facts rather than reasoning asserting them.
+      probe_once "$groups" $(( s_idx - 1 ))
       if better_than "${rate_at[$S]}" "${rate_at[$L]}"; then
         lower_side="pass — $S beats $L by more than ${recon_margin}%"
       else
@@ -821,8 +855,8 @@ print('%.1f' % (s['successful_mutation_goodput'] / s['duration_seconds']))" "${c
           printf '  %-8s %10s  %-7s %7s  %s\n' \
             "$lvl" "${rate_at[$lvl]}" "${shape_at[$lvl]}" "${spread_at[$lvl]}" "${cell_at[$lvl]}"
         done
-        printf '\n  selected S          %s\n' "$S"
-        printf '  deciding H          %s\n' "$H"
+        printf '\n  selected S          %s   (lowest level on the discovered plateau)\n' "$S"
+        printf '  deciding H          %s   (higher, and not materially better than S)\n' "$H"
         printf '  lower-side check    %s\n' "$lower_side"
       } > "$report"
 

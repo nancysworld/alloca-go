@@ -386,6 +386,35 @@ higher and repeat the reconnaissance/retained-point selection as necessary. Ther
 maximum such as 16 workers/group**; the upper bound is empirical and generator/resource gates still
 apply.
 
+**Probes are 120 s, and the trade that buys is stated rather than hidden** (maintainer decision,
+2026-08-19). A probe reads the early, high part of a trajectory that PR4a measured declining to
+roughly 0.75× by 600 s (`ag-sept-pr4.md` §3.21), so a bracket is selected on a *different quantity*
+from the full-600 s horizon average that decides the retained comparison in §4.6.5. Longer probes
+would narrow that gap and consume the budget the retained runs need. The mitigation is the selection
+rule below, not a claim that the two quantities agree.
+
+**`S` is the lowest worker level on the discovered plateau** (maintainer decision, 2026-08-19).
+Its immediately lower reconnaissance level must be materially worse, and `H` is a higher level that
+is not materially better. Three consequences follow, and each is a mistake this rule exists to
+prevent:
+
+- **A candidate must beat the level below it, not merely fail to be beaten from above.** §4.6.5's
+  rule tests only that `H` produces no materially higher sustained Goodput, which establishes that
+  `S` is not *below* the frontier and says nothing about `S` sitting past it. A too-high `S` would
+  understate capacity at every topology while passing that rule unchallenged, and every efficiency
+  derived from it would inherit the error silently.
+- **Where throughput is flat across several levels, the lowest of them is the frontier.** Each
+  delivers the same Goodput and the lowest does it with the least queueing, so selecting a higher
+  one attributes capacity to workers that bought nothing. This is not hypothetical: local G2 and G4
+  reconnaissance were both flat from 12 to 16 workers per group — 2.2% and 2.0% apart, inside the
+  margin — while G1 was not, 16 exceeding 12 by 7.0%.
+- **Reconnaissance that cannot satisfy the rule proposes no bracket.** The honest outcomes are to
+  probe lower, or to extend the range; they are not to retain four 600 s runs at a level the
+  reconnaissance declined to stand behind.
+
+Deciding this at reconnaissance costs one short probe. Discovering it after the fact costs four
+retained 600 s runs, which is why the rule belongs here rather than in §4.6.5.
+
 #### 4.6.5 Retained closed-loop capacity points are 600 s, with both sides confirmed
 
 For each topology, once reconnaissance identifies a candidate bracket:
@@ -443,6 +472,21 @@ knee. If the two `H` observations disagree materially, or either belongs to an u
 regime, the knee remains unresolved; investigate or move the bracket rather than averaging the
 disagreement into a result.
 
+**"Materially" is 5% of the compared quantity** (maintainer decision, 2026-08-19). The figure is
+derived rather than chosen: ten identical `G4` cells in the healthy regime agreed to within 2.6%
+([`pr4a-rehearsal/repeats/`](../../measurements/pr4a-rehearsal/repeats/)), so 5% is approximately
+twice the environment's own demonstrated reproducibility. A difference must therefore exceed what
+this machine can distinguish from noise before it decides anything — whether that is `H` beating
+`S`, or a point disagreeing with its own confirmation. §4.6.4 brackets with the same threshold, so a
+bracket is judged by the standard it was chosen by.
+
+Any analysis applying this rule must state the threshold it used. A knee decided by an unstated
+margin cannot be checked.
+
+The threshold operationalises the rule; it does not replace it. A difference below 5% is not
+evidence of equality, and none of the other conditions above — an invalid regime, a fixture or
+generator failure, an unsound run — becomes admissible by falling inside it.
+
 This replaces the earlier rule that confirmed only the selected point. It also replaces the earlier
 canonical “every ladder rung is a sustained run” shape: short reconnaissance discovers the bracket;
 only the two load-bearing points and their independent confirmations receive the full retained
@@ -474,6 +518,22 @@ The scheduler-partitioned workstation runs the complete method above and derives
 E2_local = G2_local / (2 × G1_local)
 E4_local = G4_local / (4 × G1_local)
 ```
+
+**Each `G_local` is the mean of that topology's two selected-point observations** (maintainer
+decision, 2026-08-19). The selected point is measured twice, as §4.6.5 requires, and both runs are
+full 600 s horizon averages from the same fixed conditioned start — neither is more canonical than
+the other, so quoting one would discard a measurement of equal standing on the basis of running
+order alone. Both observations and the spread between them are reported beside the mean: a mean
+whose inputs are not shown cannot be checked, and the spread is the reader's evidence that the two
+runs reproduced at all. The deciding `H` observations are never averaged into anything — they decide
+whether the knee is resolved, and then leave the derivation.
+
+**An unresolved knee withholds the figure rather than lowering it.** Where §4.6.5's conditions do
+not hold, that topology has no `G_local`, and any efficiency dividing it is withheld with the reason
+stated. This matters most for `G1_local`, which is the denominator of both efficiencies: an
+unresolved `G1` withholds `E2_local` and `E4_local` together. An efficiency computed from a level
+nothing selected reads exactly like a scaling result while being a statement about an arbitrary
+operating point, and it is the number a report is most likely to quote.
 
 This discharges `VAL-SCALE-6` when the method/evidence gates hold. It is a quantitative capacity and
 scale characterisation of the **explicitly recorded local environment**, not rehearsal-only data.

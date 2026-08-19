@@ -155,22 +155,68 @@ run_capacity s-only ITC_CAPACITY_S=12
 grep -q 'without its deciding point' "$CAP_OUT" \
   && ok "the refusal says why a lone S cannot resolve a knee" || bad "the refusal does not explain"
 
-printf '\n--- the accepted bracket, observed without driving anything -------------------\n'
-# Pre-create the four retained cells so the resume branch skips every run. What is asserted is that
-# validation accepted 12/16 for G1 and said so, quoting this topology's own probe rate.
-for role in s h s-confirm h-confirm; do
-  mkdir -p "test/results/$GROUP/g1-$role/cell-01"
-  python3 - "test/results/$GROUP/g1-$role/cell-01/run.json" <<'PY'
+# retained_cell fabricates a cell the resume path will find: $1 role, $2 workers, $3 seconds,
+# $4 slots. A cell is more than run.json — the intent check reads the fixture too.
+retained_cell() {
+  local dir="test/results/$GROUP/g1-$1/cell-01"
+  mkdir -p "$dir"
+  printf 'SLOTS=%s\nCAPACITY=20\n' "$4" > "$dir/fixture.txt"
+  python3 - "$dir/run.json" "$2" "$3" <<'PY'
 import json, sys
+path, workers, seconds = sys.argv[1], int(sys.argv[2]), float(sys.argv[3])
 json.dump({"manifest": {}, "summary": {
-    "successful_mutation_goodput": 600000, "duration_seconds": 600.0,
-    "workers_per_group": 12, "measurement_sound": True},
-    "quotability": {"level": "capacity"}}, open(sys.argv[1], "w"))
+    "successful_mutation_goodput": int(1000 * seconds), "duration_seconds": seconds,
+    "workers_per_group": workers, "measurement_sound": True},
+    "quotability": {"level": "capacity"}}, open(path, "w"))
 PY
-done
+}
+
+printf '\n--- a retained cell at the wrong worker level is refused, not kept ------------\n'
+# **The hole this case exists for.** Resume originally accepted any existing cell/run.json on sight,
+# so re-running after a bracket change silently mixed a 600 s S from the old level with new
+# confirmations. This fixture is exactly that: every role retained at 12 workers while H=16.
+for role in s h s-confirm h-confirm; do retained_cell "$role" 12 600 15000; done
+run_capacity stale-level ITC_CAPACITY_S=12 ITC_CAPACITY_H=16
+[ "$CAP_STATUS" -ne 0 ] && ok "refused: exit $CAP_STATUS" \
+  || bad "exit 0 — an H role retained at S's worker level was kept on resume"
+grep -q 'asked for 16 workers/group, cell ran at 12' "$CAP_OUT" \
+  && ok "the refusal names the level it wanted and the level it found" \
+  || bad "the refusal does not identify the mismatch"
+grep -q 'retained earlier' "$CAP_OUT" \
+  && ok "and says the cell came from an earlier invocation" || bad "the refusal does not say it was a resume"
+
+printf '\n--- a retained cell on the wrong fixture is refused ---------------------------\n'
+rm -rf "test/results/$GROUP/g1-"*
+for role in s s-confirm; do retained_cell "$role" 12 600 15000; done
+for role in h h-confirm; do retained_cell "$role" 16 600 44000; done   # sized before the re-derivation
+run_capacity stale-fixture ITC_CAPACITY_S=12 ITC_CAPACITY_H=16
+[ "$CAP_STATUS" -ne 0 ] && ok "refused: exit $CAP_STATUS" \
+  || bad "exit 0 — a cell seeded on a different fixture was kept"
+grep -q 'slots/org, not the 15000 this comparison fixed' "$CAP_OUT" \
+  && ok "the refusal names both fixture sizes" || bad "the refusal does not identify the fixture"
+
+printf '\n--- a retained short run is refused -------------------------------------------\n'
+rm -rf "test/results/$GROUP/g1-"*
+for role in s s-confirm; do retained_cell "$role" 12 600 15000; done
+retained_cell h 16 60 15000            # a 60 s cell: sound, capacity-certified, wrong quantity
+retained_cell h-confirm 16 600 15000
+run_capacity stale-duration ITC_CAPACITY_S=12 ITC_CAPACITY_H=16
+[ "$CAP_STATUS" -ne 0 ] && ok "refused: exit $CAP_STATUS" \
+  || bad "exit 0 — a 60 s cell was kept as a 600 s horizon average"
+grep -q 'measured 60s against 600s' "$CAP_OUT" \
+  && ok "the refusal names the horizon" || bad "the refusal does not identify the duration"
+
+printf '\n--- the accepted bracket, observed without driving anything -------------------\n'
+# Now with each role retained at its own correct level, so the resume path both validates and keeps.
+rm -rf "test/results/$GROUP/g1-"*
+for role in s s-confirm; do retained_cell "$role" 12 600 15000; done
+for role in h h-confirm; do retained_cell "$role" 16 600 15000; done
 run_capacity accepted ITC_CAPACITY_S=12 ITC_CAPACITY_H=16
 grep -q 'common bracket S=12 H=16' "$CAP_OUT" \
   && ok "the bracket is accepted and recorded" || bad "the accepted bracket was not logged"
+grep -q 'matches this comparison — keeping it' "$CAP_OUT" \
+  && ok "a valid retained cell is kept, and says it was checked" \
+  || bad "a valid retained cell was not kept"
 grep -q 'this topology probed 12 at 1411.9/s against its own best 1411.9/s' "$CAP_OUT" \
   && ok "and it quotes this topology's own probe rate, not the override" \
   || bad "the log does not show the evidence the override was checked against"

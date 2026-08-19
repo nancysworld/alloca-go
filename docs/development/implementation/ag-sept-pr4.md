@@ -1984,6 +1984,67 @@ additional contingency draw. Preserve the drift control, document the storage-pa
 establish `G4` only, withhold the `G1`/`G2`-derived efficiencies, and mark `VAL-SCALE-6` unresolved
 and not discharged.
 
+### 3.32 Review found two gates that would have admitted a wrong result
+
+Independent review of the PR raised seven findings. Four were `P1`, and two of those are defects in
+gates that had tests, passed them, and were wrong anyway.
+
+**The knee rule was weaker than §4.6.5, not conservative.** `decide()` compared the best `H`
+observation against the best `S` observation, with a comment asserting that using `S`'s better
+reading made the rule harder to pass. It makes it easier. The reviewer's counterexample: `S` =
+100/105 and `H` = 110/105, where both points reproduce inside the margin and best-`H` is under 5%
+above best-`S`, so the knee resolved — while the first `H` stands **10% above** the first `S`, which
+is what §4.6.5 forbids. The rule is pairwise: no `H` observation may materially exceed *any* `S`
+observation, which is `max(H)` against `min(S)`. The reasoning in the comment was backwards, and no
+test caught it because every case in the suite had its extremes on the same side as its pairs.
+
+**A retained cell was accepted on resume without any intent check.** The capacity stage validated
+duration, worker level and fixture for a cell it had just driven, and kept an existing
+`cell-01/run.json` on sight. Resume exists so an interrupted fourteen-run sequence need not restart —
+but the cell it keeps is from an *earlier* invocation, which is exactly when the bracket or fixture
+may have changed. A 600 s `S` at the old level, sound and `capacity`-certified, would then have been
+mixed with confirmations from the new one. Both reviewers found this independently, and the
+bracket self-test **demonstrated** the hole rather than catching it: its accepted case pre-created
+every role at 12 workers while `H` was 16, and the stage was content.
+
+The fix is one `assert_cell_intent` used by the driving path, the resume path and the drift stage,
+so there is no path that judges a cell more loosely than another. `itc-capacity-result.py` also now
+enforces §4.6.5's 600 s horizon and cross-checks that the four runs are one comparison — a point and
+its confirmation at the same level, `H` above `S` — because that script is documented as runnable
+directly against any retained directory and must not depend on having been reached through the
+stage.
+
+**The margin's rationale was falsified by this milestone's own evidence.** §4.6.5 called 5%
+"derived" from the 2.6% agreement of ten identical `G4` cells and said a difference must exceed
+"what this machine can distinguish from noise". PR4b then measured four identical `G1` runs spanning
+25.1%. The correction is a distinction rather than a new number: **5% is a preselected engineering
+materiality margin, and reproducibility is a separate admissibility gate.** Materiality asks whether
+a difference is large enough to matter; reproducibility asks whether the environment can measure the
+point at all. Read that way `G1`'s failure strengthens the method — the margin did not fail, the
+environment failed the admissibility gate, and the rule withheld a number rather than reporting one
+it could not support.
+
+**The common bracket was a maintainer decision the validation plan did not own.** §3.27 recorded it;
+§4.6.4 still said reconnaissance selects per topology and defined `S` as the lowest plateau level,
+so for `G2` — measured at 12/16 where its reconnaissance selected 8/12 — the claim that the defined
+method ran end to end was not literally true. §4.6.4 now owns the exception, with three conditions
+the stage already enforced and a fourth it did not: the comparison must *record* that it ran at a
+common bracket, which `common-bracket.txt` now does beside the runs.
+
+Two smaller findings: the storage wording was stronger in the plan and status table than the
+mechanism paragraph it summarised, and is now uniformly "localises the limit to the shared write
+path" with the unrun killing test named; and `VAL-NEG-8`'s status row still read "not yet executed"
+though PR4a implemented and mutation-proved it, which matters because it is a prerequisite for
+interpreting `VAL-SCALE-6`.
+
+**What this says about the gates rather than the findings.** Both `P1` defects were in code with
+passing discriminating tests. The knee rule's tests all placed their extremes on the same side as
+their pairs, so a rule about pairs was never exercised as one; the resume path's test asserted the
+outcome it wanted while constructing a fixture that could only reach it through the hole. Mutation
+testing does not help here — mutating a rule that the suite never distinguishes from its weaker form
+produces a passing mutation, which reads as evidence the rule is unnecessary. What found these was a
+reader reasoning about the rule's *intent* against a counterexample of their own construction.
+
 ## 4. Open items
 
 > **Most of this list is superseded by the 2026-08-18 re-baseline and is kept as history.** It was

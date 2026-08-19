@@ -52,10 +52,11 @@ AG-Sept's governing goal, its iteration history, and the currently open problem 
   Only PR4c can discharge `VAL-SCALE-5` and derive independently provisioned `E2_aws`/`E4_aws`.
 
   **PR4b executed on 2026-08-19 and did not derive `E2_local`/`E4_local`.** `G4_local` resolved;
-  `G1` and `G2` did not, and `G1_local` is the denominator of both efficiencies. The limit is the
-  shared storage path rather than `alloca-go`, so the local tier turned out to be unable to produce
-  the efficiency figures this paragraph originally promised, and `VAL-SCALE-6` is executed but not
-  discharged. That strengthens rather than weakens the case for PR4c: independently provisioned
+  `G1` and `G2` did not, and `G1_local` is the denominator of both efficiencies. The evidence
+  localises the limit to the shared write path rather than to `alloca-go` — without proving the
+  mechanism, since the killing test was not run — so the local tier turned out to be unable to
+  produce the efficiency figures this paragraph originally promised, and `VAL-SCALE-6` is executed
+  but not discharged. That strengthens rather than weakens the case for PR4c: independently provisioned
   per-unit storage is exactly the condition that removes the limit. `VAL-SCALE-5` remains reported
   explicitly unproven.
 
@@ -559,7 +560,8 @@ For Iteration C the mandatory path is now independent of AWS quota:
   **Delivered 2026-08-19 without `E2_local`/`E4_local`**: `G4_local` resolved, `G1` and `G2` did
   not, and the efficiencies are withheld because their denominator cannot be measured to better
   than ~25% on this environment. The limiting-resource analysis is the deliverable that carries the
-  result, and it identifies the shared storage path;
+  result, and it localises the limit to the shared write path — without proving the mechanism, since
+  the killing test was not run;
 - correctness/reconciliation and provenance/resource evidence required for every quoted local
   result;
 - if PR4c is not executed, the retained AWS provisioning limitation and explicit

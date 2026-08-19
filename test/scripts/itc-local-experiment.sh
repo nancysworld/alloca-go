@@ -237,21 +237,21 @@ ALLOCA_POOL_MAX_CONNS="${ALLOCA_POOL_MAX_CONNS:-8}"
 export ALLOCA_POOL_MAX_CONNS
 
 # **"Materially", as one number for every stage that needs it** (ag-sept-validation-plan.md §4.6.5,
-# maintainer decision 2026-08-19). It is derived rather than chosen: ten identical G4 cells in the
-# healthy regime agreed to within 2.6% (docs/measurements/pr4a-rehearsal/repeats/), so 5% is roughly
-# twice the environment's own demonstrated reproducibility — a difference must exceed what this
-# machine can distinguish from noise before it decides anything.
+# which owns the definition). It is a **preselected engineering materiality margin**: the smallest
+# difference in sustained Goodput this experiment treats as a real difference in capacity, fixed in
+# advance so a knee is not decided by a threshold chosen to fit the numbers.
+#
+# **It is not a noise floor, and the plan's original wording that called it one was corrected after
+# review.** The 2.6% agreement of ten identical G4 cells informed the choice; it never licensed
+# reading 5% as a bound on this environment's noise. PR4b measured four identical G1 runs spanning
+# 25.1% and G4 reproducing to 1.4%, so no single noise figure describes the machine at all.
+# Materiality asks whether a difference matters; reproducibility asks whether the environment can
+# measure the point — they are separate gates and §4.6.5 keeps them separate.
 #
 # **Defined here rather than inside a stage, because more than one stage decides with it.** It began
 # inside `recon`, and the capacity stage's plateau validation then read it out of scope: under
 # `set -u` that is an unbound-variable abort, after the retained runs have been driven. One
 # definition also means the bracket is judged by the standard it was chosen by.
-#
-# The 2.6% figure was measured on 60 s cells driven back to back in one session. The same level
-# re-probed in a later session on 2026-08-19 moved by 6.7%, so this is a defensible transfer rather
-# than a measurement of cross-session reproducibility — which is why every artifact records the
-# margin it used, and why the retained 600 s runs and their confirmations, not a probe, are what
-# settle a knee.
 recon_margin="${ITC_RECON_MARGIN:-5}"
 
 # recon_level reads a selected level out of a reconnaissance report: $1 the report, $2 the label.
@@ -274,6 +274,53 @@ recon_level() {
 #
 # The table is delimited by its own header and the blank line after it, so that is what these read.
 # They are shared for the same reason recon_level is: two copies of a parse drifted once already.
+# assert_cell_intent checks a retained cell against the run that was *asked for*:
+#   $1 cell directory, $2 a label for messages, $3 the intended workers_per_group.
+# Duration and fixture come from ITC_WINDOW_SECONDS and SLOTS, which the calling stage has fixed.
+#
+# **Every gate inside a cell judges the run that happened; none of them knows which run was
+# requested.** PR4a's first sustained attempt ran 60 s cells on the wrong fixture and passed
+# everything, because each gate was satisfied by the run in front of it.
+#
+# **One function, because the resume path skipped these checks entirely** (review finding,
+# 2026-08-19). The checks lived inline after the run that produced the cell, so a cell already on
+# disk was accepted on sight — and that is the case most likely to be wrong, since it exists only
+# when an earlier invocation used a possibly different bracket or fixture. Returns non-zero and
+# explains; the caller decides whether that is fatal.
+assert_cell_intent() {
+  local cell="$1" label="$2" want_level="$3" ran_seconds ran_workers ran_slots
+  local want_seconds="${ITC_WINDOW_SECONDS:-600}"
+
+  ran_seconds="$(python3 -c "
+import json,sys
+print(int(round(json.load(open(sys.argv[1]))['summary']['duration_seconds'])))" "$cell/run.json")"
+  ran_workers="$(python3 -c "
+import json,sys
+print(json.load(open(sys.argv[1]))['summary'].get('workers_per_group'))" "$cell/run.json")"
+  ran_slots="$(grep '^SLOTS=' "$cell/fixture.txt" 2>/dev/null | cut -d= -f2)"
+
+  if [ "$ran_workers" != "$want_level" ]; then
+    printf '\n!! %s: asked for %s workers/group, cell ran at %s. It is a sound run of a
+  different point, which is the hardest kind of wrong to notice later.\n' \
+      "$label" "$want_level" "$ran_workers" >&2
+    return 1
+  fi
+  if [ "$ran_seconds" -lt $(( want_seconds * 95 / 100 )) ]; then
+    printf '\n!! %s: measured %ss against %ss. §4.6.5'"'"'s comparison quantity is the full-600 s
+  horizon average; a shorter run answers a different question.\n' \
+      "$label" "$ran_seconds" "$want_seconds" >&2
+    return 1
+  fi
+  if [ "$ran_slots" != "$SLOTS" ]; then
+    printf '\n!! %s: ran on %s slots/org, not the %s this comparison fixed. Two arms seeded
+  differently are not comparable however carefully their averages are computed (§4.6.5).\n' \
+      "$label" "$ran_slots" "$SLOTS" >&2
+    return 1
+  fi
+  log "$label ran ${ran_seconds}s at $ran_workers workers/group on $ran_slots slots/org"
+  return 0
+}
+
 recon_probe_rate() {
   awk -v want="$2" '
     /^  workers/ { inside = 1; next }
@@ -926,8 +973,8 @@ print('%.1f' % (s['successful_mutation_goodput'] / s['duration_seconds']))" "${c
         printf '  pool_max_conns      %s\n' "$ALLOCA_POOL_MAX_CONNS"
         printf '  slots/organisation  %s at capacity %s\n' "$SLOTS" "$CAPACITY"
         printf '  conditioning        %s mutations/org\n' "$CONDITIONING_TARGET"
-        printf '  margin              %s%%  (twice the 2.6%% agreement of ten identical healthy\n' "$recon_margin"
-        printf '                      G4 cells, docs/measurements/pr4a-rehearsal/repeats/)\n'
+        printf '  margin              %s%%  (preselected materiality margin, not a noise floor:\n' "$recon_margin"
+        printf '                      ag-sept-validation-plan.md §4.6.5)\n'
         printf '  ladder              %s\n' "$ladder"
         printf '  start               %s\n\n' "$recon_start"
         printf '  %-8s %10s  %-7s %7s  %s\n' workers probe/s shape spread cell
@@ -1120,18 +1167,11 @@ SIZING
   cannot say whether the trend is monotonic, which is the whole question."
 
       cell="$run_dir/cell-01"
-      ran_seconds="$(python3 -c "
-import json,sys
-print(int(round(json.load(open(sys.argv[1]))['summary']['duration_seconds'])))" "$cell/run.json")"
-      ran_workers="$(python3 -c "
-import json,sys
-print(json.load(open(sys.argv[1]))['summary'].get('workers_per_group'))" "$cell/run.json")"
-      [ "$ran_workers" = "$drift_level" ] \
-        || fail "position $position ran at $ran_workers workers/group, not $drift_level. The runs
-  must be identical or the series measures the level as well as the position."
-      [ "$ran_seconds" -ge $(( seconds * 95 / 100 )) ] \
-        || fail "position $position measured ${ran_seconds}s against ${seconds}s asked for."
-      log "position $position ran ${ran_seconds}s at $ran_workers workers/group"
+      # The same check the capacity stage applies, for the same reason: identical runs are only
+      # identical if each one actually ran at the level, duration and fixture asked for.
+      assert_cell_intent "$cell" "position $position" "$drift_level" \
+        || fail "the position-$position run does not match the rest of the series; see above. The
+  runs must be identical or the series measures something other than position."
       ./test/scripts/itc-slices.py "$cell" | tee "$cell/slices.txt" > /dev/null
       position=$((position + 1))
     done
@@ -1261,6 +1301,27 @@ DRIFT
 
         log "G$groups: common bracket S=$common_s H=$common_h (reconnaissance selected S=$S H=$H;"
         log "  this topology probed $common_s at $s_rate/s against its own best $best_rate/s)"
+
+        # **Retained, not just logged** (§4.6.4's third condition on a common bracket). A reader has
+        # to be able to see that the arms ran at a substituted level rather than at each topology's
+        # own selection, and a log line is not an artifact. Appended per topology so the file
+        # records the whole comparison.
+        record="test/results/$out_group/common-bracket.txt"
+        if [ ! -f "$record" ]; then
+          {
+            printf 'Common S/H bracket across the arms (ag-sept-validation-plan.md §4.6.4)\n'
+            printf 'recorded %s\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            printf 'These runs did NOT use each topology'"'"'s own reconnaissance selection. One\n'
+            printf 'bracket was fixed for every arm so that E2 and E4 compare topologies at the\n'
+            printf 'same demand-per-group (§2.3). Each level below was checked against that\n'
+            printf 'topology'"'"'s own probe table before any run was driven.\n\n'
+            printf '  %-6s %-14s %-14s %-12s %s\n' topology 'common S/H' 'recon S/H' 'S probed at' "topology's best"
+          } > "$record"
+        fi
+        printf '  %-6s %-14s %-14s %-12s %s
+' \
+          "G$groups" "$common_s/$common_h" "$S/$H" "$s_rate/s" "$best_rate/s" >> "$record"
+
         S="$common_s"
         H="$common_h"
       fi
@@ -1275,8 +1336,20 @@ DRIFT
         esac
 
         run_dir="test/results/$out_group/g${groups}-${role}"
+
+        # **A kept cell faces the same gate as a driven one** (review finding, 2026-08-19). Resume
+        # exists so a fourteen-run sequence interrupted at run nine does not restart from run one,
+        # and it originally accepted any existing `cell-01/run.json` on sight. That is precisely
+        # where a stale cell enters: change the bracket or the fixture and re-run, and the runs
+        # already on disk are from the *previous* configuration — a 600 s S at the old worker level,
+        # sound and `capacity`-certified, silently mixed with confirmations from the new one. Rates
+        # close enough to pass the reproducibility test then produce a knee nobody measured.
         if [ -f "$run_dir/cell-01/run.json" ]; then
-          log "G$groups $role already retained at $run_dir — keeping it"
+          assert_cell_intent "$run_dir/cell-01" "G$groups $role (retained earlier)" "$level" \
+            || fail "the retained G$groups $role cell does not match this comparison. Delete it and
+  re-drive that role, or point RESULTS_GROUP at a fresh group: resuming across a changed bracket or
+  fixture is how a sound run of a different experiment enters a knee."
+          log "G$groups $role already retained at $run_dir and matches this comparison — keeping it"
           continue
         fi
 
@@ -1297,28 +1370,8 @@ DRIFT
         cell="$run_dir/cell-01"
         [ -f "$cell/run.json" ] || fail "G$groups $role produced no cell at $cell"
 
-        # **Check the artifact against the intent.** Every gate inside a cell judges the run that
-        # happened; none of them knows which run was asked for. PR4a's first sustained attempt ran
-        # 60 s cells on the wrong fixture and passed everything.
-        ran_seconds="$(python3 -c "
-import json,sys
-print(int(round(json.load(open(sys.argv[1]))['summary']['duration_seconds'])))" "$cell/run.json")"
-        ran_workers="$(python3 -c "
-import json,sys
-print(json.load(open(sys.argv[1]))['summary'].get('workers_per_group'))" "$cell/run.json")"
-        ran_slots="$(grep '^SLOTS=' "$cell/fixture.txt" | cut -d= -f2)"
-
-        [ "$ran_workers" = "$level" ] \
-          || fail "G$groups $role was asked for $level workers/group and ran at $ran_workers. It is
-  a sound run of a different point, which is the hardest kind of wrong to notice later."
-        [ "$ran_seconds" -ge $(( seconds * 95 / 100 )) ] \
-          || fail "G$groups $role measured ${ran_seconds}s against ${seconds}s. §4.6.5's comparison
-  quantity is the full-600 s horizon average; a shorter run answers a different question."
-        [ "$ran_slots" = "$SLOTS" ] \
-          || fail "G$groups $role ran on $ran_slots slots/org, not the $SLOTS this comparison
-  fixed. Two arms seeded differently are not comparable however carefully their averages are
-  computed (§4.6.5)."
-        log "G$groups $role ran ${ran_seconds}s at $ran_workers workers/group on $ran_slots slots/org"
+        assert_cell_intent "$cell" "G$groups $role" "$level" \
+          || fail "the G$groups $role run does not match what this stage asked for; see above."
 
         log "G$groups $role slices -> $cell/slices.txt"
         ./test/scripts/itc-slices.py "$cell" | tee "$cell/slices.txt"

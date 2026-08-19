@@ -1,6 +1,7 @@
-Iteration C local capacity result, from test/results/pr4b-capacity
+Iteration C local capacity result, from docs/measurements/pr4b-capacity
 comparison quantity: full-measured-interval Goodput, ag-sept-validation-plan.md §4.6.5
-margin for 'materially': 5% (operationalises §4.6.5; see the source)
+margin for 'materially': 5% — a preselected engineering materiality
+margin, not a noise floor; reproducibility is a separate gate (§4.6.5)
 
 G1:
   s             1080.1/s      648,048 mutations over 600s at 12 workers/group [capacity]
@@ -9,7 +10,7 @@ G1:
   h-confirm     1193.8/s      716,298 mutations over 600s at 16 workers/group [capacity]
   S reproduces: yes (1080.1/s vs 1094.0/s, 1.3% apart)
   H reproduces: NO (1032.6/s vs 1193.8/s, 15.6% apart)
-  H does not beat S: NO (best H 1193.8/s vs best S 1094.0/s)
+  no H beats any S: NO (best H 1193.8/s vs weakest S 1080.1/s)
   KNEE UNRESOLVED — investigate or move the bracket (§4.6.5). This is not a low capacity result; it is the absence of one.
   G1_local = withheld: the knee is unresolved
 
@@ -20,7 +21,7 @@ G2:
   h-confirm     2477.7/s    1,486,630 mutations over 600s at 16 workers/group [capacity]
   S reproduces: NO (2259.0/s vs 2450.8/s, 8.5% apart)
   H reproduces: NO (2323.1/s vs 2477.7/s, 6.7% apart)
-  H does not beat S: yes (best H 2477.7/s vs best S 2450.8/s)
+  no H beats any S: NO (best H 2477.7/s vs weakest S 2259.0/s)
   KNEE UNRESOLVED — investigate or move the bracket (§4.6.5). This is not a low capacity result; it is the absence of one.
   G2_local = withheld: the knee is unresolved
 
@@ -31,7 +32,7 @@ G4:
   h-confirm     3543.5/s    2,126,152 mutations over 600s at 16 workers/group [capacity]
   S reproduces: yes (3494.8/s vs 3492.9/s, 0.1% apart)
   H reproduces: yes (3509.5/s vs 3543.5/s, 1.0% apart)
-  H does not beat S: yes (best H 3543.5/s vs best S 3494.8/s)
+  no H beats any S: yes (best H 3543.5/s vs weakest S 3492.9/s)
   G4_local = 3493.9/s
 
 scale efficiency (§4.6.7):

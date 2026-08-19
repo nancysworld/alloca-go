@@ -28,6 +28,18 @@ Fixture sizing for the probes is derived in
 the retained comparison's fixture, which §4.6.6 sizes from the bracket reconnaissance had not yet
 found.
 
+## The margin line in these reports carries superseded wording
+
+Each report prints `margin 5% (twice the 2.6% agreement of ten identical healthy G4 cells…)`. That
+rationale was **corrected after review on 2026-08-19**: 5% is a *preselected engineering materiality
+margin*, not a bound on this environment's noise, and materiality and reproducibility are separate
+gates (`ag-sept-validation-plan.md` §4.6.5, which owns the definition).
+
+The files are left exactly as the stage produced them. They are retained artifacts, and editing one
+to match a later understanding would make it a record of something that did not happen. The
+*threshold* they applied is unchanged at 5%, so every selection below stands; only the sentence
+explaining where 5% came from was wrong, and the stage no longer prints it.
+
 ## The limitation this reconnaissance discovered about itself
 
 [`reprobe-G1.txt`](reprobe-G1.txt) re-drives G1 at 16 workers, a level already probed, to ask whether

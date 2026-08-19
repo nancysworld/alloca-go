@@ -1,0 +1,17 @@
+Common S/H bracket across the arms (ag-sept-validation-plan.md §4.6.4)
+reconstructed 2026-08-19 from the retained reconnaissance reports
+
+These runs did NOT use each topology's own reconnaissance selection. One bracket was
+fixed for every arm so that E2 and E4 compare topologies at the same demand-per-group
+(§2.3). Each level below was checked against that topology's own probe table before any
+run was driven; the check is in itc-local-experiment.sh and is covered by
+itc-capacity-bracket-test.sh.
+
+  topology common S/H   recon S/H   S probed at   topology's best
+  G1       12/16        12/16       1411.9/s      1411.9/s
+  G2       12/16        8/12        2617.8/s      2617.8/s
+  G4       12/16        12/16       3827.7/s      3827.7/s
+
+G2 is the substitution: its reconnaissance selected S=8, whose probe read within 0.8%
+of its own 12 — inside the margin, and far inside the single-probe variation recorded in
+pr4b-recon/README.md. See ag-sept-pr4.md §3.27.

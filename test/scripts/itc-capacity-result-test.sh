@@ -34,13 +34,15 @@ bad() { printf '  !!    %s\n' "$*"; fail=$((fail + 1)); }
 
 # write_run fabricates one run's manifest: $1 root, $2 dir, $3 rate/s, $4 workers, and optionally
 # $5 a quotability level (default capacity) and $6 measurement_sound (default true).
+# $7 overrides the measured duration, for the horizon case; everything else defaults to a valid
+# 600 s run so each case varies exactly one thing.
 write_run() {
-  local root="$1" dir="$2" rate="$3" workers="$4" level="${5:-capacity}" sound="${6:-true}"
+  local root="$1" dir="$2" rate="$3" workers="$4" level="${5:-capacity}" sound="${6:-true}" secs="${7:-600}"
   mkdir -p "$root/$dir"
-  python3 - "$root/$dir/run.json" "$rate" "$workers" "$level" "$sound" <<'PY'
+  python3 - "$root/$dir/run.json" "$rate" "$workers" "$level" "$sound" "$secs" <<'PY'
 import json, sys
-path, rate, workers, level, sound = sys.argv[1:6]
-seconds = 600.0
+path, rate, workers, level, sound, secs = sys.argv[1:7]
+seconds = float(secs)
 json.dump({
     "manifest": {"environment": "synthetic"},
     "summary": {
@@ -104,6 +106,64 @@ grep -q 'G1_local is the denominator of both and is not resolved' "$RESULT_OUT" 
   || bad "an efficiency was derived from an unresolved G1"
 grep -q 'E4_local = [0-9]' "$RESULT_OUT" \
   && bad "an efficiency figure was printed anyway" || ok "no efficiency figure appears at all"
+
+printf '\n--- a crossed pair: H beats S while the extremes look fine -------------------\n'
+# **The case that exposed the rule being weaker than §4.6.5, not conservative** (review finding,
+# 2026-08-19). S = 100/105 and H = 110/105: both points reproduce within 5%, and best-H (110) is
+# under 5% above best-S (105) — so comparing extreme against extreme resolves the knee. But the
+# first H stands 10% above the first S, which is exactly what §4.6.5's pairwise rule forbids: the
+# deciding H *and* its confirmation must each fail to beat the selected point's runs.
+ROOT="$WORK/crossed-pair"
+write_run "$ROOT" "g1-s"         100 12
+write_run "$ROOT" "g1-s-confirm" 105 12
+write_run "$ROOT" "g1-h"         110 16
+write_run "$ROOT" "g1-h-confirm" 105 16
+run_result crossed-pair "$ROOT"
+# **Assert the knee, not the exit status.** This root holds G1 only, so the script exits non-zero
+# either way for the missing topologies — an exit-code assertion here passes for the wrong reason,
+# which mutation testing showed it doing.
+grep -q 'KNEE UNRESOLVED' "$RESULT_OUT" \
+  && ok "the knee is unresolved" \
+  || bad "an H standing 10% above its corresponding S resolved the knee"
+grep -q 'G1_local = withheld' "$RESULT_OUT" \
+  && ok "and G1_local is withheld" || bad "G1_local was reported from a crossed pair"
+grep -q 'no H beats any S: NO' "$RESULT_OUT" \
+  && ok "the pairwise test is the one reported" || bad "the output does not report the pairwise test"
+# The discriminating detail: the comparison must be against S's *weakest* reading, not its best.
+grep -q 'weakest S 100.0' "$RESULT_OUT" \
+  && ok "compared against the weakest S, which is the conservative side" \
+  || bad "the comparison did not use the weakest S: $(grep 'beats any S' "$RESULT_OUT")"
+
+printf '\n--- a sound run of the wrong horizon is refused ------------------------------\n'
+# 60 s cells are sound, certify `capacity`, and answer a different question. The stage validates
+# duration when it drives a cell; this script is documented as runnable directly, so it must not
+# depend on having been reached that way.
+ROOT="$WORK/short-horizon"
+write_topology "$ROOT" 1 1000 1010
+write_run "$ROOT" "g1-h" 1010 16 capacity true 60
+run_result short-horizon "$ROOT"
+[ "$RESULT_STATUS" -ne 0 ] && ok "refused: exit $RESULT_STATUS" \
+  || bad "exit 0 — a 60 s manifest entered a 600 s horizon comparison"
+grep -q "measured 60s against §4.6.5's fixed 600s horizon" "$RESULT_OUT" \
+  && ok "the refusal names the horizon and the section that fixes it" \
+  || bad "the refusal does not explain itself"
+
+printf '\n--- the four runs must be one comparison -------------------------------------\n'
+# A point and its confirmation at different levels are not two observations of one point, however
+# well they agree.
+ROOT="$WORK/split-point"
+write_topology "$ROOT" 1 1000 1010
+write_run "$ROOT" "g1-s-confirm" 1000 14
+run_result split-point "$ROOT"
+grep -q 'not two observations of one point' "$RESULT_OUT" \
+  && ok "S at 12 with its confirmation at 14 is refused" || bad "a split point was accepted"
+
+# H at or below S is not a deciding point, whatever its rate says.
+ROOT="$WORK/h-not-higher"
+write_topology "$ROOT" 1 1000 1010 16 16
+run_result h-not-higher "$ROOT"
+grep -q 'H is by definition a higher level' "$RESULT_OUT" \
+  && ok "H at the same level as S is refused" || bad "H at S's level was accepted"
 
 printf '\n--- S does not reproduce -----------------------------------------------------\n'
 ROOT="$WORK/s-unstable"

@@ -52,6 +52,7 @@ lead to a different next validation while the governing goal remains stable.
 - [`ag-sept-validation-plan.md`](ag-sept-validation-plan.md) — AG-Sept validation of the
   single-authority frontier, Phase 1 multi-authority correctness/failure isolation, and Iteration C
   shard-group capacity method including `VAL-SCALE-5`/`VAL-SCALE-6`;
-- [`ag-sept-pr4c-aws-probe.md`](ag-sept-pr4c-aws-probe.md) — the deliberately smaller PR4c Stage-0
-  G1-A/G1-B/G2 diagnostic on independently provisioned AWS units. It decides whether a full Tier-1
-  campaign is worth running and **does not** itself discharge `VAL-SCALE-5`.
+- [`ag-sept-pr4c-aws-probe.md`](ag-sept-pr4c-aws-probe.md) — the deliberately bounded PR4c
+  G1-A/G1-B/G2 diagnostic on independently provisioned AWS units. It decides whether any different
+  independent-capacity experiment is worth proposing and **does not** itself discharge
+  `VAL-SCALE-5`.

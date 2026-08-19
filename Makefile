@@ -130,7 +130,7 @@ ITC_CPUS_GENERATOR ?= 8-11
 all: ci
 
 ## ci: run the full local gate, identical to CI (fmt, vet, lint, build, test, race)
-ci: fmt-check vet lint build test test-race build-context-check itc-layout-check itc-topology-check-test itc-conditioning-check itc-pool-check itc-obs-labels-check
+ci: fmt-check vet lint build test test-race build-context-check itc-layout-check itc-topology-check-test itc-conditioning-check itc-pool-check itc-obs-labels-check itc-recon-walk-check
 
 ## fmt: format all Go files
 fmt:
@@ -398,6 +398,19 @@ itc-pool-check:
 # the label was present and well-formed, so every query and every gate passed (ag-sept-pr4.md §3).
 itc-obs-labels-check:
 	@./test/scripts/itc-obs-targets-test.sh
+
+## itc-recon-walk-check: prove the saturation search still selects the level it measured
+#
+# In `ci` because it needs no daemon: the search's rate source is substituted for a synthetic
+# curve, so the cases run in a second and drive no cell. It exists because the walk decides which
+# two worker levels receive four retained 600 s runs each, unattended — a defect costs the hour
+# and then returns a bracket that is wrong while every run inside it is sound
+# (ag-sept-validation-plan.md §4.6.4).
+#
+# It is not covered by `go test ./...`: the search is bash, and the Go suite says nothing about
+# whether it still refuses a ladder end or still checks the lower side of its own candidate.
+itc-recon-walk-check:
+	@./test/scripts/itc-recon-walk-test.sh
 
 ## image: build the production-shaped service image, tagged with the current commit
 #

@@ -54,7 +54,10 @@ usage: ./test/scripts/itc-local-experiment.sh <stage>
                         fixture sized from the measured rate. Qualification evidence only —
                         it is not a capacity result and no E4_local follows from it
 
-  recon                 adaptive workers_per_group reconnaissance (§4.6.4)      [not yet built]
+  recon                 adaptive workers_per_group reconnaissance (§4.6.4): short probes that
+                        bracket saturation per topology and propose S and H. Not capacity
+                        evidence, and nothing it produces may be quoted as a rate
+
   fixture               fixture sizing for a 600 s retained bracket (§4.6.6)    [not yet built]
   capacity              the retained S/H + confirmations, PR4b (§4.6.5)         [not yet built]
 
@@ -490,7 +493,353 @@ print(int(round(json.load(open(sys.argv[1]))['summary']['duration_seconds'])))" 
     log "and no E4_local follows from them, and 16 workers/group is not a selected S (§4.6.5)."
     ;;
 
-  recon|fixture|capacity)
+  recon)
+    # **Reconnaissance answers one question: which two worker levels deserve the expensive
+    # retained measurement?** (ag-sept-validation-plan.md §4.6.4.) It is explicitly *not* capacity
+    # evidence — no rate it produces enters E2/E4 or may be quoted as a result, and a level is not
+    # promoted because a probe happened to look stable.
+    #
+    # The ordinary measurement path, for the same reason the sustained qualification uses it: a
+    # probe instrumented differently from the runs it selects for would bracket a different system.
+    unset PLAN_PROBE PG_AUTO_EXPLAIN PG_STAT_STATEMENTS PG_LOG_AUTOVACUUM PG_AUTO_EXPLAIN_SAMPLE
+
+    export WINDOW="${ENV_WINDOW:-120s}"
+    export REQUIRE="${REQUIRE:-capacity}"
+    export RESULTS_GROUP="${RESULTS_GROUP:-pr4b-recon}"
+
+    # **120 s, and the trade it makes is recorded rather than hidden.** A probe reads the early,
+    # high part of a trajectory that PR4a measured declining to ~0.75x by 600 s
+    # (ag-sept-pr4.md §3.21), so a bracket chosen here is chosen on a *different quantity* from the
+    # 600 s horizon average that decides the retained comparison (§4.6.5). Long probes would close
+    # the gap and cost the budget the retained runs need; the lower-side check below is what makes
+    # the short probe safe enough to act on (maintainer decision, 2026-08-19).
+    recon_seconds="${ITC_RECON_SECONDS:-120}"
+
+    # **The ladder, and why the walk may not run off either end.** §4.6.4 sets no maximum, so this
+    # is a starting range rather than a bound: reaching an end means the bracket is outside the
+    # range prior evidence suggested, which is a fact worth a person seeing before another hour of
+    # probing is spent. Re-run with an explicit ITC_RECON_LADDER to extend it.
+    ladder="${ITC_RECON_LADDER:-2 4 8 12 16 24 32 48 64 96 128}"
+
+    # 16 workers/group is where PR4a's six retained runs were taken, so it is the one level on this
+    # machine whose 600 s behaviour is already known. Starting there means the first probe can be
+    # read against something.
+    recon_start="${ITC_RECON_START:-16}"
+
+    # **The margin is derived, not chosen.** Ten identical G4 cells in the healthy regime agreed to
+    # within 2.6% (docs/measurements/pr4a-rehearsal/repeats/), so 5% is roughly twice the
+    # environment's own demonstrated reproducibility: a level must beat its neighbour by more than
+    # the machine's noise before the walk treats it as better. That figure was measured on 60 s
+    # cells rather than on 120 s probes, so it is a defensible transfer and not a measurement of
+    # this probe shape — which is why the artifact records the margin it used.
+    recon_margin="${ITC_RECON_MARGIN:-5}"
+
+    recon_groups="${ITC_RECON_GROUPS:-1 2 4}"
+
+    # **The prober is a seam, so the walk below can be tested without an hour of machine time.**
+    # The search has real logic — a direction decision, two walks, two ladder-end refusals and the
+    # lower-side check — and it runs unattended while driving real cells. A defect in it costs the
+    # hour *and* can hand back the wrong bracket, which is the expensive kind of wrong.
+    # `test/scripts/itc-recon-walk-test.sh` substitutes a prober that returns a synthetic curve and
+    # exercises this exact code, rather than a copy of it that could drift from it.
+    #
+    # **It swaps where a rate comes from, so it is loud and it is fenced.** A synthetic invocation
+    # drives no cell and measures nothing; it refuses to write into the real results group, says so
+    # on every line, and stamps the report. Recon output is non-evidence by definition (§4.6.4), so
+    # the worst this can produce is a fabricated *bracket* — and the retained 600 s runs are what
+    # turn a bracket into a result.
+    #
+    # **The fence is here, above every write.** It was originally beside the prober call further
+    # down, and the self-test caught what that meant: a synthetic invocation had already written its
+    # fixture-sizing artifact into `pr4b-recon/` by the time the refusal fired. A refusal that
+    # leaves a file behind in the real results group is not a fence.
+    recon_synthetic="${ITC_RECON_PROBE_CMD:-}"
+    if [ -n "$recon_synthetic" ]; then
+      [ -x "$recon_synthetic" ] || fail "ITC_RECON_PROBE_CMD=$recon_synthetic is not executable"
+      [ "$RESULTS_GROUP" != "pr4b-recon" ] || fail "a synthetic prober may not write into the
+  real results group. Set RESULTS_GROUP to something a reader cannot mistake for a measurement."
+    fi
+
+    # --- probe fixture ---------------------------------------------------------------------
+    #
+    # Deliberately its own size, and not the one §4.6.6 fixes for the retained runs: that size is
+    # derived *from* the bracket this stage has not found yet. It only has to keep fresh mutations
+    # available for 120 s at the deepest probe, so it is sized from the measured G4 aggregate with
+    # room for a probe to run twice as fast as PR4a's 16-worker point, and it is smaller than the
+    # retained fixture because seeding time is the cost paid on every probe.
+    #
+    # **Why 2x is enough, stated rather than assumed.** With the safety factor on top the fixture
+    # survives 2.8x the best measured G4 aggregate, and the pool is frozen at 8 per group: past 16
+    # workers per group the binding constraint has already moved off admission onto one authority's
+    # capacity to do concurrent work on two CPUs (§3.22), so a deeper probe queues rather than runs
+    # faster. A probe that nonetheless spent its fixture would report an unexpected
+    # `business_refusal` population, which invalidates that probe rather than quietly lowering it.
+    measured_aggregate="${ITC_MEASURED_G4_RATE:-3436}"      # G4, 16 workers/group, pool 8, 600 s
+    probe_speedup="${ITC_RECON_SPEEDUP:-200}"               # % — headroom for a deeper probe
+    safety="${ITC_FIXTURE_SAFETY:-140}"                     # % explicit headroom on top
+
+    peak_aggregate=$(( measured_aggregate * probe_speedup / 100 ))
+    per_org=$(( peak_aggregate * recon_seconds / 4 ))
+    required_per_org=$(( (per_org + CONDITIONING_TARGET) * safety / 100 ))
+    slots_per_org=$(( (required_per_org + CAPACITY - 1) / CAPACITY ))
+    slots_per_org=$(( (slots_per_org / 5000 + 1) * 5000 ))
+    export SLOTS="${ENV_SLOTS:-$slots_per_org}"
+
+    mkdir -p "test/results/$RESULTS_GROUP"
+    sizing="test/results/$RESULTS_GROUP/probe-fixture-sizing.txt"
+    cat > "$sizing" <<SIZING
+probe fixture sizing for PR4b reconnaissance (ag-sept-validation-plan.md §4.6.4)
+derived $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+  measured G4 aggregate rate         $measured_aggregate /s   (G4, 16 workers/group, pool 8, 600 s,
+                                                     docs/measurements/pr4a-sustained/g4-pool8)
+  headroom for a deeper probe        ${probe_speedup}%
+  peak aggregate assumed             $peak_aggregate /s
+  probe duration                     ${recon_seconds}s
+  probe consumption per org          $per_org mutations
+  conditioning per org               $CONDITIONING_TARGET mutations
+  explicit safety headroom           ${safety}%
+  required per org                   $required_per_org mutations
+  capacity per slot                  $CAPACITY
+  slots per organisation             $SLOTS   (rounded up)
+  seeded supply                      $(( SLOTS * CAPACITY * 4 )) mutations across 4 organisations
+  measured supply after conditioning $(( (SLOTS - CONDITIONING_SLOTS) * CAPACITY * 4 )) mutations
+
+This is the *probe* fixture and is not the retained one. §4.6.6 sizes the retained fixture from
+the deepest bracket this stage selects, which is not known until it has run.
+SIZING
+    log "probe fixture sizing -> $sizing"
+    sed 's/^/    /' "$sizing"
+
+    if [ -n "$recon_synthetic" ]; then
+      log "!! SYNTHETIC PROBER: $recon_synthetic"
+      log "!! this invocation drives no cell and measures nothing. Every rate below is the test"
+      log "!! harness's own, and no artifact it writes describes this machine."
+    else
+      clear_sandbox_placeholders
+      build_generator
+    fi
+
+    # --- one probe -------------------------------------------------------------------------
+    #
+    # Results travel in globals rather than on stdout because log() writes to stdout too, and a
+    # capture that swallowed the log lines would hide exactly the progress a long stage needs to
+    # show. PROBE_RATE is the only value the walk reads; the rest are for the artifact.
+    PROBE_RATE=""; PROBE_CELL=""; PROBE_SHAPE=""; PROBE_SPREAD=""
+    recon_probe() {
+      local groups="$1" level="$2" series cell ran_seconds ran_workers ran_slots
+
+      log "probe: G$groups at $level workers/group, ${WINDOW}, pool_max_conns=$ALLOCA_POOL_MAX_CONNS"
+      ITC_WORKERS_PER_GROUP="$level" ./test/scripts/itc-series.sh "$groups" 1 \
+        || fail "the G$groups probe at $level workers/group did not complete. A probe that failed
+  is not a probe that found a limit: diagnose it rather than reading its absence as saturation."
+
+      series="$(ls -1dt test/results/$RESULTS_GROUP/*/ 2>/dev/null | head -1)"
+      cell="$(ls -1dt "$series"cell-*/ 2>/dev/null | head -1)"
+      [ -n "$cell" ] || fail "the G$groups probe at $level produced no cell directory under $series"
+
+      # **Check the artifact against the intent.** The first attempt at the sustained stage ran
+      # 60 s cells and reported them as a clean 600 s qualification, because every gate judged the
+      # run that happened rather than the run that was asked for. A probe is cheaper to lose and
+      # far easier to misread: a level silently probed at the wrong worker count would move the
+      # bracket, and nothing downstream could notice.
+      ran_seconds="$(python3 -c "
+import json,sys
+print(int(round(json.load(open(sys.argv[1]))['summary']['duration_seconds'])))" "${cell}run.json")"
+      ran_workers="$(python3 -c "
+import json,sys
+print(json.load(open(sys.argv[1]))['summary'].get('workers_per_group'))" "${cell}run.json")"
+      ran_slots="$(grep '^SLOTS=' "${cell}fixture.txt" | cut -d= -f2)"
+
+      [ "$ran_workers" = "$level" ] \
+        || fail "the G$groups probe was asked for $level workers/group and ran at $ran_workers.
+  The walk would attribute this rate to the wrong level and bracket somewhere else entirely."
+      [ "$ran_seconds" -ge $(( recon_seconds * 95 / 100 )) ] \
+        || fail "the G$groups probe at $level measured ${ran_seconds}s against ${recon_seconds}s
+  asked for. Probe rates are only comparable across levels at one duration."
+      [ "$ran_slots" = "$SLOTS" ] \
+        || fail "the G$groups probe at $level ran on $ran_slots slots/org, not the $SLOTS this
+  stage sized. A probe short of fixture measures exhaustion, not the worker level."
+
+      PROBE_CELL="$cell"
+      PROBE_RATE="$(python3 -c "
+import json,sys
+s=json.load(open(sys.argv[1]))['summary']
+print('%.1f' % (s['successful_mutation_goodput'] / s['duration_seconds']))" "${cell}run.json")"
+
+      # Shape and spread are recorded, not gated on. The within-window spread discriminator was
+      # calibrated on 60 s cells in the degraded regime (itc-classify.py), and that regime is the
+      # one conditioning closed (§3.20) — so a threshold imported here would refuse probes on a
+      # boundary no longer measured for this shape. It is retained so a reader can see whether a
+      # level's reading looks unlike its neighbours'.
+      PROBE_SHAPE="$(./test/scripts/itc-classify.py "$cell" 2>/dev/null | awk 'NR==3{print $3}')"
+      PROBE_SPREAD="$(./test/scripts/itc-classify.py "$cell" 2>/dev/null | awk 'NR==3{print $4}')"
+      [ -n "$PROBE_SHAPE" ] || { PROBE_SHAPE="-"; PROBE_SPREAD="-"; }
+
+      log "  G$groups @ $level -> ${PROBE_RATE}/s  (shape $PROBE_SHAPE, spread $PROBE_SPREAD)"
+    }
+
+    # better_than tests strictly by the margin, in awk because the rates are not integers.
+    better_than() { awk -v a="$1" -v b="$2" -v m="$recon_margin" \
+      'BEGIN { exit !(a > b * (1 + m/100)) }'; }
+
+    # `if`, not `[ ... ] && ...`. Under `set -e` a false test as the final command of a list is a
+    # non-zero status, and the same shape has already aborted a run in this repository once.
+    ladder_index() {
+      local want="$1" i=0 lvl
+      for lvl in $ladder; do
+        if [ "$lvl" = "$want" ]; then printf '%s\n' "$i"; return 0; fi
+        i=$((i + 1))
+      done
+      return 1
+    }
+    ladder_at() { printf '%s\n' "$ladder" | tr ' ' '\n' | sed -n "$(( $1 + 1 ))p"; }
+    ladder_size() { printf '%s\n' "$ladder" | wc -w; }
+
+    for groups in $recon_groups; do
+      declare -A rate_at=() cell_at=() shape_at=() spread_at=()
+      order=""
+
+      # A level is probed at most once per topology. The walk revisits neighbours by design — the
+      # lower-side check asks about a level the upward walk may already have measured — and
+      # re-driving a cell would spend four minutes to get a second answer to a settled question.
+      probe_once() {
+        local groups="$1" idx="$2" level
+        level="$(ladder_at "$idx")"
+        if [ -n "${rate_at[$level]:-}" ]; then return 0; fi
+        if [ -n "$recon_synthetic" ]; then
+          PROBE_RATE="$("$recon_synthetic" "$groups" "$level")"
+          PROBE_CELL="synthetic"; PROBE_SHAPE="-"; PROBE_SPREAD="-"
+          log "  G$groups @ $level -> ${PROBE_RATE}/s  (synthetic)"
+        else
+          recon_probe "$groups" "$level"
+        fi
+        rate_at[$level]="$PROBE_RATE"
+        cell_at[$level]="$PROBE_CELL"
+        shape_at[$level]="$PROBE_SHAPE"
+        spread_at[$level]="$PROBE_SPREAD"
+        order="$order $level"
+      }
+
+      start_idx="$(ladder_index "$recon_start")" \
+        || fail "ITC_RECON_START=$recon_start is not on the ladder [$ladder]"
+      last_idx=$(( $(ladder_size) - 1 ))
+
+      log ""
+      log "=== reconnaissance at G$groups: start $recon_start, margin ${recon_margin}%, ladder [$ladder]"
+
+      probe_once "$groups" "$start_idx"
+      best_idx="$start_idx"
+
+      # **Walk up first, because the question is where the frontier stops rising.** The direction
+      # is decided by one probe rather than assumed: if the level above the start does not beat it
+      # by the margin, the start is already at or past the frontier and the walk turns around.
+      if [ "$start_idx" -lt "$last_idx" ]; then
+        probe_once "$groups" $(( start_idx + 1 ))
+        if better_than "${rate_at[$(ladder_at $(( start_idx + 1 )))]}" "${rate_at[$(ladder_at "$start_idx")]}"; then
+          best_idx=$(( start_idx + 1 ))
+          while [ "$best_idx" -lt "$last_idx" ]; do
+            probe_once "$groups" $(( best_idx + 1 ))
+            better_than "${rate_at[$(ladder_at $(( best_idx + 1 )))]}" "${rate_at[$(ladder_at "$best_idx")]}" || break
+            best_idx=$(( best_idx + 1 ))
+          done
+        fi
+      fi
+
+      # Turn around only if going up bought nothing at all: the start is then a candidate whose
+      # lower side has never been observed, which is exactly what the check below needs.
+      if [ "$best_idx" -eq "$start_idx" ]; then
+        while [ "$best_idx" -gt 0 ]; do
+          probe_once "$groups" $(( best_idx - 1 ))
+          better_than "${rate_at[$(ladder_at $(( best_idx - 1 )))]}" "${rate_at[$(ladder_at "$best_idx")]}" || break
+          best_idx=$(( best_idx - 1 ))
+        done
+      fi
+
+      S="$(ladder_at "$best_idx")"
+
+      [ "$best_idx" -lt "$last_idx" ] || fail "G$groups: the walk reached the top of the ladder at
+  $S workers/group and each level was still better than the one below it. §4.6.4 sets no maximum,
+  so this is a bracket outside the starting range rather than a limit. Extend and re-run:
+      ITC_RECON_LADDER='$ladder 192 256' ./test/scripts/itc-local-experiment.sh recon"
+      [ "$best_idx" -gt 0 ] || fail "G$groups: the walk reached the bottom of the ladder at $S
+  workers/group. The frontier is below the starting range; extend downward and re-run:
+      ITC_RECON_LADDER='1 $ladder' ./test/scripts/itc-local-experiment.sh recon"
+
+      H="$(ladder_at $(( best_idx + 1 )))"
+      L="$(ladder_at $(( best_idx - 1 )))"
+
+      # **The lower-side check** (maintainer decision, 2026-08-19). §4.6.5's selection rule tests
+      # only that H fails to beat S, which confirms S is not *below* the frontier and says nothing
+      # about S sitting past the peak — and a too-high S would understate capacity at every
+      # topology while passing the rule unchallenged. Recon is where that costs one short probe
+      # rather than four retained 600 s runs, so S is proposed only when it beats the level below
+      # it by the same margin.
+      #
+      # **The probe below is a guard, not the source of the data, and mutation testing is how that
+      # was established** rather than assumed. Every path through the walk above has already
+      # measured `best_idx - 1`: the upward walk passed through it, the turnaround probed it to
+      # decide it was not better, and a downward walk exits precisely when it fails to beat the
+      # level above. So this call is idempotent in all three cases — deleting it changes no
+      # current behaviour, and it is kept only so that a future change to the walk cannot leave the
+      # check reading a level nothing observed.
+      probe_once "$groups" $(( best_idx - 1 ))
+      if better_than "${rate_at[$S]}" "${rate_at[$L]}"; then
+        lower_side="pass — $S beats $L by more than ${recon_margin}%"
+      else
+        lower_side="FAIL — $S does not beat $L by ${recon_margin}%; the frontier is at or below $L"
+      fi
+
+      report="test/results/$RESULTS_GROUP/recon-G${groups}.txt"
+      {
+        printf 'PR4b reconnaissance, G%s (ag-sept-validation-plan.md §4.6.4)\n' "$groups"
+        printf 'driven %s\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        if [ -n "$recon_synthetic" ]; then
+          printf '*** SYNTHETIC PROBER (%s) ***\n' "$recon_synthetic"
+          printf '*** No cell was driven. Every rate below is a test harness fixture and describes\n'
+          printf '*** no machine. This file is a self-test transcript, not a probe record.\n\n'
+        fi
+        printf 'NOT CAPACITY EVIDENCE. These are short non-canonical probes. No rate below may be\n'
+        printf 'quoted, entered into E2/E4, or compared with a 600 s horizon average: a probe reads\n'
+        printf 'the early part of a trajectory that PR4a measured declining to ~0.75x by 600 s.\n'
+        printf 'Their only output is the two levels named at the bottom.\n\n'
+        printf '  probe duration      %ss\n' "$recon_seconds"
+        printf '  pool_max_conns      %s\n' "$ALLOCA_POOL_MAX_CONNS"
+        printf '  slots/organisation  %s at capacity %s\n' "$SLOTS" "$CAPACITY"
+        printf '  conditioning        %s mutations/org\n' "$CONDITIONING_TARGET"
+        printf '  margin              %s%%  (twice the 2.6%% agreement of ten identical healthy\n' "$recon_margin"
+        printf '                      G4 cells, docs/measurements/pr4a-rehearsal/repeats/)\n'
+        printf '  ladder              %s\n' "$ladder"
+        printf '  start               %s\n\n' "$recon_start"
+        printf '  %-8s %10s  %-7s %7s  %s\n' workers probe/s shape spread cell
+        for lvl in $(tr ' ' '\n' <<< "$order" | grep -v '^$' | sort -n); do
+          printf '  %-8s %10s  %-7s %7s  %s\n' \
+            "$lvl" "${rate_at[$lvl]}" "${shape_at[$lvl]}" "${spread_at[$lvl]}" "${cell_at[$lvl]}"
+        done
+        printf '\n  selected S          %s\n' "$S"
+        printf '  deciding H          %s\n' "$H"
+        printf '  lower-side check    %s\n' "$lower_side"
+      } > "$report"
+
+      log ""
+      sed 's/^/    /' "$report"
+      log "G$groups reconnaissance -> $report"
+
+      case "$lower_side" in
+        FAIL*) fail "G$groups: the lower-side check failed. Proposing S=$S would risk selecting a
+  level past the peak, which §4.6.5's rule cannot detect. Re-run reconnaissance around $L before
+  spending four retained 600 s runs on this bracket." ;;
+      esac
+
+      unset rate_at cell_at shape_at spread_at
+    done
+
+    log ""
+    log "reconnaissance complete for topologies [$recon_groups]. Size the retained fixture from the"
+    log "deepest selected bracket next: ./test/scripts/itc-local-experiment.sh fixture"
+    ;;
+
+  fixture|capacity)
     # Named and refused rather than absent. A stage that silently did nothing would look like a
     # stage that found nothing, and the dependency order is the point: each of these consumes the
     # answer the previous one produced.

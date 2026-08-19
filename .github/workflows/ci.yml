@@ -90,6 +90,15 @@ jobs:
       - name: iteration C observability labels
         run: ./test/scripts/itc-obs-targets-test.sh
 
+      # Guards the PR4b saturation search, which chooses the two worker levels that receive four
+      # retained 600 s runs each. It substitutes a synthetic rate curve for the prober, so it
+      # drives no cell and needs no daemon. It exists because the search runs unattended for the
+      # better part of an hour and a defect returns a wrong bracket full of sound runs — and
+      # because mutation testing on it found one assertion passing for the wrong reason
+      # (ag-sept-validation-plan.md §4.6.4).
+      - name: iteration C reconnaissance walk
+        run: ./test/scripts/itc-recon-walk-test.sh
+
   integration:
     name: postgres integration
     runs-on: ubuntu-latest

@@ -317,11 +317,11 @@ variation exists at the unit level, then decide whether the intended comparison 
 architecture signal at the claimed precision.
 
 A useful pre-capacity diagnostic may therefore measure several equivalent units **individually**
-before composing those same units. For two units A and B at one common probe load, comparing
-`g2_AB` with `g1_A + g1_B` asks whether the actual provisioned units compose roughly in line with
-what they each demonstrated separately. That paired diagnostic controls one source of arbitrary
-baseline selection, but it is not itself a capacity efficiency: saturation, repetition and the
-measurement contract's capacity gates still belong to the full validation method.
+before composing those same units. For capacity units CU1 and CU2 at one common probe load,
+comparing `g2_CU1_CU2` with `g1_CU1 + g1_CU2` asks whether the actual provisioned units compose
+roughly in line with what they each demonstrated separately. That paired diagnostic controls one
+source of arbitrary baseline selection, but it is not itself a capacity efficiency: saturation,
+repetition and the measurement contract's capacity gates still belong to the full validation method.
 
 The current Iteration C probe design is
 [`independent-capacity-probe.md`](independent-capacity-probe.md). Its result may determine how much

@@ -12,6 +12,10 @@ This is a **diagnostic probe, not a new route to `VAL-SCALE-5`**. A partial AWS 
 partial topology. PR4c may provide evidence that a different future experiment would be worthwhile;
 it cannot be renamed Tier 1 or Tier 2 because its result looks good.
 
+Capacity units use numeric identities **CU1/CU2** throughout this probe. Organisations retain the
+established letter identities **A/B/C/D**. Those namespaces must not be reused for each other in run
+names, manifests, or reports.
+
 ## 1. Question
 
 At one common non-canonical worker level, do two equivalent independently provisioned capacity units:
@@ -27,12 +31,12 @@ ask for a precise efficiency estimate.
 
 No interpreted probe begins until all of these hold:
 
-- capacity units A and B are separate EC2 instances and use the same serving instance shape;
-- A and B use separate storage allocations/paths with the same declared storage shape;
+- capacity units CU1 and CU2 are separate EC2 instances and use the same serving instance shape;
+- CU1 and CU2 use separate storage allocations/paths with the same declared storage shape;
 - one service replica and one PostgreSQL authority run on each active unit;
-- the load generator/measurement stack runs on separate EC2 compute, never on A or B;
-- A and B run the same Alloca-Go image, PostgreSQL version/configuration, schema version, pool policy,
-  timeout policy and OS/bootstrap shape relevant to the measurement;
+- the load generator/measurement stack runs on separate EC2 compute, never on CU1 or CU2;
+- CU1 and CU2 run the same Alloca-Go image, PostgreSQL version/configuration, schema version, pool
+  policy, timeout policy and OS/bootstrap shape relevant to the measurement;
 - the placement document and unit metadata agree on the active topology before load starts;
 - node/service/PostgreSQL evidence required below is populated for every active serving host;
 - clocks are synchronised sufficiently for the generator measurement window and host series to be
@@ -71,24 +75,24 @@ do not tune one topology independently.
 
 Drive exactly these first three measured cells:
 
-### 4.1 `G1-A`
+### 4.1 `G1-CU1`
 
-- capacity unit A active;
+- capacity unit CU1 active;
 - one explicit sharded authority owns organisations A/B/C/D;
-- capacity unit B is not serving the workload;
+- CU2 is not serving the workload;
 - fresh reset/reseed, conditioning to the common state target, state-preserving service/pool recycle,
   pre-measurement checks, 120 s measured interval, reconciliation.
 
-### 4.2 `G1-B`
+### 4.2 `G1-CU2`
 
-Same topology and procedure as `G1-A`, but capacity unit B is the serving unit. This is an
-independent-unit baseline, not a repeat of A.
+Same topology and procedure as `G1-CU1`, but CU2 is the serving unit. This is an independent-unit
+baseline, not a repeat of CU1.
 
-### 4.3 `G2-A+B`
+### 4.3 `G2-CU1+CU2`
 
-- capacity units A and B active together;
-- A owns organisations A/B;
-- B owns organisations C/D;
+- capacity units CU1 and CU2 active together;
+- CU1 owns organisations A/B;
+- CU2 owns organisations C/D;
 - each group receives its own `workers_per_group=P` stream under the already established
   `VAL-NEG-8` generator design;
 - fresh reset/reseed/conditioning on both authorities, state-preserving recycle, checks, 120 s
@@ -104,7 +108,8 @@ Each cell retains enough evidence to answer both the system and environment side
   deployed image identity;
 - observed serving-unit metadata proving the intended active unit set and one image/schema contract;
 - EC2 serving shape and observed vCPU/memory resources for every active unit;
-- storage shape and per-unit identity sufficient to show that A and B do not share one data volume;
+- storage shape and per-unit identity sufficient to show that CU1 and CU2 do not share one data
+  volume;
 - host CPU, memory, disk read/write throughput, disk utilisation/queue depth and network series per
   active serving unit;
 - service/process, pool and PostgreSQL panels per authority;
@@ -125,7 +130,7 @@ A cell is **uninterpretable** when any of these fails:
 - fixture exhaustion or unexpected policy refusals alter the workload;
 - conditioning/reconciliation populations do not reconcile;
 - one required host/resource series is absent;
-- A and B are not equivalent in the declared capacity-unit configuration;
+- CU1 and CU2 are not equivalent in the declared capacity-unit configuration;
 - the generator is a plausible limiter at the observed request rate;
 - an active serving unit is materially constrained by a provisioning fault that is not part of the
   intended capacity-unit shape.
@@ -139,9 +144,9 @@ may be promoted to `G1_aws`, `G2_aws` or `E2_aws`.
 Let the full-120 s fresh-mutation Goodput observations be:
 
 ```text
-g1_A(P)
-g1_B(P)
-g2_AB(P)
+g1_CU1(P)
+g1_CU2(P)
+g2_CU1_CU2(P)
 ```
 
 Report all three raw observations first.
@@ -149,19 +154,19 @@ Report all three raw observations first.
 Then derive:
 
 ```text
-U1_probe = |g1_A - g1_B| / ((g1_A + g1_B) / 2)
-R2_probe = g2_AB / (g1_A + g1_B)
+D_unit_probe = |g1_CU1 - g1_CU2| / ((g1_CU1 + g1_CU2) / 2)
+R2_probe = g2_CU1_CU2 / (g1_CU1 + g1_CU2)
 ```
 
-`U1_probe` describes the difference between the two nominally equivalent AWS units in this one pass.
-It is **not** an estimate of run-to-run variance or a confidence interval.
+`D_unit_probe` describes the difference between the two nominally equivalent AWS capacity units in
+this one pass. It is **not** an estimate of run-to-run variance or a confidence interval.
 
 `R2_probe` asks whether the two actual units, when composed, deliver aggregate Goodput commensurate
 with the sum of the observations those same units produced separately. It is labelled `[DERIVED]`
 and **must never be called `E2_aws`**.
 
-Where the harness exposes per-authority G2 Goodput, report A and B separately beside the aggregate.
-A balanced sum and an asymmetric sum are different architecture evidence.
+Where the harness exposes per-authority G2 Goodput, report CU1 and CU2 separately beside the
+aggregate. A balanced sum and an asymmetric sum are different architecture evidence.
 
 ## 8. Interpretation and decision after the first result
 
@@ -169,16 +174,16 @@ There is no numerical pass/fail threshold. PR4c records one of three explicit de
 
 ### PROCEED
 
-Use when A/B behaviour is sufficiently intelligible and the G2 composition signal is sufficiently
-clear that a different, longer or repeated independent measurement **may** be worth proposing.
-`PROCEED` creates no follow-on stage, budget or execution commitment.
+Use when CU1/CU2 behaviour is sufficiently intelligible and the G2 composition signal is
+sufficiently clear that a different, longer or repeated independent measurement **may** be worth
+proposing. `PROCEED` creates no follow-on stage, budget or execution commitment.
 
 ### BOUNDED REPEAT
 
 Use when one small repeat can discriminate a specific ambiguity — for example whether a surprising
-A/B difference repeats, or whether the one-vCPU generator was the limiter. Name the hypothesis and
-the killing observation before the repeat. Do not start a generic replication campaign. The repeat
-must remain inside PR4c's existing 1.0-day allocation.
+CU1/CU2 difference repeats, or whether the one-vCPU generator was the limiter. Name the hypothesis
+and the killing observation before the repeat. Do not start a generic replication campaign. The
+repeat must remain inside PR4c's existing 1.0-day allocation.
 
 ### STOP / DEFER
 
@@ -194,8 +199,8 @@ variation**, rather than forcing both through an arbitrary precision threshold.
 - **`VAL-NEG-8`** is reused, not reopened: the independent per-group demand-stream property is
   already mutation-proved. PR4c observes its deployed accounting but does not need a new slow-group
   proof unless the generator implementation changes.
-- **`VAL-NEG-7`** is exercised in miniature for A/B equivalence and per-host evidence, but is not
-  discharged for `VAL-SCALE-5`: the complete G1/G2/G4 family has not run.
+- **`VAL-NEG-7`** is exercised in miniature for CU1/CU2 equivalence and per-host evidence, but is
+  not discharged for `VAL-SCALE-5`: the complete G1/G2/G4 family has not run.
 - **`VAL-SCALE-5`** remains unproven regardless of `R2_probe`. Only the governing validation plan's
   complete independently provisioned Tier-1 method can discharge it.
 - **Tier 2 does not apply** to this probe. Tier 2 requires a complete G4 environment that exists but

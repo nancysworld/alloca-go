@@ -1,0 +1,12 @@
+rehearsal cpusets for G4 (expecting generator/monitor on 8-11)
+  alloca-service-1         0,1
+  alloca-authority-1-db    0,1
+  alloca-service-2         2,3
+  alloca-authority-2-db    2,3
+  alloca-service-3         4,5
+  alloca-authority-3-db    4,5
+  alloca-service-4         6,7
+  alloca-authority-4-db    6,7
+  alloca-prometheus        8,9,10,11
+  alloca-grafana           8,9,10,11
+  alloca-node-exporter     8,9,10,11

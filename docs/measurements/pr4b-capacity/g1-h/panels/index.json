@@ -1,0 +1,316 @@
+{
+  "window": {
+    "start": "2026-08-19T10:10:16Z",
+    "end": "2026-08-19T10:20:16Z"
+  },
+  "query_window": {
+    "start": "2026-08-19T10:10:31Z",
+    "end": "2026-08-19T10:20:16Z"
+  },
+  "rate_range": "15s",
+  "step": "5s",
+  "_note": "step is finer than rate_range, so consecutive points share samples and the series is smoothed; this is a property of the export, not of the measurement",
+  "_query_window_note": "window is the measured phase and is the authority for what was measured. Range queries are evaluated only from window.start + rate_range, because rate(x[R]) at time T reads samples from T-R and the fixture re-seed resets database rows but not the service's counters \u2014 so earlier evaluations would mix warm-up traffic into a file that claims to describe the measured phase. Instant selectors carry no range and keep the full window; each panel records its own queried_from.",
+  "panels": [
+    {
+      "key": "throughput",
+      "title": "Completed throughput",
+      "unit": "req/s",
+      "expr": "sum(rate(alloca_requests_total[15s]))",
+      "file": "panels/throughput.csv",
+      "queried_from": "2026-08-19T10:10:31Z",
+      "series": 1,
+      "points": 118
+    },
+    {
+      "key": "goodput",
+      "title": "Successful mutation goodput",
+      "unit": "req/s",
+      "expr": "sum(rate(alloca_requests_total{operation=~\"reserve|confirm|cancel\",outcome=\"admitted_success\",replay=\"false\"}[15s]))",
+      "file": "panels/goodput.csv",
+      "queried_from": "2026-08-19T10:10:31Z",
+      "series": 1,
+      "points": 118
+    },
+    {
+      "key": "replay_rate",
+      "title": "Replayed mutations",
+      "unit": "req/s",
+      "expr": "sum(rate(alloca_requests_total{operation=~\"reserve|confirm|cancel\",outcome=\"admitted_success\",replay=\"true\"}[15s]))",
+      "file": "panels/replay_rate.csv",
+      "queried_from": "2026-08-19T10:10:31Z",
+      "series": 0,
+      "points": 0
+    },
+    {
+      "key": "latency_p50",
+      "title": "Request latency p50",
+      "unit": "s",
+      "expr": "histogram_quantile(0.50, sum by (le) (rate(alloca_request_duration_seconds_bucket[15s])))",
+      "file": "panels/latency_p50.csv",
+      "queried_from": "2026-08-19T10:10:31Z",
+      "series": 1,
+      "points": 118
+    },
+    {
+      "key": "latency_p95",
+      "title": "Request latency p95",
+      "unit": "s",
+      "expr": "histogram_quantile(0.95, sum by (le) (rate(alloca_request_duration_seconds_bucket[15s])))",
+      "file": "panels/latency_p95.csv",
+      "queried_from": "2026-08-19T10:10:31Z",
+      "series": 1,
+      "points": 118
+    },
+    {
+      "key": "latency_p99",
+      "title": "Request latency p99",
+      "unit": "s",
+      "expr": "histogram_quantile(0.99, sum by (le) (rate(alloca_request_duration_seconds_bucket[15s])))",
+      "file": "panels/latency_p99.csv",
+      "queried_from": "2026-08-19T10:10:31Z",
+      "series": 1,
+      "points": 118
+    },
+    {
+      "key": "outcomes",
+      "title": "Outcomes",
+      "unit": "req/s",
+      "expr": "sum by (outcome) (rate(alloca_requests_total[15s]))",
+      "file": "panels/outcomes.csv",
+      "queried_from": "2026-08-19T10:10:31Z",
+      "series": 1,
+      "points": 118
+    },
+    {
+      "key": "pool_in_use",
+      "title": "DB pool connections in use",
+      "unit": "conns",
+      "expr": "alloca_db_pool_acquired_connections",
+      "file": "panels/pool_in_use.csv",
+      "queried_from": "2026-08-19T10:10:16Z",
+      "series": 1,
+      "points": 120
+    },
+    {
+      "key": "pool_idle",
+      "title": "DB pool connections idle",
+      "unit": "conns",
+      "expr": "alloca_db_pool_idle_connections",
+      "file": "panels/pool_idle.csv",
+      "queried_from": "2026-08-19T10:10:16Z",
+      "series": 1,
+      "points": 120
+    },
+    {
+      "key": "pool_total",
+      "title": "DB pool connections held",
+      "unit": "conns",
+      "expr": "alloca_db_pool_total_connections",
+      "file": "panels/pool_total.csv",
+      "queried_from": "2026-08-19T10:10:16Z",
+      "series": 1,
+      "points": 120
+    },
+    {
+      "key": "pool_constructing",
+      "title": "DB pool connections constructing",
+      "unit": "conns",
+      "expr": "alloca_db_pool_constructing_connections",
+      "file": "panels/pool_constructing.csv",
+      "queried_from": "2026-08-19T10:10:16Z",
+      "series": 1,
+      "points": 120
+    },
+    {
+      "key": "pool_new_conns",
+      "title": "DB pool connections established",
+      "unit": "conns/s",
+      "expr": "rate(alloca_db_pool_new_connections_total[15s])",
+      "file": "panels/pool_new_conns.csv",
+      "queried_from": "2026-08-19T10:10:31Z",
+      "series": 1,
+      "points": 118
+    },
+    {
+      "key": "pool_destroys",
+      "title": "DB pool connections destroyed",
+      "unit": "conns/s",
+      "expr": "rate(alloca_db_pool_max_lifetime_destroys_total[15s]) + rate(alloca_db_pool_max_idle_destroys_total[15s])",
+      "file": "panels/pool_destroys.csv",
+      "queried_from": "2026-08-19T10:10:31Z",
+      "series": 1,
+      "points": 118
+    },
+    {
+      "key": "pool_acquire_wait",
+      "title": "DB pool acquire duration",
+      "unit": "s/s",
+      "expr": "rate(alloca_db_pool_acquire_wait_seconds_total[15s])",
+      "file": "panels/pool_acquire_wait.csv",
+      "queried_from": "2026-08-19T10:10:31Z",
+      "series": 1,
+      "points": 118
+    },
+    {
+      "key": "pool_empty_acquire_wait",
+      "title": "DB pool empty-acquire duration",
+      "unit": "s/s",
+      "expr": "rate(alloca_db_pool_empty_acquire_wait_seconds_total[15s])",
+      "file": "panels/pool_empty_acquire_wait.csv",
+      "queried_from": "2026-08-19T10:10:31Z",
+      "series": 1,
+      "points": 118
+    },
+    {
+      "key": "pool_acquire_mean",
+      "title": "DB pool mean acquire duration",
+      "unit": "s",
+      "expr": "rate(alloca_db_pool_acquire_wait_seconds_total[15s]) / rate(alloca_db_pool_acquires_total[15s])",
+      "file": "panels/pool_acquire_mean.csv",
+      "queried_from": "2026-08-19T10:10:31Z",
+      "series": 1,
+      "points": 118
+    },
+    {
+      "key": "host_cpu_busy",
+      "title": "Host CPU busy",
+      "unit": "cores",
+      "expr": "sum(rate(node_cpu_seconds_total{job=\"node\",mode!=\"idle\"}[30s]))",
+      "file": "panels/host_cpu_busy.csv",
+      "queried_from": "2026-08-19T10:10:46Z",
+      "series": 1,
+      "points": 115
+    },
+    {
+      "key": "host_cpu_steal",
+      "title": "Host CPU steal and iowait",
+      "unit": "cores",
+      "expr": "sum by (mode) (rate(node_cpu_seconds_total{job=\"node\",mode=~\"steal|iowait\"}[30s]))",
+      "file": "panels/host_cpu_steal.csv",
+      "queried_from": "2026-08-19T10:10:46Z",
+      "series": 2,
+      "points": 230
+    },
+    {
+      "key": "host_runqueue",
+      "title": "Host run queue (load average)",
+      "unit": "tasks",
+      "expr": "node_load1{job=\"node\"}",
+      "file": "panels/host_runqueue.csv",
+      "queried_from": "2026-08-19T10:10:16Z",
+      "series": 1,
+      "points": 121
+    },
+    {
+      "key": "host_memory_available",
+      "title": "Host memory available",
+      "unit": "bytes",
+      "expr": "sum(node_memory_MemAvailable_bytes{job=\"node\"})",
+      "file": "panels/host_memory_available.csv",
+      "queried_from": "2026-08-19T10:10:16Z",
+      "series": 1,
+      "points": 121
+    },
+    {
+      "key": "process_cpu",
+      "title": "Process CPU",
+      "unit": "cores",
+      "expr": "rate(process_cpu_seconds_total{job=\"alloca-go\"}[15s])",
+      "file": "panels/process_cpu.csv",
+      "queried_from": "2026-08-19T10:10:31Z",
+      "series": 1,
+      "points": 118
+    },
+    {
+      "key": "process_memory",
+      "title": "Process resident memory",
+      "unit": "bytes",
+      "expr": "process_resident_memory_bytes{job=\"alloca-go\"}",
+      "file": "panels/process_memory.csv",
+      "queried_from": "2026-08-19T10:10:16Z",
+      "series": 1,
+      "points": 120
+    },
+    {
+      "key": "go_goroutines",
+      "title": "Goroutines",
+      "unit": "count",
+      "expr": "go_goroutines{job=\"alloca-go\"}",
+      "file": "panels/go_goroutines.csv",
+      "queried_from": "2026-08-19T10:10:16Z",
+      "series": 1,
+      "points": 120
+    },
+    {
+      "key": "go_gc_pause",
+      "title": "GC pause quantile",
+      "unit": "s",
+      "expr": "go_gc_duration_seconds{job=\"alloca-go\",quantile=\"0.75\"}",
+      "file": "panels/go_gc_pause.csv",
+      "queried_from": "2026-08-19T10:10:16Z",
+      "series": 1,
+      "points": 120
+    },
+    {
+      "key": "pg_wait_events",
+      "title": "PostgreSQL backends by wait event type",
+      "unit": "backends",
+      "expr": "sum by (authority, wait_event_type) (pg_stat_activity_count{job=\"postgres\",state=\"active\"})",
+      "file": "panels/pg_wait_events.csv",
+      "queried_from": "2026-08-19T10:10:16Z",
+      "series": 5,
+      "points": 287
+    },
+    {
+      "key": "pg_backends_active",
+      "title": "PostgreSQL active backends",
+      "unit": "backends",
+      "expr": "sum by (authority) (pg_stat_activity_count{job=\"postgres\",state=\"active\"})",
+      "file": "panels/pg_backends_active.csv",
+      "queried_from": "2026-08-19T10:10:16Z",
+      "series": 1,
+      "points": 121
+    },
+    {
+      "key": "pg_checkpoints_timed",
+      "title": "PostgreSQL timed checkpoints (cumulative)",
+      "unit": "count",
+      "expr": "sum by (authority) (pg_stat_bgwriter_checkpoints_timed_total{job=\"postgres\"})",
+      "file": "panels/pg_checkpoints_timed.csv",
+      "queried_from": "2026-08-19T10:10:16Z",
+      "series": 1,
+      "points": 121
+    },
+    {
+      "key": "pg_checkpoints_req",
+      "title": "PostgreSQL requested checkpoints (cumulative)",
+      "unit": "count",
+      "expr": "sum by (authority) (pg_stat_bgwriter_checkpoints_req_total{job=\"postgres\"})",
+      "file": "panels/pg_checkpoints_req.csv",
+      "queried_from": "2026-08-19T10:10:16Z",
+      "series": 1,
+      "points": 121
+    },
+    {
+      "key": "pg_buffers_backend",
+      "title": "PostgreSQL buffers written by backends",
+      "unit": "buffers/s",
+      "expr": "sum by (authority) (rate(pg_stat_bgwriter_buffers_backend_total{job=\"postgres\"}[30s]))",
+      "file": "panels/pg_buffers_backend.csv",
+      "queried_from": "2026-08-19T10:10:46Z",
+      "series": 1,
+      "points": 115
+    },
+    {
+      "key": "pg_long_transactions",
+      "title": "PostgreSQL longest open transaction",
+      "unit": "s",
+      "expr": "max by (authority) (pg_stat_activity_max_tx_duration{job=\"postgres\"})",
+      "file": "panels/pg_long_transactions.csv",
+      "queried_from": "2026-08-19T10:10:16Z",
+      "series": 1,
+      "points": 121
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+seeding G2 from placement-itc-g2.json: 45000 slots per organisation, capacity 20
+  org-a -> authority-1 (localhost:15433) [reset]
+seeded 45000 slots (capacity 20) for org "org-a"; clean start asserted: 0 live claims, 0 idempotency records
+  org-b -> authority-1 (localhost:15433)
+seeded 45000 slots (capacity 20) for org "org-b"; clean start asserted: 0 live claims, 0 idempotency records
+  org-c -> authority-2 (localhost:15434) [reset]
+seeded 45000 slots (capacity 20) for org "org-c"; clean start asserted: 0 live claims, 0 idempotency records
+  org-d -> authority-2 (localhost:15434)
+seeded 45000 slots (capacity 20) for org "org-d"; clean start asserted: 0 live claims, 0 idempotency records
+G2 fixture seeded: 4 organisations x 45000 slots across 2 authority/authorities

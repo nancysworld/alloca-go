@@ -71,15 +71,35 @@ SECTIONS = [
     # busy is a rounding error on a shared axis, and it is the series that would say whether the
     # host was descheduled.
     #
-    # The collector set is deliberately wider than these panels (diskstats, netdev, filesystem are
+    # The collector set is deliberately wider than these panels (netdev and filesystem are
     # collected and not plotted). Collect broadly, panel narrowly: the snapshot retains everything
     # scraped, so a series nobody thought to plot is still recoverable — which is exactly how the
     # pool population question was answered without re-running a cell (§3.13.1).
+    #
+    # **The two disk graphs are here because PR4b's result turned on them** (maintainer decision,
+    # 2026-08-19). The gap that exposed was not in the collector set: diskstats was scraped and
+    # reachable in Prometheus the whole time, so "recoverable from the snapshot" held — but the
+    # *cell's* retained panels are what a report cites, and a series absent from them got quoted
+    # from a live query instead (ag-sept-pr4.md §3.31). Defining the panels closes the evidence
+    # half; plotting them closes the other half, which TestDashboardIsDeliberatelySmall's own
+    # comment names: an unplotted series is *recoverable*, not *noticed*, and the next degraded
+    # cell has to be read by someone who does not yet know the storage path is a candidate.
+    #
+    # So the rule needs its second half stated: collect broadly, panel narrowly — and promote a
+    # series to a panel the moment a claim rests on it, because a snapshot nobody ships is not
+    # evidence a reader can check.
     ("Host (the machine every unit shares)", [
         ("Host CPU busy (cores)", ["host_cpu_busy"]),
         ("Host CPU stolen and blocked (cores)", ["host_cpu_steal"]),
         ("Host run queue (tasks)", ["host_runqueue"]),
         ("Host memory available", ["host_memory_available"]),
+        ("Host disk throughput", ["host_disk_write_bytes", "host_disk_read_bytes"]),
+        # One graph on purpose. Utilisation near 1.0 means "never idle", not "saturated", and only
+        # the queue depth beside it distinguishes the two: PR4b measured ~1.0 at every topology
+        # while G4 extracted three times G1's write bandwidth at three to four times the queue
+        # depth. Separating them would let a reader take utilisation for a ceiling, which is the
+        # misreading this pairing exists to prevent.
+        ("Host disk utilisation and queue depth", ["host_disk_util", "host_disk_queue"]),
     ]),
     # PostgreSQL's own view (ag-sept-pr4.md §3.16). The section exists for the first graph: every
     # other instrument in this dashboard can say a backend was slow, and only `wait_event_type` can
@@ -128,6 +148,10 @@ DATASOURCE = {"type": "prometheus", "uid": "alloca-prometheus"}
 # So a panel whose GRAFANA_UNIT is "bytes" or "s" carries no unit suffix in SECTIONS.
 GRAFANA_UNIT = {
     "bytes": "bytes",
+    # Bytes per second. One of the units that scales its own axis — "18.1 MiB/s" rather than
+    # 19000000 — so it joins SCALING_UNITS automatically and the disk throughput title carries no
+    # unit suffix.
+    "Bps": "Bps",
     "s": "s",
     "req/s": "short",
     "cores": "short",
@@ -140,6 +164,10 @@ GRAFANA_UNIT = {
     "checkpoints/s": "short",
     "buffers/s": "short",
     "ratio": "percentunit",
+    # Dimensionless, and deliberately not percentunit. Disk utilisation happens to sit near 1.0,
+    # but average queue depth shares its graph and runs to 5; rendering that as "500%" would name
+    # a quantity nobody measured.
+    "none": "short",
 }
 
 # The Grafana units that scale their own axis, and so own the unit label rather than sharing it

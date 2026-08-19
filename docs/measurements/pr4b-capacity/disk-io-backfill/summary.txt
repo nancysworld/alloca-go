@@ -1,0 +1,17 @@
+Mean over each run's measured interval, from the CSVs beside this file.
+Goodput/s is the run's own horizon average from run.json; mut/MiB is their ratio.
+
+run              util   queue  read MiB/s  write MiB/s  Goodput/s  mut/MiB
+--------------------------------------------------------------------------
+g1-s             1.00    1.30       0.152        16.17     1080.1     66.8
+g1-h             1.00    0.94       0.115        15.39     1032.6     67.1
+g1-s-confirm     1.00    1.37       0.119        16.78     1094.0     65.2
+g1-h-confirm     1.00    1.20       0.127        17.86     1193.8     66.8
+g2-s             1.01    4.44       0.454        31.67     2259.0     71.3
+g2-h             1.01    3.31       0.279        34.07     2323.1     68.2
+g2-s-confirm     1.01    3.40       0.251        35.20     2450.8     69.6
+g2-h-confirm     1.01    3.39       0.208        36.18     2477.7     68.5
+g4-s             1.02    5.00       1.073        48.93     3494.8     71.4
+g4-h             1.01    4.81       0.946        48.74     3509.5     72.0
+g4-s-confirm     1.02    4.52       1.033        48.30     3492.9     72.3
+g4-h-confirm     1.02    4.89       1.056        48.74     3543.5     72.7

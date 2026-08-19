@@ -10,6 +10,7 @@ ladder, and they measure different things:
 |---|---|---|---|
 | the **PR1 single-service run** | §1–§8 | one service and one database on this host | a reproducible observation of this machine; establishes no capacity |
 | the **PR4a Iteration C rehearsal cell** | §9–§17 | 1, 2 or 4 shard groups pinned to disjoint CPU sets, with monitoring | rehearsal/diagnostic only; never a capacity, scale-efficiency or Tier-2 result |
+| the **PR4b Iteration C capacity comparison** | §9–§17, driven through the stages below | the same partitioned topologies, at a selected `S`/`H` bracket for a retained 600 s horizon | a `capacity`-level result about *this recorded environment* only (`VAL-SCALE-6`); never independently provisioned evidence, never Tier 1 or Tier 2 |
 
 **One entry point drives the whole local experiment.**
 [`../../test/scripts/itc-local-experiment.sh`](../../test/scripts/itc-local-experiment.sh) composes
@@ -19,15 +20,35 @@ host-executable command the experiment needs:
 ```sh
 ./test/scripts/itc-local-experiment.sh preflight     # read-only: can this machine drive it?
 ./test/scripts/itc-local-experiment.sh build         # generator, refused unless its stamp is clean
-./test/scripts/itc-local-experiment.sh sustained     # conditioned 600 s G1 and G4
-./test/scripts/itc-local-experiment.sh pool          # the bounded G1 pool sensitivity
+
+# method qualification (PR4a)
+./test/scripts/itc-local-experiment.sh qualify-conditioning   # the conditioned start state
+./test/scripts/itc-local-experiment.sh pool                   # the bounded G1 pool sensitivity
+./test/scripts/itc-local-experiment.sh sustained              # conditioned 600 s G1 and G4
+
+# the capacity comparison (PR4b)
+./test/scripts/itc-local-experiment.sh recon         # adaptive workers_per_group bracketing
+./test/scripts/itc-local-experiment.sh fixture       # one fixture size for the whole comparison
+./test/scripts/itc-local-experiment.sh capacity      # S/H + confirmations, then the knee decision
+
+# diagnostics, which select nothing and back no capacity claim
+ITC_RECON_ONLY=16 ./test/scripts/itc-local-experiment.sh recon   # re-probe one level
+./test/scripts/itc-local-experiment.sh drift                     # N identical runs at one level
 ```
 
-The stages carry a dependency that is not a preference — qualify conditioning, freeze the pool,
-find the worker bracket, size the fixture — and each consumes the previous one's answer. `recon`,
-`fixture` and `capacity` are named and refuse until they are built, because a stage that silently
-did nothing would look like a stage that found nothing. The scripts below remain the workers and
-can still be driven directly.
+**The stages carry a dependency that is not a preference** — qualify conditioning, freeze the pool,
+find the worker bracket, size the fixture, then measure — and each consumes the previous one's
+answer. `fixture` reads the reconnaissance reports; `capacity` reads the fixture `fixture` derived
+and refuses without it. Running them out of order produces numbers describing a method that had not
+yet been qualified, which is the failure the sequence exists to avoid. The scripts below remain the
+workers and can still be driven directly.
+
+**Two properties of `capacity` an operator should expect.** It is resumable — an interrupted
+fourteen-run sequence continues rather than restarting — but a cell it finds is re-validated against
+the current bracket, duration and fixture before being kept, and refused if it does not match, since
+a cell on disk is from an earlier invocation whose configuration may have differed. And it exits
+non-zero when a knee is unresolved: that is the absence of a capacity result rather than a low one,
+and the efficiencies are withheld rather than computed.
 
 §9 onwards assumes §1–§8 rather than repeating it: what the manifest records, what each
 quotability level means (§4), and why both the service and the generator are built rather

@@ -814,6 +814,116 @@
     },
     {
       "id": 20,
+      "type": "timeseries",
+      "title": "Host disk throughput",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "alloca-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 68
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "alloca-prometheus"
+          },
+          "expr": "sum(rate(node_disk_written_bytes_total{job=\"node\"}[30s]))",
+          "legendFormat": "Host disk written",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "alloca-prometheus"
+          },
+          "expr": "sum(rate(node_disk_read_bytes_total{job=\"node\"}[30s]))",
+          "legendFormat": "Host disk read",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Host disk utilisation and queue depth",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "alloca-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 68
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "alloca-prometheus"
+          },
+          "expr": "sum(rate(node_disk_io_time_seconds_total{job=\"node\"}[30s]))",
+          "legendFormat": "Host disk utilisation",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "alloca-prometheus"
+          },
+          "expr": "sum(rate(node_disk_io_time_weighted_seconds_total{job=\"node\"}[30s]))",
+          "legendFormat": "Host disk average queue depth",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 22,
       "type": "row",
       "title": "PostgreSQL (per authority)",
       "collapsed": false,
@@ -821,12 +931,12 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 68
+        "y": 76
       },
       "panels": []
     },
     {
-      "id": 21,
+      "id": 23,
       "type": "timeseries",
       "title": "Backends by wait event type",
       "datasource": {
@@ -837,7 +947,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 69
+        "y": 77
       },
       "fieldConfig": {
         "defaults": {
@@ -871,7 +981,7 @@
       ]
     },
     {
-      "id": 22,
+      "id": 24,
       "type": "timeseries",
       "title": "Active backends",
       "datasource": {
@@ -882,7 +992,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 69
+        "y": 77
       },
       "fieldConfig": {
         "defaults": {
@@ -916,7 +1026,7 @@
       ]
     },
     {
-      "id": 23,
+      "id": 25,
       "type": "timeseries",
       "title": "Checkpoints started (cumulative)",
       "datasource": {
@@ -927,7 +1037,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 77
+        "y": 85
       },
       "fieldConfig": {
         "defaults": {
@@ -971,7 +1081,7 @@
       ]
     },
     {
-      "id": 24,
+      "id": 26,
       "type": "timeseries",
       "title": "Buffers written by backends (per second)",
       "datasource": {
@@ -982,7 +1092,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 77
+        "y": 85
       },
       "fieldConfig": {
         "defaults": {
@@ -1016,7 +1126,7 @@
       ]
     },
     {
-      "id": 25,
+      "id": 27,
       "type": "timeseries",
       "title": "Longest open transaction",
       "datasource": {
@@ -1027,7 +1137,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 85
+        "y": 93
       },
       "fieldConfig": {
         "defaults": {

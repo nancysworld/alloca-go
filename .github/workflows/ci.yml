@@ -90,6 +90,30 @@ jobs:
       - name: iteration C observability labels
         run: ./test/scripts/itc-obs-targets-test.sh
 
+      # Guards the PR4b saturation search, which chooses the two worker levels that receive four
+      # retained 600 s runs each. It substitutes a synthetic rate curve for the prober, so it
+      # drives no cell and needs no daemon. It exists because the search runs unattended for the
+      # better part of an hour and a defect returns a wrong bracket full of sound runs — and
+      # because mutation testing on it found one assertion passing for the wrong reason
+      # (ag-sept-validation-plan.md §4.6.4).
+      - name: iteration C reconnaissance walk
+        run: ./test/scripts/itc-recon-walk-test.sh
+
+      # Guards the knee decision that separates VAL-SCALE-6 established from VAL-SCALE-6 explicitly
+      # unresolved, and the efficiencies derived from it. The cases write the manifests the analysis
+      # reads, so no cell is driven. It exists because a defect in the rule yields a plausible
+      # efficiency rather than an obviously wrong one — the number a report is most likely to quote
+      # (ag-sept-validation-plan.md §4.6.5, §4.6.7).
+      - name: iteration C capacity result rule
+        run: ./test/scripts/itc-capacity-result-test.sh
+
+      # Guards the one variable that can move the retained operating point by hand. Every refusal it
+      # exercises fires before a topology is raised, and the accept case pre-creates the retained
+      # cells so the resume branch skips them — no daemon, no cell. A guard that stopped guarding
+      # would leave a plausible efficiency measured at a level no reconnaissance selected.
+      - name: iteration C capacity bracket validation
+        run: ./test/scripts/itc-capacity-bracket-test.sh
+
   integration:
     name: postgres integration
     runs-on: ubuntu-latest

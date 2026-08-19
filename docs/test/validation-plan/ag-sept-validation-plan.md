@@ -386,6 +386,63 @@ higher and repeat the reconnaissance/retained-point selection as necessary. Ther
 maximum such as 16 workers/group**; the upper bound is empirical and generator/resource gates still
 apply.
 
+**Probes are 120 s, and the trade that buys is stated rather than hidden** (maintainer decision,
+2026-08-19). A probe reads the early, high part of a trajectory that PR4a measured declining to
+roughly 0.75× by 600 s (`ag-sept-pr4.md` §3.21), so a bracket is selected on a *different quantity*
+from the full-600 s horizon average that decides the retained comparison in §4.6.5. Longer probes
+would narrow that gap and consume the budget the retained runs need. The mitigation is the selection
+rule below, not a claim that the two quantities agree.
+
+**`S` is the lowest worker level on the discovered plateau** (maintainer decision, 2026-08-19).
+Its immediately lower reconnaissance level must be materially worse, and `H` is a higher level that
+is not materially better. Three consequences follow, and each is a mistake this rule exists to
+prevent:
+
+- **A candidate must beat the level below it, not merely fail to be beaten from above.** §4.6.5's
+  rule tests only that `H` produces no materially higher sustained Goodput, which establishes that
+  `S` is not *below* the frontier and says nothing about `S` sitting past it. A too-high `S` would
+  understate capacity at every topology while passing that rule unchallenged, and every efficiency
+  derived from it would inherit the error silently.
+- **Where throughput is flat across several levels, the lowest of them is the frontier.** Each
+  delivers the same Goodput and the lowest does it with the least queueing, so selecting a higher
+  one attributes capacity to workers that bought nothing. This is not hypothetical: local G2 and G4
+  reconnaissance were both flat from 12 to 16 workers per group — 2.2% and 2.0% apart, inside the
+  margin — while G1 was not, 16 exceeding 12 by 7.0%.
+- **Reconnaissance that cannot satisfy the rule proposes no bracket.** The honest outcomes are to
+  probe lower, or to extend the range; they are not to retain four 600 s runs at a level the
+  reconnaissance declined to stand behind.
+
+Deciding this at reconnaissance costs one short probe. Discovering it after the fact costs four
+retained 600 s runs, which is why the rule belongs here rather than in §4.6.5.
+
+**A common bracket across the topologies is a permitted, recorded exception to per-topology
+selection** (maintainer decision, 2026-08-19). Reconnaissance selects per topology, and those
+selections can differ for reasons that are not properties of the topology: on 2026-08-19 the local
+run returned S=12, S=8, S=12, where `G2`'s 8 read within **0.8%** of its own 12 — inside the margin,
+and far inside the single-probe variation §4.6.4 records above. `E2` and `E4` compare topologies, so
+arms measured at different demand-per-group carry that difference into the efficiency itself, which
+§2.3 forbids.
+
+The maintainer may therefore fix one `S`/`H` bracket for every arm, subject to three conditions:
+
+1. **the level must sit on each topology's own measured plateau** — probed by that topology's
+   reconnaissance, and not materially below the best rate that reconnaissance observed there. A
+   level a topology never probed, or one it measured materially below its own best, is refused;
+2. **`H` must still satisfy §4.6.4's definition at every topology** — higher than `S`, and not
+   materially better;
+3. **the comparison must report that it ran at a common bracket**, naming both the common levels and
+   what reconnaissance selected per topology, so a reader can see the substitution rather than
+   infer it.
+
+This is an exception to *which* level each arm runs at, and to nothing else. It does not relax the
+lowest-plateau rule, which still decides each topology's own selection and remains what conditions
+1 and 2 are checked against; and a comparison driven this way has not run the per-topology selection
+end to end, so it must not be described as though it had.
+
+The conditions are enforced rather than trusted: `itc-local-experiment.sh` validates a hand-set
+bracket against each topology's retained probe table before driving anything, because this is the
+one control that can move the retained operating point by hand.
+
 #### 4.6.5 Retained closed-loop capacity points are 600 s, with both sides confirmed
 
 For each topology, once reconnaissance identifies a candidate bracket:
@@ -443,6 +500,43 @@ knee. If the two `H` observations disagree materially, or either belongs to an u
 regime, the knee remains unresolved; investigate or move the bracket rather than averaging the
 disagreement into a result.
 
+**"Materially" is 5% of the compared quantity, and it is a preselected engineering materiality
+margin — not a noise floor** (maintainer decision, 2026-08-19; rationale corrected 2026-08-19 after
+review). It states the smallest difference in sustained Goodput this experiment is willing to treat
+as a real difference in capacity. It is chosen in advance, before any comparison, so that a knee is
+not decided by a threshold picked to fit the numbers.
+
+**Materiality and reproducibility are two separate gates, and conflating them is what the original
+wording did.** That version called 5% "derived" from the ten identical `G4` cells that agreed to
+within 2.6% ([`pr4a-rehearsal/repeats/`](../../measurements/pr4a-rehearsal/repeats/)) and said a
+difference must exceed "what this machine can distinguish from noise". PR4b then measured four
+identical `G1` runs spanning **25.1%**, so 5% plainly does not bound this environment's noise, and a
+rationale resting on that reading would have been falsified by the milestone's own evidence. The
+2.6% population informed the *choice* of margin; it never licensed treating the margin as a
+measurement of noise, and no single environment-wide noise figure exists to license it — the same
+machine reproduces to 1.4% at `G4`.
+
+Separated, each gate does one job:
+
+- **materiality** asks whether a difference is large enough to matter — is `H` meaningfully above
+  `S`, is a point meaningfully apart from its confirmation;
+- **reproducibility** asks whether this environment can measure the point at all. A point whose two
+  observations differ by more than the margin has not been measured to the resolution the comparison
+  requires, and is inadmissible regardless of what its mean would have been.
+
+**So `G1`'s failure strengthens the method rather than undermining its threshold.** The margin did
+not fail; the environment failed the admissibility gate, and the rule refused to report a number
+rather than reporting one it could not support. A margin widened until `G1` passed would have
+described nothing but the choice of margin.
+
+§4.6.4 brackets with the same threshold, so a bracket is judged by the standard it was chosen by.
+Any analysis applying this rule must state the threshold it used: a knee decided by an unstated
+margin cannot be checked.
+
+The threshold operationalises the rule; it does not replace it. A difference below 5% is not
+evidence of equality, and none of the other conditions above — an invalid regime, a fixture or
+generator failure, an unsound run — becomes admissible by falling inside it.
+
 This replaces the earlier rule that confirmed only the selected point. It also replaces the earlier
 canonical “every ladder rung is a sustained run” shape: short reconnaissance discovers the bracket;
 only the two load-bearing points and their independent confirmations receive the full retained
@@ -474,6 +568,22 @@ The scheduler-partitioned workstation runs the complete method above and derives
 E2_local = G2_local / (2 × G1_local)
 E4_local = G4_local / (4 × G1_local)
 ```
+
+**Each `G_local` is the mean of that topology's two selected-point observations** (maintainer
+decision, 2026-08-19). The selected point is measured twice, as §4.6.5 requires, and both runs are
+full 600 s horizon averages from the same fixed conditioned start — neither is more canonical than
+the other, so quoting one would discard a measurement of equal standing on the basis of running
+order alone. Both observations and the spread between them are reported beside the mean: a mean
+whose inputs are not shown cannot be checked, and the spread is the reader's evidence that the two
+runs reproduced at all. The deciding `H` observations are never averaged into anything — they decide
+whether the knee is resolved, and then leave the derivation.
+
+**An unresolved knee withholds the figure rather than lowering it.** Where §4.6.5's conditions do
+not hold, that topology has no `G_local`, and any efficiency dividing it is withheld with the reason
+stated. This matters most for `G1_local`, which is the denominator of both efficiencies: an
+unresolved `G1` withholds `E2_local` and `E4_local` together. An efficiency computed from a level
+nothing selected reads exactly like a scaling result while being a statement about an arbitrary
+operating point, and it is the number a report is most likely to quote.
 
 This discharges `VAL-SCALE-6` when the method/evidence gates hold. It is a quantitative capacity and
 scale characterisation of the **explicitly recorded local environment**, not rehearsal-only data.
@@ -748,6 +858,24 @@ composition, does not satisfy REQ-SCALE-4's strongest claim, and does not discha
 The point of the validation is to retain useful controlled evidence without laundering shared-host
 partitioning into independent provisioning.
 
+**Executed 2026-08-19 and NOT discharged.** Every stage of the method ran and its gates held; the
+environment did not support the result. One qualification: the retained runs used a common
+cross-topology bracket under §4.6.4's recorded exception rather than each topology's own selection,
+so `G2` was measured at 12/16 where its reconnaissance had selected 8/12. `G4_local` resolved at 3493.9/s, but `G1`'s run-to-run
+spread is 25.1% under identical conditions — five times this plan's own 5% margin — so `G1_local`
+and `G2_local` are withheld, and with them both efficiencies. Goodput tracks delivered write
+bandwidth at a near-constant 65–72 mutations per MiB — across the four identical `G1` runs, Goodput
+spans 25.1% while that ratio spans 1.0% — which places the limit on the shared storage path rather
+than on `alloca-go`. Whether reproducibility improves *because* more authorities issue I/O
+concurrently is a reading of the retained evidence rather than a result established by it: the
+identical-run control was driven at `G1` only. Status, evidence and the maintainer's decision to
+stop execution are recorded in §9 and in `ag-sept-pr4.md` §3.28–§3.31.
+
+**The reproducibility requirement is the part that failed, and it is not negotiable.** A single
+admissible `G1` reading exists; what does not exist is evidence that it describes the topology
+rather than one draw from a 25%-wide distribution. Widening the margin to admit it would make the
+validation pass by redefining the standard it is meant to enforce.
+
 ### VAL-LOAD-1 — Bounded open-loop load-response characterisation
 
 After the closed-loop capacity result is established for the environment being characterised,
@@ -846,10 +974,10 @@ key rather than minting the same logical key in several streams.
 | Phase 1 correctness and failure isolation | established for Iteration B | PR3c report and retained artifacts; VAL-COR-1..3, VAL-COR-5, VAL-COR-6 and VAL-FAIL-1 |
 | cross-authority refusal (VAL-COR-4) | established for Iteration B | all four §3.5 clauses now hold on the deployed topology: the refusal and absence of partial booking state by the PR3c passes, and **same-key replay** by control 3b, retained in [`../../measurements/pr3c-phase1/controls-replay/`](../../measurements/pr3c-phase1/controls-replay/) |
 | database-authority composition (VAL-SCALE-3) | established as architecture/correctness evidence | PR3c; explicitly **not** a capacity multiplier on the co-resident workstation |
-| Iteration C measurement method | **defined; implementation qualification in progress** | §4.6: explicit conditioning, fixed pool policy, independent `workers_per_group`, adaptive reconnaissance, retained 600 s S/H + confirmation of both, 60 s analysis slices |
-| Iteration C local capacity (VAL-SCALE-6) | **defined; not yet executed** | PR4b will run the full qualified G1/G2/G4 method locally and derive bounded `E2_local`/`E4_local` |
+| Iteration C measurement method | **defined and executed end to end** | §4.6: explicit conditioning, fixed pool policy, independent `workers_per_group`, adaptive reconnaissance, retained 600 s S/H + confirmation of both, 60 s analysis slices. PR4b drove all twelve retained runs; the method held and its gates refused what they should |
+| Iteration C local capacity (VAL-SCALE-6) | **executed; NOT discharged** | PR4b drove the full G1/G2/G4 method locally. `G4_local` = 3493.9/s resolved (S reproduces to 0.1%, H to 1.0%, H does not beat S); **`G1` and `G2` are explicitly unresolved** and `G1_local`, `G2_local`, `E2_local` and `E4_local` are all withheld. `G1`'s run-to-run spread is **25.1%** under identical conditions — five times the margin — so its knee is not resolvable on this environment by any run order. The evidence localises the limit to the shared write path rather than to `alloca-go`, without proving the mechanism: Goodput tracks delivered write bandwidth at a near-constant 65–72 mutations per MiB, and across the four identical `G1` runs Goodput spans 25.1% while that ratio spans 1.0%. The killing test — `G1` with its data directory off the VHDX — was not run. Whether reproducibility improves *because* more authorities issue I/O concurrently is a reading of the evidence, not a result — the identical-run control was driven at `G1` only. Evidence: [`../../measurements/pr4b-capacity/`](../../measurements/pr4b-capacity/), [`../../measurements/pr4b-drift-g1/`](../../measurements/pr4b-drift-g1/), disk series in [`pr4b-capacity/disk-io-backfill/`](../../measurements/pr4b-capacity/disk-io-backfill/); analysis in `ag-sept-pr4.md` §3.28–§3.31 |
 | Iteration C independently provisioned capacity (VAL-SCALE-5) | **defined; externally blocked at present** | optional PR4c only when the complete equivalent environment can actually be provisioned; Tier 1 derives `E2_aws`/`E4_aws`; otherwise remains explicitly unproven |
-| Iteration C per-group demand independence (VAL-NEG-8) | **defined; not yet executed** | PR4a generator work must prove one slow group cannot throttle healthy groups; control must fail against shared global closed-loop workers |
+| Iteration C per-group demand independence (VAL-NEG-8) | **established** | PR4a: one fixed worker pool, sequence and collector per shard group, with group identity in the idempotency key (`internal/loadgen/streams.go`). The control is discriminating and mutation-proved — [`streams_test.go`](../../../internal/loadgen/streams_test.go) drives the same fixture against both designs and **fails against the old shared-pool implementation**, which is what §2.4 requires of a negative control. Recorded in `ag-sept-pr4.md` §3.23. It is a prerequisite for interpreting `VAL-SCALE-6`, so it is stated here rather than left implicit in the PR4a record |
 | Iteration C resource-envelope control (VAL-NEG-7) | **defined; not yet executed** | applies to independently provisioned `VAL-SCALE-5`; local resource evidence does not satisfy the independent-host premise |
 | bounded open-loop response (VAL-LOAD-1) | **defined; optional after closed-loop result** | second lens only; does not enter closed-loop capacity or E2/E4 |
 | stateless replica scaling | unproven and not selected by Iteration C | existing VAL-SCALE-1/2 remain separate future validation definitions |

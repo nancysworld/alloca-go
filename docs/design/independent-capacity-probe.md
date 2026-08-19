@@ -1,9 +1,9 @@
 # Independent capacity-unit probe
 
-**Status:** Proposed — PR4c Stage 0 design for Iteration C.  
+**Status:** Proposed — PR4c bounded probe design for Iteration C.  
 **Scope:** the smallest independently provisioned AWS experiment that can discriminate resource
-coupling from per-unit/environment variance before AG-Sept spends time on a complete G1/G2/G4
-capacity campaign.  
+coupling from per-unit/environment variance before AG-Sept decides whether any different capacity
+experiment is worth pursuing.  
 **Requirements:** `REQ-SCALE-4`, `REQ-EVID-1`, `REQ-EVID-2` in
 [`../requirements/system-requirements.md`](../requirements/system-requirements.md).  
 **Umbrella design:** [`horizontal-scaling.md`](horizontal-scaling.md) §12 and
@@ -29,15 +29,17 @@ does not remove run-to-run variance inside one unit. A cloud unit could still va
 one run to the next, and four independent units would not make a noisy denominator precise by
 construction.
 
-PR4c therefore starts with a cheap discriminating question before any full capacity matrix:
+PR4c therefore starts with a cheap discriminating question instead of assuming a full capacity
+matrix is justified:
 
 > When the same two capacity-unit designs are measured separately and then composed, does G2
 > deliver an aggregate signal that is intelligible relative to what those same units delivered
 > alone, and how much unit/environment variation is already visible?
 
-The first result decides whether more measurement is worth buying.
+The result determines what, if anything, is worth proposing afterwards. No later experiment is part
+of this design by default.
 
-## 2. Stage-0 topology
+## 2. Probe topology
 
 The smallest useful topology is two equivalent capacity-unit hosts plus generator/measurement
 compute outside both units:
@@ -87,13 +89,13 @@ per-host evidence when they become plausible explanations.
 
 The storage **shape** must be equivalent across A and B: same volume class, size and any explicit
 IOPS/throughput configuration. Whether PostgreSQL uses a dedicated data volume or the instance's own
-root-volume set is an implementation choice for Stage 0, but the choice must be identical for A and
-B and each unit's storage allocation must remain separate.
+root-volume set is an implementation choice for PR4c, but the choice must be identical for A and B
+and each unit's storage allocation must remain separate.
 
 ## 4. Use the same two units separately, then together
 
-Stage 0 deliberately reuses the same physical AWS instances rather than comparing G2 with an
-arbitrary third host.
+PR4c deliberately reuses the same physical AWS instances rather than comparing G2 with an arbitrary
+third host.
 
 The three measured probes are:
 
@@ -110,14 +112,14 @@ between cells; persisted state is not carried from one topology into another.
 This paired shape answers a stronger diagnostic question than `G2 / (2 x one arbitrary G1)` because
 one unusually fast or slow baseline host cannot silently become the denominator for both units.
 
-It does **not** change the canonical Tier-1 definition yet. Stage 0 exists to learn whether a later
-Tier-1 experiment needs more per-unit baseline replication; that decision is made from the probe
-rather than assumed in advance.
+It does **not** change the canonical Tier-1 definition. The probe exists to learn whether a future
+independent-capacity experiment would need more per-unit baseline replication; that decision is made
+from evidence rather than assumed in advance.
 
 ## 5. Probe workload and run shape
 
-Stage 0 reuses the qualified Iteration C semantics so the only intentional architecture change is
-the resource envelope:
+PR4c reuses the qualified Iteration C semantics so the only intentional architecture change is the
+resource envelope:
 
 - workload: `WL-MUT-DISP-4`;
 - one service replica + one PostgreSQL authority per active shard group;
@@ -134,8 +136,8 @@ cells must use the same `P`; otherwise the derived composition ratio would mix t
 
 `pool_max_conns=8` and `P=12` are inherited starting points, not claims that AWS has the same
 frontier as the workstation. If the first AWS evidence shows either parameter is an obvious
-measurement limiter, Stage 0 may be re-driven after the reason is recorded. It does not silently
-turn into a tuning matrix.
+measurement limiter, PR4c may be re-driven once after the reason is recorded if that discriminating
+repeat fits the existing bounded scope. It does not silently turn into a tuning matrix.
 
 ## 6. Evidence retained per unit
 
@@ -155,7 +157,7 @@ an environment result:
 Account identifiers, credentials, private keys and other secret/private cloud values are not part of
 reproducibility and are not committed.
 
-## 7. Stage-0 outputs
+## 7. Probe outputs
 
 For the common probe level `P`, report the three full-window fresh-mutation Goodput observations:
 
@@ -184,17 +186,17 @@ reported beside it so the ratio cannot hide a noisy or asymmetric denominator.
 Where possible, also retain G2's per-authority contribution so an aggregate that looks reasonable
 cannot hide one constrained unit behind another.
 
-## 8. There is no precision target for Stage 0
+## 8. There is no precision target for the probe
 
-PR4b demonstrated why precision must not be assumed from one environment. Stage 0 therefore has no
+PR4b demonstrated why precision must not be assumed from one environment. PR4c therefore has no
 5%, 10%, or other pass threshold for `U1_probe` or `R2_probe`.
 
 The decision is architectural and prospective:
 
-- **clear composition signal + intelligible A/B behaviour** → a longer/repeated independent
-  experiment may be worth its quota and time;
+- **clear composition signal + intelligible A/B behaviour** → a different independent experiment
+  may be worth proposing;
 - **large A/B variation** → first decide whether repeated baselines or a better-controlled AWS
-  resource shape can resolve the denominator; do not manufacture precision by averaging an
+  resource shape could resolve the denominator; do not manufacture precision by averaging an
   unplanned population;
 - **G2 materially below what A+B suggest** → inspect per-unit resource and workload evidence before
   deciding whether the architecture, storage/network environment, generator, or configuration is
@@ -202,8 +204,8 @@ The decision is architectural and prospective:
 - **generator/provenance/reconciliation failure** → the probe is uninterpretable, regardless of its
   throughput number.
 
-A single ambiguous result permits at most a bounded follow-up chosen after the evidence is seen. It
-does not automatically launch the complete Tier-1 matrix.
+A single ambiguous result permits at most a bounded hypothesis-driven follow-up inside the existing
+PR4c budget. It does not automatically launch the complete Tier-1 matrix.
 
 ## 9. Relationship to Tier 1
 
@@ -211,7 +213,7 @@ The full independent-capacity claim remains exactly where the existing architect
 plan put it: a complete equivalent G1/G2/G4 environment with the retained capacity method,
 reproducibility gates, resource-envelope control and independent generator compute.
 
-Stage 0 is a **pre-Tier diagnostic**. Its value is to answer whether the independently provisioned
-environment is promising enough to justify that campaign and, if it is, which experimental risk to
-address first. If quota remains too small for G4, Stage 0 may still produce useful architecture
-evidence, but `VAL-SCALE-5` remains explicitly unproven.
+PR4c is a **pre-Tier diagnostic**. Its value is to answer whether the independently provisioned
+environment is promising enough that a different experiment would be worth proposing and, if it is,
+which experimental risk matters most. If quota remains too small for G4, PR4c may still produce
+useful architecture evidence, but `VAL-SCALE-5` remains explicitly unproven.

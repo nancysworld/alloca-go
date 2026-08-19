@@ -2,8 +2,7 @@
 
 **Status:** Proposed — PR4c bounded probe design for Iteration C.  
 **Scope:** the smallest independently provisioned AWS experiment that can discriminate resource
-coupling from per-unit/environment variance before AG-Sept decides whether any different capacity
-experiment is worth pursuing.  
+coupling from per-unit/environment variance before AG-Sept closes this line of investigation.  
 **Requirements:** `REQ-SCALE-4`, `REQ-EVID-1`, `REQ-EVID-2` in
 [`../requirements/system-requirements.md`](../requirements/system-requirements.md).  
 **Umbrella design:** [`horizontal-scaling.md`](horizontal-scaling.md) §12 and
@@ -29,15 +28,15 @@ does not remove run-to-run variance inside one unit. A cloud unit could still va
 one run to the next, and four independent units would not make a noisy denominator precise by
 construction.
 
-PR4c therefore starts with a cheap discriminating question instead of assuming a full capacity
-matrix is justified:
+PR4c therefore asks one cheap discriminating question instead of assuming a full capacity matrix is
+justified:
 
 > When the same two capacity-unit designs are measured separately and then composed, does G2
 > deliver an aggregate signal that is intelligible relative to what those same units delivered
 > alone, and how much unit/environment variation is already visible?
 
-The result determines what, if anything, is worth proposing afterwards. No later experiment is part
-of this design by default.
+The result completes PR4c. If it makes a fuller experiment look worthwhile, that experiment is a
+**post-AG-Sept candidate**, not a continuation implicitly created by this design.
 
 ## 2. Probe topology and naming
 
@@ -68,6 +67,12 @@ selected instance families fit the account quota. That is an implementation cons
 durable instance-type choice. The capacity units should use a non-burstable shape when the quota
 allows it; the generator may be a small/burstable instance because it is measurement infrastructure
 whose headroom is observed directly.
+
+At that serving-unit shape, a complete G4 environment would require four two-vCPU capacity units plus
+separate generator compute — approximately **9 vCPU or more** before any generator resize. The
+current **5-vCPU allowance therefore cannot provision the complete Tier-1 family**. A strong PR4c
+result does not remove that external boundary; a future G4 experiment must wait for sufficient quota
+and a separate post-AG-Sept planning decision.
 
 If the quota cannot instantiate two equivalent serving units plus separate generator compute, the
 probe does not collapse them onto one host. That would recreate the resource-coupling question it
@@ -114,9 +119,9 @@ reset between cells; persisted state is not carried from one topology into anoth
 This paired shape answers a stronger diagnostic question than `G2 / (2 x one arbitrary G1)` because
 one unusually fast or slow baseline host cannot silently become the denominator for both units.
 
-It does **not** change the canonical Tier-1 definition. The probe exists to learn whether a future
-independent-capacity experiment would need more per-unit baseline replication; that decision is made
-from evidence rather than assumed in advance.
+It does **not** change the canonical Tier-1 definition. The probe can reveal what a future independent-
+capacity experiment would need — for example more per-unit baseline replication — without scheduling
+or funding that experiment inside AG-Sept.
 
 ## 5. Probe workload and run shape
 
@@ -198,27 +203,28 @@ PR4b demonstrated why precision must not be assumed from one environment. PR4c t
 
 The decision is architectural and prospective:
 
-- **clear composition signal + intelligible CU1/CU2 behaviour** → a different independent experiment
-  may be worth proposing;
-- **large CU1/CU2 variation** → first decide whether repeated baselines or a better-controlled AWS
-  resource shape could resolve the denominator; do not manufacture precision by averaging an
-  unplanned population;
+- **clear composition signal + intelligible CU1/CU2 behaviour** → carry the fuller independent-
+  capacity question forward as a possible **post-AG-Sept** experiment;
+- **large CU1/CU2 variation** → record that a future method would first need repeated baselines or a
+  better-controlled AWS resource shape; do not manufacture precision by averaging an unplanned
+  population;
 - **G2 materially below what CU1+CU2 suggest** → inspect per-unit resource and workload evidence
-  before deciding whether the architecture, storage/network environment, generator, or
-  configuration is responsible;
+  before deciding what limitation PR4c actually established;
 - **generator/provenance/reconciliation failure** → the probe is uninterpretable, regardless of its
   throughput number.
 
 A single ambiguous result permits at most a bounded hypothesis-driven follow-up inside the existing
 PR4c budget. It does not automatically launch the complete Tier-1 matrix.
 
-## 9. Relationship to Tier 1
+## 9. Relationship to Tier 1 and AG-Sept closure
 
 The full independent-capacity claim remains exactly where the existing architecture and validation
 plan put it: a complete equivalent G1/G2/G4 environment with the retained capacity method,
 reproducibility gates, resource-envelope control and independent generator compute.
 
-PR4c is a **pre-Tier diagnostic**. Its value is to answer whether the independently provisioned
-environment is promising enough that a different experiment would be worth proposing and, if it is,
-which experimental risk matters most. If quota remains too small for G4, PR4c may still produce
-useful architecture evidence, but `VAL-SCALE-5` remains explicitly unproven.
+PR4c is **AG-Sept's bounded independent-provisioning probe**, not an in-milestone gateway to Tier 1.
+The current quota cannot provision the complete G4 environment at the selected capacity-unit shape,
+and AG-Sept is already at its closeout boundary. A positive probe result therefore means only that
+the fuller capacity question is worth carrying into future planning after AG-Sept. `VAL-SCALE-5`
+remains explicitly unproven in this milestone unless circumstances and an explicit new milestone
+decision change before closeout; PR4c itself never discharges it.

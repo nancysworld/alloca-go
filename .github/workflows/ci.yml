@@ -107,6 +107,13 @@ jobs:
       - name: iteration C capacity result rule
         run: ./test/scripts/itc-capacity-result-test.sh
 
+      # Guards the one variable that can move the retained operating point by hand. Every refusal it
+      # exercises fires before a topology is raised, and the accept case pre-creates the retained
+      # cells so the resume branch skips them — no daemon, no cell. A guard that stopped guarding
+      # would leave a plausible efficiency measured at a level no reconnaissance selected.
+      - name: iteration C capacity bracket validation
+        run: ./test/scripts/itc-capacity-bracket-test.sh
+
   integration:
     name: postgres integration
     runs-on: ubuntu-latest

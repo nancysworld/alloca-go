@@ -232,6 +232,24 @@ ENV_SLOTS="${SLOTS-}"
 ALLOCA_POOL_MAX_CONNS="${ALLOCA_POOL_MAX_CONNS:-8}"
 export ALLOCA_POOL_MAX_CONNS
 
+# **"Materially", as one number for every stage that needs it** (ag-sept-validation-plan.md §4.6.5,
+# maintainer decision 2026-08-19). It is derived rather than chosen: ten identical G4 cells in the
+# healthy regime agreed to within 2.6% (docs/measurements/pr4a-rehearsal/repeats/), so 5% is roughly
+# twice the environment's own demonstrated reproducibility — a difference must exceed what this
+# machine can distinguish from noise before it decides anything.
+#
+# **Defined here rather than inside a stage, because more than one stage decides with it.** It began
+# inside `recon`, and the capacity stage's plateau validation then read it out of scope: under
+# `set -u` that is an unbound-variable abort, after the retained runs have been driven. One
+# definition also means the bracket is judged by the standard it was chosen by.
+#
+# The 2.6% figure was measured on 60 s cells driven back to back in one session. The same level
+# re-probed in a later session on 2026-08-19 moved by 6.7%, so this is a defensible transfer rather
+# than a measurement of cross-session reproducibility — which is why every artifact records the
+# margin it used, and why the retained 600 s runs and their confirmations, not a probe, are what
+# settle a knee.
+recon_margin="${ITC_RECON_MARGIN:-5}"
+
 CONDITIONING_SLOTS="${CONDITIONING_SLOTS:-200}"
 CONDITIONING_TARGET="${CONDITIONING_TARGET:-4000}"
 SLOTS="${SLOTS:-3200}"
@@ -531,15 +549,8 @@ print(int(round(json.load(open(sys.argv[1]))['summary']['duration_seconds'])))" 
     # read against something.
     recon_start="${ITC_RECON_START:-16}"
 
-    # **The margin is derived, not chosen.** Ten identical G4 cells in the healthy regime agreed to
-    # within 2.6% (docs/measurements/pr4a-rehearsal/repeats/), so 5% is roughly twice the
-    # environment's own demonstrated reproducibility: a level must beat its neighbour by more than
-    # the machine's noise before the walk treats it as better. That figure was measured on 60 s
-    # cells rather than on 120 s probes, so it is a defensible transfer and not a measurement of
-    # this probe shape — which is why the artifact records the margin it used.
-    recon_margin="${ITC_RECON_MARGIN:-5}"
-
     recon_groups="${ITC_RECON_GROUPS:-1 2 4}"
+    recon_only="${ITC_RECON_ONLY:-}"
 
     # **The prober is a seam, so the walk below can be tested without an hour of machine time.**
     # The search has real logic — a direction decision, two walks, two ladder-end refusals and the
@@ -737,6 +748,36 @@ print('%.1f' % (s['successful_mutation_goodput'] / s['duration_seconds']))" "${c
         spread_at[$level]="$PROBE_SPREAD"
         order="$order $level"
       }
+
+      # **Probe-only mode: drive named levels and report their rates, selecting nothing.**
+      # `ITC_RECON_ONLY='16'` exists for the diagnostic question the walk cannot ask — re-reading a
+      # level already probed, to separate run-to-run noise from drift across a session. It writes
+      # `probe-G<n>.txt` rather than `recon-G<n>.txt` precisely so it cannot be mistaken for a
+      # bracket: `fixture` and `capacity` both glob the latter and will never read this.
+      if [ -n "$recon_only" ]; then
+        for lvl in $recon_only; do
+          idx="$(ladder_index "$lvl")" \
+            || fail "ITC_RECON_ONLY names $lvl, which is not on the ladder [$ladder]"
+          probe_once "$groups" "$idx"
+        done
+        probe_report="test/results/$RESULTS_GROUP/probe-G${groups}.txt"
+        {
+          printf 'PR4b diagnostic probes, G%s — NO BRACKET IS SELECTED\n' "$groups"
+          printf 'driven %s\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          printf 'These are individual %ss probes at named levels, driven to answer a question about\n' "$recon_seconds"
+          printf 'the measurement rather than to bracket saturation. No S, no H, no capacity claim.\n\n'
+          printf '  %-8s %10s  %-7s %7s  %s\n' workers probe/s shape spread cell
+          for lvl in $(tr ' ' '\n' <<< "$order" | grep -v '^$' | sort -n); do
+            printf '  %-8s %10s  %-7s %7s  %s\n' \
+              "$lvl" "${rate_at[$lvl]}" "${shape_at[$lvl]}" "${spread_at[$lvl]}" "${cell_at[$lvl]}"
+          done
+        } > "$probe_report"
+        log ""
+        sed 's/^/    /' "$probe_report"
+        log "G$groups diagnostic probes -> $probe_report"
+        unset rate_at cell_at shape_at spread_at
+        continue
+      fi
 
       start_idx="$(ladder_index "$recon_start")" \
         || fail "ITC_RECON_START=$recon_start is not on the ladder [$ladder]"
@@ -1017,14 +1058,67 @@ SIZING
       report="test/results/$recon_group/recon-G${groups}.txt"
       [ -f "$report" ] || fail "no reconnaissance report at $report, so G$groups has no selected
   bracket. §4.6.4 discovers the bracket; this stage only measures it."
-      S="$(awk '/^  selected S/{print $NF}' "$report")"
-      H="$(awk '/^  deciding H/{print $NF}' "$report")"
+      S="$(sed -n 's/^  selected S  *\([0-9][0-9]*\).*/\1/p' "$report")"
+      H="$(sed -n 's/^  deciding H  *\([0-9][0-9]*\).*/\1/p' "$report")"
       [ -n "$S" ] && [ -n "$H" ] || fail "$report names no selected S or deciding H"
       # A reconnaissance whose lower-side check failed proposes no bracket. Reading S out of it
       # anyway would spend four 600 s runs on a level its own report refused to stand behind.
       grep -q '^  lower-side check    pass' "$report" \
-        || fail "$report did not pass the lower-side check, so S=$S is not a proposed selection.
-  Re-run reconnaissance around the level below it before spending four retained runs here."
+        || fail "$report did not pass the lower-side check, so its bracket is not a proposed
+  selection. Re-run reconnaissance around the level below it before spending four retained runs."
+
+      # **A common bracket across the arms, when the maintainer sets one** (decision, 2026-08-19).
+      # Reconnaissance selects per topology, and on 2026-08-19 that returned S=12, S=8, S=12 — where
+      # the dissenting 8 read within 0.8% of its own 12, well inside the ~6% variation the same
+      # level shows between sessions. E2 and E4 compare topologies, so arms measured at different
+      # demand-per-group would carry that difference into the efficiency; §2.3 of the validation plan
+      # asks for like against like.
+      #
+      # **The override is validated against each topology's own probes rather than trusted.** A
+      # hand-set level that no reconnaissance measured, or one that a topology measured materially
+      # below its own best, is refused here — otherwise this variable would be a way to move the
+      # operating point without evidence, which is the whole failure the stage sequence prevents.
+      if [ -n "${ITC_CAPACITY_S:-}" ]; then
+        common_s="$ITC_CAPACITY_S"
+        common_h="${ITC_CAPACITY_H:?ITC_CAPACITY_S was set without ITC_CAPACITY_H; a selected point
+  without its deciding point cannot resolve a knee (§4.6.5)}"
+
+        s_rate="$(awk -v l="$common_s" '$1==l && $2 ~ /^[0-9.]+$/ {print $2}' "$report" | head -1)"
+        h_rate="$(awk -v l="$common_h" '$1==l && $2 ~ /^[0-9.]+$/ {print $2}' "$report" | head -1)"
+        [ -n "$s_rate" ] || fail "G$groups reconnaissance never probed $common_s workers/group, so
+  ITC_CAPACITY_S=$common_s is a level this topology has no evidence about. Probe it first:
+      ITC_RECON_ONLY='$common_s' ITC_RECON_GROUPS=$groups ./test/scripts/itc-local-experiment.sh recon"
+        [ -n "$h_rate" ] || fail "G$groups reconnaissance never probed $common_h workers/group, so
+  ITC_CAPACITY_H=$common_h is a level this topology has no evidence about."
+
+        # **On this topology's plateau means: not materially worse than the best rate it probed.**
+        #
+        # This one comparison also enforces §4.6.4's requirement that `H` must not be materially
+        # better than `S`, and a separate check for that was removed as unreachable. `best_rate` is
+        # the maximum over every probed level and `H` is one of them, so `best_rate >= h_rate`
+        # always; any `H` that materially beat `S` would therefore have already failed here. The
+        # separate check could never fire, and a check that cannot fire is worse than none, because
+        # it reads as protection. The self-test established this rather than inspection: a case
+        # written to exercise it kept refusing one line earlier.
+        best_rate="$(awk '$2 ~ /^[0-9.]+$/ {if ($2+0 > m) m = $2+0} END {print m}' "$report")"
+        awk -v best="$best_rate" -v s="$s_rate" -v m="$recon_margin" \
+          'BEGIN { exit !(best > s * (1 + m/100)) }' \
+          && fail "G$groups measured $common_s workers/group at $s_rate/s against its own best of
+  $best_rate/s, which is materially better at ${recon_margin}%. ITC_CAPACITY_S=$common_s is not on
+  this topology's plateau, so running the arm there would measure it below its own frontier. When
+  the better level is above $common_s this is also §4.6.4's 'bracket not found': move the bracket
+  up rather than retaining four runs that will report the knee is elsewhere."
+
+        # H must be higher than S. Ordering is the one part of §4.6.4's definition of H that the
+        # rate comparison above cannot express.
+        [ "$common_h" -gt "$common_s" ] || fail "ITC_CAPACITY_H=$common_h is not above
+  ITC_CAPACITY_S=$common_s; H is by definition a higher level (§4.6.4)."
+
+        log "G$groups: common bracket S=$common_s H=$common_h (reconnaissance selected S=$S H=$H;"
+        log "  this topology probed $common_s at $s_rate/s against its own best $best_rate/s)"
+        S="$common_s"
+        H="$common_h"
+      fi
 
       log ""
       log "=== G$groups retained comparison: S=$S, H=$H, ${WINDOW} each, four runs"

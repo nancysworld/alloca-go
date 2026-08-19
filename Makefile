@@ -130,7 +130,7 @@ ITC_CPUS_GENERATOR ?= 8-11
 all: ci
 
 ## ci: run the full local gate, identical to CI (fmt, vet, lint, build, test, race)
-ci: fmt-check vet lint build test test-race build-context-check itc-layout-check itc-topology-check-test itc-conditioning-check itc-pool-check itc-obs-labels-check itc-recon-walk-check itc-capacity-result-check
+ci: fmt-check vet lint build test test-race build-context-check itc-layout-check itc-topology-check-test itc-conditioning-check itc-pool-check itc-obs-labels-check itc-recon-walk-check itc-capacity-result-check itc-capacity-bracket-check
 
 ## fmt: format all Go files
 fmt:
@@ -421,6 +421,16 @@ itc-recon-walk-check:
 # can distinguish from a real one (ag-sept-validation-plan.md §4.6.5, §4.6.7).
 itc-capacity-result-check:
 	@./test/scripts/itc-capacity-result-test.sh
+
+## itc-capacity-bracket-check: prove a hand-set bracket is still checked against the probes
+#
+# In `ci` because every refusal it exercises fires before a topology is raised, and its accept case
+# pre-creates the retained cells so the resume branch skips them — so no daemon and no cell. It
+# exists because ITC_CAPACITY_S is the one way to move the operating point by hand, and a guard that
+# stopped guarding would leave a plausible efficiency measured at a level no reconnaissance selected
+# (ag-sept-validation-plan.md §4.6.4, §2.3).
+itc-capacity-bracket-check:
+	@./test/scripts/itc-capacity-bracket-test.sh
 
 ## image: build the production-shaped service image, tagged with the current commit
 #

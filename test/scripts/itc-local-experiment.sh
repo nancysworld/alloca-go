@@ -66,6 +66,10 @@ usage: ./test/scripts/itc-local-experiment.sh <stage>
                         selected point, the deciding higher point, and each again as an
                         independent confirmation — then the knee decision and E2_local/E4_local
 
+  drift                 N identical 600 s runs at one worker level, to measure whether rate tracks
+                        run position. Selects nothing and backs no capacity claim; it exists
+                        because the comparison's fixed S/H order confounds position with role
+
 Knobs travel through the environment to the workers unchanged, e.g.
   ITC_WORKERS_PER_GROUP=16 CONDITIONING_TARGET=4000 ./test/scripts/itc-local-experiment.sh pool
 EOF
@@ -1055,6 +1059,112 @@ SIZING
     sed 's/^/    /' "$sizing"
     log "capacity stage inputs -> test/results/$out_group/retained-fixture.env"
     log "drive the retained comparison next: ./test/scripts/itc-local-experiment.sh capacity"
+    ;;
+
+  drift)
+    # **N identical runs at one worker level, to separate run position from S/H role.**
+    #
+    # The retained comparison drives S, H, S-confirm, H-confirm in that fixed order, so `S` always
+    # occupies positions 1 and 3 and `H` always 2 and 4. On 2026-08-19 the local G2 series rose
+    # monotonically with position — +0.0%, +2.8%, +8.5%, +9.7% — and G1's position-4 run was its
+    # highest at +10.5%, which is enough on its own to produce the 9.1% "H beats S" that left G1's
+    # knee unresolved. G4 showed no such effect (+1.4% at most).
+    #
+    # A drift that tracks position rather than worker level cannot be distinguished from a real
+    # difference between S and H while every S runs early and every H runs late. Holding the level
+    # fixed removes the role entirely: whatever remains is the environment's own trend across a
+    # session, measured rather than argued about.
+    #
+    # **This is not capacity evidence and selects nothing.** Identical runs describe the measurement
+    # environment. Its own results group and file name keep it away from anything that reads a
+    # bracket or a retained point.
+    unset PLAN_PROBE PG_AUTO_EXPLAIN PG_STAT_STATEMENTS PG_LOG_AUTOVACUUM PG_AUTO_EXPLAIN_SAMPLE
+
+    drift_groups="${ITC_DRIFT_GROUPS:-1}"
+    drift_level="${ITC_DRIFT_LEVEL:-12}"
+    drift_runs="${ITC_DRIFT_RUNS:-4}"
+    out_group="${RESULTS_GROUP:-pr4b-drift-g${drift_groups}}"
+    export RESULTS_GROUP="$out_group"
+    export WINDOW="${ENV_WINDOW:-600s}"
+    export REQUIRE="${REQUIRE:-capacity}"
+    seconds="${ITC_WINDOW_SECONDS:-600}"
+
+    # **The same fixture the comparison used, not a fresh derivation.** The question is about the
+    # configuration those twelve runs were driven under; a differently sized fixture would answer a
+    # question nobody asked.
+    fixture_env="${ITC_FIXTURE_ENV:-test/results/pr4b-capacity/retained-fixture.env}"
+    [ -f "$fixture_env" ] || fail "$fixture_env does not exist. This stage reproduces the retained
+  comparison's configuration at one worker level, so it needs that comparison's fixture size."
+    # shellcheck disable=SC1090
+    . "$fixture_env"
+    export SLOTS="${ENV_SLOTS:-$SLOTS}"
+
+    log "drift: $drift_runs identical runs at G$drift_groups, $drift_level workers/group, ${WINDOW},"
+    log "  $SLOTS slots/org, pool_max_conns=$ALLOCA_POOL_MAX_CONNS (from $fixture_env)"
+
+    position=1
+    while [ "$position" -le "$drift_runs" ]; do
+      run_dir="$(printf 'test/results/%s/run-%02d' "$out_group" "$position")"
+      if [ -f "$run_dir/cell-01/run.json" ]; then
+        log "position $position already retained at $run_dir — keeping it"
+        position=$((position + 1))
+        continue
+      fi
+
+      log ""
+      log "position $position of $drift_runs: G$drift_groups at $drift_level workers/group"
+      clear_sandbox_placeholders
+      SERIES="$run_dir" ITC_WORKERS_PER_GROUP="$drift_level" \
+        ./test/scripts/itc-series.sh "$drift_groups" 1 \
+        || fail "the position-$position run did not complete. A drift series with a gap in it
+  cannot say whether the trend is monotonic, which is the whole question."
+
+      cell="$run_dir/cell-01"
+      ran_seconds="$(python3 -c "
+import json,sys
+print(int(round(json.load(open(sys.argv[1]))['summary']['duration_seconds'])))" "$cell/run.json")"
+      ran_workers="$(python3 -c "
+import json,sys
+print(json.load(open(sys.argv[1]))['summary'].get('workers_per_group'))" "$cell/run.json")"
+      [ "$ran_workers" = "$drift_level" ] \
+        || fail "position $position ran at $ran_workers workers/group, not $drift_level. The runs
+  must be identical or the series measures the level as well as the position."
+      [ "$ran_seconds" -ge $(( seconds * 95 / 100 )) ] \
+        || fail "position $position measured ${ran_seconds}s against ${seconds}s asked for."
+      log "position $position ran ${ran_seconds}s at $ran_workers workers/group"
+      ./test/scripts/itc-slices.py "$cell" | tee "$cell/slices.txt" > /dev/null
+      position=$((position + 1))
+    done
+
+    # The table is written from the runs' own manifests so it is re-derivable, and it reports the
+    # change against position 1 because that is the quantity the confound is made of.
+    report="test/results/$out_group/drift-result.txt"
+    python3 - "test/results/$out_group" "$drift_groups" "$drift_level" > "$report" <<'DRIFT'
+import json, pathlib, sys
+root, groups, level = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+rows = []
+for path in sorted(root.glob("run-*/cell-01/run.json")):
+    s = json.loads(path.read_text())["summary"]
+    phases = dict(l.split("=", 1) for l in (path.parent / "phases.txt").read_text().split())
+    rows.append((path.parent.parent.name, phases["measured_start"][11:16],
+                 s["successful_mutation_goodput"] / s["duration_seconds"]))
+print(f"Run-position effect at G{groups}, {level} workers/group — IDENTICAL RUNS")
+print("This selects nothing and is not a capacity result. It measures whether the environment")
+print("trends across a session, which the retained comparison's fixed S/H order cannot separate")
+print("from a real difference between the two levels (ag-sept-validation-plan.md §4.6.5).\n")
+print(f"  {'run':<10}{'start':<8}{'pos':>4}{'rate/s':>11}{'vs pos 1':>11}")
+base = rows[0][2] if rows else 0
+for position, (name, start, rate) in enumerate(rows, 1):
+    print(f"  {name:<10}{start:<8}{position:>4}{rate:>11.1f}{100 * (rate / base - 1):>+10.1f}%")
+if len(rows) >= 2:
+    lo, hi = min(r[2] for r in rows), max(r[2] for r in rows)
+    print(f"\n  spread {100 * (hi / lo - 1):.1f}% across {len(rows)} identical runs")
+    print("  monotonic with position: "
+          + ("yes" if all(rows[i][2] < rows[i + 1][2] for i in range(len(rows) - 1)) else "no"))
+DRIFT
+    log ""
+    sed 's/^/    /' "$report"
+    log "drift result -> $report"
     ;;
 
   capacity)

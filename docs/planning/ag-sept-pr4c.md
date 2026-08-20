@@ -3,7 +3,7 @@
 **Status:** Closed — `STOP / DEFER`, 2026-08-20; AWS measurement did not start.  
 **Milestone:** AG-Sept, Iteration C.  
 **Predecessor:** PR4b (#20), merged 2026-08-19.  
-**Budget:** **1.0 development day**, transferred from AG-Sept contingency on 2026-08-19; closed within that allocation.  
+**Budget:** **1.0 development day** transferred from AG-Sept contingency on 2026-08-19, **charged at 0.5 with 0.5 returned** ([`ag-sept-plan.md`](ag-sept-plan.md) §2.1.4).  
 **Design:** [`../design/independent-capacity-probe.md`](../design/independent-capacity-probe.md).  
 **Validation:** [`../test/validation-plan/ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md).  
 **Milestone schedule/budget owner:** [`ag-sept-plan.md`](ag-sept-plan.md).

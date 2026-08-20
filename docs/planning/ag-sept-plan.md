@@ -97,20 +97,30 @@ granularity is false precision that invites its own overrun (Nancy's call, 2026-
 | Iteration C planning | PR #18 | 0.5 | 0.5 | 0.0 | complete; hard planning cap met |
 | Iteration C method preparation and measurement qualification | PR4a | 4.0 | 4.0 | 0.0 | complete; consumed the whole former PR4a/PR4b envelope (§2.1.3) |
 | Iteration C local sustained capacity characterisation | PR4b | 1.0 | 1.0 | 0.0 | complete; funded by the 1.0-day contingency draw (§2.1.3). Gate met on the "explicitly unresolved" branch; no further draw |
-| Iteration C independent AWS probe | PR4c | **1.0** | **1.0** | **0.0** | closed `STOP / DEFER`; design/provisioning/closeout completed, no measured AWS cell |
+| Iteration C independent AWS probe | PR4c | **0.5** | **0.5** | **0.0** | closed `STOP / DEFER`; originally 1.0, with 0.5 returned to contingency (§2.1.4). Design, method correction, provisioning attempt and closeout; no measured AWS cell |
 | Iteration C A&R and AG-Sept conclusion | PR5 | 1.5 | 0.0 | 1.5 | not started |
-| **Allocated development budget** | | **17.5** | **16.0** | **1.5** | |
-| Contingency | | **2.0** | **1.0** | **1.0** | 1.0 drawn by §2.1.1; 1.0 reallocated to PR4b by §2.1.3; 1.0 reallocated to PR4c by §2.1.4 |
-| **Total milestone budget** | | **19.5** | **17.0** | **2.5** | |
+| **Allocated development budget** | | **17.0** | **15.5** | **1.5** | |
+| Contingency | | **2.5** | **1.0** | **1.5** | **drawn:** 1.0 by §2.1.1. **Transferred out and now counted on their own rows:** 1.0 to PR4b (§2.1.3), 1.0 to PR4c (§2.1.4). **Returned in:** 0.5 from PR4c (§2.1.4) |
+| **Total milestone budget** | | **19.5** | **16.5** | **3.0** | |
 
 **The numeric columns are the accounting source of truth:** `Allocated = Spent + Left` on every
 row. Completed work that returned unused allocation is shown at its current allocation; **Status**
 keeps the historical context, not the accounting.
 
-PR4c closes at its allocated **1.0 day**. The day covered the bounded probe design, review-driven
-method correction, AWS bootstrap/configuration attempt, quota verification and closeout. It bought
-no measured AWS cell because the external prerequisite failed before the environment could exist;
-that is a valid stop under the work unit's bounded scope, not an invitation to draw more time.
+**Contingency moves in two different ways, and they touch different columns.** A **draw** spends
+contingency directly on work that has no work-unit row of its own, so it lands in this row's
+**Spent** — §2.1.1 is the only one. A **transfer** moves days out of contingency into a work unit:
+it reduces this row's **Allocated** and appears once as that unit's allocation, never as spend
+here. A unit that closes under its transferred allocation returns the difference the same way, and
+this row's **Allocated** rises again. Reading transfers as contingency spend is what makes the pool
+look overdrawn — 2.5 with three 1.0 movements against it is incoherent only under that reading.
+The milestone total is invariant under both operations: **19.5 days throughout**.
+
+PR4c is charged at **0.5 day against its 1.0-day transfer, returning 0.5 to contingency** (§2.1.4).
+The half day covered the bounded probe design, the review-driven method correction, the AWS
+provisioning attempt, quota verification and closeout. It bought no measured AWS cell because the
+external prerequisite failed before the environment could exist; that is a valid stop under the work
+unit's bounded scope, not an invitation to draw more time.
 
 A further **2–3 days** are reserved beyond the development budget for rerunning decisive
 experiments, validating negative controls, reviewing measurements and interpretations, correcting
@@ -137,11 +147,13 @@ evidence.
 
 **Every PR is funded at what its scope costs.** No PR carries a deliberate shortfall.
 
-PR4b and PR4c were both explicit evidence-driven transfers and are now closed. **1.0 day of
-contingency remains** and is not silently reserved for a future AWS campaign.
+PR4b and PR4c were both explicit evidence-driven transfers and are now closed. **1.5 days of
+contingency remain** — the 1.0 left after those transfers plus the 0.5 PR4c returned — and are not
+silently reserved for a future AWS campaign.
 
 **Contingency is not scope.** It is drawn on before §5's descope order. After the PR4b and PR4c
-transfers, the contingency row is **2.0 total**: **1.0 is drawn** (§2.1.1) and **1.0 remains**.
+transfers and PR4c's return, the contingency row is **2.5 total**: **1.0 is drawn** (§2.1.1) and
+**1.5 remains**.
 
 Unspent contingency is not a licence to expand a PR. It returns to the reserve.
 
@@ -182,7 +194,7 @@ deliberately bounded: new methodology work or another diagnostic investigation w
 signal rather than an automatic second draw. PR4b followed that rule and closed once the local
 shared-write-path limit was established strongly enough to withhold the unsupported efficiencies.
 
-### 2.1.4 PR4c receives and closes within 1.0 day
+### 2.1.4 PR4c receives 1.0 day, closes on a quota blocker, and returns 0.5
 
 **Nancy's decision, 2026-08-19:** allocate **1.0 day from remaining contingency** to PR4c and start
 with the smallest useful independent-node experiment rather than the full retained capacity matrix.
@@ -194,10 +206,16 @@ EC2 enforced it by refusing one `c5.large`. Earlier increase requests to 20 and 
 declined, and a later 6-vCPU request was also declined. The 5-vCPU minimum topology therefore could
 not be instantiated. No measured cell ran.
 
-PR4c is charged at its allocated **1.0 day** for design, review/method refinement, provisioning
-attempt, quota verification and closeout. No further contingency is drawn. The work unit closes
-`STOP / DEFER`; any future cloud experiment returns to post-AG-Sept planning rather than inheriting
-this allocation.
+**Charge and return, Nancy's decision 2026-08-20:** PR4c is charged at **0.5 day actual** against
+its 1.0-day transfer, and the remaining **0.5 returns to contingency**. The half day covers the
+bounded probe design, the review-driven method correction, the provisioning attempt, quota
+verification and closeout — the AWS fight and the planning it forced were real work, and the
+measured cells that would have consumed the rest never became possible.
+
+This follows §2.1.2's rule rather than making an exception to it: a work unit that closes under its
+allocation returns the difference to contingency instead of carrying it into the next unit. No
+further contingency is drawn. The work unit closes `STOP / DEFER`; any future cloud experiment
+returns to post-AG-Sept planning rather than inheriting this allocation.
 
 ### 2.2 Review depth is the throughput control
 

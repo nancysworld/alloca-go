@@ -306,29 +306,15 @@ server scaling from measurement-system contention.
 
 ### 12.3 Independent does not mean variance-free
 
-Independent provisioning removes **coupling between capacity-unit resource envelopes**. It does
-not guarantee that two nominally equivalent units produce identical throughput, nor that one unit
-reproduces tightly across time. Storage service time, VM scheduling, network delivery and other
-provider/environment effects may still vary within the declared resource shape.
+Independent provisioning removes coupling between capacity-unit resource envelopes; it does not
+remove run-to-run or provider variation. A noisy `G1` observation does not become a precise
+scale-efficiency denominator merely because the larger topology uses independent hosts.
 
-That distinction matters to a scale-efficiency denominator. A noisy single `G1` observation does
-not become precise merely because `G2` or `G4` uses independent hosts. Evidence must first show what
-variation exists at the unit level, then decide whether the intended comparison can resolve the
-architecture signal at the claimed precision.
-
-A useful pre-capacity diagnostic may therefore measure equivalent units **individually** before
-composing those same units, while keeping each unit's own workload/state envelope unchanged. For two
-units `CU1` and `CU2`, the paired diagnostic asks whether each unit's Goodput changes when the other
-unit is present and whether the aggregate remains commensurate with the sum of their individual
-observations. That controls both arbitrary baseline selection and the working-set confound that
-would arise if a unit carried fewer organisations only in the composed topology.
-
-The deferred PR4c design in
-[`independent-capacity-probe.md`](independent-capacity-probe.md) uses fixed A/B and C/D unit slices
-for this purpose and treats generator host headroom as a separate admissibility condition. PR4c did
-**not** execute the probe because the AWS account's applied Standard On-Demand quota was 1 vCPU at
-provisioning time. The design remains a possible post-AG-Sept experiment; no AWS capacity evidence
-was produced in the milestone.
+A bounded diagnostic can therefore measure equivalent units alone and composed while keeping each
+unit's workload/state envelope fixed. That avoids changing working set at the same time as resources
+are added. The retained method is
+[`independent-capacity-probe.md`](independent-capacity-probe.md); evidence must still bound unit-level
+variation before any composition ratio is interpreted.
 
 ## 13. Workload and placement envelope
 
@@ -374,13 +360,10 @@ The concrete AG-Sept validations for this architecture are owned by
 For Iteration C that plan selected `WL-MUT-DISP-4` and the local 1/2/4-shard-group comparison needed
 to attempt `G1`, `G2`, `G4`, their derived efficiencies, and limiting-resource evidence.
 
-PR4c separately refined a bounded independent-unit diagnostic in
+PR4c separately refined the bounded independent-unit diagnostic in
 [`../test/validation-plan/ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md).
-That diagnostic was **not executed**: the applied AWS quota at provisioning time could not
-instantiate even one selected two-vCPU capacity unit. It therefore contributes design/methodology
-only, not measured evidence, and does not substitute for `VAL-SCALE-5`. A fuller independent
-G1/G2/G4 experiment—or the paired diagnostic itself—belongs to post-AG-Sept planning if later
-selected and if external provisioning prerequisites are first verified.
+It was not executed and does not substitute for `VAL-SCALE-5`; any future independent-capacity
+experiment is post-AG-Sept work.
 
 Earlier validation meanings for service-replica scaling, connection-budget controls,
 multi-authority correctness, routing/refusal, and failure isolation remain valid where cited; they

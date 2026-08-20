@@ -198,13 +198,16 @@ shared-write-path limit was established strongly enough to withhold the unsuppor
 
 **Nancy's decision, 2026-08-19:** allocate **1.0 day from remaining contingency** to PR4c and start
 with the smallest useful independent-node experiment rather than the full retained capacity matrix.
-The initial plan assumed the retained 5-vCPU Standard On-Demand allowance could support two
-two-vCPU serving units plus separate one-vCPU generator compute.
+The initial plan used an interactively observed **5-vCPU** Standard On-Demand quota figure as its
+planning assumption. That CLI output was not retained as a repository artifact, so its exact
+provenance cannot now be re-verified.
 
-**Closure, 2026-08-20:** the same quota was observed at **1 vCPU** immediately before execution, and
-EC2 enforced it by refusing one `c5.large`. Earlier increase requests to 20 and 12 vCPUs had been
-declined, and a later 6-vCPU request was also declined. The 5-vCPU minimum topology therefore could
-not be instantiated. No measured cell ran.
+**Closure, 2026-08-20:** the applied quota was observed at **1 vCPU** immediately before execution,
+and EC2 enforced it by refusing one `c5.large`. Earlier increase requests to 20 and 12 vCPUs had
+been declined, and a later 6-vCPU request was also declined. Whether the earlier 5-vCPU figure
+represented an earlier applied-account state or an earlier misreading is unresolved and immaterial
+to the closure: the 5-vCPU minimum topology could not be instantiated at execution time. No measured
+cell ran.
 
 **Charge and return, Nancy's decision 2026-08-20:** PR4c is charged at **0.5 day actual** against
 its 1.0-day transfer, and the remaining **0.5 returns to contingency**. The half day covers the
@@ -281,8 +284,9 @@ would be variance-free.
 
 PR4c was therefore opened probe-first. Review refined that probe again before execution: the future
 paired comparison keeps **A/B fixed on CU1 and C/D fixed on CU2** both alone and composed, rather
-than halving each authority's working set only at G2; and the shared generator host's physical
-headroom becomes an explicit admissibility condition in addition to independent worker streams.
+than halving each authority's working set only in the composed probe cell; and the shared generator
+host's physical headroom becomes an explicit admissibility condition in addition to independent
+worker streams.
 
 The intended boundary was:
 
@@ -292,10 +296,12 @@ PR4b — execute and analyse the full sustained experiment locally
 PR4c — probe two independent AWS units separately and together
 ```
 
-The third step was then externally blocked. Earlier retained CLI evidence showed a 5-vCPU applied
-Standard On-Demand quota; execution-time evidence showed 1 vCPU, below even one selected two-vCPU
-capacity unit. The refined PR4c method is retained, but no workload implementation or measured AWS
-result is claimed.
+The third step was then externally blocked. A **5-vCPU** Standard On-Demand quota figure had been
+observed interactively through the AWS CLI and used as the planning assumption, but that earlier
+output was not retained as a repository artifact. At execution time the applied quota was observed
+at **1 vCPU**, below even one selected two-vCPU capacity unit. Whether the earlier 5-vCPU figure was
+a prior applied-account state or a misreading is unresolved; the refined PR4c method is retained,
+but no workload implementation or measured AWS result is claimed.
 
 This does **not** weaken the Iteration C Problem or `REQ-SCALE-4`. Local scheduler partitioning and
 independent provisioning remain different evidence classes. The complete independently provisioned
@@ -396,7 +402,8 @@ result it depends on was not secured.
 ### PR4c — Bounded independently provisioned AWS probe — closed `STOP / DEFER`
 
 PR4c was intended to answer: **what does the first genuinely independent two-unit environment
-show?** It closes at **1.0 day** from §2.1.4 with **no measured AWS cell**.
+show?** It is charged at **0.5 day against its 1.0-day transfer** from §2.1.4 and closes with **no
+measured AWS cell**.
 
 The planned minimum serving topology was:
 
@@ -406,11 +413,13 @@ CU2                 2-vCPU equivalent non-burstable serving unit
 generator/monitor   separate 1-vCPU measurement compute
 ```
 
-Earlier retained AWS CLI evidence showed the relevant applied quota at **5 vCPU**, which was enough
-for that 2 + 2 + 1 shape. On 2026-08-20 the same applied quota was **1 vCPU**. EC2 then refused one
-`c5.large` because that single instance requires two vCPUs. With the independent environment unable
-to exist, the probe stopped before bootstrap/load execution rather than collapsing resources onto
-one host or changing the serving-unit question.
+During planning, a **5-vCPU** figure for the relevant Standard On-Demand quota was observed
+interactively through the AWS CLI and used as the planning assumption. That earlier output was not
+retained as a repository artifact. On 2026-08-20 the applied quota was observed at **1 vCPU**, and
+EC2 refused one `c5.large` because that single instance requires two vCPUs. Whether the earlier
+5-vCPU figure represented a prior account state or a misreading is unresolved. With the independent
+environment unable to exist, the probe stopped before bootstrap/load execution rather than
+collapsing resources onto one host or changing the serving-unit question.
 
 Review work before the stop improved the future method: keep A/B fixed on CU1 and C/D fixed on CU2
 both separately and together, use a distinct probe/unit-slice workload identity rather than
@@ -420,7 +429,7 @@ make generator **process + host** headroom an explicit evidence gate.
 Design: [`../design/independent-capacity-probe.md`](../design/independent-capacity-probe.md). Validation
 record: [`../test/validation-plan/ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md).
 
-**Gate:** `STOP / DEFER`. Record the quota change and failed provisioning attempt, retain no AWS
+**Gate:** `STOP / DEFER`. Record the quota blocker and failed provisioning attempt, retain no AWS
 performance number, leave `VAL-SCALE-5` unproven, and proceed to PR5. Future AWS work requires a
 new post-AG-Sept decision and prerequisite check.
 
@@ -601,9 +610,11 @@ conditional AWS deployment. PR2's measured result changed the order:
    efficiencies, while its identical G1 control showed that independent provisioning should not be
    assumed variance-free. PR4c was therefore opened probe-first;
 10. review refined that probe to fixed per-unit A/B and C/D workload slices and explicit generator-
-    host headroom, but on 2026-08-20 the previously retained **5-vCPU applied quota was observed at
-    1 vCPU**. EC2 refused one two-vCPU `c5.large`, so PR4c stopped before measurement and AG-Sept
-    moved to closeout rather than redesigning around the account limit.
+    host headroom. On 2026-08-20 the applied Standard On-Demand quota was observed at **1 vCPU**;
+    EC2 refused one two-vCPU `c5.large`, so PR4c stopped before measurement and AG-Sept moved to
+    closeout rather than redesigning around the account limit. The earlier interactively observed
+    5-vCPU planning figure was not retained, so whether it represented a prior account state or a
+    misreading remains unresolved.
 
 ### 6.3 The original AWS path remains withdrawn; independent capacity is post-AG-Sept
 

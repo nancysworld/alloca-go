@@ -21,12 +21,13 @@ write path made the denominator insufficiently reproducible. That is evidence fo
 
 A first AWS experiment was therefore deliberately bounded to two equivalent capacity units measured
 separately and together. Review then exposed a methodological problem in its original placement:
-G1 placed A/B/C/D behind one authority while G2 placed only A/B or C/D behind each authority, so the
-per-authority working set halved at the same time the second resource envelope was added. A
-write-path/working-set-sensitive result could therefore look super-linear for reasons unrelated to
-capacity-unit composition.
+the canonical-style one-group cell placed A/B/C/D behind one authority while the two-group cell
+placed only A/B or C/D behind each authority, so the per-authority working set halved at the same
+time the second resource envelope was added. A write-path/working-set-sensitive result could
+therefore look super-linear for reasons unrelated to capacity-unit composition.
 
-The refined probe removes that confound by fixing the workload/state envelope **per unit**.
+The refined probe removes that confound by fixing the workload/state envelope **per unit** and uses
+probe-specific `P1/P2` names so its quantities cannot be confused with canonical `G1/G2/G4`.
 
 ## 2. Probe topology
 
@@ -66,9 +67,9 @@ capacity-unit slices:
 slice U1 = A/B
 slice U2 = C/D
 
-G1-CU1        CU1 carries U1 (A/B)
-G1-CU2        CU2 carries U2 (C/D)
-G2-CU1+CU2    CU1 still carries U1; CU2 still carries U2
+P1-CU1        CU1 carries U1 (A/B)
+P1-CU2        CU2 carries U2 (C/D)
+P2-CU1+CU2    CU1 still carries U1; CU2 still carries U2
 ```
 
 A/B/C/D are deliberately equivalent populations. Their names distinguish routing and evidence only.
@@ -86,7 +87,7 @@ ratios must not be treated as interchangeable.
 
 The existing `WL-MUT-DISP-4` workload intentionally fixes the exact global A/B/C/D population across
 its topology comparison. The unit-slice probe has different semantics because only U1 is active in
-`G1-CU1`, only U2 in `G1-CU2`, and both in G2.
+`P1-CU1`, only U2 in `P1-CU2`, and both in `P2-CU1+CU2`.
 
 A future implementation must therefore use a **distinct probe/unit-slice workload identity or
 family** and retain each slice's participants in the run manifest. Do not weaken or overload
@@ -101,12 +102,12 @@ Independent per-group demand has two layers:
 
 1. **logical/scheduling independence** — one fixed worker pool, sequence and response collector per
    capacity unit, so a slow CU2 request cannot consume CU1's worker budget;
-2. **physical measurement headroom** — those streams share one generator process/host, so a G2 cell
-   is invalid if that shared measurement resource becomes a plausible limiter.
+2. **physical measurement headroom** — those streams share one generator process/host, so a
+   `P2-CU1+CU2` cell is invalid if that shared measurement resource becomes a plausible limiter.
 
 A future probe therefore retains generator process CPU as actual **cores consumed**, whole-host CPU
 busy/run queue/steal or iowait/memory/network evidence, and per-stream Goodput/outcome/latency
-accounting. The generator's resource envelope must have demonstrable headroom at G2.
+accounting. The generator's resource envelope must have demonstrable headroom in the composed cell.
 
 If a T-family generator is used, measured cells should use Unlimited credit mode and retain the
 credit/surplus state needed to show that run order did not introduce throttling. This requirement is
@@ -137,40 +138,44 @@ its end state to match a slower unit.
 At one common probe level `P`, retain:
 
 ```text
-g1_CU1_AB
-g1_CU2_CD
-g2_CU1_AB
-g2_CU2_CD
-g2_total
+p1_CU1_AB
+p1_CU2_CD
+p2_CU1_AB
+p2_CU2_CD
+p2_total
 ```
 
 and derive:
 
 ```text
-R_CU1 = g2_CU1_AB / g1_CU1_AB
-R_CU2 = g2_CU2_CD / g1_CU2_CD
-R2_probe = g2_total / (g1_CU1_AB + g1_CU2_CD)
+R_CU1 = p2_CU1_AB / p1_CU1_AB
+R_CU2 = p2_CU2_CD / p1_CU2_CD
+R2_probe = p2_total / (p1_CU1_AB + p1_CU2_CD)
 ```
 
 The per-unit retention ratios are primary because they expose asymmetric composition effects that
 an aggregate ratio can hide.
 
-The difference between `g1_CU1_AB` and `g1_CU2_CD` is also retained as a baseline/unit observation,
+The difference between `p1_CU1_AB` and `p1_CU2_CD` is also retained as a baseline/unit observation,
 but one reading of each is not a statistically established noise range or confidence interval.
 
 The intended hypothesis is qualitative: composition should introduce **no material observed per-unit
 change beyond the unit/environment variation visible in the bounded probe**. There is no preselected
 pass percentage.
 
-`R2_probe` is diagnostic only. It is not `E2_aws`, does not establish saturation, and cannot
-discharge `VAL-SCALE-5`.
+`R2_probe` is diagnostic only. It is neither `E2_aws` nor comparable with `E2_local`: the canonical
+local experiment holds the total A/B/C/D workload fixed while changing placement, whereas this
+probe holds each capacity unit's workload/state envelope fixed and adds an equivalent workload slice
+with the second unit. `R2_probe` does not establish saturation and cannot discharge `VAL-SCALE-5`.
 
 ## 8. AG-Sept execution outcome
 
-PR4c attempted to provision the bounded AWS environment after earlier retained CLI evidence had
-shown a 5-vCPU Standard On-Demand quota in `eu-west-2`. At execution time the same applied quota was
-1 vCPU, and EC2 refused one selected two-vCPU `c5.large`. The minimum bounded topology required
-2 + 2 + 1 = 5 vCPUs. Quota-increase requests were declined.
+PR4c was planned against an interactively observed **5-vCPU** Standard On-Demand quota figure in
+`eu-west-2`. That earlier CLI output was **not retained as a repository artifact**, so whether it
+represented an earlier applied-account state or an earlier misreading cannot now be established.
+At execution time the applied quota was observed at **1 vCPU**, and EC2 refused one selected
+two-vCPU `c5.large`. The minimum bounded topology required 2 + 2 + 1 = 5 vCPUs. Quota-increase
+requests were declined.
 
 The environment therefore never existed and **no probe cell ran**. This is an external account/
 provisioning limitation, not an architecture result and not a Tier-2 condition.

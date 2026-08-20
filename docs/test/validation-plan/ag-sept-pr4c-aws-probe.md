@@ -24,6 +24,8 @@ driven together?
 
 The paired comparison is intended to distinguish capacity-unit composition from shared-resource
 coupling. It does not estimate a precise capacity multiplier and does not discharge `VAL-SCALE-5`.
+Probe-specific `P1/P2` names are used deliberately so these observations cannot be confused with the
+canonical `G1/G2/G4` capacity family.
 
 ## 2. Fixed-per-unit workload shape
 
@@ -31,9 +33,9 @@ The future probe should use the four established equivalent synthetic organisati
 capacity-unit slices:
 
 ```text
-G1-CU1        CU1 -> A/B
-G1-CU2        CU2 -> C/D
-G2-CU1+CU2    CU1 -> A/B, CU2 -> C/D
+P1-CU1        CU1 -> A/B
+P1-CU2        CU2 -> C/D
+P2-CU1+CU2    CU1 -> A/B, CU2 -> C/D
 ```
 
 The unit's workload, fixture/state population, worker count, pool policy, service/database shape and
@@ -80,9 +82,9 @@ parts:
 
 1. **stream independence** — each active capacity unit has its own fixed worker pool, request
    sequence and response accounting, so a slow CU2 request cannot consume CU1's workers;
-2. **resource headroom** — those streams still share one generator process/host, so G2 is
-   uninterpretable if generator CPU, scheduling, memory, network, GC/runtime or measurement overhead
-   plausibly limits the offered demand.
+2. **resource headroom** — those streams still share one generator process/host, so the composed
+   `P2-CU1+CU2` cell is uninterpretable if generator CPU, scheduling, memory, network, GC/runtime or
+   measurement overhead plausibly limits the offered demand.
 
 A future interpreted cell therefore retains:
 
@@ -97,8 +99,8 @@ probe and retain the relevant CPU-credit/surplus state so run order cannot silen
 depletion variable. Capacity units themselves should be non-burstable for a capacity comparison.
 
 `VAL-NEG-8` remains established structurally by PR4a. A future cloud execution may add a short
-deployed slow/stopped-unit control if useful, but the ordinary G2 cell still has to demonstrate
-physical generator headroom independently of that structural property.
+deployed slow/stopped-unit control if useful, but the ordinary composed cell still has to
+demonstrate physical generator headroom independently of that structural property.
 
 ## 5. Preconditions and evidence
 
@@ -107,8 +109,8 @@ No interpreted future probe begins until:
 - CU1 and CU2 are separate equivalent serving instances with separate storage allocations;
 - the generator/measurement stack is on separate compute;
 - service image, PostgreSQL/schema/configuration, pool and timeout policy match across units;
-- each unit's G1 starting state matches its own G2 starting state logically, including fixture and
-  conditioning population;
+- each unit's individual-cell starting state matches its own composed-cell starting state logically,
+  including fixture and conditioning population;
 - placement and active-unit metadata match the requested topology;
 - host/service/PostgreSQL/generator evidence is populated and time-aligned;
 - response validation, reconciliation and final logical-mutation accounting succeed.
@@ -124,19 +126,19 @@ paired ratio is interpreted.
 Let the full-window per-unit fresh-mutation Goodput observations be:
 
 ```text
-g1_CU1_AB
-g1_CU2_CD
-g2_CU1_AB
-g2_CU2_CD
-g2_total = g2_CU1_AB + g2_CU2_CD
+p1_CU1_AB
+p1_CU2_CD
+p2_CU1_AB
+p2_CU2_CD
+p2_total = p2_CU1_AB + p2_CU2_CD
 ```
 
 Report the raw values first, then derive:
 
 ```text
-R_CU1 = g2_CU1_AB / g1_CU1_AB
-R_CU2 = g2_CU2_CD / g1_CU2_CD
-R2_probe = g2_total / (g1_CU1_AB + g1_CU2_CD)
+R_CU1 = p2_CU1_AB / p1_CU1_AB
+R_CU2 = p2_CU2_CD / p1_CU2_CD
+R2_probe = p2_total / (p1_CU1_AB + p1_CU2_CD)
 ```
 
 The per-unit retention ratios are the primary diagnostic: if only one unit changes under
@@ -150,27 +152,32 @@ No numerical pass threshold is predeclared. The intended hypothesis is simply th
 introduces **no material observed per-unit change beyond the unit/environment variation visible in
 the bounded probe**.
 
-None of these diagnostic quantities is `E2_aws`.
+`R2_probe` is neither `E2_aws` nor comparable with `E2_local`. The local quantity belongs to the
+fixed-total A/B/C/D strong-scaling-style comparison; this probe holds each unit's workload/state
+envelope fixed and adds an equivalent workload slice with the second unit. None of these diagnostic
+quantities establishes saturation or discharges `VAL-SCALE-5`.
 
 ## 7. Execution outcome in AG-Sept
 
 No probe cell ran. Therefore:
 
 ```text
-g1_CU1_AB     NOT MEASURED
-g1_CU2_CD     NOT MEASURED
-g2_CU1_AB     NOT MEASURED
-g2_CU2_CD     NOT MEASURED
+p1_CU1_AB     NOT MEASURED
+p1_CU2_CD     NOT MEASURED
+p2_CU1_AB     NOT MEASURED
+p2_CU2_CD     NOT MEASURED
 R_CU1          NOT DERIVED
 R_CU2          NOT DERIVED
 R2_probe       NOT DERIVED
 VAL-SCALE-5    UNPROVEN
 ```
 
-The blocker is external provisioning: previously retained CLI evidence showed a 5-vCPU applied
-Standard On-Demand quota, while execution-time evidence showed 1 vCPU and EC2 enforced that value.
-Quota-increase requests were declined. This is not a Tier-2 trigger because the independently
-provisioned environment never existed.
+During planning, a **5-vCPU** Standard On-Demand quota figure was observed interactively through the
+AWS CLI and used as the planning assumption. That output was **not retained as a repository
+artifact**, so whether it represented an earlier applied-account state or an earlier misreading is
+unresolved. At execution time the applied quota was observed at **1 vCPU**, and EC2 enforced that
+value by refusing one selected two-vCPU `c5.large`. Quota-increase requests were declined. This is
+not a Tier-2 trigger because the independently provisioned environment never existed.
 
 ## 8. Decision
 

@@ -53,6 +53,6 @@ lead to a different next validation while the governing goal remains stable.
   single-authority frontier, Phase 1 multi-authority correctness/failure isolation, and Iteration C
   shard-group capacity method including `VAL-SCALE-5`/`VAL-SCALE-6`;
 - [`ag-sept-pr4c-aws-probe.md`](ag-sept-pr4c-aws-probe.md) — the refined fixed-per-unit
-  `G1-CU1`/`G1-CU2`/`G2-CU1+CU2` AWS diagnostic design. PR4c **did not execute it** because the
+  `P1-CU1`/`P1-CU2`/`P2-CU1+CU2` AWS diagnostic design. PR4c **did not execute it** because the
   applied Standard On-Demand quota was 1 vCPU at provisioning time, below the 5-vCPU minimum
   topology. The design is retained only as a post-AG-Sept candidate; `VAL-SCALE-5` remains unproven.

@@ -10,19 +10,27 @@
 
 PR4c was the bounded attempt to obtain genuinely independent shard-group evidence before AG-Sept
 closeout. It produced **no AWS performance result**. The experiment was stopped at provisioning
-because the account could no longer instantiate even one selected two-vCPU capacity unit.
+because the execution-time account quota could not instantiate even one selected two-vCPU capacity
+unit.
 
 ## 1. What happened
 
-Earlier retained AWS CLI evidence for `eu-west-2` showed the applied
-`Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances` quota at **5 vCPU**. PR4c was
-therefore deliberately reduced to a minimum **2 + 2 + 1 vCPU** topology: two equivalent two-vCPU
-serving units plus separate one-vCPU generator/measurement compute.
+During planning, an AWS CLI reading of **5 vCPU** for the `eu-west-2`
+`Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances` quota was observed
+interactively and used as the planning assumption. That output was **not retained as a repository
+artifact**, so its exact provenance can no longer be re-verified. PR4c was deliberately reduced to a
+minimum **2 + 2 + 1 vCPU** topology on that assumption: two equivalent two-vCPU serving units plus
+separate one-vCPU generator/measurement compute.
 
-At execution time on 2026-08-20 the same applied quota was **1 vCPU**. EC2 independently enforced
-that value by refusing the launch of a single `c5.large` because that instance alone requires two
-vCPUs. Earlier requests to increase the quota to 20 and then 12 vCPUs had been declined; a later
-request for 6 vCPUs was also declined.
+At execution time on 2026-08-20 the applied quota was observed at **1 vCPU**. EC2 independently
+enforced that value by refusing the launch of a single `c5.large` because that instance alone
+requires two vCPUs. Earlier requests to increase the quota to 20 and then 12 vCPUs had been
+declined; a later request for 6 vCPUs was also declined.
+
+Whether the earlier 5-vCPU reading represented an earlier applied-account state or an earlier
+misreading is **unresolved** and is not needed for the PR4c conclusion. The execution-time 1-vCPU
+limit and failed launch are sufficient to establish that the planned environment could not be
+provisioned.
 
 This is an **external provisioning/account constraint**, not evidence about Alloca-Go capacity or
 architecture. No throughput, scale-efficiency, or independent-composition conclusion is inferred
@@ -48,18 +56,19 @@ sufficient quota. It does not inherit AG-Sept schedule or budget automatically.
 Before provisioning stopped, review improved the probe method. That design is worth retaining even
 though it was not implemented or measured.
 
-The future paired comparison should keep a fixed workload/state envelope **per capacity unit**:
+The future paired comparison should keep a fixed workload/state envelope **per capacity unit** and
+uses probe-specific names so it cannot be confused with the canonical `G1/G2/G4` capacity family:
 
 ```text
-G1-CU1        CU1 drives organisations A/B
-G1-CU2        CU2 drives organisations C/D
-G2-CU1+CU2    CU1 still drives A/B; CU2 still drives C/D
+P1-CU1        CU1 drives organisations A/B
+P1-CU2        CU2 drives organisations C/D
+P2-CU1+CU2    CU1 still drives A/B; CU2 still drives C/D
 ```
 
 A/B/C/D are equivalent synthetic populations; their names carry no intended behavioural
 difference. This shape compares each unit alone with the **same workload slice it carries when
 composed**, avoiding the earlier design's factor-of-two per-authority working-set reduction between
-G1 and G2.
+the one-unit and two-unit probe cells.
 
 The existing `WL-MUT-DISP-4` identity must **not** be weakened to express this probe: that workload
 intentionally means the exact global A/B/C/D population at every topology. A future implementation
@@ -67,9 +76,9 @@ must introduce an explicit probe/unit-slice workload identity or family and reta
 assignment in its manifest.
 
 The generator remains outside the capacity units and must provide one independent worker stream per
-active unit. A future G2 result is interpretable only when generator **process and host headroom** are
-observed directly; separate worker pools prove scheduling independence but do not prove that the
-shared generator host is not a resource bottleneck.
+active unit. A future `P2-CU1+CU2` result is interpretable only when generator **process and host
+headroom** are observed directly; separate worker pools prove scheduling independence but do not
+prove that the shared generator host is not a resource bottleneck.
 
 ## 4. Result boundary
 
@@ -82,11 +91,12 @@ minimum planned probe: 5 vCPU (2 + 2 + 1)
 VAL-SCALE-5: UNPROVEN
 ```
 
-No `g1_CU1`, `g1_CU2`, `g2_CU1_CU2`, `R2_probe`, `G1_aws`, `G2_aws`, `E2_aws`, or `E4_aws` exists.
+No `p1_CU1_AB`, `p1_CU2_CD`, `p2_CU1_AB`, `p2_CU2_CD`, `R_CU1`, `R_CU2`, `R2_probe`,
+`G1_aws`, `G2_aws`, `E2_aws`, or `E4_aws` exists.
 
 ## 5. Exit decision
 
-**`STOP / DEFER`.** Record the external quota change and failed provisioning attempt, preserve the
+**`STOP / DEFER`.** Record the external quota blocker and failed provisioning attempt, preserve the
 refined experiment design for possible post-AG-Sept work, and proceed to PR5. Do not weaken the
 independent-resource requirement or reinterpret local evidence to manufacture the missing AWS
 result.

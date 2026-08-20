@@ -48,7 +48,7 @@ AG-Sept's governing goal, its iteration history, and the currently open problem 
   layer.** PR4a qualified the method; PR4b ran the sustained local G1/G2/G4 experiment; PR4c
   refined a bounded independent probe but stopped before measurement because the required AWS
   environment could not be provisioned. **No AWS performance evidence exists and `VAL-SCALE-5`
-  remains unproven.** The PR4c outcome is owned by [`ag-sept-pr4c.md`](ag-sept-pr4c.md).
+  remains unproven.**
 
   **PR4b executed on 2026-08-19 and did not derive `E2_local`/`E4_local`.** `G4_local` resolved;
   `G1` and `G2` did not, and `G1_local` is the denominator of both efficiencies. The evidence
@@ -349,8 +349,7 @@ result it depends on was not secured.
 attempted provisioning, but the 5-vCPU minimum environment could not be instantiated. No AWS
 performance cell ran and `VAL-SCALE-5` remains unproven.
 
-Outcome: [`ag-sept-pr4c.md`](ag-sept-pr4c.md). Design:
-[`../design/independent-capacity-probe.md`](../design/independent-capacity-probe.md). Validation:
+Design: [`../design/independent-capacity-probe.md`](../design/independent-capacity-probe.md). Validation:
 [`../test/validation-plan/ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md).
 Evidence: [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
 

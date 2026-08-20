@@ -61,30 +61,38 @@ That is the fact PR4c's `STOP / DEFER` rests on: the bounded probe needed a 5-vC
   Whether a grant expired, was reversed, or the account was adjusted is not visible in any artifact
   here.
 
-## What the request history rules out
+## The request history, and what it does not say
 
 The quota-scoped capture is the **complete** requested-change history for `L-1216C47A`. It holds
 exactly two records:
 
-| Case | Desired | Created | Status |
-|---|---:|---|---|
-| `178654858600135` | 20.0 | 2026-08-12 | `CASE_CLOSED` (last updated 2026-08-14) |
-| `178723066000473` | 6.0 | 2026-08-20 13:57 | **`CASE_OPENED`** |
+| Case | Desired | Created | Status | Actual course (maintainer) |
+|---|---:|---|---|---|
+| `178654858600135` | 20.0 | 2026-08-12 | `CASE_CLOSED` (updated 2026-08-14) | declined; appealed at 12; declined |
+| `178723066000473` | 6.0 | 2026-08-20 13:57 | `CASE_OPENED` | declined; appealed; **awaiting final decision** |
 
-Three consequences, and two of them contradict what the surrounding documents say:
+**`Status` is the case's current state, not its decision history, and the two are easy to confuse.**
+A request that was declined and then appealed reads `CASE_OPENED` — identical to one that was never
+decided at all. Neither `Status` nor `LastUpdated` records the decline that preceded the appeal: the
+6.0 record's `LastUpdated` is five seconds after its `Created`, while the decline and the appeal both
+happened afterwards and left no trace in this API. The same is true in the other direction:
+`CASE_CLOSED` is not itself a denial, only a closed case.
+
+**Neither request's outcome can be read off this capture.** Both declines rest on the support
+correspondence — recorded in prose in
+[`ag-sept-pr4.md`](../../development/implementation/ag-sept-pr4.md) §5 for the 20.0 case — and the
+6.0 appeal's outcome does not exist yet.
+
+What the capture does establish:
 
 - **No decrease was ever requested by the account.** Nothing in the account's own request history
   produced the 5.0 → 1.0 fall, which is why it stays unexplained rather than merely undocumented.
-  This is a genuine negative result: it excludes the most ordinary explanation.
-- **The 6-vCPU request is open, not declined.** It was created on the day execution was attempted and
-  its status is `CASE_OPENED`. Any statement that it was declined is contradicted by this capture.
+  This is a genuine negative result: it excludes the most ordinary explanation, and it does not
+  depend on reading any status field.
 - **No separate 12-vCPU request exists.** The history holds one case at 20.0, consistent with the
-  12-vCPU figure having been an appeal *within* case `178654858600135` — which is how
-  [`ag-sept-pr4.md`](../../development/implementation/ag-sept-pr4.md) §5 describes that exchange.
-  "Requests to 20 and then 12" reads as two requests; the record shows one case.
-
-`CASE_CLOSED` is also not itself a denial — it records that the support case closed. The decline of
-the 20.0 request rests on the support correspondence recorded in prose in §5, not on this field.
+  12-vCPU figure having been an appeal *within* case `178654858600135` — which is how §5 describes
+  that exchange, and which matches the request-then-appeal pattern the 6.0 case repeats. "Requests to
+  20 and then 12" reads as two requests; the record shows one case carrying both.
 
 ## Not captured, and deliberately not pursued
 

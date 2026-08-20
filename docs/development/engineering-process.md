@@ -182,6 +182,24 @@ The project should bias toward a higher code-to-implementation-doc ratio than it
 is a direction, not a numeric metric: remove or avoid prose that merely mirrors code, while
 retaining documentation that carries information the code alone cannot preserve clearly.
 
+### 1.6 Compress documentation to durable signal
+
+Useful working detail is not automatically durable project information. Before a work unit is
+considered complete, accumulated or generated prose should be compressed to the minimum record
+needed to preserve requirements, decisions, evidence boundaries, reproducibility, and future
+engineering understanding.
+
+Prefer deletion and links to one semantic owner over repeated explanation. Review chronology,
+exact timestamps, ordinary workflow narration, duplicated rationale, and intermediate discoveries
+are normally transient unless they materially change interpretation or a future decision. If
+changing one fact routinely requires edits in many documents, ownership has failed: keep one
+normative or empirical owner and have other documents link to it.
+
+AI assistance makes overproduction cheap, so **AI-generated documentation carries a compression
+obligation**. The goal is not to preserve everything that was useful during the work; it is to
+leave the durable signal. Documentation review should therefore be deletion-biased and reduce
+reader/review surface without weakening evidence or traceability.
+
 ## 2. Roles and decision ownership
 
 The roles below describe **responsibility and review emphasis, not permissions**. One participant

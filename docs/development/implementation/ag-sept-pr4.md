@@ -1860,11 +1860,11 @@ understated `G1` and recorded `G2` as passing a test it does not. Neither topolo
 changes, because both were already unresolved on reproducibility; what changes is the accuracy of
 the reason given.
 
-No retained resource signal distinguishes `G1`'s four runs: host CPU busy 2.3–2.4%, memory available
-within 0.2%, run queue 7.4–8.0, active backends 4.4–5.0, wait events 1.8–2.0, and all four took
-exactly four requested checkpoints. Every run at every topology is a "dip" in shape, so none belongs
-to a visibly different regime, and `G1`'s outlier sits above the other three at all ten of its slices
-rather than diverging part-way.
+No retained resource signal distinguishes `G1`'s four runs: host CPU busy 2.3–2.4 cores (of 16),
+memory available within 0.2%, run queue 7.4–8.0, active backends 4.4–5.0, wait events 1.8–2.0, and
+all four took exactly four requested checkpoints. Every run at every topology is a "dip" in shape,
+so none belongs to a visibly different regime, and `G1`'s outlier sits above the other three at all
+ten of its slices rather than diverging part-way.
 
 ### 3.29 Run position was the wrong explanation, and the control refuted it
 

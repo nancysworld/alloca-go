@@ -57,10 +57,10 @@ the run can say about itself and not about what was measured.
 
 ## Where the variance comes from
 
-Not from the host: CPU busy 2.37–2.43%, memory available within 0.8%, run queue 7.44–7.83, active
-backends 4.39–4.79, wait events 1.74–1.90, pool acquire wait 3.79–3.83 ms — all flat across the four.
-The slow run used *less* service CPU (0.40 vs 0.43–0.47) and did less database write work, which is
-the signature of a downstream stall rather than a service limit.
+Not from the host: CPU busy 2.37–2.43 cores (of 16), memory available within 0.8%, run queue
+7.44–7.83, active backends 4.39–4.79, wait events 1.74–1.90, pool acquire wait 3.79–3.83 ms — all
+flat across the four. The slow run used *less* service CPU (0.40 vs 0.43–0.47 cores) and did less
+database write work, which is the signature of a downstream stall rather than a service limit.
 
 It comes from the storage path. Reads are ~0, writes are 15.53–19.17 MiB/s, and Goodput tracks
 delivered write bandwidth. The full evidence and its consequence for `VAL-SCALE-6` are in

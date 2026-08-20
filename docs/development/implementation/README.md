@@ -42,7 +42,12 @@ change and the document benefits from preserving their shared history.
 | [`ag-sept-pr1.md`](ag-sept-pr1.md) | measurement substrate and load harness | merged |
 | [`ag-sept-pr2.md`](ag-sept-pr2.md) | single-instance frontier | merged |
 | [`ag-sept-pr3.md`](ag-sept-pr3.md) | horizontal database authority Phase 1, across PR3a/3b/3c | merged |
-| [`ag-sept-pr4.md`](ag-sept-pr4.md) | independently provisioned shard-group capacity, across PR4a/4b | PR4a merged; PR4b executed and reported, `VAL-SCALE-6` not discharged |
+| [`ag-sept-pr4.md`](ag-sept-pr4.md) | Iteration C shard-group capacity method and local execution, across PR4a/PR4b | PR4a/PR4b merged; `G4_local` resolved, G1/G2-derived local efficiencies withheld; `VAL-SCALE-6` not discharged |
+
+PR4c has no implementation record because no AWS cell ran. Its reusable method is retained in the
+[design](../../design/independent-capacity-probe.md) and
+[validation plan](../../test/validation-plan/ag-sept-pr4c-aws-probe.md); the external blocker is
+retained under [`../../measurements/pr4c-quota/`](../../measurements/pr4c-quota/).
 
 The first three began as `docs/planning/ag-sept-pr*-scope.md` and moved here once the directory
 existed. They are named for the work unit, not the branch, and PR3's and PR4's records each span

@@ -304,6 +304,18 @@ This is stronger than merely running the generator as another process: if genera
 groups compete for the same fixed CPU/network/storage resource, the result cannot distinguish
 server scaling from measurement-system contention.
 
+### 12.3 Independent does not mean variance-free
+
+Independent provisioning removes coupling between capacity-unit resource envelopes; it does not
+remove run-to-run or provider variation. A noisy `G1` observation does not become a precise
+scale-efficiency denominator merely because the larger topology uses independent hosts.
+
+A bounded diagnostic can therefore measure equivalent units alone and composed while keeping each
+unit's workload/state envelope fixed. That avoids changing working set at the same time as resources
+are added. The retained method is
+[`independent-capacity-probe.md`](independent-capacity-probe.md); evidence must still bound unit-level
+variation before any composition ratio is interpreted.
+
 ## 13. Workload and placement envelope
 
 Capacity is always conditional on a workload. A shard group's numeric result therefore names the
@@ -317,8 +329,7 @@ is mapped to 1, 2, or more shard groups for a particular experiment.
 For the current dispersed mutation question, the important architectural property is that the
 participating organisations are independent: moving `org-a` to a different shard group from
 `org-b` must not introduce a new correctness dependency between them. The experiment may then vary
-placement while retaining the same workload semantics and compare whether independent writable
-resource envelopes add useful capacity.
+placement while retaining the workload semantics that its own workload identity declares.
 
 The resulting per-group envelope must state enough context to make the result reusable: workload
 identity, organisation distribution, service/database resource shape, connection budget, and the
@@ -346,8 +357,13 @@ requirements, and evidence that justify them.
 
 The concrete AG-Sept validations for this architecture are owned by
 [`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md).
-For Iteration C that plan selects `WL-MUT-DISP-4` and fixes the 1/2/4-shard-group comparison needed
-to obtain `G1`, `G2`, `G4`, their derived efficiencies, and the limiting-resource evidence.
+For Iteration C that plan selected `WL-MUT-DISP-4` and the local 1/2/4-shard-group comparison needed
+to attempt `G1`, `G2`, `G4`, their derived efficiencies, and limiting-resource evidence.
+
+PR4c separately refined the bounded independent-unit diagnostic in
+[`../test/validation-plan/ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md).
+It was not executed and does not substitute for `VAL-SCALE-5`; any future independent-capacity
+experiment is post-AG-Sept work.
 
 Earlier validation meanings for service-replica scaling, connection-budget controls,
 multi-authority correctness, routing/refusal, and failure isolation remain valid where cited; they

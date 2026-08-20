@@ -1,0 +1,68 @@
+echo "=== Availability zones ==="
+aws ec2 describe-availability-zones \
+  --region eu-west-2 \
+  --query 'AvailabilityZones[?State==`available`].[ZoneName,State]' \
+  --output table
+
+echo
+echo "=== Default VPC ==="
+aws ec2 describe-vpcs \
+  --region eu-west-2 \
+  --filters Name=is-default,Values=true \
+  --query 'Vpcs[].{VpcId:VpcId,Cidr:CidrBlock,State:State}' \
+  --output table
+
+echo
+echo "=== Default subnets ==="
+aws ec2 describe-subnets \
+  --region eu-west-2 \
+  --filters Name=default-for-az,Values=true \
+  --query 'Subnets[].{SubnetId:SubnetId,AZ:AvailabilityZone,Cidr:CidrBlock}' \
+  --output table
+
+echo
+echo "=== EC2 Standard On-Demand vCPU quota ==="
+aws service-quotas get-service-quota \
+  --region eu-west-2 \
+  --service-code ec2 \
+  --quota-code L-1216C47A \
+  --query 'Quota.{Name:QuotaName,Value:Value,Adjustable:Adjustable}' \
+  --output table
+
+=== Availability zones ===
+-----------------------------
+| DescribeAvailabilityZones |
++-------------+-------------+
+|  eu-west-2a |  available  |
+|  eu-west-2b |  available  |
+|  eu-west-2c |  available  |
++-------------+-------------+
+
+=== Default VPC ===
+---------------------------------------------------------
+|                     DescribeVpcs                      |
++----------------+------------+-------------------------+
+|      Cidr      |   State    |          VpcId          |
++----------------+------------+-------------------------+
+|  172.31.0.0/16 |  available |  vpc-01751c67e0bbc5ba9  |
++----------------+------------+-------------------------+
+
+=== Default subnets ===
+--------------------------------------------------------------
+|                       DescribeSubnets                      |
++------------+------------------+----------------------------+
+|     AZ     |      Cidr        |         SubnetId           |
++------------+------------------+----------------------------+
+|  eu-west-2b|  172.31.32.0/20  |  subnet-09c0790f4cf1a02ae  |
+|  eu-west-2a|  172.31.16.0/20  |  subnet-030b9bb265f3a4cc5  |
+|  eu-west-2c|  172.31.0.0/20   |  subnet-015d6bbb93a8defee  |
++------------+------------------+----------------------------+
+
+=== EC2 Standard On-Demand vCPU quota ===
+---------------------------------------------------------------------------------------------
+|                                      GetServiceQuota                                      |
++------------+--------------------------------------------------------------------+---------+
+| Adjustable |                               Name                                 |  Value  |
++------------+--------------------------------------------------------------------+---------+
+|  True      |  Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances  |  5.0    |
++------------+--------------------------------------------------------------------+---------+

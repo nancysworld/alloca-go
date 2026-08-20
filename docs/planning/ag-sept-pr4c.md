@@ -15,22 +15,23 @@ unit.
 
 ## 1. What happened
 
-During planning, an AWS CLI reading of **5 vCPU** for the `eu-west-2`
-`Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances` quota was observed
-interactively and used as the planning assumption. That output was **not retained as a repository
-artifact**, so its exact provenance can no longer be re-verified. PR4c was deliberately reduced to a
-minimum **2 + 2 + 1 vCPU** topology on that assumption: two equivalent two-vCPU serving units plus
-separate one-vCPU generator/measurement compute.
+During planning, a retained AWS CLI `GetServiceQuota` capture reported an applied value of
+**5 vCPU** for the
+`Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances` quota. The earlier table capture
+preserves the quota name and applied value but not its command line, Region, or exact date; it is
+retained with the later capture in [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
+PR4c was deliberately reduced to a minimum **2 + 2 + 1 vCPU** topology on that observed allowance:
+two equivalent two-vCPU serving units plus separate one-vCPU generator/measurement compute.
 
-At execution time on 2026-08-20 the applied quota was observed at **1 vCPU**. EC2 independently
-enforced that value by refusing the launch of a single `c5.large` because that instance alone
-requires two vCPUs. Earlier requests to increase the quota to 20 and then 12 vCPUs had been
-declined; a later request for 6 vCPUs was also declined.
+At execution time on 2026-08-20 a second retained `GetServiceQuota` capture, explicitly querying
+`eu-west-2` quota `L-1216C47A`, reported an applied value of **1 vCPU**. EC2 independently enforced
+that value by refusing the launch of a single `c5.large` because that instance alone requires two
+vCPUs. Earlier requests to increase the quota to 20 and then 12 vCPUs had been declined; a later
+request for 6 vCPUs was also declined.
 
-Whether the earlier 5-vCPU reading represented an earlier applied-account state or an earlier
-misreading is **unresolved** and is not needed for the PR4c conclusion. The execution-time 1-vCPU
-limit and failed launch are sufficient to establish that the planned environment could not be
-provisioned.
+The retained captures therefore establish that the reported applied value fell from **5.0 to 1.0**
+between the observations. **Why AWS reduced it is unknown** and was deliberately not pursued further
+inside AG-Sept; that causal question is not needed for the PR4c conclusion.
 
 This is an **external provisioning/account constraint**, not evidence about Alloca-Go capacity or
 architecture. No throughput, scale-efficiency, or independent-composition conclusion is inferred

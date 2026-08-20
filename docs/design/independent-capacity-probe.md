@@ -170,12 +170,17 @@ with the second unit. `R2_probe` does not establish saturation and cannot discha
 
 ## 8. AG-Sept execution outcome
 
-PR4c was planned against an interactively observed **5-vCPU** Standard On-Demand quota figure in
-`eu-west-2`. That earlier CLI output was **not retained as a repository artifact**, so whether it
-represented an earlier applied-account state or an earlier misreading cannot now be established.
-At execution time the applied quota was observed at **1 vCPU**, and EC2 refused one selected
-two-vCPU `c5.large`. The minimum bounded topology required 2 + 2 + 1 = 5 vCPUs. Quota-increase
-requests were declined.
+A retained AWS CLI `GetServiceQuota` capture from planning reported an applied value of **5 vCPU**
+for the relevant Standard On-Demand quota. The earlier table capture preserves the quota name and
+applied value but not its command line, Region, or exact date; see
+[`../measurements/pr4c-quota/`](../measurements/pr4c-quota/). At execution time on 2026-08-20, a
+second retained capture explicitly querying `eu-west-2` quota `L-1216C47A` reported **1 vCPU**, and
+EC2 refused one selected two-vCPU `c5.large`. The minimum bounded topology required 2 + 2 + 1 =
+5 vCPUs. Quota-increase requests were declined.
+
+The retained captures establish that the reported applied value fell from **5.0 to 1.0** between the
+observations. The reason for the reduction is unknown and was deliberately not pursued further in
+AG-Sept.
 
 The environment therefore never existed and **no probe cell ran**. This is an external account/
 provisioning limitation, not an architecture result and not a Tier-2 condition.

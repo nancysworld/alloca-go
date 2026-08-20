@@ -198,16 +198,18 @@ shared-write-path limit was established strongly enough to withhold the unsuppor
 
 **Nancy's decision, 2026-08-19:** allocate **1.0 day from remaining contingency** to PR4c and start
 with the smallest useful independent-node experiment rather than the full retained capacity matrix.
-The initial plan used an interactively observed **5-vCPU** Standard On-Demand quota figure as its
-planning assumption. That CLI output was not retained as a repository artifact, so its exact
-provenance cannot now be re-verified.
+The initial plan used a retained AWS CLI `GetServiceQuota` capture reporting an applied **5-vCPU**
+Standard On-Demand quota value. The earlier table capture preserves the quota name and applied value
+but not its command line, Region, or exact date; the evidence and its provenance boundary are
+recorded in [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
 
-**Closure, 2026-08-20:** the applied quota was observed at **1 vCPU** immediately before execution,
-and EC2 enforced it by refusing one `c5.large`. Earlier increase requests to 20 and 12 vCPUs had
-been declined, and a later 6-vCPU request was also declined. Whether the earlier 5-vCPU figure
-represented an earlier applied-account state or an earlier misreading is unresolved and immaterial
-to the closure: the 5-vCPU minimum topology could not be instantiated at execution time. No measured
-cell ran.
+**Closure, 2026-08-20:** a second retained `GetServiceQuota` capture, explicitly querying
+`eu-west-2` quota `L-1216C47A`, reported an applied value of **1 vCPU**, and EC2 enforced that value
+by refusing one `c5.large`. Earlier increase requests to 20 and 12 vCPUs had been declined, and a
+later 6-vCPU request was also declined. The retained captures therefore show that the reported
+applied value fell from **5.0 to 1.0** between observations. **Why AWS reduced it is unknown** and
+was deliberately not pursued further in AG-Sept. The 5-vCPU minimum topology could not be
+instantiated at execution time, so no measured cell ran.
 
 **Charge and return, Nancy's decision 2026-08-20:** PR4c is charged at **0.5 day actual** against
 its 1.0-day transfer, and the remaining **0.5 returns to contingency**. The half day covers the
@@ -296,12 +298,14 @@ PR4b — execute and analyse the full sustained experiment locally
 PR4c — probe two independent AWS units separately and together
 ```
 
-The third step was then externally blocked. A **5-vCPU** Standard On-Demand quota figure had been
-observed interactively through the AWS CLI and used as the planning assumption, but that earlier
-output was not retained as a repository artifact. At execution time the applied quota was observed
-at **1 vCPU**, below even one selected two-vCPU capacity unit. Whether the earlier 5-vCPU figure was
-a prior applied-account state or a misreading is unresolved; the refined PR4c method is retained,
-but no workload implementation or measured AWS result is claimed.
+The third step was then externally blocked. A retained `GetServiceQuota` capture from planning
+reported an applied Standard On-Demand value of **5 vCPU**; its table output preserves the quota
+name/value but not its command line, Region, or exact date. On 2026-08-20 a second retained capture,
+explicitly querying `eu-west-2` quota `L-1216C47A`, reported **1 vCPU**, below even one selected
+two-vCPU capacity unit. The reported applied value therefore fell from **5.0 to 1.0** between the
+observations; why AWS reduced it is unknown. The refined PR4c method is retained, but no workload
+implementation or measured AWS result is claimed. Evidence is in
+[`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
 
 This does **not** weaken the Iteration C Problem or `REQ-SCALE-4`. Local scheduler partitioning and
 independent provisioning remain different evidence classes. The complete independently provisioned
@@ -413,13 +417,15 @@ CU2                 2-vCPU equivalent non-burstable serving unit
 generator/monitor   separate 1-vCPU measurement compute
 ```
 
-During planning, a **5-vCPU** figure for the relevant Standard On-Demand quota was observed
-interactively through the AWS CLI and used as the planning assumption. That earlier output was not
-retained as a repository artifact. On 2026-08-20 the applied quota was observed at **1 vCPU**, and
-EC2 refused one `c5.large` because that single instance requires two vCPUs. Whether the earlier
-5-vCPU figure represented a prior account state or a misreading is unresolved. With the independent
-environment unable to exist, the probe stopped before bootstrap/load execution rather than
-collapsing resources onto one host or changing the serving-unit question.
+During planning, a retained AWS CLI `GetServiceQuota` capture reported an applied **5-vCPU** value
+for the relevant Standard On-Demand quota. The earlier table capture preserves the quota name and
+value but not its command line, Region, or exact date. On 2026-08-20 a second retained capture,
+explicitly querying `eu-west-2` quota `L-1216C47A`, reported **1 vCPU**, and EC2 refused one
+`c5.large` because that single instance requires two vCPUs. The retained captures show the reported
+applied value fell from **5.0 to 1.0** between observations; why AWS reduced it is unknown. With the
+independent environment unable to exist, the probe stopped before bootstrap/load execution rather
+than collapsing resources onto one host or changing the serving-unit question. Evidence:
+[`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
 
 Review work before the stop improved the future method: keep A/B fixed on CU1 and C/D fixed on CU2
 both separately and together, use a distinct probe/unit-slice workload identity rather than
@@ -610,11 +616,14 @@ conditional AWS deployment. PR2's measured result changed the order:
    efficiencies, while its identical G1 control showed that independent provisioning should not be
    assumed variance-free. PR4c was therefore opened probe-first;
 10. review refined that probe to fixed per-unit A/B and C/D workload slices and explicit generator-
-    host headroom. On 2026-08-20 the applied Standard On-Demand quota was observed at **1 vCPU**;
-    EC2 refused one two-vCPU `c5.large`, so PR4c stopped before measurement and AG-Sept moved to
-    closeout rather than redesigning around the account limit. The earlier interactively observed
-    5-vCPU planning figure was not retained, so whether it represented a prior account state or a
-    misreading remains unresolved.
+    host headroom. A retained planning `GetServiceQuota` capture reported an applied Standard
+    On-Demand value of **5 vCPU**; on 2026-08-20 a second retained capture explicitly querying
+    `eu-west-2` quota `L-1216C47A` reported **1 vCPU**. EC2 refused one two-vCPU `c5.large`, so PR4c
+    stopped before measurement and AG-Sept moved to closeout rather than redesigning around the
+    account limit. The reported applied value fell from **5.0 to 1.0** between the observations;
+    why AWS reduced it is unknown. The earlier table capture lacks command/Region/date provenance;
+    both captures and that limitation are retained in
+    [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
 
 ### 6.3 The original AWS path remains withdrawn; independent capacity is post-AG-Sept
 

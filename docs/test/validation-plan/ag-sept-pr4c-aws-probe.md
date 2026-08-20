@@ -172,12 +172,16 @@ R2_probe       NOT DERIVED
 VAL-SCALE-5    UNPROVEN
 ```
 
-During planning, a **5-vCPU** Standard On-Demand quota figure was observed interactively through the
-AWS CLI and used as the planning assumption. That output was **not retained as a repository
-artifact**, so whether it represented an earlier applied-account state or an earlier misreading is
-unresolved. At execution time the applied quota was observed at **1 vCPU**, and EC2 enforced that
-value by refusing one selected two-vCPU `c5.large`. Quota-increase requests were declined. This is
-not a Tier-2 trigger because the independently provisioned environment never existed.
+A retained AWS CLI `GetServiceQuota` capture from planning reported an applied value of **5 vCPU**
+for the relevant Standard On-Demand quota. The earlier table capture preserves the quota name and
+applied value but not its command line, Region, or exact date; see
+[`../../measurements/pr4c-quota/`](../../measurements/pr4c-quota/). At execution time on 2026-08-20,
+a second retained capture explicitly querying `eu-west-2` quota `L-1216C47A` reported **1 vCPU**,
+and EC2 enforced that value by refusing one selected two-vCPU `c5.large`. The retained captures
+therefore show the reported applied value fell from **5.0 to 1.0** between observations. Why AWS
+reduced it is unknown and was deliberately not pursued further in AG-Sept. Quota-increase requests
+were declined. This is not a Tier-2 trigger because the independently provisioned environment never
+existed.
 
 ## 8. Decision
 

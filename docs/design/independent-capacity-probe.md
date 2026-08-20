@@ -186,8 +186,9 @@ EC2 refused one selected two-vCPU `c5.large`. The minimum bounded topology requi
 5 vCPUs. Quota-increase requests were declined.
 
 The retained captures establish that the reported applied value fell from **5.0 to 1.0** between the
-observations. The reason for the reduction is unknown and was deliberately not pursued further in
-AG-Sept.
+observations. Evidence gathered after the provisioning stop records the increase-request and appeal
+sequence, but still does not identify why the applied value fell. That causal question is not needed
+for PR4c's closure.
 
 The environment therefore never existed and **no probe cell ran**. This is an external account/
 provisioning limitation, not an architecture result and not a Tier-2 condition.

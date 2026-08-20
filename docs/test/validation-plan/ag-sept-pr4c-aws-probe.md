@@ -202,10 +202,12 @@ applied value together with its command line and Region, but not its exact date;
 [`../../measurements/pr4c-quota/`](../../measurements/pr4c-quota/). At execution time on 2026-08-20,
 a second retained capture explicitly querying `eu-west-2` quota `L-1216C47A` reported **1 vCPU**,
 and EC2 enforced that value by refusing one selected two-vCPU `c5.large`. The retained captures
-therefore show the reported applied value fell from **5.0 to 1.0** between observations. Why AWS
-reduced it is unknown and was deliberately not pursued further in AG-Sept. Quota-increase requests
-were declined. This is not a Tier-2 trigger because the independently provisioned environment never
-existed.
+therefore show the reported applied value fell from **5.0 to 1.0** between observations. Evidence
+gathered after the provisioning stop documents one 20-vCPU increase case, declined then appealed at
+12 and declined again, plus a separate 6-vCPU case that was immediately declined and appealed. The
+final 6-vCPU decision was still pending as at 2026-08-20. Neither the API history nor the maintainer
+record identifies why the applied value fell. This is not a Tier-2 trigger because the independently
+provisioned environment never existed.
 
 ## 8. Decision
 

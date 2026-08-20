@@ -56,10 +56,10 @@ That is the fact PR4c's `STOP / DEFER` rests on: the bounded probe needed a 5-vC
   undocumented. **Observed, not investigated** — see the stop below.
 - **The EC2 launch refusal is not retained here.** That the API refused one `c5.large` on 2026-08-20
   is recorded in prose in the PR4c documents and has no artifact in this repository.
-- **Why the quota fell is still not evidenced.** The requested-change history is now captured and
-  shows no decrease was ever requested (see below), which narrows the cause without identifying it.
-  Whether a grant expired, was reversed, or the account was adjusted is not visible in any artifact
-  here.
+- **Why the quota fell is still not evidenced.** The later request-history captures document the
+  Service Quotas increase cases returned by the API. They do not record arbitrary decrease requests,
+  every support exchange, or the account action that produced the observed fall. Whether a grant
+  expired, was reversed, or the account was adjusted is not visible in any artifact here.
 
 ## The request history, and what it does not say
 
@@ -85,31 +85,41 @@ correspondence — recorded in prose in
 
 What the capture does establish:
 
-- **No decrease was ever requested by the account.** Nothing in the account's own request history
-  produced the 5.0 → 1.0 fall, which is why it stays unexplained rather than merely undocumented.
-  This is a genuine negative result: it excludes the most ordinary explanation, and it does not
-  depend on reading any status field.
-- **No separate 12-vCPU request exists.** The history holds one case at 20.0, consistent with the
-  12-vCPU figure having been an appeal *within* case `178654858600135` — which is how §5 describes
-  that exchange, and which matches the request-then-appeal pattern the 6.0 case repeats. "Requests to
-  20 and then 12" reads as two requests; the record shows one case carrying both.
+- **The retained API output contains no requested value that explains the 5.0 → 1.0 fall.** This is
+  a narrow statement about the captured Service Quotas **increase-request** history, not evidence
+  that no decrease request, support action, grant expiry or account adjustment occurred through
+  another route. The history documents the two increase cases; it does not establish the cause.
+- **No separate 12-vCPU Service Quotas case exists.** The API history holds one case at 20.0. The
+  maintainer record says that case was declined, appealed at 12, and declined again — which is how
+  §5 describes the exchange. The later 6.0 case was immediately declined and then appealed. The API
+  status fields do not preserve either appeal's decision sequence.
 
-## Not captured, and deliberately not pursued
+## Evidence gathered after the initial stop decision
 
-**Maintainer decision, 2026-08-20:** stop spending AG-Sept time on the AWS side. What is above is the
-record. AG-Sept closes with the quota fact evidenced and its cause unexplained, which is sufficient
-for a closure that claims no AWS measurement.
+**Maintainer timeline, 2026-08-20:** PR4c stopped before measurement when the 1-vCPU applied quota
+made the planned environment impossible. Evidence gathering nevertheless continued after that stop:
+the maintainer supplied the complete earlier four-command probe, retained the execution-time rerun,
+and captured both the regional EC2 request history and the quota-scoped JSON response. The earlier
+wording that the AWS side was "not pursued" is therefore not accurate.
 
-This is a stated stop, not a tech-debt item: there is no condition under which it becomes wrong, and
-no trigger to revisit it inside this milestone.
+Those later artifacts pin both applied-value observations to `eu-west-2` quota `L-1216C47A` and
+document the two Service Quotas increase cases. Together with the maintainer record, they establish
+the request sequence: the 20-vCPU case was declined, appealed at 12, and declined again; the separate
+6-vCPU case was immediately declined and appealed, with a final decision still pending as at
+2026-08-20. They still do not establish why the applied value fell.
 
-One capture was considered and not taken — `get-service-quota --output json`, whose `QuotaArn` would
-carry Region and quota identity inside the artifact rather than in the command line above it. The
-command lines in the two applied-value captures already pin both, so it would add provenance that is
-present by another route. If independently provisioned capacity is ever selected as post-AG-Sept
-work, verify external provisioning prerequisites first, and capture the applied value **before** any
-pending increase request is decided: once granted, the value observed at planning time becomes
-unrecoverable, which is exactly how the 5.0 reading came to have no artifact for a week.
+PR4c's closure does not depend on resolving that causal question. No AWS measured cell exists, and
+the external provisioning prerequisite failed during the milestone. The record is closed as an
+AG-Sept outcome, not as a claim that no later evidence could be added or that AWS capacity can never
+be revisited. A later quota decision may enable newly planned post-AG-Sept work; it cannot create a
+retrospective PR4c measurement.
+
+A full unprojected `get-service-quota --output json` response was not retained. Its `QuotaArn` would
+carry Region and quota identity inside the response body rather than in the command line above it.
+Both retained table captures already include command lines that pin Region and quota code, so PR4c
+does not depend on that additional representation. If independently provisioned capacity is selected
+as post-AG-Sept work, verify provisioning prerequisites and capture the applied value before any new
+request decision changes it.
 
 The `sed` filter redacts the 12-digit AWS account identifier from any ARN while preserving region and
 quota code, which is the part that carries evidentiary weight. It is applied under

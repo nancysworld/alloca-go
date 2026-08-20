@@ -26,14 +26,16 @@ two equivalent two-vCPU serving units plus separate one-vCPU generator/measureme
 At execution time on 2026-08-20 a second retained `GetServiceQuota` capture, explicitly querying
 `eu-west-2` quota `L-1216C47A`, reported an applied value of **1 vCPU**. EC2 independently enforced
 that value by refusing the launch of a single `c5.large` because that instance alone requires two
-vCPUs. Earlier requests to increase the quota to 20 and then 12 vCPUs had been declined; a later
-request for 6 vCPUs was also declined and is **under appeal, awaiting a final decision** as at
-2026-08-20. That outcome does not change PR4c: the environment did not exist during the milestone,
-and a later grant would enable future work rather than retrospectively supply a measurement.
+vCPUs. One 20-vCPU increase case was declined, appealed at 12 vCPUs, and declined again. A separate
+6-vCPU case was immediately declined and appealed, with a final decision still pending as at
+2026-08-20. That pending outcome does not change PR4c: the environment did not exist during the
+milestone, and a later grant would enable future work rather than retrospectively supply a
+measurement.
 
-The retained captures therefore establish that the reported applied value fell from **5.0 to 1.0**
-between the observations. **Why the applied value fell is unknown** and was deliberately not pursued further
-inside AG-Sept; that causal question is not needed for the PR4c conclusion.
+The retained captures establish that the reported applied value fell from **5.0 to 1.0** between the
+observations. Evidence gathering after the provisioning stop retained the complete earlier probe and
+the request histories, but did not establish why the applied value fell. That causal question is not
+needed for the PR4c conclusion.
 
 This is an **external provisioning/account constraint**, not evidence about Alloca-Go capacity or
 architecture. No throughput, scale-efficiency, or independent-composition conclusion is inferred

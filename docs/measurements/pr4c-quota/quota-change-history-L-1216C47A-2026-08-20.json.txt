@@ -3,8 +3,10 @@ ALTERED CAPTURE. Every occurrence of the 12-digit AWS account identifier is repl
 under public-disclosure-policy.md. Nothing else is changed. Kept with a .txt extension because the
 file carries this header and is therefore no longer parseable JSON; the payload below is verbatim.
 
-This is the quota-scoped query, so it is definitive for L-1216C47A: these two records are the
-complete requested-change history for the quota PR4c depended on.
+This is the quota-scoped output returned for L-1216C47A on 2026-08-20. It contains the two
+Service Quotas increase-request cases returned by the command. It is complete for that paginated
+command response; it is not an assertion that this API records decrease requests, every support
+exchange, or unlimited account history.
 
 nancy@NancyAlienware:~/projects/alloca-go$ aws service-quotas list-requested-service-quota-change-history-by-quota \
   --region eu-west-2 \

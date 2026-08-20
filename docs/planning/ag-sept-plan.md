@@ -205,13 +205,13 @@ recorded in [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
 
 **Closure, 2026-08-20:** a second retained `GetServiceQuota` capture, explicitly querying
 `eu-west-2` quota `L-1216C47A`, reported an applied value of **1 vCPU**, and EC2 enforced that value
-by refusing one `c5.large`. Earlier increase requests to 20 and 12 vCPUs had been declined, and a
-later 6-vCPU request was also declined and is **under appeal, awaiting a final decision** as at
-2026-08-20 — a pending outcome that does not reopen PR4c, since the environment did not exist during
-the milestone. The retained captures therefore show that the reported
-applied value fell from **5.0 to 1.0** between observations. **Why the applied value fell is unknown** and
-was deliberately not pursued further in AG-Sept. The 5-vCPU minimum topology could not be
-instantiated at execution time, so no measured cell ran.
+by refusing one `c5.large`. One 20-vCPU increase case was declined, appealed at 12 vCPUs, and
+declined again. A separate 6-vCPU case was immediately declined and appealed, with a final decision
+still pending as at 2026-08-20. That pending outcome does not reopen PR4c, since the environment did
+not exist during the milestone. The retained captures show that the reported applied value fell from
+**5.0 to 1.0** between observations. Evidence gathering after the provisioning stop retained the
+request histories and the complete earlier probe, but did not establish why the applied value fell.
+The 5-vCPU minimum topology could not be instantiated at execution time, so no measured cell ran.
 
 **Charge and return, Nancy's decision 2026-08-20:** PR4c is charged at **0.5 day actual** against
 its 1.0-day transfer, and the remaining **0.5 returns to contingency**. The half day covers the
@@ -623,9 +623,9 @@ conditional AWS deployment. PR2's measured result changed the order:
     `eu-west-2` quota `L-1216C47A` reported **1 vCPU**. EC2 refused one two-vCPU `c5.large`, so PR4c
     stopped before measurement and AG-Sept moved to closeout rather than redesigning around the
     account limit. The reported applied value fell from **5.0 to 1.0** between the observations;
-    why the applied value fell is unknown, and the account's own request history contains no
-    decrease. The earlier capture lacks only its exact date; both captures, the request history and
-    those limitations are retained in
+    why the applied value fell is unknown. The retained Service Quotas history documents the 20- and
+    6-vCPU increase cases but does not explain the fall. The earlier capture lacks only its exact
+    date; both captures, the request history and those limitations are retained in
     [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
 
 ### 6.3 The original AWS path remains withdrawn; independent capacity is post-AG-Sept

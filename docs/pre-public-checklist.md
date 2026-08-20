@@ -25,6 +25,12 @@ inspected in context.
       — inspect all hits; policy text itself may match.
 - [ ] Search for secrets or credentials: keys, tokens, connection strings, `.env`
       contents, AWS account IDs, private endpoints, and exported configuration.
+- [ ] Decide on account-specific cloud resource identifiers: VPC, subnet, instance and
+      security-group IDs, and their CIDR blocks. They are not secrets and identify nothing
+      without credentials, so this is a judgement rather than a removal rule — but decide it
+      deliberately. Known holding:
+      [`measurements/pr4c-quota/`](measurements/pr4c-quota/) retains default-VPC and
+      default-subnet IDs inside verbatim AWS CLI captures.
 - [ ] Confirm all workload data and scale numbers are synthetic, and no modelled
       assumption is presented as an observed fact about an external system.
 - [ ] Confirm every prior-work figure is reproducible in this repository or

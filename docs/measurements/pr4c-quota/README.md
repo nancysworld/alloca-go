@@ -22,6 +22,6 @@ of 1.0 refuses even a single non-burstable serving unit.
 ## Consequence
 
 PR4c produced no AWS measurement. `VAL-SCALE-5` remains unproven, and independently provisioned
-capacity evidence is post-AG-Sept work. The closure reasoning is owned by
-[`../../planning/ag-sept-pr4c.md`](../../planning/ag-sept-pr4c.md); this directory only holds the
-external fact it depends on.
+capacity evidence is post-AG-Sept work. The milestone status and budget are recorded in
+[`../../planning/ag-sept-plan.md`](../../planning/ag-sept-plan.md); this directory only holds the
+external fact they depend on.

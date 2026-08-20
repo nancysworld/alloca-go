@@ -1,0 +1,51 @@
+ALTERED CAPTURE. Every occurrence of the 12-digit AWS account identifier is replaced by
+<account-id> -- twice inside the escaped Requester string and once in QuotaArn, per record --
+under public-disclosure-policy.md. Nothing else is changed. Kept with a .txt extension because the
+file carries this header and is therefore no longer parseable JSON; the payload below is verbatim.
+
+This is the quota-scoped query, so it is definitive for L-1216C47A: these two records are the
+complete requested-change history for the quota PR4c depended on.
+
+nancy@NancyAlienware:~/projects/alloca-go$ aws service-quotas list-requested-service-quota-change-history-by-quota \
+  --region eu-west-2 \
+  --service-code ec2 \
+  --quota-code L-1216C47A \
+  --output json
+{
+    "RequestedQuotas": [
+        {
+            "Id": "3d3666c471b94098b130768f48cfbcf8VcGR0Nfb",
+            "CaseId": "178723066000473",
+            "ServiceCode": "ec2",
+            "ServiceName": "Amazon Elastic Compute Cloud (Amazon EC2)",
+            "QuotaCode": "L-1216C47A",
+            "QuotaName": "Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances",
+            "DesiredValue": 6.0,
+            "Status": "CASE_OPENED",
+            "Created": "2026-08-20T13:57:39.062000+01:00",
+            "LastUpdated": "2026-08-20T13:57:44.605000+01:00",
+            "Requester": "{\"accountId\":\"<account-id>\",\"callerArn\":\"arn:aws:iam::<account-id>:root\"}",
+            "QuotaArn": "arn:aws:servicequotas:eu-west-2:<account-id>:ec2/L-1216C47A",
+            "GlobalQuota": false,
+            "Unit": "None",
+            "QuotaRequestedAtLevel": "ACCOUNT"
+        },
+        {
+            "Id": "dd14da2910ce474b836e86f8305a760dWA4QrMDZ",
+            "CaseId": "178654858600135",
+            "ServiceCode": "ec2",
+            "ServiceName": "Amazon Elastic Compute Cloud (Amazon EC2)",
+            "QuotaCode": "L-1216C47A",
+            "QuotaName": "Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances",
+            "DesiredValue": 20.0,
+            "Status": "CASE_CLOSED",
+            "Created": "2026-08-12T16:28:58.669000+01:00",
+            "LastUpdated": "2026-08-14T22:36:19.430000+01:00",
+            "Requester": "{\"accountId\":\"<account-id>\",\"callerArn\":\"arn:aws:iam::<account-id>:root\"}",
+            "QuotaArn": "arn:aws:servicequotas:eu-west-2:<account-id>:ec2/L-1216C47A",
+            "GlobalQuota": false,
+            "Unit": "None",
+            "QuotaRequestedAtLevel": "ACCOUNT"
+        }
+    ]
+}

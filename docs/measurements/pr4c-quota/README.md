@@ -44,9 +44,17 @@ That is the fact PR4c's `STOP / DEFER` rests on: the bounded probe needed a 5-vC
   change history would show whether a grant expired, was reversed, or the account was adjusted; it
   is not captured (see below).
 
-## Still owed
+## Not captured, and deliberately not pursued
 
-These need credentials this session did not have. Run from a shell with a valid session:
+**Maintainer decision, 2026-08-20:** stop spending AG-Sept time on the AWS side. The two captures
+above are the record; the fuller ones below were not taken and are not owed. AG-Sept closes with the
+quota fact evidenced and its cause unexplained, which is sufficient for a closure that claims no AWS
+measurement.
+
+This is a stated stop, not a tech-debt item: there is no condition under which it becomes wrong, and
+no trigger to revisit it inside this milestone. If independently provisioned capacity is ever
+selected as post-AG-Sept work, external provisioning prerequisites get verified first and these are
+the commands for it:
 
 ```sh
 # Full unfiltered JSON: QuotaArn records region and quota identity in the artifact itself.
@@ -62,9 +70,9 @@ aws service-quotas list-requested-service-quota-change-history \
   > quota-change-history-$(date -u +%Y-%m-%dT%H%MZ).json
 ```
 
-**Capture the current state before the pending increase request is decided.** If it is granted, the
-1.0 applied value becomes as unrecoverable as the 5.0 reading now is, and the load-bearing half of
-this record would be permanently unretained.
+Should that ever happen, capture the applied value **before** any pending increase request is
+decided: once granted, the value observed at planning time becomes unrecoverable, which is exactly
+how the 5.0 reading came to have no artifact for a week.
 
 The `sed` filter redacts the 12-digit AWS account identifier from any ARN while preserving region and
 quota code, which is the part that carries evidentiary weight. It is applied under

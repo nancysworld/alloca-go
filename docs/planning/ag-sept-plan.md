@@ -45,13 +45,10 @@ AG-Sept's governing goal, its iteration history, and the currently open problem 
   Review in PR #17. The Phase 1 authority model is established as a correctness/composition result,
   not a capacity multiplier.
 - **Iteration C — shard-group capacity, with independent provisioning as the strongest evidence
-  layer.** PR4a qualified the method; PR4b ran the complete sustained G1/G2/G4 experiment on the
-  scheduler-partitioned workstation; PR4c refined and attempted to provision the smallest useful
-  independent AWS probe, then closed `STOP / DEFER` before any measured cell because the account's
-  applied Standard On-Demand quota was **1 vCPU** at execution time. The minimum bounded topology
-  required **5 vCPUs (2 + 2 + 1)** and EC2 refused even one selected two-vCPU `c5.large`.
-  **PR4c produced no AWS performance evidence, does not discharge `VAL-SCALE-5`, and derives no
-  `E2_aws`/`E4_aws`.** Any AWS capacity experiment is now unscheduled post-AG-Sept work.
+  layer.** PR4a qualified the method; PR4b ran the sustained local G1/G2/G4 experiment; PR4c
+  refined a bounded independent probe but stopped before measurement because the required AWS
+  environment could not be provisioned. **No AWS performance evidence exists and `VAL-SCALE-5`
+  remains unproven.** The PR4c outcome is owned by [`ag-sept-pr4c.md`](ag-sept-pr4c.md).
 
   **PR4b executed on 2026-08-19 and did not derive `E2_local`/`E4_local`.** `G4_local` resolved;
   `G1` and `G2` did not, and `G1_local` is the denominator of both efficiencies. The evidence
@@ -61,9 +58,8 @@ AG-Sept's governing goal, its iteration history, and the currently open problem 
   empirically justifies the independent-resource requirement while also warning that independent
   provisioning need not eliminate per-unit variance.
 
-The next scheduled work is therefore PR5: combine Iteration C Analyse & Review with the AG-Sept
-architecture/milestone conclusion, carrying the AWS result as **explicitly unproven due to external
-provisioning**, not as unfinished in-milestone execution.
+The next scheduled work is PR5: Iteration C Analyse & Review plus the AG-Sept architecture/milestone
+conclusion.
 
 | Workstream | Work unit | Status |
 |---|---|---|
@@ -75,9 +71,9 @@ provisioning**, not as unfinished in-milestone execution.
 | Iteration B Analyse & Review | review step, PR #17 | merged; Iteration B closed and Iteration C Problem selected |
 | Iteration C planning | PR #18 | complete in #18; closes Requirements → Design → Validation → Schedule |
 | Iteration C experiment preparation and measurement qualification | PR4a | merged #19; no canonical scaling result |
-| Iteration C local sustained capacity and scale characterisation | PR4b | merged #20; gate met on the "explicitly unresolved" branch. `G4_local` resolved, `G1`/`G2` unresolved, efficiencies withheld, `VAL-SCALE-6` **not discharged** |
-| Iteration C independently provisioned AWS probe | PR4c | **closed `STOP / DEFER` 2026-08-20; no measured AWS cell. Applied quota was 1 vCPU, below the 5-vCPU minimum topology** |
-| Iteration C A&R and AG-Sept conclusion | PR5 | not started; follows PR4b evidence plus PR4c's explicit external blocker |
+| Iteration C local sustained capacity and scale characterisation | PR4b | merged #20; `G4_local` resolved, `G1`/`G2` unresolved, efficiencies withheld, `VAL-SCALE-6` **not discharged** |
+| Iteration C independently provisioned AWS probe | PR4c | closed `STOP / DEFER`; no measured AWS cell; `VAL-SCALE-5` unproven |
+| Iteration C A&R and AG-Sept conclusion | PR5 | not started |
 
 Validation status is owned by the validation plan's own status table, not duplicated here.
 
@@ -96,31 +92,20 @@ granularity is false precision that invites its own overrun (Nancy's call, 2026-
 | Multi-authority correctness and failure-isolation evidence | PR3c | 1.5 | 1.5 | 0.0 | merged; originally 2.0, with 0.5 returned to contingency |
 | Iteration C planning | PR #18 | 0.5 | 0.5 | 0.0 | complete; hard planning cap met |
 | Iteration C method preparation and measurement qualification | PR4a | 4.0 | 4.0 | 0.0 | complete; consumed the whole former PR4a/PR4b envelope (§2.1.3) |
-| Iteration C local sustained capacity characterisation | PR4b | 1.0 | 1.0 | 0.0 | complete; funded by the 1.0-day contingency draw (§2.1.3). Gate met on the "explicitly unresolved" branch; no further draw |
-| Iteration C independent AWS probe | PR4c | **0.5** | **0.5** | **0.0** | closed `STOP / DEFER`; originally 1.0, with 0.5 returned to contingency (§2.1.4). Design, method correction, provisioning attempt and closeout; no measured AWS cell |
+| Iteration C local sustained capacity characterisation | PR4b | 1.0 | 1.0 | 0.0 | complete; funded by the 1.0-day contingency transfer (§2.1.3) |
+| Iteration C independent AWS probe | PR4c | **0.5** | **0.5** | **0.0** | closed `STOP / DEFER`; originally 1.0, with 0.5 returned (§2.1.4) |
 | Iteration C A&R and AG-Sept conclusion | PR5 | 1.5 | 0.0 | 1.5 | not started |
 | **Allocated development budget** | | **17.0** | **15.5** | **1.5** | |
-| Contingency | | **2.5** | **1.0** | **1.5** | **drawn:** 1.0 by §2.1.1. **Transferred out and now counted on their own rows:** 1.0 to PR4b (§2.1.3), 1.0 to PR4c (§2.1.4). **Returned in:** 0.5 from PR4c (§2.1.4) |
+| Contingency | | **2.5** | **1.0** | **1.5** | 1.0 direct spend; transfers to PR4b/PR4c are counted on their rows; 0.5 returned from PR4c |
 | **Total milestone budget** | | **19.5** | **16.5** | **3.0** | |
 
 **The numeric columns are the accounting source of truth:** `Allocated = Spent + Left` on every
 row. Completed work that returned unused allocation is shown at its current allocation; **Status**
 keeps the historical context, not the accounting.
 
-**Contingency moves in two different ways, and they touch different columns.** A **draw** spends
-contingency directly on work that has no work-unit row of its own, so it lands in this row's
-**Spent** — §2.1.1 is the only one. A **transfer** moves days out of contingency into a work unit:
-it reduces this row's **Allocated** and appears once as that unit's allocation, never as spend
-here. A unit that closes under its transferred allocation returns the difference the same way, and
-this row's **Allocated** rises again. Reading transfers as contingency spend is what makes the pool
-look overdrawn — 2.5 with three 1.0 movements against it is incoherent only under that reading.
-The milestone total is invariant under both operations: **19.5 days throughout**.
-
-PR4c is charged at **0.5 day against its 1.0-day transfer, returning 0.5 to contingency** (§2.1.4).
-The half day covered the bounded probe design, the review-driven method correction, the AWS
-provisioning attempt, quota verification and closeout. It bought no measured AWS cell because the
-external prerequisite failed before the environment could exist; that is a valid stop under the work
-unit's bounded scope, not an invitation to draw more time.
+A **draw** spends contingency directly on work with no work-unit row; a **transfer** moves days from
+contingency to a work-unit allocation and is not counted as contingency spend. Returned allocation
+moves back the same way. The milestone total remains **19.5 days**.
 
 A further **2–3 days** are reserved beyond the development budget for rerunning decisive
 experiments, validating negative controls, reviewing measurements and interpretations, correcting
@@ -129,8 +114,7 @@ repository for external readers. **Iteration B's Analyse & Review (#17) spent 0.
 reserve, leaving 1.5–2.5 days.**
 
 PR5's Iteration C A&R and milestone-conclusion work is funded by PR5's existing **1.5 development
-days**, not as another draw on that reserve. The remaining reserve stays available for review depth
-and the final pre-publication pass; it is not used to keep waiting for AWS quota.
+days**. The remaining reserve stays available for review depth and the final pre-publication pass.
 
 The time budget is a constraint, not an estimate to be expanded whenever a tool introduces
 incidental complexity.
@@ -147,13 +131,8 @@ evidence.
 
 **Every PR is funded at what its scope costs.** No PR carries a deliberate shortfall.
 
-PR4b and PR4c were both explicit evidence-driven transfers and are now closed. **1.5 days of
-contingency remain** — the 1.0 left after those transfers plus the 0.5 PR4c returned — and are not
-silently reserved for a future AWS campaign.
-
-**Contingency is not scope.** It is drawn on before §5's descope order. After the PR4b and PR4c
-transfers and PR4c's return, the contingency row is **2.5 total**: **1.0 is drawn** (§2.1.1) and
-**1.5 remains**.
+After the PR4b and PR4c transfers and PR4c's return, the contingency row is **2.5 total**:
+**1.0 spent** and **1.5 left**.
 
 Unspent contingency is not a licence to expand a PR. It returns to the reserve.
 
@@ -196,33 +175,12 @@ shared-write-path limit was established strongly enough to withhold the unsuppor
 
 ### 2.1.4 PR4c receives 1.0 day, closes on a quota blocker, and returns 0.5
 
-**Nancy's decision, 2026-08-19:** allocate **1.0 day from remaining contingency** to PR4c and start
-with the smallest useful independent-node experiment rather than the full retained capacity matrix.
-The initial plan used a retained AWS CLI `GetServiceQuota` capture reporting an applied **5-vCPU**
-Standard On-Demand quota value. The earlier table capture preserves the quota name and applied value
-together with its command line and Region, but not its exact date; the evidence and its provenance boundary are
-recorded in [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
+PR4c received a **1.0-day contingency transfer** for the bounded independent probe. Provisioning
+could not satisfy the probe's 5-vCPU minimum, so no measured cell ran; the external evidence is
+retained under [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
 
-**Closure, 2026-08-20:** a second retained `GetServiceQuota` capture, explicitly querying
-`eu-west-2` quota `L-1216C47A`, reported an applied value of **1 vCPU**, and EC2 enforced that value
-by refusing one `c5.large`. One 20-vCPU increase case was declined, appealed at 12 vCPUs, and
-declined again. A separate 6-vCPU case was immediately declined and appealed, with a final decision
-still pending as at 2026-08-20. That pending outcome does not reopen PR4c, since the environment did
-not exist during the milestone. The retained captures show that the reported applied value fell from
-**5.0 to 1.0** between observations. Evidence gathering after the provisioning stop retained the
-request histories and the complete earlier probe, but did not establish why the applied value fell.
-The 5-vCPU minimum topology could not be instantiated at execution time, so no measured cell ran.
-
-**Charge and return, Nancy's decision 2026-08-20:** PR4c is charged at **0.5 day actual** against
-its 1.0-day transfer, and the remaining **0.5 returns to contingency**. The half day covers the
-bounded probe design, the review-driven method correction, the provisioning attempt, quota
-verification and closeout — the AWS fight and the planning it forced were real work, and the
-measured cells that would have consumed the rest never became possible.
-
-This follows §2.1.2's rule rather than making an exception to it: a work unit that closes under its
-allocation returns the difference to contingency instead of carrying it into the next unit. No
-further contingency is drawn. The work unit closes `STOP / DEFER`; any future cloud experiment
-returns to post-AG-Sept planning rather than inheriting this allocation.
+PR4c is charged at **0.5 day actual** and returns **0.5 day** to contingency. It closes
+`STOP / DEFER`; any future cloud experiment is post-AG-Sept work and does not inherit this budget.
 
 ### 2.2 Review depth is the throughput control
 
@@ -276,43 +234,23 @@ demonstrated and the workstation's usefulness became clearer.
 
 ### 2.5 PR4 is re-cut as preparation → local evidence → bounded independent verification
 
-**Nancy's decisions, 2026-08-18 through 2026-08-20:** the PR boundary follows purpose rather than
-environment, and independent verification is never allowed to weaken its resource-separation
-requirement merely to fit an account quota.
-
-The workstation exposed enough CPU to exercise the complete G1/G2/G4 topology and was unmetered, so
-limiting it to a rehearsal would have thrown away useful controlled evidence. PR4b then established
-that the local G1 denominator varied materially because the shard groups still shared the host write
-path, both justifying independent provisioning and warning against assuming a cloud capacity unit
-would be variance-free.
-
-PR4c was therefore opened probe-first. Review refined that probe again before execution: the future
-paired comparison keeps **A/B fixed on CU1 and C/D fixed on CU2** both alone and composed, rather
-than halving each authority's working set only in the composed probe cell; and the shared generator
-host's physical headroom becomes an explicit admissibility condition in addition to independent
-worker streams.
-
-The intended boundary was:
+The PR boundary follows purpose rather than environment:
 
 ```text
 PR4a — prepare and qualify the experiment
 PR4b — execute and analyse the full sustained experiment locally
-PR4c — probe two independent AWS units separately and together
+PR4c — attempt a bounded independent-resource probe
 ```
 
-The third step was then externally blocked. A retained `GetServiceQuota` capture from planning
-reported an applied Standard On-Demand value of **5 vCPU**; its table output preserves the quota
-name/value together with its command line and Region, but not its exact date. On 2026-08-20 a second retained capture,
-explicitly querying `eu-west-2` quota `L-1216C47A`, reported **1 vCPU**, below even one selected
-two-vCPU capacity unit. The reported applied value therefore fell from **5.0 to 1.0** between the
-observations; why the applied value fell is unknown. The refined PR4c method is retained, but no workload
-implementation or measured AWS result is claimed. Evidence is in
-[`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
+PR4b established that the local denominator was limited by shared-write-path variation. PR4c then
+refined the independent probe method but stopped at provisioning. The reusable method is owned by
+[`../design/independent-capacity-probe.md`](../design/independent-capacity-probe.md) and
+[`../test/validation-plan/ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md);
+the provisioning evidence is owned by [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
 
-This does **not** weaken the Iteration C Problem or `REQ-SCALE-4`. Local scheduler partitioning and
-independent provisioning remain different evidence classes. The complete independently provisioned
-capacity question remains unresolved and moves out of AG-Sept rather than keeping the milestone
-open indefinitely.
+Local scheduler partitioning and independent provisioning remain different evidence classes. The
+complete independently provisioned capacity question therefore moves out of AG-Sept rather than
+keeping the milestone open.
 
 ## 3. PR sequence
 
@@ -407,44 +345,22 @@ result it depends on was not secured.
 
 ### PR4c — Bounded independently provisioned AWS probe — closed `STOP / DEFER`
 
-PR4c was intended to answer: **what does the first genuinely independent two-unit environment
-show?** It is charged at **0.5 day against its 1.0-day transfer** from §2.1.4 and closes with **no
-measured AWS cell**.
+**Actual 0.5 day against a 1.0-day transfer.** PR4c refined the bounded independent-unit method and
+attempted provisioning, but the 5-vCPU minimum environment could not be instantiated. No AWS
+performance cell ran and `VAL-SCALE-5` remains unproven.
 
-The planned minimum serving topology was:
+Outcome: [`ag-sept-pr4c.md`](ag-sept-pr4c.md). Design:
+[`../design/independent-capacity-probe.md`](../design/independent-capacity-probe.md). Validation:
+[`../test/validation-plan/ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md).
+Evidence: [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
 
-```text
-CU1                 2-vCPU equivalent non-burstable serving unit
-CU2                 2-vCPU equivalent non-burstable serving unit
-generator/monitor   separate 1-vCPU measurement compute
-```
-
-During planning, a retained AWS CLI `GetServiceQuota` capture reported an applied **5-vCPU** value
-for the relevant Standard On-Demand quota. The earlier table capture preserves the quota name and
-value together with its command line and Region, but not its exact date. On 2026-08-20 a second retained capture,
-explicitly querying `eu-west-2` quota `L-1216C47A`, reported **1 vCPU**, and EC2 refused one
-`c5.large` because that single instance requires two vCPUs. The retained captures show the reported
-applied value fell from **5.0 to 1.0** between observations; why the applied value fell is unknown. With the
-independent environment unable to exist, the probe stopped before bootstrap/load execution rather
-than collapsing resources onto one host or changing the serving-unit question. Evidence:
-[`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
-
-Review work before the stop improved the future method: keep A/B fixed on CU1 and C/D fixed on CU2
-both separately and together, use a distinct probe/unit-slice workload identity rather than
-weakening `WL-MUT-DISP-4`, compare per-unit retained Goodput as well as aggregate composition, and
-make generator **process + host** headroom an explicit evidence gate.
-
-Design: [`../design/independent-capacity-probe.md`](../design/independent-capacity-probe.md). Validation
-record: [`../test/validation-plan/ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md).
-
-**Gate:** `STOP / DEFER`. Record the quota blocker and failed provisioning attempt, retain no AWS
-performance number, leave `VAL-SCALE-5` unproven, and proceed to PR5. Future AWS work requires a
-new post-AG-Sept decision and prerequisite check.
+**Gate:** `STOP / DEFER`; proceed to PR5. Future AWS capacity work requires a new post-AG-Sept
+planning decision and prerequisite check.
 
 ### PR5 — Iteration C Analyse & Review + AG-Sept conclusion
 
-**Budget:** 1.5 development days, following PR4b's retained local evidence and PR4c's explicit
-external provisioning blocker.
+**Budget:** 1.5 development days, following PR4b's retained local evidence and PR4c's external
+provisioning blocker.
 
 PR5 consumes the strongest retained Iteration C evidence and closes both the final iteration and
 the AG-Sept milestone. It records the Analyse & Review outcome required by
@@ -481,16 +397,14 @@ The Iteration C closeout path is now:
 
 ```mermaid
 flowchart TD
-    A[PR4a: prepare + qualify method] --> B[PR4b: full local sustained G1/G2/G4 evidence]
-    B --> C[PR4c: refine independent probe + attempt AWS provisioning]
-    C --> D[Applied quota 1 vCPU: probe STOP / DEFER, no AWS result]
+    A[PR4a: prepare + qualify method] --> B[PR4b: local sustained evidence]
+    B --> C[PR4c: refine independent probe + attempt provisioning]
+    C --> D[Provisioning blocked: no AWS result]
     D --> E[PR5: Iteration C A&R + AG-Sept conclusion]
     E --> F[Pre-publication documentation pass]
     F --> G[Public release]
     G --> H[AG-Sept closed]
 ```
-
-A future AWS experiment may reuse the retained design, but it does not alter this closeout path.
 
 ## 4. Manifest and reconciliation staging
 
@@ -499,15 +413,12 @@ identity. PR4a extended the harness so conditioning, `workers_per_group`, per-gr
 measured-start baselines, fixed pool policy and the 600 s retained run shape are explicit and
 auditable. PR4b applied that machinery to every quoted local G1/G2/G4 point.
 
-PR4c produced **no run artifact** because provisioning failed before the independent environment
-existed. Its refined future method deliberately requires a distinct probe/unit-slice workload
-identity and generator-host headroom evidence; those are design requirements, not capabilities
-claimed as implemented by AG-Sept.
+PR4c produced **no run artifact or AWS reconciliation** because provisioning failed before a
+measured environment existed. Its refined future method is design/validation only.
 
 Reconciliation: PR1 established the single-authority self-check; PR3b extended it to multiple
 authorities; PR3c exercised it against deliberate failure. PR4a added the conditioning/measurement/
-resolution population boundary; PR4b exercised it on the full local sustained result. No AWS
-reconciliation exists because no AWS measured cell ran.
+resolution population boundary; PR4b exercised it on the full local sustained result.
 
 **Quotability target:** provenance level and validation meaning remain separate. No external
 project-level independent-capacity claim follows until the governing validation/evidence gates for
@@ -530,7 +441,7 @@ For Iteration C the mandatory path remains independent of successful AWS capacit
 - correctness/reconciliation and provenance/resource evidence required for every quoted result;
 - `VAL-SCALE-5` explicitly unproven because the complete independent Tier-1 family did not run.
 
-PR4c is now closed at provisioning. Successful AWS capacity measurement remains outside the P0
+PR4c is closed at provisioning. Successful AWS capacity measurement remains outside the P0
 completion gate. The older service-replica VAL-SCALE-1/2 path is not Iteration C scope.
 
 ### 5.2 P1 — strongly desirable
@@ -542,9 +453,8 @@ completion gate. The older service-replica VAL-SCALE-1/2 path is not Iteration C
 - polished charts beyond the minimum needed to communicate the result;
 - extra diagnostic reruns requested by A&R.
 
-The former PR4c AWS opportunity is no longer an AG-Sept P1 item; it is a post-milestone candidate.
-Capacity/resource economics is likewise unscheduled unless a future kickoff selects it as part of a
-new Goal or Problem.
+The former PR4c AWS opportunity is now a post-milestone candidate. Capacity/resource economics is
+likewise unscheduled unless a future kickoff selects it as part of a new Goal or Problem.
 
 ### 5.3 P2 — only after decisive evidence
 
@@ -560,14 +470,11 @@ EKS; RDS; Kubernetes; a service mesh; autoscaling; a broker solely to claim even
 architecture; complete production authentication/authorization; eliminating hot-authority
 serialization; and reproducing a full commercial workload.
 
-Independent AWS capacity measurement is now also **deferred beyond AG-Sept**. The retained PR4c
-design is a future experiment candidate only; no cloud-production conclusion follows from the
-failed provisioning attempt.
+Independent AWS capacity measurement is also deferred beyond AG-Sept. The retained PR4c design is
+a future experiment candidate only; no cloud-production conclusion follows from the provisioning
+stop.
 
 ### 5.5 Descope order
-
-PR4c has already taken the strongest descope action available: **stop before weakening the experiment
-when the required independent environment cannot be provisioned**.
 
 If time slips in the remaining closeout, remove work in this order:
 
@@ -609,24 +516,12 @@ conditional AWS deployment. PR2's measured result changed the order:
 6. that rehearsal proved unusually valuable, exposed and ultimately root-caused a benchmark-induced
    cached-plan regime, while the workstation itself proved large enough to exercise the full
    topology family;
-7. AWS quota-increase requests were declined on the new account, making AWS a weaker immediate
-   execution environment than the unmetered workstation even though it remained the stronger
-   **evidence class** for independent resource envelopes;
-8. on 2026-08-18 the work was therefore re-cut by purpose: PR4a qualifies, PR4b measures locally,
-   and PR4c independently verifies only if useful;
-9. PR4b then measured the local shared-write-path limitation directly enough to withhold the
-   efficiencies, while its identical G1 control showed that independent provisioning should not be
-   assumed variance-free. PR4c was therefore opened probe-first;
-10. review refined that probe to fixed per-unit A/B and C/D workload slices and explicit generator-
-    host headroom. A retained planning `GetServiceQuota` capture reported an applied Standard
-    On-Demand value of **5 vCPU**; on 2026-08-20 a second retained capture explicitly querying
-    `eu-west-2` quota `L-1216C47A` reported **1 vCPU**. EC2 refused one two-vCPU `c5.large`, so PR4c
-    stopped before measurement and AG-Sept moved to closeout rather than redesigning around the
-    account limit. The reported applied value fell from **5.0 to 1.0** between the observations;
-    why the applied value fell is unknown. The retained Service Quotas history documents the 20- and
-    6-vCPU increase cases but does not explain the fall. The earlier capture lacks only its exact
-    date; both captures, the request history and those limitations are retained in
-    [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
+7. AWS quota constraints made the cloud environment unavailable for the planned independent probe;
+8. the work was therefore re-cut by purpose: PR4a qualifies, PR4b measures locally, and PR4c probes
+   independent resources only if useful;
+9. PR4b established the local shared-write-path limitation strongly enough to withhold unsupported
+   efficiencies;
+10. PR4c refined the bounded independent probe, but provisioning blocked it before measurement.
 
 ### 6.3 The original AWS path remains withdrawn; independent capacity is post-AG-Sept
 
@@ -697,9 +592,7 @@ Before PR5 can close Iteration C and judge the AG-Sept Goal:
 - PR4a has qualified the reusable method and run primitives defined by the validation plan;
 - PR4b has executed the full local G1/G2/G4 S/H + confirmation method and retained the explicit
   unresolved `VAL-SCALE-6` verdict without manufacturing `E2_local`/`E4_local`;
-- PR4c has **explicitly refused execution at provisioning** because the independent environment
-  could not be instantiated under the 1-vCPU applied quota, and has retained no synthetic or
-  partial AWS result as a substitute;
+- PR4c stopped before measurement because the independent environment could not be provisioned;
 - `VAL-SCALE-5` remains explicitly unproven because a complete independent validation did not run;
 - response validation, conditioning-aware reconciliation, provenance and applicable resource
   controls are demonstrated for every result actually quoted;
@@ -708,11 +601,9 @@ Before PR5 can close Iteration C and judge the AG-Sept Goal:
 - architecture reflects evidence rather than desired presentation;
 - the repository remains suitable for public review under the disclosure policy.
 
-**Successful AWS capacity measurement is not an Iteration C exit gate.** PR4b's complete local
-characterisation remains the mandatory capacity-characterisation path. PR4c demonstrates the other
-valid branch: when the stronger independent environment cannot be provisioned, record the blocker
-and leave the stronger claim unproven rather than weakening the experiment or keeping the milestone
-open indefinitely.
+**Successful AWS capacity measurement is not an Iteration C exit gate.** When the stronger
+independent environment cannot be provisioned, record the blocker and leave the stronger claim
+unproven rather than weakening the experiment or keeping the milestone open indefinitely.
 
 PR5 then records the required Analyse & Review outcome and closes the **AG-Sept** engineering loop.
 It does not start the next Alloca iteration. Any continuation after AG-Sept begins with a separate

@@ -1,49 +1,37 @@
 # Independent capacity-unit probe
 
-**Status:** Proposed — PR4c bounded probe design for Iteration C.  
-**Scope:** the smallest independently provisioned AWS experiment that can discriminate resource
-coupling from per-unit/environment variance before AG-Sept closes this line of investigation.  
+**Status:** Deferred — refined during PR4c, not executed in AG-Sept.  
+**Scope:** smallest independently provisioned experiment that can distinguish capacity-unit
+composition from shared-resource coupling without changing each unit's own workload/state envelope.  
 **Requirements:** `REQ-SCALE-4`, `REQ-EVID-1`, `REQ-EVID-2` in
 [`../requirements/system-requirements.md`](../requirements/system-requirements.md).  
 **Umbrella design:** [`horizontal-scaling.md`](horizontal-scaling.md) §12 and
 [`deployment-architecture.md`](deployment-architecture.md) §13.  
 **Validation:** [`../test/validation-plan/ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md).
 
-This document owns the **probe-specific architecture** only. It does not redefine the full Tier-1
-G1/G2/G4 capacity method, the meaning of `VAL-SCALE-5`, the milestone budget, or AWS as a production
-target.
+This document owns the **probe-specific architecture** only. It does not redefine the complete
+Tier-1 G1/G2/G4 capacity method or the meaning of `VAL-SCALE-5`.
 
 ## 1. Why the probe exists
 
-PR4b answered the local question more usefully than expected: the scheduler-partitioned workstation
-could run the complete topology family, but its shard groups still shared one host write path. G1
-then reproduced poorly while G4 drove the shared device differently, so changing topology also
-changed how the common storage resource was exercised. The local experiment therefore could not
-separate shard-group composition from shared-environment behaviour strongly enough to derive the
-intended efficiencies.
+PR4b ran the complete local G1/G2/G4 method on a scheduler-partitioned workstation. It established
+`G4_local` but withheld `G1_local`, `G2_local`, `E2_local` and `E4_local` because the shared local
+write path made the denominator insufficiently reproducible. That is evidence for the need to add
+**independent serving resource envelopes**, not evidence for any particular cloud efficiency.
 
-That finding justifies independent provisioning, but it does **not** imply that an independent AWS
-capacity unit will be stable. Independence removes resource **coupling** between capacity units; it
-does not remove run-to-run variance inside one unit. A cloud unit could still vary materially from
-one run to the next, and four independent units would not make a noisy denominator precise by
-construction.
+A first AWS experiment was therefore deliberately bounded to two equivalent capacity units measured
+separately and together. Review then exposed a methodological problem in its original placement:
+G1 placed A/B/C/D behind one authority while G2 placed only A/B or C/D behind each authority, so the
+per-authority working set halved at the same time the second resource envelope was added. A
+write-path/working-set-sensitive result could therefore look super-linear for reasons unrelated to
+capacity-unit composition.
 
-PR4c therefore asks one cheap discriminating question instead of assuming a full capacity matrix is
-justified:
+The refined probe removes that confound by fixing the workload/state envelope **per unit**.
 
-> When the same two capacity-unit designs are measured separately and then composed, does G2
-> deliver an aggregate signal that is intelligible relative to what those same units delivered
-> alone, and how much unit/environment variation is already visible?
+## 2. Probe topology
 
-The result completes PR4c. If it makes a fuller experiment look worthwhile, that experiment is a
-**post-AG-Sept candidate**, not a continuation implicitly created by this design.
-
-## 2. Probe topology and naming
-
-The smallest useful topology is two equivalent capacity-unit hosts plus generator/measurement
-compute outside both units. Capacity units use **numeric `CU*` identities** while organisations keep
-the established **letter identities A/B/C/D**. The namespaces are deliberately distinct so topology
-notation cannot be confused with organisation placement.
+The serving topology is two equivalent capacity-unit hosts plus separate generator/measurement
+compute:
 
 ```text
                  generator / measurement host
@@ -57,174 +45,137 @@ notation cannot be confused with organisation placement.
              +-------------+      +-------------+
 ```
 
-Each capacity unit is one EC2 instance containing exactly one Alloca-Go service replica and one
-PostgreSQL authority, matching `deployment-architecture.md` §13.1. The generator/monitor host is a
-third instance and is never counted as serving capacity.
+One capacity unit is one independently provisioned shard group: one Alloca-Go service replica, one
+PostgreSQL authority and its own serving storage/resource envelope. The generator is measurement
+infrastructure and is never counted as serving capacity.
 
-The current account's small Standard On-Demand allowance is sufficient in principle for a **2 + 2 +
-1 vCPU shape**: two equivalent two-vCPU serving units and one one-vCPU measurement unit, if the
-selected instance families fit the account quota. That is an implementation constraint, not a
-durable instance-type choice. The capacity units should use a non-burstable shape when the quota
-allows it; the generator may be a small/burstable instance because it is measurement infrastructure
-whose headroom is observed directly.
+Equivalent serving units must use the same intended instance/resource shape, storage class and
+configuration, service image, PostgreSQL/schema configuration, pool policy and timeout policy.
+They need not be the same physical host.
 
-At that serving-unit shape, a complete G4 environment would require four two-vCPU capacity units plus
-separate generator compute — approximately **9 vCPU or more** before any generator resize. The
-current **5-vCPU allowance therefore cannot provision the complete Tier-1 family**. A strong PR4c
-result does not remove that external boundary; a future G4 experiment must wait for sufficient quota
-and a separate post-AG-Sept planning decision.
+Capacity units should be non-burstable for the measurement. A burstable generator is acceptable
+only when its headroom and credit state are observed directly and it is configured so credit
+exhaustion cannot silently throttle later cells.
 
-If the quota cannot instantiate two equivalent serving units plus separate generator compute, the
-probe does not collapse them onto one host. That would recreate the resource-coupling question it
-exists to remove.
+## 3. Fixed per-unit workload slices
 
-## 3. What "independent" means here
-
-The two serving units must have no intentionally shared serving resource envelope:
-
-- separate EC2 instances;
-- separate kernels and CPU/memory allocations;
-- separate PostgreSQL processes and database filesystems;
-- separate EBS volume allocations/paths for the storage used by each unit;
-- no shared Docker volume, host filesystem, or PostgreSQL writer;
-- no generator/Prometheus process on either serving unit.
-
-The two units may still share AWS provider infrastructure such as an Availability Zone, network
-fabric, or underlying storage fleet. This experiment does not claim physical isolation from the
-cloud provider. Those provider layers are part of the recorded environment and are bounded through
-per-host evidence when they become plausible explanations.
-
-The storage **shape** must be equivalent across CU1 and CU2: same volume class, size and any explicit
-IOPS/throughput configuration. Whether PostgreSQL uses a dedicated data volume or the instance's own
-root-volume set is an implementation choice for PR4c, but the choice must be identical for CU1 and
-CU2 and each unit's storage allocation must remain separate.
-
-## 4. Use the same two units separately, then together
-
-PR4c deliberately reuses the same physical AWS instances rather than comparing G2 with an arbitrary
-third host.
-
-The three measured probes are:
+The refined comparison keeps four total synthetic organisations but divides them into two equivalent
+capacity-unit slices:
 
 ```text
-G1-CU1        CU1 alone; one authority owns organisations A/B/C/D
-G1-CU2        CU2 alone; one authority owns organisations A/B/C/D
-G2-CU1+CU2    CU1 owns organisations A/B; CU2 owns C/D
+slice U1 = A/B
+slice U2 = C/D
+
+G1-CU1        CU1 carries U1 (A/B)
+G1-CU2        CU2 carries U2 (C/D)
+G2-CU1+CU2    CU1 still carries U1; CU2 still carries U2
 ```
 
-`G1-CU1` and `G1-CU2` are two observations of the **capacity-unit design on two independent units**,
-not two repeated runs of one host. `G2-CU1+CU2` then composes exactly those two units. Placement is
-reset between cells; persisted state is not carried from one topology into another.
+A/B/C/D are deliberately equivalent populations. Their names distinguish routing and evidence only.
+The comparison therefore asks whether the **same unit workload** changes when another equivalent
+unit is present.
 
-This paired shape answers a stronger diagnostic question than `G2 / (2 x one arbitrary G1)` because
-one unusually fast or slow baseline host cannot silently become the denominator for both units.
+This is a weak-scaling/composition diagnostic: adding CU2 adds both one serving resource envelope
+and one equivalent workload slice. It is not the fixed-total-dataset strong-scaling-style comparison
+used by the local `WL-MUT-DISP-4` G1/G2/G4 matrix.
 
-It does **not** change the canonical Tier-1 definition. The probe can reveal what a future independent-
-capacity experiment would need — for example more per-unit baseline replication — without scheduling
-or funding that experiment inside AG-Sept.
+That distinction is intentional. The two experiments answer different questions and their derived
+ratios must not be treated as interchangeable.
 
-## 5. Probe workload and run shape
+## 4. Workload identity
 
-PR4c reuses the qualified Iteration C semantics so the only intentional architecture change is the
-resource envelope:
+The existing `WL-MUT-DISP-4` workload intentionally fixes the exact global A/B/C/D population across
+its topology comparison. The unit-slice probe has different semantics because only U1 is active in
+`G1-CU1`, only U2 in `G1-CU2`, and both in G2.
 
-- workload: `WL-MUT-DISP-4`;
-- one service replica + one PostgreSQL authority per active shard group;
-- independent `workers_per_group` streams;
-- same service image, PostgreSQL version/configuration, timeout policy and placement semantics;
-- `pool_max_conns=8` as the qualified local starting policy;
-- explicit state-based conditioning followed by the state-preserving service/pool recycle;
-- the same fixture/state accounting and reconciliation rules as PR4a/PR4b;
-- no Grafana/query workload during a measured interval.
+A future implementation must therefore use a **distinct probe/unit-slice workload identity or
+family** and retain each slice's participants in the run manifest. Do not weaken or overload
+`WL-MUT-DISP-4` to accept different participant sets under the same name.
 
-The probe is intentionally **short and non-canonical**. Validation fixes a 120 s measured window and
-one common probe level `P`, initially `workers_per_group=12` from the local common bracket. The three
-cells must use the same `P`; otherwise the derived composition ratio would mix topology with demand.
+The request mechanics may be factored internally with the existing workload, but the externally
+retained workload identity must preserve the semantic distinction.
 
-`pool_max_conns=8` and `P=12` are inherited starting points, not claims that AWS has the same
-frontier as the workstation. If the first AWS evidence shows either parameter is an obvious
-measurement limiter, PR4c may be re-driven once after the reason is recorded if that discriminating
-repeat fits the existing bounded scope. It does not silently turn into a tuning matrix.
+## 5. Generator independence
 
-## 6. Evidence retained per unit
+Independent per-group demand has two layers:
 
-Every interpreted probe keeps the same evidence classes needed to distinguish a server result from
-an environment result:
+1. **logical/scheduling independence** — one fixed worker pool, sequence and response collector per
+   capacity unit, so a slow CU2 request cannot consume CU1's worker budget;
+2. **physical measurement headroom** — those streams share one generator process/host, so a G2 cell
+   is invalid if that shared measurement resource becomes a plausible limiter.
 
-- run manifest, source revision, deployed image identity and placement assignment;
-- EC2 instance shape, vCPU count and memory allocation;
-- storage class/configuration and the fact that CU1/CU2 use separate allocations;
-- host CPU, memory, disk throughput/utilisation/queueing and network counters for each serving unit;
-- service/runtime, pool and PostgreSQL panels per authority;
-- conditioning boundary and start/end persisted-state evidence;
-- generator CPU/network/resource evidence and request accounting;
-- clock-synchronisation evidence sufficient to align the measured window;
-- final per-authority reconciliation.
+A future probe therefore retains generator process CPU as actual **cores consumed**, whole-host CPU
+busy/run queue/steal or iowait/memory/network evidence, and per-stream Goodput/outcome/latency
+accounting. The generator's resource envelope must have demonstrable headroom at G2.
 
-Account identifiers, credentials, private keys and other secret/private cloud values are not part of
-reproducibility and are not committed.
+If a T-family generator is used, measured cells should use Unlimited credit mode and retain the
+credit/surplus state needed to show that run order did not introduce throttling. This requirement is
+for the measurement apparatus; capacity units themselves remain non-burstable for the comparison.
 
-## 7. Probe outputs
+## 6. Starting-state equivalence
 
-For the common probe level `P`, report the three full-window fresh-mutation Goodput observations:
+For each capacity unit, the individual and composed cells must begin from the same declared logical
+state:
+
+- same organisations in the slice;
+- same slots per organisation and slot capacity;
+- same conditioning target per organisation;
+- same pool/service/PostgreSQL configuration;
+- same worker count and measured horizon;
+- fresh reset/reseed/conditioning and state-preserving service/pool recycle before measurement.
+
+Because the original design failed specifically on a working-set confound, a future execution also
+retains pre-measurement per-unit row/state and table/index-volume evidence sufficient to verify that
+the intended fixed-per-unit start state was achieved. Physical byte counts are evidence, not an
+arbitrary pass threshold; a material unexplained mismatch is investigated before interpretation.
+
+State growth during the measured interval is an outcome/mechanism of the run, not a reason to force
+its end state to match a slower unit.
+
+## 7. Diagnostic outputs
+
+At one common probe level `P`, retain:
 
 ```text
-g1_CU1(P)
-g1_CU2(P)
-g2_CU1_CU2(P)
+g1_CU1_AB
+g1_CU2_CD
+g2_CU1_AB
+g2_CU2_CD
+g2_total
 ```
 
-Report the two-unit baseline difference explicitly as the symmetric relative spread:
+and derive:
 
 ```text
-D_unit_probe = |g1_CU1 - g1_CU2| / mean(g1_CU1, g1_CU2)
+R_CU1 = g2_CU1_AB / g1_CU1_AB
+R_CU2 = g2_CU2_CD / g1_CU2_CD
+R2_probe = g2_total / (g1_CU1_AB + g1_CU2_CD)
 ```
 
-and derive the paired composition ratio:
+The per-unit retention ratios are primary because they expose asymmetric composition effects that
+an aggregate ratio can hide.
 
-```text
-R2_probe = g2_CU1_CU2(P) / (g1_CU1(P) + g1_CU2(P))
-```
+The difference between `g1_CU1_AB` and `g1_CU2_CD` is also retained as a baseline/unit observation,
+but one reading of each is not a statistically established noise range or confidence interval.
 
-`D_unit_probe` describes only the observed difference between CU1 and CU2 in this pass. It is not a
-run-to-run variance estimate or confidence interval.
+The intended hypothesis is qualitative: composition should introduce **no material observed per-unit
+change beyond the unit/environment variation visible in the bounded probe**. There is no preselected
+pass percentage.
 
-`R2_probe` is **diagnostic only**. It is not `E2_aws`, does not establish saturation, does not
-establish a capacity multiplier, and cannot discharge `VAL-SCALE-5`. The raw per-unit values are
-reported beside it so the ratio cannot hide a noisy or asymmetric denominator.
+`R2_probe` is diagnostic only. It is not `E2_aws`, does not establish saturation, and cannot
+discharge `VAL-SCALE-5`.
 
-Where possible, also retain G2's per-authority contribution so an aggregate that looks reasonable
-cannot hide one constrained unit behind another.
+## 8. AG-Sept execution outcome
 
-## 8. There is no precision target for the probe
+PR4c attempted to provision the bounded AWS environment after earlier retained CLI evidence had
+shown a 5-vCPU Standard On-Demand quota in `eu-west-2`. At execution time the same applied quota was
+1 vCPU, and EC2 refused one selected two-vCPU `c5.large`. The minimum bounded topology required
+2 + 2 + 1 = 5 vCPUs. Quota-increase requests were declined.
 
-PR4b demonstrated why precision must not be assumed from one environment. PR4c therefore has no
-5%, 10%, or other pass threshold for `D_unit_probe` or `R2_probe`.
+The environment therefore never existed and **no probe cell ran**. This is an external account/
+provisioning limitation, not an architecture result and not a Tier-2 condition.
 
-The decision is architectural and prospective:
-
-- **clear composition signal + intelligible CU1/CU2 behaviour** → carry the fuller independent-
-  capacity question forward as a possible **post-AG-Sept** experiment;
-- **large CU1/CU2 variation** → record that a future method would first need repeated baselines or a
-  better-controlled AWS resource shape; do not manufacture precision by averaging an unplanned
-  population;
-- **G2 materially below what CU1+CU2 suggest** → inspect per-unit resource and workload evidence
-  before deciding what limitation PR4c actually established;
-- **generator/provenance/reconciliation failure** → the probe is uninterpretable, regardless of its
-  throughput number.
-
-A single ambiguous result permits at most a bounded hypothesis-driven follow-up inside the existing
-PR4c budget. It does not automatically launch the complete Tier-1 matrix.
-
-## 9. Relationship to Tier 1 and AG-Sept closure
-
-The full independent-capacity claim remains exactly where the existing architecture and validation
-plan put it: a complete equivalent G1/G2/G4 environment with the retained capacity method,
-reproducibility gates, resource-envelope control and independent generator compute.
-
-PR4c is **AG-Sept's bounded independent-provisioning probe**, not an in-milestone gateway to Tier 1.
-The current quota cannot provision the complete G4 environment at the selected capacity-unit shape,
-and AG-Sept is already at its closeout boundary. A positive probe result therefore means only that
-the fuller capacity question is worth carrying into future planning after AG-Sept. `VAL-SCALE-5`
-remains explicitly unproven in this milestone unless circumstances and an explicit new milestone
-decision change before closeout; PR4c itself never discharges it.
+AG-Sept consequently closes without independent AWS capacity evidence. `VAL-SCALE-5` remains
+unproven. If this experiment is selected after the milestone, external quota/instance prerequisites
+must be verified first and the work begins from the refined design above rather than from the
+superseded fixed-total-dataset probe shape.

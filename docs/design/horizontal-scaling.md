@@ -316,17 +316,19 @@ not become precise merely because `G2` or `G4` uses independent hosts. Evidence 
 variation exists at the unit level, then decide whether the intended comparison can resolve the
 architecture signal at the claimed precision.
 
-A useful pre-capacity diagnostic may therefore measure several equivalent units **individually**
-before composing those same units. For two units `CU1` and `CU2` at one common probe load, comparing
-`g2_CU1_CU2` with `g1_CU1 + g1_CU2` asks whether the actual provisioned units compose roughly in line
-with what they each demonstrated separately. That paired diagnostic controls one source of arbitrary
-baseline selection, but it is not itself a capacity efficiency: saturation, repetition and the
-measurement contract's capacity gates still belong to the full validation method.
+A useful pre-capacity diagnostic may therefore measure equivalent units **individually** before
+composing those same units, while keeping each unit's own workload/state envelope unchanged. For two
+units `CU1` and `CU2`, the paired diagnostic asks whether each unit's Goodput changes when the other
+unit is present and whether the aggregate remains commensurate with the sum of their individual
+observations. That controls both arbitrary baseline selection and the working-set confound that
+would arise if a unit carried fewer organisations only in the composed topology.
 
-The current Iteration C probe design is
-[`independent-capacity-probe.md`](independent-capacity-probe.md). Its result may identify what a
-future capacity experiment would need, but that experiment is not implicitly scheduled inside
-AG-Sept; a positive probe result is carried into post-milestone planning.
+The deferred PR4c design in
+[`independent-capacity-probe.md`](independent-capacity-probe.md) uses fixed A/B and C/D unit slices
+for this purpose and treats generator host headroom as a separate admissibility condition. PR4c did
+**not** execute the probe because the AWS account's applied Standard On-Demand quota was 1 vCPU at
+provisioning time. The design remains a possible post-AG-Sept experiment; no AWS capacity evidence
+was produced in the milestone.
 
 ## 13. Workload and placement envelope
 
@@ -341,8 +343,7 @@ is mapped to 1, 2, or more shard groups for a particular experiment.
 For the current dispersed mutation question, the important architectural property is that the
 participating organisations are independent: moving `org-a` to a different shard group from
 `org-b` must not introduce a new correctness dependency between them. The experiment may then vary
-placement while retaining the same workload semantics and compare whether independent writable
-resource envelopes add useful capacity.
+placement while retaining the workload semantics that its own workload identity declares.
 
 The resulting per-group envelope must state enough context to make the result reusable: workload
 identity, organisation distribution, service/database resource shape, connection budget, and the
@@ -370,14 +371,16 @@ requirements, and evidence that justify them.
 
 The concrete AG-Sept validations for this architecture are owned by
 [`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md).
-For Iteration C that plan selects `WL-MUT-DISP-4` and fixes the 1/2/4-shard-group comparison needed
-to obtain `G1`, `G2`, `G4`, their derived efficiencies, and the limiting-resource evidence.
+For Iteration C that plan selected `WL-MUT-DISP-4` and the local 1/2/4-shard-group comparison needed
+to attempt `G1`, `G2`, `G4`, their derived efficiencies, and limiting-resource evidence.
 
-PR4c adds the bounded independent-unit diagnostic defined by
+PR4c separately refined a bounded independent-unit diagnostic in
 [`../test/validation-plan/ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md).
-The diagnostic closes AG-Sept's independent-provisioning probe at the strongest evidence supported by
-the current quota; it does not substitute for the complete `VAL-SCALE-5` family. A fuller G1/G2/G4
-experiment, if later selected, belongs to post-AG-Sept planning once sufficient quota is available.
+That diagnostic was **not executed**: the applied AWS quota at provisioning time could not
+instantiate even one selected two-vCPU capacity unit. It therefore contributes design/methodology
+only, not measured evidence, and does not substitute for `VAL-SCALE-5`. A fuller independent
+G1/G2/G4 experiment—or the paired diagnostic itself—belongs to post-AG-Sept planning if later
+selected and if external provisioning prerequisites are first verified.
 
 Earlier validation meanings for service-replica scaling, connection-budget controls,
 multi-authority correctness, routing/refusal, and failure isolation remain valid where cited; they

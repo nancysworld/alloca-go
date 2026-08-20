@@ -1,182 +1,92 @@
-# AG-Sept PR4c — probe-first AWS independent verification
+# AG-Sept PR4c — bounded AWS independent verification
 
-**Status:** Scheduled — bounded AWS independent-capacity probe.  
+**Status:** Closed — `STOP / DEFER`, 2026-08-20; AWS measurement did not start.  
 **Milestone:** AG-Sept, Iteration C.  
 **Predecessor:** PR4b (#20), merged 2026-08-19.  
-**Budget:** **1.0 development day**, transferred from AG-Sept contingency by maintainer decision on
-2026-08-19.  
+**Budget:** **1.0 development day**, transferred from AG-Sept contingency on 2026-08-19; closed within that allocation.  
 **Design:** [`../design/independent-capacity-probe.md`](../design/independent-capacity-probe.md).  
 **Validation:** [`../test/validation-plan/ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md).  
 **Milestone schedule/budget owner:** [`ag-sept-plan.md`](ag-sept-plan.md).
 
-This is the focused PR4c execution plan. It does not replace the milestone plan's accounting or the
-governing `VAL-SCALE-5` definition. PR4c is **the bounded AWS probe described here**; no subsequent
-phase, larger matrix, or additional contingency draw is scheduled by implication.
+PR4c was the bounded attempt to obtain genuinely independent shard-group evidence before AG-Sept
+closeout. It produced **no AWS performance result**. The experiment was stopped at provisioning
+because the account could no longer instantiate even one selected two-vCPU capacity unit.
 
-Capacity units use numeric identities **CU1/CU2**. Organisations retain **A/B/C/D**. This distinction
-is carried through probe names, placement, manifests and reports.
+## 1. What happened
 
-## 1. Why PR4c changed shape
+Earlier retained AWS CLI evidence for `eu-west-2` showed the applied
+`Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances` quota at **5 vCPU**. PR4c was
+therefore deliberately reduced to a minimum **2 + 2 + 1 vCPU** topology: two equivalent two-vCPU
+serving units plus separate one-vCPU generator/measurement compute.
 
-PR4b was originally expected to be only a local rehearsal before AWS. It did more than that: the
-complete local method ran, but the shared workstation write path materially affected the result and
-G1 did not reproduce at the experiment's required resolution. The local environment therefore
-answered the question that decides the next step: scheduler partitioning is not equivalent to
-independently growing capacity-unit resource envelopes.
+At execution time on 2026-08-20 the same applied quota was **1 vCPU**. EC2 independently enforced
+that value by refusing the launch of a single `c5.large` because that instance alone requires two
+vCPUs. Earlier requests to increase the quota to 20 and then 12 vCPUs had been declined; a later
+request for 6 vCPUs was also declined.
 
-That points directly to AWS, but not directly to a long G1/G2/G4 campaign. PR4b also showed that an
-individual capacity-unit observation can vary substantially. AWS removes cross-unit resource
-coupling; it does not guarantee low run-to-run variance.
+This is an **external provisioning/account constraint**, not evidence about Alloca-Go capacity or
+architecture. No throughput, scale-efficiency, or independent-composition conclusion is inferred
+from the failed launch.
 
-PR4c therefore follows an evidence-first sequence:
+## 2. Why AG-Sept stops here
 
-```text
-small independent G1/G2 probe
-        |
-        v
-first result + environment evidence
-        |
-        +--> enough to conclude / defer
-        +--> one bounded discriminating repeat, only if a specific ambiguity demands it
-        +--> carry a fuller experiment forward as a post-AG-Sept candidate
-```
+The experiment exists to compare **independently growing serving resource envelopes**. Shrinking the
+serving units, collapsing them onto one host, switching to a materially different topology, or
+using a partial single-unit run merely to fit a 1-vCPU quota would answer a different question.
 
-The probe result completes PR4c. **No fuller AWS campaign is currently planned inside AG-Sept.**
+Successful AWS capacity measurement was already not an Iteration C exit gate. PR4b delivered the
+strongest local evidence available and correctly withheld unsupported `G1_local`, `G2_local`,
+`E2_local`, and `E4_local`; `VAL-SCALE-5` remains explicitly unproven. The milestone therefore moves
+to PR5 Analyse & Review / architecture conclusion rather than waiting indefinitely on an external
+quota decision.
 
-## 2. The scheduled experiment
+Any future AWS execution is a **post-AG-Sept candidate** requiring a new planning decision and
+sufficient quota. It does not inherit AG-Sept schedule or budget automatically.
 
-PR4c is deliberately small:
+## 3. Probe design retained for future use
 
-```text
-G1-CU1        independent capacity unit CU1 alone
-G1-CU2        equivalent capacity unit CU2 alone
-G2-CU1+CU2    those same two units composed
-```
+Before provisioning stopped, review improved the probe method. That design is worth retaining even
+though it was not implemented or measured.
 
-A separate generator/measurement instance drives all three. Under the account's current **5-vCPU
-Standard On-Demand allowance**, the target shape is **2 + 2 + 1 vCPU** if available in compatible
-instance families: two equivalent serving units plus one small generator/monitor unit. Exact
-instance types are implementation choices and must be recorded rather than embedded here as durable
-architecture.
-
-The first measured pass is three **120 s diagnostic cells** at the validation plan's common
-`workers_per_group=12`, after the normal explicit conditioning/recycle sequence. These are not the
-canonical 600 s capacity points.
-
-At the selected two-vCPU serving-unit shape, a complete G4 environment plus separate generator
-compute needs approximately **9 vCPU or more**. The current quota therefore cannot support the full
-Tier-1 family even if the probe result is excellent. A larger experiment waits for sufficient quota
-and a separate post-AG-Sept planning decision.
-
-## 3. Implementation scope
-
-Only build what the three-cell probe requires:
-
-1. **AWS bootstrap**
-   - instantiate two equivalent capacity-unit EC2 hosts and one separate generator/measurement host;
-   - apply the minimum networking/security rules for service, metrics, SSH/bootstrap and verifier
-     reachability;
-   - install the existing container runtime/observability prerequisites;
-   - prove teardown is deterministic so metered resources are not left running accidentally.
-2. **Per-unit independent storage**
-   - each serving unit receives its own storage allocation/path with the same declared shape;
-   - no filesystem/volume is shared between CU1 and CU2.
-3. **Deploy the existing shard-group design**
-   - same Alloca-Go image and PostgreSQL configuration on both serving units;
-   - per-authority migration, explicit placement, readiness and provenance checks before load.
-4. **Adapt the qualified harness, do not redesign it**
-   - route the existing independent `workers_per_group` streams to remote targets;
-   - retain per-host/per-authority metrics and environment/provenance evidence;
-   - reuse explicit conditioning, state-preserving recycle, response validation and reconciliation.
-5. **Drive the three probe cells**
-   - `G1-CU1`, `G1-CU2`, then `G2-CU1+CU2`;
-   - retain raw rates, per-unit resource evidence and the diagnostic `D_unit_probe`/`R2_probe`
-     derivation.
-6. **Stop and decide**
-   - report one of `CARRY FORWARD`, `BOUNDED REPEAT`, `STOP / DEFER` from the validation plan;
-   - do not begin a 600 s matrix in the same execution session merely because the first result looks
-     promising.
-
-## 4. What PR4c deliberately does not build
-
-- G4 under the current quota;
-- the full Tier-1 S/H + both-confirmations matrix;
-- statistical precision through many repeated runs;
-- a new pool/worker tuning matrix;
-- EKS, RDS, load balancers, autoscaling, service mesh or production-cloud architecture;
-- the local off-VHDX `DEBT-8` killing test;
-- `VAL-LOAD-1` open-loop work.
-
-A fuller AWS capacity campaign is **not part of AG-Sept's current plan**. If this probe produces
-evidence that makes one worthwhile, PR5 records it as a post-milestone candidate rather than
-scheduling it by momentum.
-
-## 5. Evidence and result boundary
-
-PR4c reports:
+The future paired comparison should keep a fixed workload/state envelope **per capacity unit**:
 
 ```text
-g1_CU1(12)
-g1_CU2(12)
-g2_CU1_CU2(12)
-D_unit_probe
-R2_probe
+G1-CU1        CU1 drives organisations A/B
+G1-CU2        CU2 drives organisations C/D
+G2-CU1+CU2    CU1 still drives A/B; CU2 still drives C/D
 ```
 
-and the host/service/database evidence needed to interpret them.
+A/B/C/D are equivalent synthetic populations; their names carry no intended behavioural
+difference. This shape compares each unit alone with the **same workload slice it carries when
+composed**, avoiding the earlier design's factor-of-two per-authority working-set reduction between
+G1 and G2.
 
-It does **not** report `G1_aws`, `G2_aws`, `E2_aws`, or discharge `VAL-SCALE-5`. The probe is useful
-precisely because it can be cheap without pretending to have the precision or saturation evidence
-of the full method.
+The existing `WL-MUT-DISP-4` identity must **not** be weakened to express this probe: that workload
+intentionally means the exact global A/B/C/D population at every topology. A future implementation
+must introduce an explicit probe/unit-slice workload identity or family and retain the slice
+assignment in its manifest.
 
-A positive probe result supports the architecture statement that independently provisioned shard
-groups can compose useful capacity under the observed workload/environment. The strength of that
-statement is bounded by one short observation per cell and the observed CU1/CU2 difference.
+The generator remains outside the capacity units and must provide one independent worker stream per
+active unit. A future G2 result is interpretable only when generator **process and host headroom** are
+observed directly; separate worker pools prove scheduling independence but do not prove that the
+shared generator host is not a resource bottleneck.
 
-## 6. Budget
+## 4. Result boundary
 
-**Allocated: 1.0 day from the remaining AG-Sept contingency** (maintainer decision, 2026-08-19).
-The milestone plan records the transfer; this is a funded work unit, not an implicit draw.
+PR4c reports only this outcome:
 
-The day covers the first AWS bootstrap, minimal remote-harness adaptation, three short probes,
-evidence retention, analysis/reporting, normal review/fix margin and—only if the first result leaves
-one sharply stated ambiguity—a bounded discriminating repeat that still fits the same day.
+```text
+AWS probe: NOT EXECUTED
+reason: applied Standard On-Demand quota = 1 vCPU at execution time
+minimum planned probe: 5 vCPU (2 + 2 + 1)
+VAL-SCALE-5: UNPROVEN
+```
 
-The allocation does **not** pre-fund a complete G1/G2/G4 Tier-1 campaign or any other follow-on
-experiment. A promising result is carried into post-AG-Sept planning rather than competing for an
-implicit continuation of this allocation.
+No `g1_CU1`, `g1_CU2`, `g2_CU1_CU2`, `R2_probe`, `G1_aws`, `G2_aws`, `E2_aws`, or `E4_aws` exists.
 
-## 7. Exit gate
+## 5. Exit decision
 
-PR4c is complete when:
-
-- the independent CU1/CU2 + separate-generator topology is reproducibly bootstrap/teardown-able;
-- all three requested cells ran with the intended topology/configuration or are explicitly refused;
-- interpreted cells pass response validation, conditioning/reconciliation, provenance and required
-  per-host evidence checks;
-- raw `G1-CU1`/`G1-CU2`/`G2-CU1+CU2` observations and `D_unit_probe`/`R2_probe` are retained with
-  their diagnostic label;
-- the result decision is recorded as `CARRY FORWARD`, `BOUNDED REPEAT`, or `STOP / DEFER`;
-- `VAL-SCALE-5` remains explicitly unproven because this bounded probe is not the complete Tier-1
-  validation;
-- AWS resources are torn down after the bounded session unless a documented immediate corrective
-  action inside this same funded scope requires them.
-
-## 8. What `CARRY FORWARD` means
-
-`CARRY FORWARD` means only that this probe found independent-unit behaviour sufficiently intelligible
-that the fuller independent-capacity question is worth recording as a **post-AG-Sept candidate**.
-It is not a scheduled next stage and carries no budget or execution commitment.
-
-Questions the probe may leave for that future work include:
-
-- are CU1 and CU2 close enough that one canonical G1 denominator might be defensible, or would a
-  future method need to baseline multiple units individually?;
-- is generator capacity adequate for G2 and plausibly larger topologies, or is measurement compute
-  already the practical boundary?;
-- does per-unit storage behave reproducibly enough that the 5% materiality resolution looks
-  realistic, or should any future claim target coarser architecture discrimination instead?;
-- does G2 expose a new bottleneck that makes a larger topology irrelevant to the current question?
-
-Those questions are inputs to a later kickoff after AG-Sept, not placeholders for predeclared PR4c
-stages.
+**`STOP / DEFER`.** Record the external quota change and failed provisioning attempt, preserve the
+refined experiment design for possible post-AG-Sept work, and proceed to PR5. Do not weaken the
+independent-resource requirement or reinterpret local evidence to manufacture the missing AWS
+result.

@@ -1,228 +1,180 @@
 # AG-Sept PR4c — AWS independent-unit probe
 
-**Status:** Scheduled diagnostic validation for PR4c.  
-**Purpose:** obtain the smallest useful independent-provisioning result before AG-Sept closeout.  
+**Status:** Not executed — `STOP / DEFER`, 2026-08-20.  
+**Purpose:** preserve the bounded independent-unit validation design and record why no AWS result
+exists.  
 **Design:** [`../../design/independent-capacity-probe.md`](../../design/independent-capacity-probe.md).  
 **Governing validation plan:** [`ag-sept-validation-plan.md`](ag-sept-validation-plan.md) §4.6,
 `VAL-SCALE-5`, `VAL-NEG-7`, `VAL-NEG-8`.  
 **Measurement contract:** [`../../design/measurement-contract.md`](../../design/measurement-contract.md).
 
-This is a **diagnostic probe, not a new route to `VAL-SCALE-5`**. A partial AWS topology remains a
-partial topology. A strong result may identify a post-AG-Sept follow-up candidate; it cannot be
-renamed Tier 1 or Tier 2 because its result looks good.
+This probe never became a measured experiment. At execution time the account's applied
+`Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances` quota in `eu-west-2` was 1 vCPU,
+and EC2 refused the launch of one selected two-vCPU `c5.large`. The minimum planned topology needed
+5 vCPUs. No partial topology substitutes for the missing independent-resource comparison.
 
-Capacity units use numeric identities **CU1/CU2** throughout this probe. Organisations retain the
-established letter identities **A/B/C/D**. Those namespaces must not be reused for each other in run
-names, manifests, or reports.
+The design below is retained as a **post-AG-Sept candidate only**. It is not implemented by this PR
+and it does not create a follow-on schedule or budget.
 
 ## 1. Question
 
-At one common non-canonical worker level, do two equivalent independently provisioned capacity units:
+At one common non-canonical worker level, do two equivalent independently provisioned capacity units
+behave materially the same when driven separately and when the **same per-unit workload slices** are
+driven together?
 
-1. show individually intelligible behaviour when each is used as G1; and
-2. when composed as G2, produce aggregate Goodput that can be interpreted relative to what those
-   **same two units** produced separately?
+The paired comparison is intended to distinguish capacity-unit composition from shared-resource
+coupling. It does not estimate a precise capacity multiplier and does not discharge `VAL-SCALE-5`.
 
-The probe also asks how much unit/environment variation is already visible. It deliberately does not
-ask for a precise efficiency estimate.
+## 2. Fixed-per-unit workload shape
 
-## 2. Preconditions
+The future probe should use the four established equivalent synthetic organisations as two fixed
+capacity-unit slices:
 
-No interpreted probe begins until all of these hold:
+```text
+G1-CU1        CU1 -> A/B
+G1-CU2        CU2 -> C/D
+G2-CU1+CU2    CU1 -> A/B, CU2 -> C/D
+```
 
-- capacity units CU1 and CU2 are separate EC2 instances and use the same serving instance shape;
-- CU1 and CU2 use separate storage allocations/paths with the same declared storage shape;
-- one service replica and one PostgreSQL authority run on each active unit;
-- the load generator/measurement stack runs on separate EC2 compute, never on CU1 or CU2;
-- CU1 and CU2 run the same Alloca-Go image, PostgreSQL version/configuration, schema version, pool
-  policy, timeout policy and OS/bootstrap shape relevant to the measurement;
-- the placement document and unit metadata agree on the active topology before load starts;
-- node/service/PostgreSQL evidence required below is populated for every active serving host;
-- clocks are synchronised sufficiently for the generator measurement window and host series to be
-  aligned;
-- the generator can reach every active unit and the verifier can reach every active authority;
-- credentials, private keys and account-specific secrets are supplied outside retained artifacts.
+The unit's workload, fixture/state population, worker count, pool policy, service/database shape and
+organisation assignment therefore remain unchanged between its individual and composed cells.
+Total active workload grows from two organisations to four when the second capacity unit is added.
+This is a weak-scaling/composition diagnostic: **add one equivalent workload/resource unit and ask
+whether the first unit changes merely because the second is present**.
 
-A failure here costs no measured run. It is a provisioning/bootstrap failure to fix or record, not
-a low capacity observation.
+A/B/C/D are intentionally equivalent synthetic populations. Their identifiers distinguish routing
+and evidence only; no behavioural difference is intended.
+
+### 2.1 Do not reuse `WL-MUT-DISP-4` unchanged
+
+`WL-MUT-DISP-4` deliberately fixes one global A/B/C/D population across its G1/G2/G4 comparison.
+The probe above has a different identity: each measured capacity unit owns one fixed two-organisation
+slice, and the active slice count changes with topology.
+
+A future implementation must therefore introduce a distinct probe/unit-slice workload identity or
+family and retain the slice participants in the manifest. It must **not** relax the existing
+`WL-MUT-DISP-4` validation merely to make this probe fit.
 
 ## 3. Common probe configuration
 
-The first pass fixes:
+The last planned first pass was:
 
 ```text
-workload                 WL-MUT-DISP-4
-workers_per_group (P)    12
-measured window           120 s
-pool_max_conns            8 per shard group
-conditioning target       4,000 fresh mutations / organisation
-fixture                    45,000 slots / organisation, capacity 20
-service replicas/group     1
-PostgreSQL authorities     1 / active group
+workers_per_group (P)     12
+measured window            120 s
+pool_max_conns             8 per shard group
+conditioning target        4,000 fresh mutations / organisation
+fixture                     45,000 slots / organisation, capacity 20
+service replicas/group      1
+PostgreSQL authorities      1 / active group
 ```
 
-`P=12` is the local experiment's common selected point and is used here only as a cheap first offered
-closed-loop intensity. The 120 s window deliberately matches reconnaissance-scale cost, not the
-canonical 600 s capacity horizon.
+Those values are diagnostic starting points inherited from PR4a/PR4b, not AWS capacity points. A
+future execution must re-establish that the selected resource envelope can support the measurement
+before interpreting any result.
 
-The three cells use **exactly the same P, duration, fixture, conditioning target, pool policy,
-service image, PostgreSQL configuration and timeout policy**. If the evidence shows P or the pool is
-an obvious measurement limiter, record that finding before choosing one bounded replacement pass;
-do not tune one topology independently.
+## 4. Independent generator requirement
 
-## 4. Run sequence
+One separate generator/measurement host drives the probe. Generator independence has two distinct
+parts:
 
-Drive exactly these first three measured cells:
+1. **stream independence** — each active capacity unit has its own fixed worker pool, request
+   sequence and response accounting, so a slow CU2 request cannot consume CU1's workers;
+2. **resource headroom** — those streams still share one generator process/host, so G2 is
+   uninterpretable if generator CPU, scheduling, memory, network, GC/runtime or measurement overhead
+   plausibly limits the offered demand.
 
-### 4.1 `G1-CU1`
+A future interpreted cell therefore retains:
 
-- capacity unit CU1 active;
-- one explicit sharded authority owns organisations A/B/C/D;
-- CU2 is not serving the workload;
-- fresh reset/reseed, conditioning to the common state target, state-preserving service/pool recycle,
-  pre-measurement checks, 120 s measured interval, reconciliation.
+- generator process CPU in **cores consumed** (`cpu_seconds / measured_duration`), not only a
+  normalised percentage;
+- whole generator-host CPU busy, run queue/load, steal/iowait, memory and network evidence;
+- per-unit workers, completions, Goodput/outcomes and latency;
+- enough runtime evidence to investigate a generator-side anomaly if one appears.
 
-### 4.2 `G1-CU2`
+If the generator is a burstable T-family instance, use **Unlimited** credit mode for the measured
+probe and retain the relevant CPU-credit/surplus state so run order cannot silently become a credit-
+depletion variable. Capacity units themselves should be non-burstable for a capacity comparison.
 
-Same topology and procedure as `G1-CU1`, but CU2 is the serving unit. This is an independent-unit
-baseline, not a repeat of CU1.
+`VAL-NEG-8` remains established structurally by PR4a. A future cloud execution may add a short
+deployed slow/stopped-unit control if useful, but the ordinary G2 cell still has to demonstrate
+physical generator headroom independently of that structural property.
 
-### 4.3 `G2-CU1+CU2`
+## 5. Preconditions and evidence
 
-- capacity units CU1 and CU2 active together;
-- CU1 owns organisations A/B;
-- CU2 owns organisations C/D;
-- each group receives its own `workers_per_group=P` stream under the already established
-  `VAL-NEG-8` generator design;
-- fresh reset/reseed/conditioning on both authorities, state-preserving recycle, checks, 120 s
-  measured interval, reconciliation.
+No interpreted future probe begins until:
 
-State from either G1 cell is never reused in G2.
+- CU1 and CU2 are separate equivalent serving instances with separate storage allocations;
+- the generator/measurement stack is on separate compute;
+- service image, PostgreSQL/schema/configuration, pool and timeout policy match across units;
+- each unit's G1 starting state matches its own G2 starting state logically, including fixture and
+  conditioning population;
+- placement and active-unit metadata match the requested topology;
+- host/service/PostgreSQL/generator evidence is populated and time-aligned;
+- response validation, reconciliation and final logical-mutation accounting succeed.
 
-## 5. Evidence retained for every interpreted cell
+Because the original design review exposed a working-set confound, a future execution should also
+retain pre-measurement per-unit state evidence sufficient to show that the intended fixed-per-unit
+logical population was actually achieved. Physical table/index byte sizes need not satisfy an
+arbitrary percentage gate, but any material unexplained mismatch should be investigated before the
+paired ratio is interpreted.
 
-Each cell retains enough evidence to answer both the system and environment sides of the question:
+## 6. Diagnostic outputs
 
-- `run.json`/equivalent manifest with workload, P, duration, fixture, placement, service revision and
-  deployed image identity;
-- observed serving-unit metadata proving the intended active unit set and one image/schema contract;
-- EC2 serving shape and observed vCPU/memory resources for every active unit;
-- storage shape and per-unit identity sufficient to show that CU1 and CU2 do not share one data
-  volume;
-- host CPU, memory, disk read/write throughput, disk utilisation/queue depth and network series per
-  active serving unit;
-- service/process, pool and PostgreSQL panels per authority;
-- generator process/host resource series and per-group request/outcome accounting;
-- conditioning population and measured-start/end persisted-state evidence;
-- per-authority reconciliation and final logical-mutation accounting;
-- enough clock evidence to bind all series to the same measured interval.
-
-A graph is optional; the retained machine-readable series are not.
-
-## 6. Admissibility checks
-
-A cell is **uninterpretable** when any of these fails:
-
-- response validation or measurement soundness;
-- intended run duration/configuration does not match what the cell actually ran;
-- placement or active unit set differs from the requested topology;
-- fixture exhaustion or unexpected policy refusals alter the workload;
-- conditioning/reconciliation populations do not reconcile;
-- one required host/resource series is absent;
-- CU1 and CU2 are not equivalent in the declared capacity-unit configuration;
-- the generator is a plausible limiter at the observed request rate;
-- an active serving unit is materially constrained by a provisioning fault that is not part of the
-  intended capacity-unit shape.
-
-The probe does **not** require the 5% PR4b reproducibility gate because it contains one observation
-per unit/topology and does not claim capacity. The absence of that gate is exactly why no probe rate
-may be promoted to `G1_aws`, `G2_aws` or `E2_aws`.
-
-## 7. Derived diagnostic quantities
-
-Let the full-120 s fresh-mutation Goodput observations be:
+Let the full-window per-unit fresh-mutation Goodput observations be:
 
 ```text
-g1_CU1(P)
-g1_CU2(P)
-g2_CU1_CU2(P)
+g1_CU1_AB
+g1_CU2_CD
+g2_CU1_AB
+g2_CU2_CD
+g2_total = g2_CU1_AB + g2_CU2_CD
 ```
 
-Report all three raw observations first.
-
-Then derive:
+Report the raw values first, then derive:
 
 ```text
-D_unit_probe = |g1_CU1 - g1_CU2| / ((g1_CU1 + g1_CU2) / 2)
-R2_probe = g2_CU1_CU2 / (g1_CU1 + g1_CU2)
+R_CU1 = g2_CU1_AB / g1_CU1_AB
+R_CU2 = g2_CU2_CD / g1_CU2_CD
+R2_probe = g2_total / (g1_CU1_AB + g1_CU2_CD)
 ```
 
-`D_unit_probe` describes the difference between the two nominally equivalent AWS capacity units in
-this one pass. It is **not** an estimate of run-to-run variance or a confidence interval.
+The per-unit retention ratios are the primary diagnostic: if only one unit changes under
+composition, the aggregate ratio must not hide it.
 
-`R2_probe` asks whether the two actual units, when composed, deliver aggregate Goodput commensurate
-with the sum of the observations those same units produced separately. It is labelled `[DERIVED]`
-and **must never be called `E2_aws`**.
+The difference between the two individual baselines may also be reported, but it should be named a
+**baseline difference**, not a measured noise range. One observation per unit cannot estimate
+run-to-run variance or a confidence interval.
 
-Where the harness exposes per-authority G2 Goodput, report CU1 and CU2 separately beside the
-aggregate. A balanced sum and an asymmetric sum are different architecture evidence.
+No numerical pass threshold is predeclared. The intended hypothesis is simply that composition
+introduces **no material observed per-unit change beyond the unit/environment variation visible in
+the bounded probe**.
 
-## 8. Interpretation and decision after the first result
+None of these diagnostic quantities is `E2_aws`.
 
-There is no numerical pass/fail threshold. PR4c records one of three explicit decisions:
+## 7. Execution outcome in AG-Sept
 
-### CARRY FORWARD
+No probe cell ran. Therefore:
 
-Use when CU1/CU2 behaviour is sufficiently intelligible and the G2 composition signal is
-sufficiently clear that a fuller independent-capacity experiment is worth recording as a
-**post-AG-Sept follow-up candidate**. `CARRY FORWARD` creates no follow-on stage, budget or execution
-commitment inside AG-Sept.
+```text
+g1_CU1_AB     NOT MEASURED
+g1_CU2_CD     NOT MEASURED
+g2_CU1_AB     NOT MEASURED
+g2_CU2_CD     NOT MEASURED
+R_CU1          NOT DERIVED
+R_CU2          NOT DERIVED
+R2_probe       NOT DERIVED
+VAL-SCALE-5    UNPROVEN
+```
 
-### BOUNDED REPEAT
+The blocker is external provisioning: previously retained CLI evidence showed a 5-vCPU applied
+Standard On-Demand quota, while execution-time evidence showed 1 vCPU and EC2 enforced that value.
+Quota-increase requests were declined. This is not a Tier-2 trigger because the independently
+provisioned environment never existed.
 
-Use when one small repeat can discriminate a specific ambiguity — for example whether a surprising
-CU1/CU2 difference repeats, or whether the one-vCPU generator was the limiter. Name the hypothesis
-and the killing observation before the repeat. Do not start a generic replication campaign. The
-repeat must remain inside PR4c's existing 1.0-day allocation.
+## 8. Decision
 
-### STOP / DEFER
-
-Use when the AWS units themselves are too variable, the generator/environment is inadequate, the
-composition signal is not interpretable, or the remaining quota cannot support a useful conclusion.
-Retain the result and leave `VAL-SCALE-5` unproven.
-
-The decision compares the **size of the composition signal with the observed unit/environment
-variation**, rather than forcing both through an arbitrary precision threshold.
-
-## 9. Relationship to existing validation IDs and quota
-
-- **`VAL-NEG-8`** is reused, not reopened: the independent per-group demand-stream property is
-  already mutation-proved. PR4c observes its deployed accounting but does not need a new slow-group
-  proof unless the generator implementation changes.
-- **`VAL-NEG-7`** is exercised in miniature for CU1/CU2 equivalence and per-host evidence, but is
-  not discharged for `VAL-SCALE-5`: the complete G1/G2/G4 family has not run.
-- **`VAL-SCALE-5`** remains unproven regardless of `R2_probe`. Only the governing validation plan's
-  complete independently provisioned Tier-1 method can discharge it.
-- **Tier 2 does not apply** to this probe. Tier 2 requires a complete G4 environment that exists but
-  is measurement-limited; current quota preventing G4 is a provisioning limit, not a Tier-2 trigger.
-- At the current 2-vCPU serving-unit shape, complete G4 plus separate generator compute needs about
-  **9 vCPU or more**, while the account currently has **5 vCPU**. Even a very good PR4c result
-  therefore cannot turn directly into the full Tier-1 experiment under the current quota.
-
-## 10. Scope guard
-
-PR4c is three short measured cells plus the bootstrap/smoke needed to make them trustworthy, with at
-most one hypothesis-driven bounded repeat if the first result specifically requires it. It does
-**not** include:
-
-- a G4 topology under the current quota;
-- a 600 s S/H + S/H-confirm matrix;
-- precision estimation by many repeated runs;
-- a new worker/pool optimisation exercise;
-- EKS, RDS, autoscaling, service mesh or production-cloud architecture;
-- `VAL-LOAD-1` open-loop work;
-- investigation of the local VHDX mechanism carried as `DEBT-8`.
-
-Any of those requires a new decision after PR4c evidence exists. In the expected AG-Sept closeout
-path, a fuller independent-capacity experiment is considered only in post-milestone planning after
-sufficient AWS quota is available.
+**`STOP / DEFER`.** AG-Sept proceeds to PR5 with PR4b as its strongest capacity evidence and with
+independent AWS capacity explicitly unproven. If the cloud experiment is revisited later, start from
+this refined fixed-per-unit method, revalidate external prerequisites first, and plan it as new
+post-milestone work.

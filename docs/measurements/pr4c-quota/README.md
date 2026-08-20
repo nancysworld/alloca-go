@@ -69,7 +69,7 @@ exactly two records:
 | Case | Desired | Created | Status | Actual course (maintainer) |
 |---|---:|---|---|---|
 | `178654858600135` | 20.0 | 2026-08-12 | `CASE_CLOSED` (updated 2026-08-14) | declined; appealed at 12; declined |
-| `178723066000473` | 6.0 | 2026-08-20 13:57 | `CASE_OPENED` | declined; appealed; **awaiting final decision** |
+| `178723066000473` | 6.0 | 2026-08-20 13:57 | `CASE_OPENED` | declined; appealed; **awaiting final decision as at 2026-08-20** |
 
 **`Status` is the case's current state, not its decision history, and the two are easy to confuse.**
 A request that was declined and then appealed reads `CASE_OPENED` — identical to one that was never

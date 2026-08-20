@@ -206,7 +206,9 @@ recorded in [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
 **Closure, 2026-08-20:** a second retained `GetServiceQuota` capture, explicitly querying
 `eu-west-2` quota `L-1216C47A`, reported an applied value of **1 vCPU**, and EC2 enforced that value
 by refusing one `c5.large`. Earlier increase requests to 20 and 12 vCPUs had been declined, and a
-later 6-vCPU request was also declined. The retained captures therefore show that the reported
+later 6-vCPU request was also declined and is **under appeal, awaiting a final decision** as at
+2026-08-20 — a pending outcome that does not reopen PR4c, since the environment did not exist during
+the milestone. The retained captures therefore show that the reported
 applied value fell from **5.0 to 1.0** between observations. **Why the applied value fell is unknown** and
 was deliberately not pursued further in AG-Sept. The 5-vCPU minimum topology could not be
 instantiated at execution time, so no measured cell ran.

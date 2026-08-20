@@ -27,7 +27,9 @@ At execution time on 2026-08-20 a second retained `GetServiceQuota` capture, exp
 `eu-west-2` quota `L-1216C47A`, reported an applied value of **1 vCPU**. EC2 independently enforced
 that value by refusing the launch of a single `c5.large` because that instance alone requires two
 vCPUs. Earlier requests to increase the quota to 20 and then 12 vCPUs had been declined; a later
-request for 6 vCPUs was also declined.
+request for 6 vCPUs was also declined and is **under appeal, awaiting a final decision** as at
+2026-08-20. That outcome does not change PR4c: the environment did not exist during the milestone,
+and a later grant would enable future work rather than retrospectively supply a measurement.
 
 The retained captures therefore establish that the reported applied value fell from **5.0 to 1.0**
 between the observations. **Why the applied value fell is unknown** and was deliberately not pursued further

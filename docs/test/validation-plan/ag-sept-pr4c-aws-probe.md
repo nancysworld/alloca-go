@@ -152,6 +152,30 @@ No numerical pass threshold is predeclared. The intended hypothesis is simply th
 introduces **no material observed per-unit change beyond the unit/environment variation visible in
 the bounded probe**.
 
+### 6.1 One observation per cell cannot support that hypothesis
+
+With a single individual and a single composed reading per unit, `R_CU1` and `R_CU2` confound a
+composition effect with ordinary run-to-run and provider variation. The hypothesis above is stated
+against "variation visible in the bounded probe" — a quantity that one reading per cell does not
+produce at all.
+
+PR4b is the standing warning, from this repository's own evidence: at `G1` the selected-point pair
+agreed to **1.3%**, while four *identical* runs of that same cell spanned **25.1%**
+([`pr4b-capacity/README.md`](../../measurements/pr4b-capacity/README.md),
+[`pr4b-drift-g1/README.md`](../../measurements/pr4b-drift-g1/README.md)). A close pair is not
+evidence of stability; it is what an unstable cell looks like most of the time.
+
+A future execution therefore does one of two things:
+
+- **repeats or interleaves the individual and composed cells** for at least one unit, so a
+  composition difference can be read against that unit's own repeat spread; or
+- **reports the raw observations uninterpreted** — deriving no retention ratio and testing no
+  composition hypothesis.
+
+At probe scale the extra cell costs minutes. Choosing neither option produces a number that reads as
+composition evidence while being indistinguishable from noise, which is the specific failure
+`VAL-SCALE-6` already demonstrated locally.
+
 `R2_probe` is neither `E2_aws` nor comparable with `E2_local`. The local quantity belongs to the
 fixed-total A/B/C/D strong-scaling-style comparison; this probe holds each unit's workload/state
 envelope fixed and adds an equivalent workload slice with the second unit. None of these diagnostic
@@ -174,7 +198,7 @@ VAL-SCALE-5    UNPROVEN
 
 A retained AWS CLI `GetServiceQuota` capture from planning reported an applied value of **5 vCPU**
 for the relevant Standard On-Demand quota. The earlier table capture preserves the quota name and
-applied value but not its command line, Region, or exact date; see
+applied value together with its command line and Region, but not its exact date; see
 [`../../measurements/pr4c-quota/`](../../measurements/pr4c-quota/). At execution time on 2026-08-20,
 a second retained capture explicitly querying `eu-west-2` quota `L-1216C47A` reported **1 vCPU**,
 and EC2 enforced that value by refusing one selected two-vCPU `c5.large`. The retained captures

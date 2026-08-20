@@ -163,6 +163,13 @@ The intended hypothesis is qualitative: composition should introduce **no materi
 change beyond the unit/environment variation visible in the bounded probe**. There is no preselected
 pass percentage.
 
+**That hypothesis is not testable from one observation per cell**, because a single reading produces
+no visible variation to judge "material" against, and the retention ratios then confound composition
+with ordinary run-to-run variation. A future execution must either repeat or interleave the
+individual and composed cells, or report the observations without deriving a ratio. The requirement
+and the local evidence behind it are owned by
+[`ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md) §6.1.
+
 `R2_probe` is diagnostic only. It is neither `E2_aws` nor comparable with `E2_local`: the canonical
 local experiment holds the total A/B/C/D workload fixed while changing placement, whereas this
 probe holds each capacity unit's workload/state envelope fixed and adds an equivalent workload slice
@@ -172,7 +179,7 @@ with the second unit. `R2_probe` does not establish saturation and cannot discha
 
 A retained AWS CLI `GetServiceQuota` capture from planning reported an applied value of **5 vCPU**
 for the relevant Standard On-Demand quota. The earlier table capture preserves the quota name and
-applied value but not its command line, Region, or exact date; see
+applied value together with its command line and Region, but not its exact date; see
 [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/). At execution time on 2026-08-20, a
 second retained capture explicitly querying `eu-west-2` quota `L-1216C47A` reported **1 vCPU**, and
 EC2 refused one selected two-vCPU `c5.large`. The minimum bounded topology required 2 + 2 + 1 =

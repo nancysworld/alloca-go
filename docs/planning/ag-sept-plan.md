@@ -200,14 +200,14 @@ shared-write-path limit was established strongly enough to withhold the unsuppor
 with the smallest useful independent-node experiment rather than the full retained capacity matrix.
 The initial plan used a retained AWS CLI `GetServiceQuota` capture reporting an applied **5-vCPU**
 Standard On-Demand quota value. The earlier table capture preserves the quota name and applied value
-but not its command line, Region, or exact date; the evidence and its provenance boundary are
+together with its command line and Region, but not its exact date; the evidence and its provenance boundary are
 recorded in [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
 
 **Closure, 2026-08-20:** a second retained `GetServiceQuota` capture, explicitly querying
 `eu-west-2` quota `L-1216C47A`, reported an applied value of **1 vCPU**, and EC2 enforced that value
 by refusing one `c5.large`. Earlier increase requests to 20 and 12 vCPUs had been declined, and a
 later 6-vCPU request was also declined. The retained captures therefore show that the reported
-applied value fell from **5.0 to 1.0** between observations. **Why AWS reduced it is unknown** and
+applied value fell from **5.0 to 1.0** between observations. **Why the applied value fell is unknown** and
 was deliberately not pursued further in AG-Sept. The 5-vCPU minimum topology could not be
 instantiated at execution time, so no measured cell ran.
 
@@ -300,10 +300,10 @@ PR4c — probe two independent AWS units separately and together
 
 The third step was then externally blocked. A retained `GetServiceQuota` capture from planning
 reported an applied Standard On-Demand value of **5 vCPU**; its table output preserves the quota
-name/value but not its command line, Region, or exact date. On 2026-08-20 a second retained capture,
+name/value together with its command line and Region, but not its exact date. On 2026-08-20 a second retained capture,
 explicitly querying `eu-west-2` quota `L-1216C47A`, reported **1 vCPU**, below even one selected
 two-vCPU capacity unit. The reported applied value therefore fell from **5.0 to 1.0** between the
-observations; why AWS reduced it is unknown. The refined PR4c method is retained, but no workload
+observations; why the applied value fell is unknown. The refined PR4c method is retained, but no workload
 implementation or measured AWS result is claimed. Evidence is in
 [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
 
@@ -419,10 +419,10 @@ generator/monitor   separate 1-vCPU measurement compute
 
 During planning, a retained AWS CLI `GetServiceQuota` capture reported an applied **5-vCPU** value
 for the relevant Standard On-Demand quota. The earlier table capture preserves the quota name and
-value but not its command line, Region, or exact date. On 2026-08-20 a second retained capture,
+value together with its command line and Region, but not its exact date. On 2026-08-20 a second retained capture,
 explicitly querying `eu-west-2` quota `L-1216C47A`, reported **1 vCPU**, and EC2 refused one
 `c5.large` because that single instance requires two vCPUs. The retained captures show the reported
-applied value fell from **5.0 to 1.0** between observations; why AWS reduced it is unknown. With the
+applied value fell from **5.0 to 1.0** between observations; why the applied value fell is unknown. With the
 independent environment unable to exist, the probe stopped before bootstrap/load execution rather
 than collapsing resources onto one host or changing the serving-unit question. Evidence:
 [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
@@ -621,8 +621,9 @@ conditional AWS deployment. PR2's measured result changed the order:
     `eu-west-2` quota `L-1216C47A` reported **1 vCPU**. EC2 refused one two-vCPU `c5.large`, so PR4c
     stopped before measurement and AG-Sept moved to closeout rather than redesigning around the
     account limit. The reported applied value fell from **5.0 to 1.0** between the observations;
-    why AWS reduced it is unknown. The earlier table capture lacks command/Region/date provenance;
-    both captures and that limitation are retained in
+    why the applied value fell is unknown, and the account's own request history contains no
+    decrease. The earlier capture lacks only its exact date; both captures, the request history and
+    those limitations are retained in
     [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
 
 ### 6.3 The original AWS path remains withdrawn; independent capacity is post-AG-Sept

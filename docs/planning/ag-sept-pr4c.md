@@ -18,7 +18,7 @@ unit.
 During planning, a retained AWS CLI `GetServiceQuota` capture reported an applied value of
 **5 vCPU** for the
 `Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances` quota. The earlier table capture
-preserves the quota name and applied value but not its command line, Region, or exact date; it is
+preserves the quota name and applied value together with its command line and Region, but not its exact date; it is
 retained with the later capture in [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
 PR4c was deliberately reduced to a minimum **2 + 2 + 1 vCPU** topology on that observed allowance:
 two equivalent two-vCPU serving units plus separate one-vCPU generator/measurement compute.
@@ -30,7 +30,7 @@ vCPUs. Earlier requests to increase the quota to 20 and then 12 vCPUs had been d
 request for 6 vCPUs was also declined.
 
 The retained captures therefore establish that the reported applied value fell from **5.0 to 1.0**
-between the observations. **Why AWS reduced it is unknown** and was deliberately not pursued further
+between the observations. **Why the applied value fell is unknown** and was deliberately not pursued further
 inside AG-Sept; that causal question is not needed for the PR4c conclusion.
 
 This is an **external provisioning/account constraint**, not evidence about Alloca-Go capacity or

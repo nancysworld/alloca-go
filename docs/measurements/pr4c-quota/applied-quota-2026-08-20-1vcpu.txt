@@ -1,0 +1,8 @@
+aws service-quotas get-service-quota   --region eu-west-2   --service-code ec2   --quota-code L-1216C47A   --query 'Quota.{Name:QuotaName,Value:Value,Adjustable:Adjustable}'   --output table
+---------------------------------------------------------------------------------------------
+|                                      GetServiceQuota                                      |
++------------+--------------------------------------------------------------------+---------+
+| Adjustable |                               Name                                 |  Value  |
++------------+--------------------------------------------------------------------+---------+
+|  True      |  Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances  |  1.0    |
++------------+--------------------------------------------------------------------+---------+

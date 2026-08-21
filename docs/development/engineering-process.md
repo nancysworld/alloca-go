@@ -291,28 +291,38 @@ The repository separates documents by what they own:
 |---|---|
 | [`../requirements/`](../requirements/) | durable engineering goals, durable problems that block them, and requirements stating what must be true independently of replaceable mechanism |
 | [`../design/`](../design/) | current normative system design and contracts |
-| [`../test/validation-plan/`](../test/validation-plan/) | validation intent: scenarios, workloads, controls, fault cases, acceptance/falsification conditions, and requirement/design coverage |
-| [`../planning/`](../planning/) | forward-looking schedules, budgets, sequencing, priorities, descope order, and intended work-unit scope |
+| [`../planning/`](../planning/) | project-wide/general planning documents plus one subdirectory per milestone |
+| `../planning/<milestone>/milestone-plan.md` | that milestone's schedule: budget, sequencing, priorities, descope order, intended work-unit/PR scope, and status |
+| `../planning/<milestone>/milestone-validation.md` | that milestone's validation intent: scenarios, workloads, controls, fault cases, acceptance/falsification conditions, and requirement/design coverage |
 | [`../decisions/`](../decisions/) | significant architectural choices: why and what, not replaceable implementation mechanics |
 | [`implementation/`](implementation/) | selective implementation records: rationale, discoveries, review decisions, deferrals, and context not adequately carried by code and tests |
+| `../../test/` | executable tests and test-support implementation: fixtures, harnesses, fault injection, and other mechanics used to validate the system |
 | [`../operations/`](../operations/) | procedures for building, running, deploying, and operating the system |
 | [`../measurements/`](../measurements/) | experiment inputs, artifacts, reports, and measured conclusions |
 
+General planning documents that are not owned by one milestone stay directly under
+`docs/planning/`. Milestone-specific planning is grouped under `docs/planning/<milestone>/` so the
+schedule and validation plan for the same milestone remain adjacent while retaining distinct
+semantic ownership.
+
 This ownership model applies the architecture/implementation principle in §1.2 to documentation.
-Requirements, design, and decisions stay at architectural abstraction; planning owns scheduling,
-not runtime mechanics. Validation plans own what must be demonstrated or falsified, not the
-mechanics or results of a particular run. Replaceable implementation detail therefore does not
-move into these documents merely because it helped reach a decision.
+Requirements, design, and decisions stay at architectural abstraction. Planning owns intended
+work and validation, not runtime or test mechanics. A milestone validation document therefore
+states what must be demonstrated or falsified; the executable tests and harnesses that carry out
+that intent belong under `test/`, and empirical execution/results belong under `measurements/`.
+Replaceable implementation detail does not move into planning merely because it helped reach a
+decision.
 
-Implementation records, operations documents, and measurement reports may carry the technical
-detail needed to explain implementation, operate the system, reproduce evidence, and preserve
-reasoning that materially contributed to a decision. They remain subject to §1.6: technical
-detail is allowed where useful, not preserved for chronological completeness.
+Implementation records, `test/`, operations documents, and measurement reports may carry the
+technical detail needed to explain implementation, exercise the system, operate it, reproduce
+evidence, and preserve reasoning that materially contributed to a decision. They remain subject
+to §1.6: technical detail is allowed where useful, not preserved for chronological completeness.
 
-The validation boundary is especially important: **validation plans own validation intent;
-measurements own validation execution and results.** Commands, concrete run configuration,
-dashboards, retained artifacts, observations, and measured results belong with their execution or
-evidence owner rather than being copied into the validation plan.
+The validation boundary is especially important: **milestone validation owns validation intent;
+`test/` owns executable validation mechanics; measurements own execution and results.** Commands,
+concrete run configuration, dashboards, retained artifacts, observations, and measured results
+belong with their implementation or evidence owner rather than being copied into the milestone
+validation document.
 
 A durable engineering goal and problem normally sit with the requirements they govern. A
 temporary implementation problem stays with the current implementation work unless analysis
@@ -335,8 +345,9 @@ Durable artifacts depend on durable owners for normative meaning.
 - Code and tests may cite requirements, design documents, ADRs, and stable invariant identifiers.
 - Operations and implementation records may cite those contracts plus code/configuration they
   explain.
-- Validation plans cite requirements/design and the measurement contract.
-- Milestone plans cite goals, requirements, design, and validation plans when scheduling work.
+- Milestone validation documents cite requirements/design and the measurement contract.
+- Milestone plans cite goals, requirements, design, and their milestone validation document when
+  scheduling work.
 - **Code, tests, requirements, and durable design must not depend on a milestone plan for
   normative meaning.**
 

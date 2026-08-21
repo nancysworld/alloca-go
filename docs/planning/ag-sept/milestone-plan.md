@@ -28,7 +28,7 @@ Everything durable lives elsewhere, and this plan links rather than restates it:
 
 **This plan is not a normative reference for code, tests, requirements, or design.** It is
 expected to change; a citation into it should be for a scheduling or historical fact and should
-say so ([`../../development/engineering-process.md`](../../development/engineering-process.md) §6.1).
+say so ([`../../development/engineering-process.md`](../../development/engineering-process.md) §6.3).
 
 Sizes, matrices, durations, and replica counts proposed here are `[HYPOTHESIS]` under
 `measurement-contract.md` §2 unless identified as a fixed planning budget or are fixed by the

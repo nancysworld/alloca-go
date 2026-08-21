@@ -220,13 +220,13 @@ func run(args []string) error {
 		// refused it, because every other gate was satisfied.
 		//
 		// Refused rather than downgraded, because the recycle is a step of the method rather
-		// than a property of the result (ag-sept-validation-plan.md §4.6.2). A deliberately
+		// than a property of the result (ag-sept/milestone-validation.md §4.6.2). A deliberately
 		// unrecycled conditioned run would be a *control*, and it should say so with its own
 		// flag rather than by leaving this one off.
 		return fmt.Errorf("-conditioned-by requires -pool-recycled: conditioning establishes the " +
 			"state and the recycle is what stops the measured connections carrying plans made " +
 			"before it, so a conditioned run without it measures the regime conditioning was " +
-			"added to remove (ag-sept-validation-plan.md §4.6.2)")
+			"added to remove (ag-sept/milestone-validation.md §4.6.2)")
 	case *conditioning && !phaseAware(*workloadName):
 		// **Only a phase-aware workload can be conditioned.** The others ignore `Phase` and
 		// `ConditioningSlots` entirely, so they draw from the whole fixture in either phase —

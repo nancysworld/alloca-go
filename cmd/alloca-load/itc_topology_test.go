@@ -11,7 +11,7 @@ import (
 	"github.com/nancysworld/alloca-go/internal/loadgen"
 )
 
-// The Iteration C matrix, exactly as ag-sept-validation-plan.md §4.6 fixes it: the same four
+// The Iteration C matrix, exactly as ag-sept/milestone-validation.md §4.6 fixes it: the same four
 // organisations at every topology, spread over one, two and four shard groups.
 var itcMatrix = []struct {
 	groups      int

@@ -4,7 +4,7 @@
 **Status:** PR4a in progress. The local multi-group topology and workload machinery are being
 exercised and the measurement procedure qualified before any metered AWS capacity attempt; AWS
 capacity evidence remains conditional on sufficient quota within the milestone timebox.
-**Budget:** 4.0 development days ([AG-Sept plan](../../planning/ag-sept-plan.md) §2, a scheduling
+**Budget:** 4.0 development days ([AG-Sept plan](../../planning/ag-sept/milestone-plan.md) §2, a scheduling
 fact), now a **shared PR4a/PR4b envelope**. The original 1.5-day PR4a / up-to-2.5-day PR4b split was
 retired by maintainer decision on 2026-08-14; PR4a may consume more of the envelope for local
 measurement qualification and PR4b correspondingly becomes a smaller bounded AWS execution pass.
@@ -12,8 +12,8 @@ measurement qualification and PR4b correspondingly becomes a smaller bounded AWS
 the capacity environment; [`horizontal-scaling.md`](../../design/horizontal-scaling.md) §12–§13
 owns the capacity-unit model; `REQ-SCALE-4` and `REQ-EVID-2`
 ([`system-requirements.md`](../../requirements/system-requirements.md)) own what must be true;
-[`workload-catalog.md`](../../test/workload-catalog.md) owns `WL-MUT-DISP-4`;
-[`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) §4.6 owns the
+[`workload-catalog.md`](../../design/workload-catalog.md) owns `WL-MUT-DISP-4`;
+[`ag-sept/milestone-validation.md`](../../planning/ag-sept/milestone-validation.md) §4.6 owns the
 matrix, the Tier 1/Tier 2 result model, `VAL-SCALE-5` and `VAL-NEG-7`; and
 [`measurement-contract.md`](../../design/measurement-contract.md) §11–§13 owns provenance and the
 quotability ladder. This record covers only how PR4 discharges them and the choices made along the
@@ -21,7 +21,7 @@ way. Where it disagrees with an owning document, the owning document wins.
 
 ## 1. Exit gates
 
-The gates are owned by [`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §3 and are not restated
+The gates are owned by [`ag-sept/milestone-plan.md`](../../planning/ag-sept/milestone-plan.md) §3 and are not restated
 here. In short: PR4a first proves the 1/2/4 experiment machinery in the bounded local partitioned
 rehearsal, then qualifies the measurement procedure far enough that a known local regime cannot
 silently contaminate the AWS comparison. Mechanical findings are fixed or explicitly bounded; the
@@ -72,7 +72,7 @@ instrumentation bought against a guess.
 It is deliberately **not** filed in [`tech-debts.md`](../../planning/tech-debts.md). That register's
 §1 admits gaps in behaviour that is correct today under a stated condition, and sends work not yet
 started to the milestone plan instead — which already owns this one
-([`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §6.4 leaves the instrument to PR4a and names
+([`ag-sept/milestone-plan.md`](../../planning/ag-sept/milestone-plan.md) §6.4 leaves the instrument to PR4a and names
 `VAL-NEG-7` as the durable obligation). Filing it as debt would put a scheduling choice in a
 register that exists for shipped trade-offs.
 
@@ -242,7 +242,7 @@ a capacity point that cannot be reconciled is not a capacity point.
 ### 2.11 PR4 implements the validation plan's two-tier result model
 
 The two-tier decision first recorded here now belongs normatively to
-[`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) §4.6. PR4b
+[`ag-sept/milestone-validation.md`](../../planning/ag-sept/milestone-validation.md) §4.6. PR4b
 attempts Tier 1 first **after the complete independently provisioned G4 measurement environment
 exists**. Only when that complete environment is itself proven unable to drive the topology family
 far enough for the saturation-selected capacity result may PR4b retain the Tier 2 operating-point
@@ -507,7 +507,7 @@ rule lands in the two documents that own evidence:
 - `measurement-contract.md` §5 now carries a **useful-demand / fixture-headroom gate**: an
   all-refusal run may be sound and may reach any provenance level, but cannot back a
   mutation-capacity claim;
-- [`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) §4.6 applies
+- [`ag-sept/milestone-validation.md`](../../planning/ag-sept/milestone-validation.md) §4.6 applies
   it to `WL-MUT-DISP-4`'s selected points and confirmation runs.
 
 The generalisation is the part worth carrying forward, because the zero-goodput case is the one
@@ -1803,7 +1803,7 @@ discovered plateau, its immediately lower level materially worse, and `H` a high
 materially better. Every level on a plateau delivers the same Goodput and the lowest does it with the
 least queueing, so selecting a higher one attributes capacity to workers that bought nothing.
 
-Both decisions live in `ag-sept-validation-plan.md` §4.6.4, which owns the method; the code cites the
+Both decisions live in `ag-sept/milestone-validation.md` §4.6.4, which owns the method; the code cites the
 plan rather than defining the rule.
 
 ### 3.27 One bracket for every arm, because the per-topology difference was not real
@@ -1825,7 +1825,7 @@ and `G4`'s 6.2% below. Against §3.25's ~4% single-probe noise, 0.8% is not a di
 
 **Maintainer decision, 2026-08-19:** every arm runs at S=12, H=16. `E2` and `E4` compare topologies,
 so arms measured at different demand-per-group would carry that difference into the efficiency
-itself, which validation-plan §2.3 forbids.
+itself, which `ag-sept/milestone-validation.md` §2.3 forbids.
 
 `ITC_CAPACITY_S`/`ITC_CAPACITY_H` express the decision and are the one way to move the retained
 operating point by hand, so the capacity stage validates them against each topology's own probes: a
@@ -2209,6 +2209,6 @@ topology is promoted as a substitute for it.
 
 **Budget consequence at the time: none.** The shared 4.0-day PR4a/PR4b envelope this refers to no
 longer exists — PR4a consumed it and PR4b is funded by a 1.0-day contingency draw
-([`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §2.1.3) — but the substantive point holds: the
+([`ag-sept/milestone-plan.md`](../../planning/ag-sept/milestone-plan.md) §2.1.3) — but the substantive point holds: the
 denial changed the probability and likely size of the cloud pass, not the milestone budget or the
 validation rule. PR4c remains unbudgeted.

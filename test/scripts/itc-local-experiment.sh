@@ -44,7 +44,7 @@ usage: ./test/scripts/itc-local-experiment.sh <stage>
   qualify-conditioning  drive one conditioned G1 diagnostic cell with the executed-plan and
                         planner-state probes both on, and establish that the measured interval
                         no longer executes the Seq Scan cached against empty mutation tables
-                        (ag-sept-validation-plan.md §4.6.2)
+                        (ag-sept/milestone-validation.md §4.6.2)
 
   pool                  the bounded G1 pool-sensitivity preflight over the conditioned path,
                         at one worker level, so a single pool policy can be frozen (§4.6.3)
@@ -236,7 +236,7 @@ ENV_SLOTS="${SLOTS-}"
 ALLOCA_POOL_MAX_CONNS="${ALLOCA_POOL_MAX_CONNS:-8}"
 export ALLOCA_POOL_MAX_CONNS
 
-# **"Materially", as one number for every stage that needs it** (ag-sept-validation-plan.md §4.6.5,
+# **"Materially", as one number for every stage that needs it** (ag-sept/milestone-validation.md §4.6.5,
 # which owns the definition). It is a **preselected engineering materiality margin**: the smallest
 # difference in sustained Goodput this experiment treats as a real difference in capacity, fixed in
 # advance so a knee is not decided by a threshold chosen to fit the numbers.
@@ -604,7 +604,7 @@ print(int(round(json.load(open(sys.argv[1]))['summary']['duration_seconds'])))" 
 
   recon)
     # **Reconnaissance answers one question: which two worker levels deserve the expensive
-    # retained measurement?** (ag-sept-validation-plan.md §4.6.4.) It is explicitly *not* capacity
+    # retained measurement?** (ag-sept/milestone-validation.md §4.6.4.) It is explicitly *not* capacity
     # evidence — no rate it produces enters E2/E4 or may be quoted as a result, and a level is not
     # promoted because a probe happened to look stable.
     #
@@ -690,7 +690,7 @@ print(int(round(json.load(open(sys.argv[1]))['summary']['duration_seconds'])))" 
     mkdir -p "test/results/$RESULTS_GROUP"
     sizing="test/results/$RESULTS_GROUP/probe-fixture-sizing.txt"
     cat > "$sizing" <<SIZING
-probe fixture sizing for PR4b reconnaissance (ag-sept-validation-plan.md §4.6.4)
+probe fixture sizing for PR4b reconnaissance (ag-sept/milestone-validation.md §4.6.4)
 derived $(date -u +%Y-%m-%dT%H:%M:%SZ)
 
   measured G4 aggregate rate         $measured_aggregate /s   (G4, 16 workers/group, pool 8, 600 s,
@@ -958,7 +958,7 @@ print('%.1f' % (s['successful_mutation_goodput'] / s['duration_seconds']))" "${c
 
       report="test/results/$RESULTS_GROUP/recon-G${groups}.txt"
       {
-        printf 'PR4b reconnaissance, G%s (ag-sept-validation-plan.md §4.6.4)\n' "$groups"
+        printf 'PR4b reconnaissance, G%s (ag-sept/milestone-validation.md §4.6.4)\n' "$groups"
         printf 'driven %s\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         if [ -n "$recon_synthetic" ]; then
           printf '*** SYNTHETIC PROBER (%s) ***\n' "$recon_synthetic"
@@ -974,7 +974,7 @@ print('%.1f' % (s['successful_mutation_goodput'] / s['duration_seconds']))" "${c
         printf '  slots/organisation  %s at capacity %s\n' "$SLOTS" "$CAPACITY"
         printf '  conditioning        %s mutations/org\n' "$CONDITIONING_TARGET"
         printf '  margin              %s%%  (preselected materiality margin, not a noise floor:\n' "$recon_margin"
-        printf '                      ag-sept-validation-plan.md §4.6.5)\n'
+        printf '                      ag-sept/milestone-validation.md §4.6.5)\n'
         printf '  ladder              %s\n' "$ladder"
         printf '  start               %s\n\n' "$recon_start"
         printf '  %-8s %10s  %-7s %7s  %s\n' workers probe/s shape spread cell
@@ -1007,7 +1007,7 @@ print('%.1f' % (s['successful_mutation_goodput'] / s['duration_seconds']))" "${c
 
   fixture)
     # **One fixture size for the whole comparison, derived from the deepest point it must survive**
-    # (ag-sept-validation-plan.md §4.6.6). The retained runs are S, H and both confirmations at
+    # (ag-sept/milestone-validation.md §4.6.6). The retained runs are S, H and both confirmations at
     # G1, G2 and G4, and the *same* per-organisation size is reused unchanged across all of them:
     # resizing per topology would change the workload as well as the topology, and the comparison
     # would no longer be between two arrangements of one experiment.
@@ -1066,7 +1066,7 @@ print('%.1f' % (s['successful_mutation_goodput'] / s['duration_seconds']))" "${c
     sizing="test/results/$out_group/fixture-sizing.txt"
     cat > "$sizing" <<SIZING
 retained fixture sizing for the PR4b capacity comparison
-(ag-sept-validation-plan.md §4.6.6)
+(ag-sept/milestone-validation.md §4.6.6)
 derived $(date -u +%Y-%m-%dT%H:%M:%SZ)
 
   reconnaissance read               test/results/$recon_group/
@@ -1191,7 +1191,7 @@ for path in sorted(root.glob("run-*/cell-01/run.json")):
 print(f"Run-position effect at G{groups}, {level} workers/group — IDENTICAL RUNS")
 print("This selects nothing and is not a capacity result. It measures whether the environment")
 print("trends across a session, which the retained comparison's fixed S/H order cannot separate")
-print("from a real difference between the two levels (ag-sept-validation-plan.md §4.6.5).\n")
+print("from a real difference between the two levels (ag-sept/milestone-validation.md §4.6.5).\n")
 print(f"  {'run':<10}{'start':<8}{'pos':>4}{'rate/s':>11}{'vs pos 1':>11}")
 base = rows[0][2] if rows else 0
 for position, (name, start, rate) in enumerate(rows, 1):
@@ -1208,7 +1208,7 @@ DRIFT
     ;;
 
   capacity)
-    # **The retained comparison** (ag-sept-validation-plan.md §4.6.5). Per topology, four 600 s runs
+    # **The retained comparison** (ag-sept/milestone-validation.md §4.6.5). Per topology, four 600 s runs
     # in this order: the selected point, the deciding higher point, then each again as an
     # independent confirmation. Each begins from its own reset/reseed/conditioning sequence, which
     # is what itc-run.sh does per cell — so a run is a cell, and the four are four cells rather than
@@ -1309,7 +1309,7 @@ DRIFT
         record="test/results/$out_group/common-bracket.txt"
         if [ ! -f "$record" ]; then
           {
-            printf 'Common S/H bracket across the arms (ag-sept-validation-plan.md §4.6.4)\n'
+            printf 'Common S/H bracket across the arms (ag-sept/milestone-validation.md §4.6.4)\n'
             printf 'recorded %s\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             printf 'These runs did NOT use each topology'"'"'s own reconnaissance selection. One\n'
             printf 'bracket was fixed for every arm so that E2 and E4 compare topologies at the\n'

@@ -46,7 +46,7 @@ change and the document benefits from preserving their shared history.
 
 PR4c has no implementation record because no AWS cell ran. Its reusable method is retained in the
 [design](../../design/independent-capacity-probe.md) and
-[validation plan](../../test/validation-plan/ag-sept-pr4c-aws-probe.md); the external blocker is
+[validation plan](../../planning/ag-sept/milestone-validation-pr4c-aws-probe.md); the external blocker is
 retained under [`../../measurements/pr4c-quota/`](../../measurements/pr4c-quota/).
 
 The first three began as `docs/planning/ag-sept-pr*-scope.md` and moved here once the directory

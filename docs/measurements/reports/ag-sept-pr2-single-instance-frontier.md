@@ -44,14 +44,14 @@ requires were not populated when these runs were taken
 
 Separately, the generator shared a host with the service throughout, which puts `publishable` out
 of reach (§13.1). **That compute never arrives in AG-Sept:** the deployment path that would have
-supplied it was withdrawn after this report was written (`ag-sept-plan.md` §6.3), so the rule is
+supplied it was withdrawn after this report was written (`ag-sept/milestone-plan.md` §6.3), so the rule is
 honoured by labelling and the milestone closes with a bounded local frontier rather than an
 externally presented capacity number.
 
 **Reading "PR3" below.** This report was written under the v0.4 plan, whose PR3 was the container
 and local scale-out work. The milestone was reordered afterwards: PR3 now covers horizontal
 database authority, and the scale-out work is held as the **post-Iteration-B scaling envelope** in
-[`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §3 — budget reserved, scope not yet selected
+[`ag-sept/milestone-plan.md`](../../planning/ag-sept/milestone-plan.md) §3 — budget reserved, scope not yet selected
 by the loop. Every forward-looking "PR3" below — the exporters, the scale-out prediction of §5.4,
 the snapshot redesign, the re-run of these cells — means that envelope. The obligations were
 carried forward in full and remain owed by the milestone; only their owning work unit is now
@@ -475,7 +475,7 @@ missing cells: past c=128 at pool 80 the queue grows and the rate does not.
 
 **Recommended operating capacity: deferred**, per `ag-sept-pr2.md` §5.6 — to the v0.4 plan's PR3
 at the time, and carried forward to the post-Iteration-B envelope when the milestone was
-reordered (`ag-sept-plan.md` §3).
+reordered (`ag-sept/milestone-plan.md` §3).
 Only the *term* is deferred, not the work. `measurement-contract.md` §3 defines
 it as a cap reserving headroom for **variance, rolling deployment, and loss of one unit**. At
 one replica the last two cannot be reserved against at all, so the defined quantity is not
@@ -538,7 +538,7 @@ Buckets are deliberately **not** changed here. Adding boundaries costs cardinali
 labelled histogram, and PR2's latency conclusions do not depend on the panel. If PR3 needs the
 dashboard to be quantitatively trustworthy in that band, insert `0.15` and `0.2` and re-measure
 the telemetry overhead, since bucket count is part of what VAL-NEG-3 was trying to price.
-Registered in [`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §6.4, group C.
+Registered in [`ag-sept/milestone-plan.md`](../../planning/ag-sept/milestone-plan.md) §6.4, group C.
 
 ### 6.2 TSDB snapshots are cumulative, and the redesign is deferred to PR3
 
@@ -559,7 +559,7 @@ re-runs everything on the container path anyway; doing it here means re-exportin
 no new evidence. The shape PR3 should take: one snapshot per *sweep* with cell-specific CSVs and
 windows, or a fresh Prometheus data directory per sweep. It matters more there than here,
 because the replica matrix multiplies cells by replica count. Registered in
-[`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §6.4, group C.
+[`ag-sept/milestone-plan.md`](../../planning/ag-sept/milestone-plan.md) §6.4, group C.
 
 ### 6.3 The prototype's overload failure is still unreproduced, and this harness cannot produce it
 
@@ -676,7 +676,7 @@ arrivals drive latency linearly upward (§2's cells show that plainly), and once
 a **binding client deadline**, timeouts begin and **controlled retry-on-timeout** supplies the
 amplification. That is a burst-plus-deadline-plus-retry route rather than a sustained-overload
 route, and this project already scopes the ingredient it lacks least: a *synchronized release
-wave* is in `ag-sept-validation-plan.md` §3.7, and retrying under the same idempotency key
+wave* is in `ag-sept/milestone-validation.md` §3.7, and retrying under the same idempotency key
 is the design's own replay path rather than an invented behaviour.
 
 So the honest statement is: **open-loop mode remains a valuable planned experiment, not a proven
@@ -707,7 +707,7 @@ the budget would first be visible.
 **Where this goes next.** Nancy's call, 2026-08-04: this is **plan work, not a debt register
 entry** — it is the prototype finding the project was built to resolve, and `tech-debts.md` is
 where it would quietly stop being anyone's deliverable. It is recorded in
-[`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §6.4, group A —
+[`ag-sept/milestone-plan.md`](../../planning/ag-sept/milestone-plan.md) §6.4, group A —
 **unassigned**, because where it lands is a re-planning decision rather than a line item here.
 It sits there with everything else PR2 deferred: the open-loop generator mode that makes the
 failure reachable at all, retry-on-timeout, the `slots_for()` fix that unblocks c ≥ 256, the

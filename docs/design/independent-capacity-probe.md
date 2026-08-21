@@ -5,7 +5,7 @@
 without changing each unit's own workload/state envelope.  
 **Requirements:** `REQ-SCALE-4`, `REQ-EVID-1`, `REQ-EVID-2` in
 [`../requirements/system-requirements.md`](../requirements/system-requirements.md).  
-**Validation:** [`../test/validation-plan/ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md).
+**Validation:** [`../planning/ag-sept/milestone-validation-pr4c-aws-probe.md`](../planning/ag-sept/milestone-validation-pr4c-aws-probe.md).
 
 This document owns the probe-specific architecture. It does not redefine the canonical G1/G2/G4
 capacity method or `VAL-SCALE-5`.

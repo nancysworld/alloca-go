@@ -36,7 +36,7 @@ repository does not carry. They are `experiments.txt` and `generator-output.txt`
 byte as the run wrote them, and the script now emits those names itself.
 
 **A commit-ambiguous outcome is not manufactured and is not required.**
-`ag-sept-validation-plan.md` VAL-COR-6 discharges the accounting on deterministic end-to-end
+`ag-sept/milestone-validation.md` VAL-COR-6 discharges the accounting on deterministic end-to-end
 tests precisely so that no experiment has to produce one to order; the other retained runs of
 this cell produced none. Read this directory as one observation of the contract holding on a
 real fault, not as a rate.

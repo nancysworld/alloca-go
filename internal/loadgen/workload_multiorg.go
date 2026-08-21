@@ -132,7 +132,7 @@ func (h HotOrganisation) Do(ctx context.Context, c *Client, seq int) []Response 
 // authorities, which Phase 1 refuses.
 //
 // It is a **bounded control reported as its own evidence class**, never a share of the
-// supported workload (ag-sept-validation-plan.md §3.5). A refusal is decided before any slot work
+// supported workload (ag-sept/milestone-validation.md §3.5). A refusal is decided before any slot work
 // and is therefore far cheaper than a real booking; mixing it into the dispersed run would
 // flatter both goodput and latency by exactly the proportion of refusals it contained.
 //

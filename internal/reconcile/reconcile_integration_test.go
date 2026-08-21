@@ -250,7 +250,7 @@ func TestOverreportedAdmissionsAreCaughtByClaims(t *testing.T) {
 // perfectly legal. What it can do is refuse the run whose *client totals* disagree with
 // persisted claims — which is what a contaminated rerun produces the moment the generator
 // still expects an admission. This test pins that, and documents the residual gap: the
-// clean-start assertion in ag-sept-validation-plan.md §3.3 is a separate guard, not something
+// clean-start assertion in ag-sept/milestone-validation.md §3.3 is a separate guard, not something
 // reconciliation subsumes.
 func TestHotIdentityContaminationIsVisible(t *testing.T) {
 	f := newFixture(t)
@@ -279,7 +279,7 @@ func TestHotIdentityContaminationIsVisible(t *testing.T) {
 
 	// A contaminated rerun reports zero admitted and two conflicts, while the claim from
 	// the earlier run is still present. The totals are internally consistent, so this run
-	// is *not* caught here — which is precisely why ag-sept-validation-plan.md §3.3 requires a clean-start
+	// is *not* caught here — which is precisely why ag-sept/milestone-validation.md §3.3 requires a clean-start
 	// assertion before load begins rather than relying on reconciliation to notice afterwards.
 	contaminated, err := runReconcile(f, summaryFor(0, 2, domain.ReasonScheduleConflict))
 	if err != nil {
@@ -289,7 +289,7 @@ func TestHotIdentityContaminationIsVisible(t *testing.T) {
 		t.Log("contaminated rerun happened to be caught:", contaminated.Quotability.BlockedBecause)
 	} else {
 		t.Log("contaminated rerun reconciles cleanly, as expected: reconciliation cannot " +
-			"detect it, and the clean-start assertion of ag-sept-validation-plan.md §3.3 is the guard that must")
+			"detect it, and the clean-start assertion of ag-sept/milestone-validation.md §3.3 is the guard that must")
 	}
 }
 

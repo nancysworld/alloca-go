@@ -3,7 +3,7 @@
 **Status:** Living — the current AG-Sept schedule
 **Delivery window:** August 2026
 **Predecessor:** AG-M1 — correct transactional core and end-to-end service path
-**Supersedes:** [`ag-sept-plan-v0.4.md`](ag-sept-plan-v0.4.md) (31 July 2026), retained as an
+**Supersedes:** [`../ag-sept-plan-v0.4.md`](../ag-sept-plan-v0.4.md) (31 July 2026), retained as an
 archived snapshot because PR1 and PR2 were planned and reported under it.
 
 ## What this document owns
@@ -15,20 +15,20 @@ Everything durable lives elsewhere, and this plan links rather than restates it:
 
 | Question | Owner |
 |---|---|
-| What worthwhile outcome is AG-Sept pursuing, and what problem is open now? | [`../requirements/ag-sept.md`](../requirements/ag-sept.md) |
-| What must be true of any acceptable resolution? | [`../requirements/system-requirements.md`](../requirements/system-requirements.md) (`REQ-*`) |
-| What workload semantics stay stable while topology changes? | [`../test/workload-catalog.md`](../test/workload-catalog.md) |
-| What is the durable system shape? | [`../design/horizontal-scaling.md`](../design/horizontal-scaling.md), [`../design/horizontal-database-authority.md`](../design/horizontal-database-authority.md), [`../design/deployment-architecture.md`](../design/deployment-architecture.md) |
-| What transactional properties must hold? | [`../design/transaction-semantics.md`](../design/transaction-semantics.md) (`INV-*`) |
-| How will the claims be proved or falsified? | [`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md) (`VAL-*`) |
-| What makes a run's numbers admissible? | [`../design/measurement-contract.md`](../design/measurement-contract.md) |
-| How is the system run and operated? | [`../operations/`](../operations/) |
-| What did the experiments establish? | [`../measurements/`](../measurements/) |
-| How was the work actually built? | [`../development/implementation/`](../development/implementation/) |
+| What worthwhile outcome is AG-Sept pursuing, and what problem is open now? | [`../../requirements/ag-sept.md`](../../requirements/ag-sept.md) |
+| What must be true of any acceptable resolution? | [`../../requirements/system-requirements.md`](../../requirements/system-requirements.md) (`REQ-*`) |
+| What workload semantics stay stable while topology changes? | [`../../design/workload-catalog.md`](../../design/workload-catalog.md) |
+| What is the durable system shape? | [`../../design/horizontal-scaling.md`](../../design/horizontal-scaling.md), [`../../design/horizontal-database-authority.md`](../../design/horizontal-database-authority.md), [`../../design/deployment-architecture.md`](../../design/deployment-architecture.md) |
+| What transactional properties must hold? | [`../../design/transaction-semantics.md`](../../design/transaction-semantics.md) (`INV-*`) |
+| How will the claims be proved or falsified? | [`milestone-validation.md`](milestone-validation.md) (`VAL-*`) |
+| What makes a run's numbers admissible? | [`../../design/measurement-contract.md`](../../design/measurement-contract.md) |
+| How is the system run and operated? | [`../../operations/`](../../operations/) |
+| What did the experiments establish? | [`../../measurements/`](../../measurements/) |
+| How was the work actually built? | [`../../development/implementation/`](../../development/implementation/) |
 
 **This plan is not a normative reference for code, tests, requirements, or design.** It is
 expected to change; a citation into it should be for a scheduling or historical fact and should
-say so ([`../development/engineering-process.md`](../development/engineering-process.md) §6.1).
+say so ([`../../development/engineering-process.md`](../../development/engineering-process.md) §6.1).
 
 Sizes, matrices, durations, and replica counts proposed here are `[HYPOTHESIS]` under
 `measurement-contract.md` §2 unless identified as a fixed planning budget or are fixed by the
@@ -37,7 +37,7 @@ owning validation/design document.
 ## 1. Where the milestone is
 
 AG-Sept's governing goal, its iteration history, and the currently open problem are owned by
-[`../requirements/ag-sept.md`](../requirements/ag-sept.md). In summary:
+[`../../requirements/ag-sept.md`](../../requirements/ag-sept.md). In summary:
 
 - **Iteration A — identify the first scaling frontier.** Resolved. PR2 established PostgreSQL as
   the limiting subsystem while the Go service retained substantial compute headroom.
@@ -177,7 +177,7 @@ shared-write-path limit was established strongly enough to withhold the unsuppor
 
 PR4c received a **1.0-day contingency transfer** for the bounded independent probe. Provisioning
 could not satisfy the probe's 5-vCPU minimum, so no measured cell ran; the external evidence is
-retained under [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
+retained under [`../../measurements/pr4c-quota/`](../../measurements/pr4c-quota/).
 
 PR4c is charged at **0.5 day actual** and returns **0.5 day** to contingency. It closes
 `STOP / DEFER`; any future cloud experiment is post-AG-Sept work and does not inherit this budget.
@@ -191,7 +191,7 @@ charged at **0.5 day** against the separate 2–3 day review/rerun/interpretatio
 For the final Iteration C, A&R is deliberately combined with PR5 rather than scheduled as a separate
 review work unit. This is a milestone-closeout exception, not a change to the normal engineering
 loop: PR5 still produces the Analyse & Review outcome required by
-[`../development/engineering-process.md`](../development/engineering-process.md) §1.4.1, but also
+[`../../development/engineering-process.md`](../../development/engineering-process.md) §1.4.1, but also
 uses that outcome to make the AG-Sept goal and architecture conclusion in the same work unit.
 
 Review depth is Nancy's to set. Less detailed review moves more responsibility onto implementation
@@ -244,9 +244,9 @@ PR4c — attempt a bounded independent-resource probe
 
 PR4b established that the local denominator was limited by shared-write-path variation. PR4c then
 refined the independent probe method but stopped at provisioning. The reusable method is owned by
-[`../design/independent-capacity-probe.md`](../design/independent-capacity-probe.md) and
-[`../test/validation-plan/ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md);
-the provisioning evidence is owned by [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
+[`../../design/independent-capacity-probe.md`](../../design/independent-capacity-probe.md) and
+[`milestone-validation-pr4c-aws-probe.md`](milestone-validation-pr4c-aws-probe.md);
+the provisioning evidence is owned by [`../../measurements/pr4c-quota/`](../../measurements/pr4c-quota/).
 
 Local scheduler partitioning and independent provisioning remain different evidence classes. The
 complete independently provisioned capacity question therefore moves out of AG-Sept rather than
@@ -263,15 +263,15 @@ the linked requirements, design, workload catalogue, measurement contract, and v
 generator, run manifest, persisted-state verifier, response-validation control, operator
 documentation.
 
-Record: [`ag-sept-pr1.md`](../development/implementation/ag-sept-pr1.md).
+Record: [`ag-sept-pr1.md`](../../development/implementation/ag-sept-pr1.md).
 
 ### PR2 — Single-instance frontier — merged
 
 2.5 days. Prometheus retention path, diagnostic panels, one-instance sweeps for controlled
 workloads, telemetry comparison, generator-bottleneck control, frontier report.
 
-Record: [`ag-sept-pr2.md`](../development/implementation/ag-sept-pr2.md). Report:
-[`ag-sept-pr2-single-instance-frontier.md`](../measurements/reports/ag-sept-pr2-single-instance-frontier.md).
+Record: [`ag-sept-pr2.md`](../../development/implementation/ag-sept-pr2.md). Report:
+[`ag-sept-pr2-single-instance-frontier.md`](../../measurements/reports/ag-sept-pr2-single-instance-frontier.md).
 Result: PostgreSQL, not `alloca-go`, sets the measured mutation frontier.
 
 ### PR3a — Placement, booking policy, and confirm/cancel ownership — merged
@@ -349,9 +349,9 @@ result it depends on was not secured.
 attempted provisioning, but the 5-vCPU minimum environment could not be instantiated. No AWS
 performance cell ran and `VAL-SCALE-5` remains unproven.
 
-Design: [`../design/independent-capacity-probe.md`](../design/independent-capacity-probe.md). Validation:
-[`../test/validation-plan/ag-sept-pr4c-aws-probe.md`](../test/validation-plan/ag-sept-pr4c-aws-probe.md).
-Evidence: [`../measurements/pr4c-quota/`](../measurements/pr4c-quota/).
+Design: [`../../design/independent-capacity-probe.md`](../../design/independent-capacity-probe.md). Validation:
+[`milestone-validation-pr4c-aws-probe.md`](milestone-validation-pr4c-aws-probe.md).
+Evidence: [`../../measurements/pr4c-quota/`](../../measurements/pr4c-quota/).
 
 **Gate:** `STOP / DEFER`; proceed to PR5. Future AWS capacity work requires a new post-AG-Sept
 planning decision and prerequisite check.
@@ -575,7 +575,7 @@ The public-ready milestone should leave:
 11. a concise public repository summary;
 12. explicit limitations, evidence labels, and negative-control results;
 13. a bounded **pre-publication documentation pass** across `docs/`, reviewed from an external
-    reader's perspective and applying the diagram convention in [`../README.md`](../README.md):
+    reader's perspective and applying the diagram convention in [`../../README.md`](../../README.md):
     improve first-read comprehension where diagrams materially help; reduce unnecessary density or
     duplication without weakening precision; verify navigation, semantic ownership, terminology,
     and document status; and remove stale planning or implementation language where it obscures the

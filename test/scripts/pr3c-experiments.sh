@@ -3,7 +3,7 @@
 # Drive the AG-Sept PR3c experiments against the running two-authority topology.
 #
 # The cells are the minimum experiment matrix of
-# `docs/test/validation-plan/ag-sept-validation-plan.md` §4.5, and each one is a *sequence*
+# `docs/planning/ag-sept/milestone-validation.md` §4.5, and each one is a *sequence*
 # rather than a load run:
 #
 #   seed -> baseline scrape per unit -> load -> (fault) -> after scrape per unit -> verify

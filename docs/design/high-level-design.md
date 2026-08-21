@@ -285,13 +285,17 @@ runtime topology properties are owned by
     migration/serving lifecycle, readiness, graceful termination, configuration, and provenance.
 11. [`latency-timeouts-and-retries.md`](latency-timeouts-and-retries.md) — latency
     bands, the deadline-budget rationale, and retry policy.
-12. [`../test/validation-plan/`](../test/validation-plan/) — how current requirements and design
-    claims are intended to be proved or falsified.
-13. [`../decisions/`](../decisions/) — architecture decision records.
+12. [`workload-catalog.md`](workload-catalog.md) — the named synthetic workloads whose demand
+    semantics stay stable while architecture, topology, and implementation change.
+13. [`../planning/ag-sept/milestone-validation.md`](../planning/ag-sept/milestone-validation.md) —
+    how the current milestone's requirements and design claims are intended to be proved or
+    falsified.
+14. [`../decisions/`](../decisions/) — architecture decision records.
 
-Milestone schedules — how accepted work is prioritised, budgeted, and split into reviewable PRs —
-live under [`../planning/`](../planning/). They stage implementation; they do not own the stable
-requirements, architecture, or validation meaning described above.
+Milestone planning — how accepted work is prioritised, budgeted, and split into reviewable PRs,
+and what each milestone must demonstrate or falsify — lives under
+[`../planning/`](../planning/), one subdirectory per milestone. It stages implementation; it does
+not own the stable requirements or architecture described above.
 
 ## 5. Where each decision lives
 
@@ -314,7 +318,8 @@ for it.
 | HTTP contract — routes, request/response shapes, status mapping, operational endpoints | [`api-surface.md`](api-surface.md) |
 | What the service emits about itself — observation types, cardinality rule, which topology dimensions may label a series, log shape | [`observability.md`](observability.md) |
 | Latency bands, deadline-budget rationale, retry policy | [`latency-timeouts-and-retries.md`](latency-timeouts-and-retries.md) |
-| Validation intent for AG-Sept workloads, faults, negative controls, and scaling scenarios | [`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md) |
+| Named synthetic workloads — demand semantics and population that stay stable while topology, architecture, and implementation change | [`workload-catalog.md`](workload-catalog.md) |
+| Validation intent for AG-Sept workloads, faults, negative controls, and scaling scenarios | [`../planning/ag-sept/milestone-validation.md`](../planning/ag-sept/milestone-validation.md) |
 | Engineering iteration loop, review/ownership rules, branch and PR process | [`../development/engineering-process.md`](../development/engineering-process.md) |
 | Modular monolith first | [`../decisions/0001-modular-monolith-first.md`](../decisions/0001-modular-monolith-first.md) |
 | PostgreSQL as transactional authority for local booking state | [`../decisions/0002-postgresql-transactional-authority.md`](../decisions/0002-postgresql-transactional-authority.md) |
@@ -341,8 +346,8 @@ invariants.
 
 Implementation status and work sequencing live in planning and implementation records rather
 than here, so this design entry point does not become a second milestone tracker. The current
-validation intent lives in `docs/test/validation-plan/`, and executed evidence lives in
-`docs/measurements/`.
+validation intent lives in `docs/planning/ag-sept/milestone-validation.md`, and executed evidence
+lives in `docs/measurements/`.
 
 **The load-bearing measured result so far** is the single-instance frontier:
 **PostgreSQL, not the Go service, is what limits booking throughput** at the measured

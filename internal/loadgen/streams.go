@@ -15,7 +15,7 @@ import (
 // topology-wide throughput drop and the experiment attributes a local stall to the whole
 // family. Independence is therefore structural here — a pool, a sequence and a collector per
 // group — rather than a property the operator is trusted to preserve
-// (ag-sept-validation-plan.md §4.6.1, VAL-NEG-8).
+// (ag-sept/milestone-validation.md §4.6.1, VAL-NEG-8).
 type Stream struct {
 	// Group is the stable shard-group identity. It labels this stream's accounting and
 	// namespaces the idempotency keys its workload mints.

@@ -95,7 +95,7 @@ jobs:
       # drives no cell and needs no daemon. It exists because the search runs unattended for the
       # better part of an hour and a defect returns a wrong bracket full of sound runs — and
       # because mutation testing on it found one assertion passing for the wrong reason
-      # (ag-sept-validation-plan.md §4.6.4).
+      # (ag-sept/milestone-validation.md §4.6.4).
       - name: iteration C reconnaissance walk
         run: ./test/scripts/itc-recon-walk-test.sh
 
@@ -103,7 +103,7 @@ jobs:
       # unresolved, and the efficiencies derived from it. The cases write the manifests the analysis
       # reads, so no cell is driven. It exists because a defect in the rule yields a plausible
       # efficiency rather than an obviously wrong one — the number a report is most likely to quote
-      # (ag-sept-validation-plan.md §4.6.5, §4.6.7).
+      # (ag-sept/milestone-validation.md §4.6.5, §4.6.7).
       - name: iteration C capacity result rule
         run: ./test/scripts/itc-capacity-result-test.sh
 

@@ -549,7 +549,7 @@ Secrets and private endpoints must not be committed.
 unpopulated.** A generator is an HTTP client and cannot discover the service's shape for
 itself, so which fields a given milestone's runs can populate is a **scheduling** question,
 answered by the plan
-([`../planning/ag-sept-plan.md`](../planning/ag-sept-plan.md), *Manifest and reconciliation
+([`../planning/ag-sept/milestone-plan.md`](../planning/ag-sept/milestone-plan.md), *Manifest and reconciliation
 staging*). The rule above is not staged: it holds against whatever the topology of the moment
 requires. What a run may claim once its fields are populated is §13.
 

@@ -43,7 +43,7 @@ mkdir -p "$RECON" "test/results/$GROUP"
 # "materially below" a fixture parameter. A test fixture cleaner than the artifact it stands for
 # tests a report that is never written.
 cat > "$RECON/recon-G1.txt" <<'REPORT'
-PR4b reconnaissance, G1 (ag-sept-validation-plan.md §4.6.4)
+PR4b reconnaissance, G1 (ag-sept/milestone-validation.md §4.6.4)
 driven 2026-08-19T08:45:56Z
 
 NOT CAPACITY EVIDENCE. These are short non-canonical probes. No rate below may be
@@ -119,7 +119,7 @@ printf '\n--- H materially better than S is the bracket not being found --------
 # §4.6.4's bracket-not-found condition is still refused after that removal, rather than having gone
 # with it. G2's synthetic table has 16 well above 12, so S=12/H=16 is exactly that shape.
 cat > "$RECON/recon-G2.txt" <<'REPORT'
-PR4b reconnaissance, G2 (ag-sept-validation-plan.md §4.6.4)
+PR4b reconnaissance, G2 (ag-sept/milestone-validation.md §4.6.4)
 driven 2026-08-19T09:02:56Z
 
   probe duration      120s

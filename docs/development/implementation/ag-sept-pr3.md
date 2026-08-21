@@ -6,7 +6,7 @@ review (#16)** — harness, two measured passes and the report, with nothing man
 outstanding. §6a records what remains opportunistic. The
 design was accepted before implementation began (formal design §8), and §6 holds no blocker —
 its one remaining item is a starting fixture, not a contract.
-**Budget:** 7.5 development days across three PRs ([AG-Sept plan](../../planning/ag-sept-plan.md) §2) —
+**Budget:** 7.5 development days across three PRs ([AG-Sept plan](../../planning/ag-sept/milestone-plan.md) §2) —
 3.0 for PR3a, 2.5 for PR3b, 2.0 for PR3c. **PR3a came in at 1.0**; the 2.0 difference went
 to the plan's contingency, not to PR3b or PR3c.
 **Owner docs:**
@@ -15,7 +15,7 @@ to the plan's contingency, not to PR3b or PR3c.
 REQ-ROUTE-1 and REQ-FAIL-1 own what must be true;
 [measurement-contract.md](../../design/measurement-contract.md) §11–§12 owns run provenance and
 reconciliation; and
-[`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) owns the
+[`ag-sept/milestone-validation.md`](../../planning/ag-sept/milestone-validation.md) owns the
 validations. This record covers only how PR3 discharges them and the choices made along the way.
 **Design input:**
 [`../../design/horizontal-database-authority.md`](../../design/horizontal-database-authority.md)
@@ -27,7 +27,7 @@ not restate the design, and where the two disagree the formal design wins.
 ## 1. Exit gates
 
 PR3 is three PRs because it has three separable exit gates, each of which can fail on its own.
-From the plan ([`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §3), verbatim:
+From the plan ([`ag-sept/milestone-plan.md`](../../planning/ag-sept/milestone-plan.md) §3), verbatim:
 
 > **PR3a:** a service unit cannot be started against an inconsistent placement map or an
 > incompatible schema; a misrouted request is refused rather than written; the booking policy is
@@ -247,7 +247,7 @@ the shape of the work rather than merely confirming it.
    so a confirm carrying a wrong identity succeeds. Without the check, sharding would make that
    outcome depend on whether two organisations happen to be colocated. This is a deliberate
    domain-contract correction, and it is the 0.5 days PR3a rose by — drawn from the plan's
-   contingency rather than from another PR (`ag-sept-plan.md` §2.1). It is not authentication:
+   contingency rather than from another PR (`ag-sept/milestone-plan.md` §2.1). It is not authentication:
    a caller who knows both the reservation identifier and its exact owner can still act as that
    owner.
 3. **An unavailable authority uses the existing infrastructure classifications** — `timeout_db`
@@ -290,7 +290,7 @@ is that `Response` and `Total` retain no key, so PR3b adds a small register of a
 requests and PR3c adds the resolution pass.
 
 **This is deliberately not group A's retry-on-timeout control.** That control shapes load during
-a run — timeout, retry, amplification — and remains unassigned (`ag-sept-plan.md` §6.4). This
+a run — timeout, retry, amplification — and remains unassigned (`ag-sept/milestone-plan.md` §6.4). This
 is a bounded post-restoration pass whose only purpose is to collapse ambiguity before the
 correctness verdict. Conflating them is how group A creeps into a PR that cannot fund it.
 
@@ -328,7 +328,7 @@ built. Fewer branches, one review, and nothing parked where it cannot be seen.
 
 - the generator's **ambiguous-request register** and `ResolveAmbiguous`. The register was
   always PR3b's — the plan asks PR3b to retain the idempotency keys of any
-  `unknown_replayable` response so PR3c can replay them (`ag-sept-plan.md` §3) — and the
+  `unknown_replayable` response so PR3c can replay them (`ag-sept/milestone-plan.md` §3) — and the
   replay mechanism was built alongside it rather than split across two PRs for the sake of
   the boundary;
 - the **`classifyCommit` ambiguity fix**: class 57 (operator intervention) and class 08
@@ -414,7 +414,7 @@ Two consequences for PR3c:
    500 ms acquisition cap might have been expected to fire first; the diagnosis is *not*
    established, and it may be that the cap does not cover establishing a new connection. This
    is adjacent to the PR2 deferral register's standing item that the timeout budget has never
-   been observed doing its job under load (`ag-sept-plan.md` §6.4, group A). Investigate
+   been observed doing its job under load (`ag-sept/milestone-plan.md` §6.4, group A). Investigate
    before asserting, and do not fix it on the strength of one observation.
 
 ### 6c. Resolution accounting is PR3c's, and PR3b stops short of it deliberately

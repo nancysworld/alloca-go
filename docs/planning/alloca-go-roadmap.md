@@ -134,7 +134,7 @@ experimental result, not something to assume from the aggregate latency number.
 **Related durable owners:**
 [`../design/measurement-contract.md`](../design/measurement-contract.md),
 [`../design/latency-timeouts-and-retries.md`](../design/latency-timeouts-and-retries.md),
-[`../test/validation-plan/`](../test/validation-plan/).
+[`ag-sept/milestone-validation.md`](ag-sept/milestone-validation.md).
 
 ### 3. Reliability and failure behaviour
 
@@ -301,4 +301,4 @@ Requirements, Design, Validation plan, and Schedule.
 
 The current milestone's goal and engineering iterations are in
 [`../requirements/ag-sept.md`](../requirements/ag-sept.md); what is actually scheduled is in
-[`ag-sept-plan.md`](ag-sept-plan.md).
+[`ag-sept/milestone-plan.md`](ag-sept/milestone-plan.md).

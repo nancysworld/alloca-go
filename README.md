@@ -61,7 +61,7 @@ The current design entry points are:
 ## Workloads as reusable test cases
 
 Architecture changes should not force the workload to change with it. Stable synthetic workloads
-are therefore catalogued in [`docs/test/workload-catalog.md`](docs/test/workload-catalog.md), while
+are therefore catalogued in [`docs/design/workload-catalog.md`](docs/design/workload-catalog.md), while
 validation plans decide how a selected workload is placed onto a topology.
 
 This lets later experiments apply the same demand to a different database technique, placement
@@ -170,9 +170,9 @@ question, not a production-architecture commitment. The experiment will obtain n
 Requirements and current Problem:
 [`docs/requirements/ag-sept.md`](docs/requirements/ag-sept.md).  
 Validation:
-[`docs/test/validation-plan/ag-sept-validation-plan.md`](docs/test/validation-plan/ag-sept-validation-plan.md).  
+[`docs/planning/ag-sept/milestone-validation.md`](docs/planning/ag-sept/milestone-validation.md).  
 Schedule:
-[`docs/planning/ag-sept-plan.md`](docs/planning/ag-sept-plan.md).
+[`docs/planning/ag-sept/milestone-plan.md`](docs/planning/ag-sept/milestone-plan.md).
 
 ## Engineering process
 

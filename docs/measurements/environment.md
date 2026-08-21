@@ -46,7 +46,7 @@ group and the generator to disjoint scheduler-visible CPU sets (`ag-sept-pr4.md`
 "shared by the whole guest" no longer describes the units under test — but the kernel, the Docker
 daemon, storage and page cache are still shared, which is why a local Iteration C result stays a
 shared-host characterisation and not independently provisioned capacity evidence
-(`ag-sept-validation-plan.md` §4.6.7).
+(`ag-sept/milestone-validation.md` §4.6.7).
 
 > So a service-process CPU figure bounds **the application's demand**. It does **not** say how
 > much of the allocation, the guest, or the host was idle. PR2 measures no total utilisation
@@ -172,11 +172,11 @@ no longer true of Iteration C: the PR4a sustained runs certify **`capacity`**, b
 co-residency is a `publishable` bar only and those runs populate the topology and environment
 provenance `measurement-contract.md` §13.2 asks for. A `capacity`-level run is a result about *the
 explicitly recorded environment* — this one, shared kernel and storage included — which is exactly
-why `ag-sept-validation-plan.md` §4.6.7 keeps a local Iteration C result out of `VAL-SCALE-5`.
+why `ag-sept/milestone-validation.md` §4.6.7 keeps a local Iteration C result out of `VAL-SCALE-5`.
 
 An externally presented capacity claim needs the separate generator compute of
 `measurement-contract.md` §13.1. AG-Sept does not fund it — the deployment path that would have
-supplied it is withdrawn (scheduling: `ag-sept-plan.md` §6.3) — so **no AG-Sept run reaches
+supplied it is withdrawn (scheduling: `ag-sept/milestone-plan.md` §6.3) — so **no AG-Sept run reaches
 `publishable`**, and the milestone closes with a bounded local frontier rather than an externally
 presented capacity number.
 

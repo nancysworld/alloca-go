@@ -164,7 +164,7 @@ Iteration B could end for AG-Sept scope when evidence demonstrated, at minimum:
   capacity multiplier.
 
 The concrete validation is owned by
-[`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md).
+[`../planning/ag-sept/milestone-validation.md`](../planning/ag-sept/milestone-validation.md).
 
 ### Analyse & Review outcome
 
@@ -306,7 +306,7 @@ explain the limiting mechanism rather than optimise the milestone toward a pass 
 ### Workload requirement
 
 Iteration C selects the reusable
-[`WL-MUT-DISP-4`](../test/workload-catalog.md#wl-mut-disp-4--four-organisation-dispersed-mutation-capacity)
+[`WL-MUT-DISP-4`](../design/workload-catalog.md#wl-mut-disp-4--four-organisation-dispersed-mutation-capacity)
 workload: four equivalent independent synthetic organisations, `org-a` through `org-d`, each with
 the same mutation semantics and equal demand share. The workload definition is stable; topology
 placement is not part of it.
@@ -371,4 +371,4 @@ Iteration C is sufficiently resolved for AG-Sept when retained evidence can stat
   separate questions unless separately evidenced.
 
 The concrete topology, repetitions, controls, and run admissibility are owned by
-[`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md).
+[`../planning/ag-sept/milestone-validation.md`](../planning/ag-sept/milestone-validation.md).

@@ -19,7 +19,7 @@
 # one workstation, one WSL kernel, one storage path and one page cache, so a partition bounds
 # CPU and nothing else. Rehearsal Goodput is diagnostic evidence: it cannot discharge
 # `VAL-SCALE-5`, cannot become a Tier-2 result, and is never mixed with AWS points
-# (ag-sept-validation-plan.md §4.6).
+# (ag-sept/milestone-validation.md §4.6).
 #
 # **Pinning the units is only half of it.** A generator free to run anywhere will land on the
 # units' CPUs and dissolve the partition it was raised to create. `make itc-rehearse` prints the

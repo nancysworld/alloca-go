@@ -6,7 +6,7 @@
 [`ag-sept-plan-v0.4.md`](../../planning/ag-sept-plan-v0.4.md) §14)
 **Owner docs:** [`measurement-contract.md`](../../design/measurement-contract.md) — run manifest,
 reconciliation, and quotability levels — and
-[`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) — controlled
+[`ag-sept/milestone-validation.md`](../../planning/ag-sept/milestone-validation.md) — controlled
 workloads and negative controls — are normative for what this PR built. (PR1 was planned under
 `ag-sept-plan-v0.4.md` §6, which carried those rules before they were migrated to their durable
 owners.) This record covers only how PR1 discharged them and the choices settled along the way.
@@ -182,7 +182,7 @@ caller, who is the only one who knows what the number is for. The ladder and the
 field lists are in
 [`docs/operations/load-harness.md`](../../operations/load-harness.md) §4; the staging they
 implement is the plan's staging — `ag-sept-plan-v0.4.md` §14 when this was written, and
-`ag-sept-plan.md` §4 now.
+`ag-sept/milestone-plan.md` §4 now.
 
 Levels are named for the claim rather than for the PR that first reaches them. A report in
 `docs/measurements/` outlives the schedule, and `"PR1"` would oblige a later reader to
@@ -288,7 +288,7 @@ one-instance frontier, still co-resident and therefore still bounded rather than
 
 When this was written, v0.4 expected separate generator compute to arrive with the AWS
 deployment. **It does not arrive in AG-Sept at all** — that path was withdrawn
-(`ag-sept-plan.md` §6.3), so **no AG-Sept run can reach `publishable`** and the
+(`ag-sept/milestone-plan.md` §6.3), so **no AG-Sept run can reach `publishable`** and the
 `measurement-contract.md` §13.1 rule is honoured by labelling rather than by satisfying it. That
 is the only level co-residency blocks; PR1's own runs sit at `local` because the deployment
 provenance above that level was not yet populated, which is a different reason.

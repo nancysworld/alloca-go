@@ -8,7 +8,7 @@ frontier report are in [`docs/measurements/pr2-frontier/`](../../measurements/pr
 and diagnostic panels, 1.5 for the sweeps, controls, and report
 **Owner docs:** [`measurement-contract.md`](../../design/measurement-contract.md) §3 and §6 — the
 capacity vocabulary and required indicators — and VAL-NEG-2 in
-[`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) are
+[`ag-sept/milestone-validation.md`](../../planning/ag-sept/milestone-validation.md) are
 normative for what this PR measured. (PR2 was planned under `ag-sept-plan-v0.4.md` §7 and §12.2,
 which carried those rules before they were migrated to their durable owners.) This record covers
 only how PR2 discharged them and the choices made along the way.
@@ -34,7 +34,7 @@ bound is stated and shown. An unresolved frontier reported as a number would be 
 
 **What PR2 may not claim, whatever it measures.** The generator shares a host with the service —
 for the whole of AG-Sept, since the compute that would separate them is not funded
-(`ag-sept-plan.md` §6.3) — so every figure here is a *bounded local* result. The VAL-NEG-2
+(`ag-sept/milestone-plan.md` §6.3) — so every figure here is a *bounded local* result. The VAL-NEG-2
 headroom control is
 what limits how much the co-resident generator can be distorting it, and that limitation
 travels with each number rather than sitting in a footnote. `quotability.level` is `local` for
@@ -278,7 +278,7 @@ report it.
 ### 5.6 The recommended-operating-capacity number is deferred (Nancy's call, 2026-08-03)
 
 Deferred to the v0.4 plan's PR3 when this was written; that work is now PR4
-(`ag-sept-plan.md` §3), because the milestone was reordered to put database-authority
+(`ag-sept/milestone-plan.md` §3), because the milestone was reordered to put database-authority
 composition ahead of replica scaling. The section number is retained — other documents cite
 into it (`tech-debts.md` DEBT-7).
 

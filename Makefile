@@ -103,7 +103,7 @@ SERVICE_1_PORT   ?= 8081
 SERVICE_2_PORT   ?= 8082
 SERVICE_3_PORT   ?= 8083
 SERVICE_4_PORT   ?= 8084
-# Iteration C's shard-group count: 1, 2 or 4 (ag-sept-validation-plan.md §4.6). It selects the
+# Iteration C's shard-group count: 1, 2 or 4 (ag-sept/milestone-validation.md §4.6). It selects the
 # Compose profile and the placement document together, which is the pairing itc-up exists to
 # make impossible to get wrong.
 #
@@ -300,7 +300,7 @@ obs-rehearse:
 	  1) profile="" ;; \
 	  2) profile="--profile g2" ;; \
 	  4) profile="--profile g4" ;; \
-	  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept-validation-plan.md §4.6); got '$(ITC_GROUPS)'" >&2; exit 1 ;; \
+	  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept/milestone-validation.md §4.6); got '$(ITC_GROUPS)'" >&2; exit 1 ;; \
 	esac; \
 	$(MAKE) --no-print-directory obs-up OBS_HOST_TARGET=0 \
 	  OBS_COMPOSE="-f $(OBSCOMPOSE) -f $(OBSREHEARSALCOMPOSE) $$profile"
@@ -376,7 +376,7 @@ itc-topology-check-test:
 # In `ci` because it needs no daemon: docker, curl, taskset and the generator are stubs and the
 # cell is driven inside a throwaway clone. It exists because the ordering is not observable from
 # a finished cell — every wrong order still completes, certifies and retains a full artifact set,
-# and only the phase boundaries move (ag-sept-validation-plan.md §4.6.2).
+# and only the phase boundaries move (ag-sept/milestone-validation.md §4.6.2).
 itc-conditioning-check:
 	@./test/scripts/itc-conditioning-test.sh
 
@@ -385,7 +385,7 @@ itc-conditioning-check:
 # In `ci` because it needs the Compose renderer but no daemon and raises nothing. It exists
 # because four service blocks have to agree and Compose does not make them: three of four
 # carrying the override raises cleanly, certifies cleanly, and produces a pool-sensitivity
-# comparison in which one authority never received the treatment (ag-sept-validation-plan.md
+# comparison in which one authority never received the treatment (ag-sept/milestone-validation.md
 # §4.6.3).
 itc-pool-check:
 	@./test/scripts/itc-pool-check.sh
@@ -405,7 +405,7 @@ itc-obs-labels-check:
 # curve, so the cases run in a second and drive no cell. It exists because the walk decides which
 # two worker levels receive four retained 600 s runs each, unattended — a defect costs the hour
 # and then returns a bracket that is wrong while every run inside it is sound
-# (ag-sept-validation-plan.md §4.6.4).
+# (ag-sept/milestone-validation.md §4.6.4).
 #
 # It is not covered by `go test ./...`: the search is bash, and the Go suite says nothing about
 # whether it still refuses a ladder end or still checks the lower side of its own candidate.
@@ -418,7 +418,7 @@ itc-recon-walk-check:
 # test the §4.6.5 rule and the §4.6.7 arithmetic rather than a cell. It exists because the rule has
 # four independent ways to fail and each means something different from a low capacity number — a
 # defect does not produce an obviously wrong answer, it produces a plausible efficiency no reader
-# can distinguish from a real one (ag-sept-validation-plan.md §4.6.5, §4.6.7).
+# can distinguish from a real one (ag-sept/milestone-validation.md §4.6.5, §4.6.7).
 itc-capacity-result-check:
 	@./test/scripts/itc-capacity-result-test.sh
 
@@ -428,7 +428,7 @@ itc-capacity-result-check:
 # pre-creates the retained cells so the resume branch skips them — so no daemon and no cell. It
 # exists because ITC_CAPACITY_S is the one way to move the operating point by hand, and a guard that
 # stopped guarding would leave a plausible efficiency measured at a level no reconnaissance selected
-# (ag-sept-validation-plan.md §4.6.4, §2.3).
+# (ag-sept/milestone-validation.md §4.6.4, §2.3).
 itc-capacity-bracket-check:
 	@./test/scripts/itc-capacity-bracket-test.sh
 
@@ -511,7 +511,7 @@ itc-up: image
 	  1) profile="" ;; \
 	  2) profile="--profile g2" ;; \
 	  4) profile="--profile g4" ;; \
-	  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept-validation-plan.md §4.6); got '$(ITC_GROUPS)'"; exit 1 ;; \
+	  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept/milestone-validation.md §4.6); got '$(ITC_GROUPS)'"; exit 1 ;; \
 	esac; \
 	stale=""; \
 	for n in 1 2 3 4; do \
@@ -608,7 +608,7 @@ itc-layout:
 itc-deployment:
 	@case "$(ITC_GROUPS)" in \
 	  1|2|4) ;; \
-	  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept-validation-plan.md §4.6); got '$(ITC_GROUPS)'" >&2; exit 1 ;; \
+	  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept/milestone-validation.md §4.6); got '$(ITC_GROUPS)'" >&2; exit 1 ;; \
 	esac; \
 	units=""; \
 	for n in $$(seq 1 $(ITC_GROUPS)); do units="$$units alloca-service-$$n"; done; \

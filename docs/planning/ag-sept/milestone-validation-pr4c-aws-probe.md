@@ -3,7 +3,7 @@
 **Status:** Not executed — `STOP / DEFER`.  
 **Purpose:** retain the bounded independent-unit validation method; PR4c produced no AWS result.  
 **Design:** [`../../design/independent-capacity-probe.md`](../../design/independent-capacity-probe.md).  
-**Governing validation:** [`ag-sept-validation-plan.md`](ag-sept-validation-plan.md) §4.6,
+**Governing validation:** [`milestone-validation.md`](milestone-validation.md) §4.6,
 `VAL-SCALE-5`, `VAL-NEG-7`, `VAL-NEG-8`.  
 **Provisioning evidence:** [`../../measurements/pr4c-quota/`](../../measurements/pr4c-quota/).
 

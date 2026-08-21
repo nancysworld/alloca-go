@@ -13,7 +13,7 @@ at the hardest local topology, and they fix `pool_max_conns` for the shard-group
 They are **not** a capacity result. No `E2_local` or `E4_local` follows from them, 16 workers per
 group is not a selected `S`, and nothing here discharges `VAL-SCALE-5` or `VAL-SCALE-6`. PR4b
 owns saturation reconnaissance, `S`/`H` selection and the retained capacity comparison
-(`ag-sept-validation-plan.md` §4.6.4–§4.6.5).
+(`ag-sept/milestone-validation.md` §4.6.4–§4.6.5).
 
 Every run is a *single* observation. `measurement-contract.md` treats a single reading as
 provisional, and none of these was repeated.

@@ -182,12 +182,35 @@ The project should bias toward a higher code-to-implementation-doc ratio than it
 is a direction, not a numeric metric: remove or avoid prose that merely mirrors code, while
 retaining documentation that carries information the code alone cannot preserve clearly.
 
+Source comments follow the same boundary. Aim for a healthy code-to-comment balance, not a
+numeric ratio. Comments should stay local and explain what a reader needs at the code site: a
+non-obvious invariant, safety reason, constraint, intent, or why an apparently simpler mechanism
+is wrong. When an explanation needs several paragraphs, architectural history, alternatives,
+experiment evidence, or broader context, move that material to the owning document and leave a
+concise comment and durable reference. Code files should not become parallel documentation files.
+
 ### 1.6 Compress documentation to durable signal
 
 Useful working detail is not automatically durable project information. Before a work unit is
 considered complete, accumulated or generated prose should be compressed to the minimum record
 needed to preserve requirements, decisions, evidence boundaries, reproducibility, and future
 engineering understanding.
+
+Compression is deliberately asymmetric across the two documentation layers defined in §6.
+**Layer 1** is held to the stricter abstraction boundary: requirements, design, validation intent,
+planning, and architectural decisions should preserve durable intent and conclusions without
+accumulating replaceable implementation mechanics, command lines, configuration detail,
+experiment history, transient debugging discoveries, or other Layer-2 material. A technical fact
+does not move into Layer 1 merely because it helped reach a decision; Layer 1 records the durable
+conclusion at the appropriate abstraction level and links to the owning evidence or implementation
+record where necessary.
+
+**Layer 2** may retain technical detail because implementation understanding, operation, and
+evidence sometimes require it, but chronological completeness is not a goal. Keep detail when it
+helps a future engineer understand the current implementation, reproduce an operation or result,
+understand why a consequential decision was made, or avoid repeating an important failed path.
+Ordinary workflow narration, superseded intermediate reasoning, and discoveries that no longer
+affect interpretation should be removed rather than preserved as an engineering diary.
 
 Prefer deletion and links to one semantic owner over repeated explanation. Review chronology,
 exact timestamps, ordinary workflow narration, duplicated rationale, and intermediate discoveries
@@ -199,6 +222,18 @@ AI assistance makes overproduction cheap, so **AI-generated documentation carrie
 obligation**. The goal is not to preserve everything that was useful during the work; it is to
 leave the durable signal. Documentation review should therefore be deletion-biased and reduce
 reader/review surface without weakening evidence or traceability.
+
+Compression is part of normal maintenance, not only a publication cleanup. Review the affected
+records during PR review and perform a broader compression pass at the end of each development
+cycle, when obsolete investigation paths, duplicated rationale, and information that now has a
+clearer semantic owner are easiest to identify.
+
+Recording these rules does not expand the work unit that records them. In particular, AG-Sept
+PR5 establishes the policy but does **not** require a repository-wide retrofit of existing
+documents or comments. The first systematic application to the existing Alloca corpus is the
+planned pre-publication documentation pass after PR5 / AG-Sept close. That pass should also
+collect real examples from the repository to sharpen this guidance rather than inventing examples
+in advance.
 
 ## 2. Roles and decision ownership
 
@@ -402,6 +437,28 @@ The repository separates documents by what they own:
 | [`implementation/`](implementation/) | selective implementation records: rationale, discoveries, review decisions, deferrals, and other context not adequately carried by code and tests |
 | [`../operations/`](../operations/) | procedures for building, running, deploying, and operating the system |
 | [`../measurements/`](../measurements/) | experiment inputs, artifacts, reports, and measured conclusions |
+
+These areas form two documentation layers with different abstraction responsibilities:
+
+- **Layer 1 — durable intent and truth:** `requirements/`, `design/`, `test/validation-plan/`,
+  `planning/`, and `decisions/`. This layer owns what must be true, the durable system shape and
+  contracts, why significant architectural choices were made, what validation is intended to
+  establish or falsify, and how work is scheduled. Replaceable technical mechanics stay out of
+  this layer unless they themselves become a durable contract.
+- **Layer 2 — execution and evidence:** `development/implementation/`, `operations/`, and
+  `measurements/`. This layer may carry the technical detail needed to explain implementation and
+  operation, reproduce experiments, preserve evidence, and retain the reasoning that materially
+  contributed to engineering decisions.
+
+The validation boundary is especially deliberate: **validation intent belongs in Layer 1;
+validation execution and results belong in Layer 2.** A validation plan may specify scenarios,
+workloads, controls, fault cases, and acceptance/falsification conditions; commands, concrete
+experiment configuration, dashboards, retained artifacts, observations, and measured results
+belong with their Layer-2 owners.
+
+Layering controls where information belongs, not whether it is held to normal engineering
+standards. The rules in §7 apply equally to both layers, and the compression discipline in §1.6
+still applies to Layer 2 even though more technical detail is legitimate there.
 
 The distinctions are deliberate:
 

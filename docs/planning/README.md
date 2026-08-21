@@ -19,11 +19,12 @@ meaning ([`../development/engineering-process.md`](../development/engineering-pr
   Goal selection — it says where the project *might* go, never what it has committed to.
 - [`ag-sept/`](ag-sept/) — the current AG-Sept milestone:
   - [`ag-sept/milestone-plan.md`](ag-sept/milestone-plan.md) — current schedule, budget,
-    work-unit status, and closeout sequence;
+    work-unit status, August publication checkpoint, and the pending Iteration C continuation;
   - [`ag-sept/milestone-validation.md`](ag-sept/milestone-validation.md) — milestone validation
     intent and `VAL-*` status;
   - [`ag-sept/milestone-validation-pr4c-aws-probe.md`](ag-sept/milestone-validation-pr4c-aws-probe.md)
-    — deferred fixed-per-unit independent probe method; PR4c produced no AWS capacity evidence.
+    — fixed-per-unit independent probe method; PR4c produced no performance cell and Iteration C
+    remains open pending an equivalent independent environment.
 - [`ag-sept-plan-v0.4.md`](ag-sept-plan-v0.4.md) — archived v0.4 snapshot, superseded 5 August 2026. Retained at its historical filename because PR1 and PR2 were planned and reported under it and cite its section numbers.
 - [`ag-m1-implementation-plan.md`](ag-m1-implementation-plan.md) — AG-M1 PR split and correctness gates.
 - [`release-shaping-experiment.md`](release-shaping-experiment.md) — synthetic AG-M2/AG-M5 experiment plan comparing synchronized, rolling, clustered, and hot-slot release shapes.

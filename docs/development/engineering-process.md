@@ -285,60 +285,90 @@ commit messages, and PR text do.
 
 ## 6. Documentation ownership and lifecycle
 
-The repository separates documents by what they own:
+The documentation structure makes the architecture/implementation boundary from §1.2 visible
+rather than requiring readers to infer it from individual files:
 
-| Area | Owns |
-|---|---|
-| [`../requirements/`](../requirements/) | durable engineering goals, durable problems that block them, and requirements stating what must be true independently of replaceable mechanism |
-| [`../design/`](../design/) | current normative system design and contracts |
-| [`../planning/`](../planning/) | project-wide/general planning documents plus one subdirectory per milestone |
-| `../planning/<milestone>/milestone-plan.md` | that milestone's schedule: budget, sequencing, priorities, descope order, intended work-unit/PR scope, and status |
-| `../planning/<milestone>/milestone-validation.md` | that milestone's validation intent: scenarios, workloads, controls, fault cases, acceptance/falsification conditions, and requirement/design coverage |
-| [`../decisions/`](../decisions/) | significant architectural choices: why and what, not replaceable implementation mechanics |
-| [`implementation/`](implementation/) | selective implementation records: rationale, discoveries, review decisions, deferrals, and context not adequately carried by code and tests |
-| `../../test/` | executable tests and test-support implementation: fixtures, harnesses, fault injection, and other mechanics used to validate the system |
-| [`../operations/`](../operations/) | procedures for building, running, deploying, and operating the system |
-| [`../measurements/`](../measurements/) | experiment inputs, artifacts, reports, and measured conclusions |
+```text
+ARCHITECTURE
+  docs/requirements/                     goals, problems, requirements
+  docs/design/                           normative system design and contracts
+  docs/decisions/                        significant architectural decisions
+  docs/planning/                         project-wide/general planning
+  docs/planning/<milestone>/
+      milestone-plan.md                  milestone schedule and scope
+      milestone-validation.md            milestone validation intent
 
-General planning documents that are not owned by one milestone stay directly under
-`docs/planning/`. Milestone-specific planning is grouped under `docs/planning/<milestone>/` so the
-schedule and validation plan for the same milestone remain adjacent while retaining distinct
-semantic ownership.
+IMPLEMENTATION
+  docs/development/implementation/       selective implementation records
+  test/                                  executable tests and test support
+  docs/operations/                       build/run/deploy/operate procedures
+  docs/measurements/                     experiment execution, evidence, results
+```
 
-This ownership model applies the architecture/implementation principle in §1.2 to documentation.
-Requirements, design, and decisions stay at architectural abstraction. Planning owns intended
-work and validation, not runtime or test mechanics. A milestone validation document therefore
-states what must be demonstrated or falsified; the executable tests and harnesses that carry out
-that intent belong under `test/`, and empirical execution/results belong under `measurements/`.
-Replaceable implementation detail does not move into planning merely because it helped reach a
-decision.
+The split is about abstraction and ownership, not importance. Architectural documents define or
+govern what implementation must satisfy; implementation documents and executable artifacts record
+how the accepted architecture is realised, operated, exercised, and measured.
 
-Implementation records, `test/`, operations documents, and measurement reports may carry the
-technical detail needed to explain implementation, exercise the system, operate it, reproduce
-evidence, and preserve reasoning that materially contributed to a decision. They remain subject
-to §1.6: technical detail is allowed where useful, not preserved for chronological completeness.
-
-The validation boundary is especially important: **milestone validation owns validation intent;
-`test/` owns executable validation mechanics; measurements own execution and results.** Commands,
-concrete run configuration, dashboards, retained artifacts, observations, and measured results
-belong with their implementation or evidence owner rather than being copied into the milestone
-validation document.
-
-A durable engineering goal and problem normally sit with the requirements they govern. A
-temporary implementation problem stays with the current implementation work unless analysis
-shows that it exposes a missing system requirement.
-
-An implementation record may begin as a scope note while work is being planned. Once
-implementation starts, it becomes the selective record of work actually performed under
-`docs/development/implementation/`; code and tests own precise mechanics while the record preserves
-context that would otherwise be lost.
+Planning is shown on the architectural side because it governs work before and above the concrete
+mechanism, but a plan is **not** normative architecture. Schedule, budget, priority, and validation
+intent may change without changing runtime meaning.
 
 The document-owner principle is:
 
 > A fact should have one normative or empirical home. Other documents link to it rather than
 > maintaining a second competing copy.
 
-### 6.1 Durable reference direction
+### 6.1 Architectural documents
+
+Architectural documents stay at the abstraction required to define the problem, accepted system
+shape, significant decisions, and the work and validation needed to establish them. Replaceable
+implementation mechanics do not move into these documents merely because they informed a
+decision.
+
+| Area | Owns |
+|---|---|
+| [`../requirements/`](../requirements/) | durable engineering goals, durable problems that block them, and requirements stating what must be true independently of replaceable mechanism |
+| [`../design/`](../design/) | current normative system design and contracts |
+| [`../decisions/`](../decisions/) | significant architectural choices: why and what, not replaceable implementation mechanics |
+| [`../planning/`](../planning/) | project-wide/general planning documents; milestone-specific planning lives in one subdirectory per milestone |
+| `../planning/<milestone>/milestone-plan.md` | schedule: budget, sequencing, priorities, descope order, intended work-unit/PR scope, and status |
+| `../planning/<milestone>/milestone-validation.md` | validation intent: scenarios, workloads, controls, fault cases, acceptance/falsification conditions, and requirement/design coverage |
+
+General planning documents that are not owned by one milestone stay directly under
+`docs/planning/`. Keeping `milestone-plan.md` and `milestone-validation.md` together makes the
+planning set for a milestone easy to find while preserving their distinct ownership.
+
+A durable engineering goal and problem normally sit with the requirements they govern.
+Milestone validation states **what must be demonstrated or falsified**, not how a particular test
+or experiment happens to implement that intent.
+
+### 6.2 Implementation documents
+
+Implementation documentation may contain technical detail when that detail is needed to
+understand the implementation, operate the system, reproduce evidence, preserve consequential
+reasoning, or avoid repeating an important failed path. It remains selective under §1.5 and §1.6:
+code and tests own precise mechanics, and chronological completeness is not a goal.
+
+| Area | Owns |
+|---|---|
+| [`implementation/`](implementation/) | selective implementation rationale, discoveries, review decisions, deferrals, and context not adequately carried by code and tests |
+| `../../test/` | executable tests and test-support implementation: fixtures, harnesses, fault injection, and other validation mechanics |
+| [`../operations/`](../operations/) | procedures for building, running, deploying, and operating the system |
+| [`../measurements/`](../measurements/) | experiment inputs, execution artifacts, reports, measured results, and empirical conclusions |
+
+An implementation record may begin as a scope note while work is being planned. Once
+implementation starts, it becomes the selective record of work actually performed under
+`docs/development/implementation/`. A temporary implementation problem stays there unless
+analysis shows that it exposes a missing architectural requirement or decision, in which case it
+crosses the boundary explicitly under §3.1.
+
+The validation boundary follows the same split: **milestone validation owns validation intent;
+`test/` owns executable validation mechanics; `measurements/` owns empirical execution and
+results.** Commands, concrete run configuration, dashboards, retained artifacts, observations,
+and measured results therefore stay on the implementation side rather than being copied into the
+milestone validation document.
+
+### 6.3 Durable reference direction
 
 Durable artifacts depend on durable owners for normative meaning.
 

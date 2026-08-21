@@ -2,8 +2,8 @@
 
 **This directory holds account-state evidence, not a measured run.** Nothing here carries a
 `quotability.level`, a workload, or a measured interval; the measurement contract's run gates do not
-apply. It exists because PR4c's closure rests on an external provisioning fact, and that fact had no
-retained artifact.
+apply. It exists because PR4c's work-unit stop rests on an external provisioning fact, and that fact
+had no retained artifact.
 
 The quota is `L-1216C47A`, **Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances**, in
 `eu-west-2`. Its `Description` is *"Maximum number of vCPUs…"* and its dimension is `Resource: vCPU`:
@@ -21,7 +21,13 @@ of 1.0 refuses even a single non-burstable serving unit.
 
 ## Consequence
 
-PR4c produced no AWS measurement. `VAL-SCALE-5` remains unproven, and independently provisioned
-capacity evidence is post-AG-Sept work. The milestone status and budget are recorded in
-[`../../planning/ag-sept/milestone-plan.md`](../../planning/ag-sept/milestone-plan.md); this directory only holds the
-external fact they depend on.
+PR4c produced no AWS measurement and `VAL-SCALE-5` remains unproven. That closes the **PR4c work
+unit**, not the Iteration C Problem. Iteration C remains open and resumes when an equivalent
+independently provisioned environment can be created; AWS after quota approval is one possible
+environment, not a requirement of the validation.
+
+The current scheduler-partitioned evidence boundary is summarised in
+[`../reports/ag-sept-pr4-scheduler-partitioned-capacity.md`](../reports/ag-sept-pr4-scheduler-partitioned-capacity.md).
+The publication/continuation schedule is recorded in
+[`../../planning/ag-sept/milestone-plan.md`](../../planning/ag-sept/milestone-plan.md); this directory
+only holds the external provisioning fact they depend on.

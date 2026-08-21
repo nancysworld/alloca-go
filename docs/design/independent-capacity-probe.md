@@ -71,35 +71,15 @@ For an individual/composed comparison to be interpretable:
 - each unit has an independent worker stream; and
 - the shared generator process **and host** have demonstrable CPU/scheduling/memory/network headroom.
 
-The validation plan owns the executable evidence checks.
+These are architectural comparability conditions. The validation document owns the concrete cells,
+observations, calculations, repeat/interleave rule, and claim gates used to demonstrate them.
 
-## 5. Diagnostic outputs
+## 5. Validation ownership
 
-Retain the raw per-unit observations:
-
-```text
-p1_CU1_AB
-p1_CU2_CD
-p2_CU1_AB
-p2_CU2_CD
-p2_total
-```
-
-When repeat evidence permits interpretation, derive:
-
-```text
-R_CU1 = p2_CU1_AB / p1_CU1_AB
-R_CU2 = p2_CU2_CD / p1_CU2_CD
-R2_probe = p2_total / (p1_CU1_AB + p1_CU2_CD)
-```
-
-One observation per cell is insufficient to attribute a difference to composition rather than
-run-to-run/provider variation. A future execution must repeat or interleave cells for at least one
-unit, or keep the raw observations uninterpreted; the validation plan owns that rule.
-
-`R2_probe` is diagnostic only. It is neither `E2_aws` nor comparable with `E2_local`: the canonical
-local experiment holds total workload fixed while this probe adds an equivalent workload/resource
-unit. It does not establish saturation or discharge `VAL-SCALE-5`.
+Probe outputs and their interpretation are validation method, not system design. The retained
+observations, retention-ratio calculations, treatment of run-to-run/provider variation, and the
+rule for when a composition claim is admissible are therefore defined only in
+[`milestone-validation-pr4c-aws-probe.md`](../planning/ag-sept/milestone-validation-pr4c-aws-probe.md).
 
 ## 6. AG-Sept outcome
 

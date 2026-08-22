@@ -228,8 +228,7 @@ the shape of the work rather than merely confirming it.
    resolve by reservation identifier alone, and the caller's `UserRef` only scopes idempotency,
    so a confirm carrying a wrong identity succeeds. Without the check, sharding would make that
    outcome depend on whether two organisations happen to be colocated. This is a deliberate
-   domain-contract correction, and it is what PR3a grew by — funded without reducing another PR's
-   scope. It is not authentication:
+   domain-contract correction, and it is what PR3a grew by. It is not authentication:
    a caller who knows both the reservation identifier and its exact owner can still act as that
    owner.
 3. **An unavailable authority uses the existing infrastructure classifications** — `timeout_db`

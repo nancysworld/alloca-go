@@ -636,9 +636,9 @@ person to reach for the regex finds the survey rather than repeating it.
 The three documents under [`../development/implementation/`](../development/implementation/)
 were moved out of `docs/planning/` and re-headed on 2026-08-07. They were not rewritten. They
 still carry the shape of the scope notes they were: §1 quotes the plan's exit gates forward as
-intent, the "What PR-n delivers" tables list what was *planned*, and budgets appear as
-estimates. Only §6d of [`ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md) was
-written as a record of what was built.
+intent, and the "What PR-n delivers" tables list what was *planned*. Only §6d of
+[`ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md) was written as a record of what
+was built.
 
 Residual wording elsewhere still calls them scope notes: the PR2 frontier report. The plan's own
 references were corrected when it was slimmed to a schedule on 2026-08-09, and
@@ -725,10 +725,11 @@ currently rests on the weaker statement.
 
 ### Why it is this way
 
-PR4b's scheduled time was exhausted. The maintainer's decision on 2026-08-19 was to stop execution
-rather than extend it: establish `G4`, withhold the `G1`/`G2`-derived efficiencies, document the
-limitation, and leave the mechanism explicitly unproven. That was the right call — the alternative
-buys a mechanism for a local result that is not the milestone's target evidence anyway.
+The extra local diagnostic was deliberately deferred. Establishing the mechanism means extending a
+local investigation, and the result it would explain is not the evidence Iteration C targets: the
+milestone needs an independently provisioned comparison, which no amount of further work on this
+shared write path produces. So execution stopped with `G4` established, the `G1`/`G2`-derived
+efficiencies withheld, the limitation documented, and the mechanism explicitly unproven.
 
 ### Why it is acceptable today
 

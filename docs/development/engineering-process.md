@@ -183,17 +183,10 @@ The project owner may act as both co-architecture/design reviewer and co-impleme
 Specialist reviewers add depth and independent challenge; they do not prevent direct
 participation across the boundary.
 
-### 2.1 Current AG-Sept working mapping
-
-| Role | Current participant / tool |
-|---|---|
-| Project owner + co-architecture/design reviewer + co-implementation reviewer | repository maintainer |
-| Architecture / design reviewer | ChatGPT |
-| Implementation agent / reviewer | Claude |
-| Additional independent review | Codex when used |
-
-This mapping is descriptive, not architectural; changing tools or redistributing responsibilities
-does not require changing system design.
+Which participant or tool currently occupies each role is a working arrangement, not an
+architectural property: changing tools or redistributing responsibilities does not require
+changing system design, and the rules above are therefore written in terms of roles rather than
+participants.
 
 ## 3. Boundary crossing and implementation readiness
 

@@ -32,5 +32,5 @@
 - [ ] Prior-work figures are reproducible here or explicitly labelled as prior and
       not yet reproduced in this repository.
 
-<!-- Trivial PRs (docs tweak, single-file refactor) may skip the Codex pass at the
-     author's discretion. Substantial milestone PRs follow the full review cycle. -->
+<!-- Trivial PRs (docs tweak, single-file refactor) may use a lighter review than the
+     full cycle a substantial milestone PR follows. -->

@@ -3,18 +3,16 @@
 **Type:** Implementation record
 **Status:** Shipped and merged — every decision in §5 settled, nothing open in §6. Results and the
 frontier report are in [`docs/measurements/pr2-frontier/`](../../measurements/pr2-frontier/)
-**Budget:** 2.5 development days (scheduled under
-[`ag-sept-plan-v0.4.md`](../../planning/ag-sept-plan-v0.4.md) §14) — 1.0 for the retention path
-and diagnostic panels, 1.5 for the sweeps, controls, and report
+**Scheduled under:** [`milestone-plan-v0.4.md`](../../planning/ag-sept/milestone-plan-v0.4.md) §14
 **Owner docs:** [`measurement-contract.md`](../../design/measurement-contract.md) §3 and §6 — the
 capacity vocabulary and required indicators — and VAL-NEG-2 in
 [`ag-sept/milestone-validation.md`](../../planning/ag-sept/milestone-validation.md) are
-normative for what this PR measured. (PR2 was planned under `ag-sept-plan-v0.4.md` §7 and §12.2,
+normative for what this PR measured. (PR2 was planned under `milestone-plan-v0.4.md` §7 and §12.2,
 which carried those rules before they were migrated to their durable owners.) This record covers
 only how PR2 discharged them and the choices made along the way.
 
 **Reading the section references below.** A bare `§n` in this record refers to
-`ag-sept-plan-v0.4.md`, the plan in force when PR2 was written, unless another document is named
+`milestone-plan-v0.4.md`, the plan in force when PR2 was written, unless another document is named
 on the line — except within §5, where a bare `§5.n` is this record's own subsection. Those plan
 sections have since been migrated to the durable owners named above; the bare references are
 retained because this record is a dated account of what the work was measured against, not a
@@ -53,7 +51,7 @@ milestone (`measurement-contract.md` §13.1–§13.2).
 | 5 | Telemetry comparison end to end: throughput and p99 with telemetry on versus off, same dataset, concurrency and environment | VAL-NEG-3 |
 | 6 | Generator-bottleneck control, and demonstrated generator headroom | VAL-NEG-2 |
 | 7 | Peak observed throughput, SLO-safe capacity, recommended operating capacity — or a documented reason each remains unresolved | `measurement-contract.md` §3 |
-| 8 | Retained run reports, verdicts, environment details, and time-series exports | `ag-sept-plan-v0.4.md` §14 PR2 |
+| 8 | Retained run reports, verdicts, environment details, and time-series exports | `milestone-plan-v0.4.md` §14 PR2 |
 
 ## 3. What PR1 changed about PR2's scope
 
@@ -65,7 +63,7 @@ read against what actually exists.
 
 The plan asks PR2 to populate the service-shape fields of measurement-contract §11 —
 PostgreSQL version, pool size per replica, server `GOMAXPROCS`, timeout budget, and
-reservation TTL. (The plan carried that field list itself, as `ag-sept-plan-v0.4.md` §6.4, when
+reservation TTL. (The plan carried that field list itself, as `milestone-plan-v0.4.md` §6.4, when
 this record was written; the list is now the measurement contract's and only the staging is the
 plan's.)
 

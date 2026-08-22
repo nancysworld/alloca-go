@@ -6,9 +6,7 @@ review (#16)** — harness, two measured passes and the report, with nothing man
 outstanding. §6a records what remains opportunistic. The
 design was accepted before implementation began (formal design §8), and §6 holds no blocker —
 its one remaining item is a starting fixture, not a contract.
-**Budget:** 7.5 development days across three PRs ([AG-Sept plan](../../planning/ag-sept/milestone-plan.md) §2) —
-3.0 for PR3a, 2.5 for PR3b, 2.0 for PR3c. **PR3a came in at 1.0**; the 2.0 difference went
-to the plan's contingency, not to PR3b or PR3c.
+**Scheduled under:** [AG-Sept plan](../../planning/ag-sept/milestone-plan.md) §2, as three PRs.
 **Owner docs:**
 [`horizontal-database-authority.md`](../../design/horizontal-database-authority.md) and
 [`deployment-architecture.md`](../../design/deployment-architecture.md) own the Phase 1 model;
@@ -142,56 +140,40 @@ per-authority migration is a loop over DSNs, not a design change.
 `:120-128`), and the HTTP mapping is keyed by outcome and total over the contract
 (`api-surface.md` §2.3). A new reason touches the domain set, the mapping, `api-surface.md`, the
 invariant register, the `measurement-contract.md` §4 taxonomy, and the metric label allowlist.
-The formal design names it `cross_authority_unsupported` and states the same list. Priced into
-PR3a at 0.5 days, and part of why PR3a is not the smallest of the three.
+The formal design names it `cross_authority_unsupported` and states the same list. That breadth is
+part of why PR3a is not the smallest of the three.
 
-## 4. Budget, by component
+## 4. How the work was split across the three PRs
 
-Estimates, not measurements. Recorded per component so an overrun is attributable to something.
+The per-component effort estimates that sized these three PRs were coordination detail and are
+not retained here. What the split means for the implementation is:
 
-**Half a day is the unit.** Finer granularity would be false precision: nothing here is
-estimated well enough to distinguish 0.3 from 0.4, and a plan that pretends otherwise invites
-its own overrun. Nancy's call, 2026-08-05.
+**PR3a** — the placement map and its startup gate; shard-affine binding and server-side
+enforcement of the assigned organisation set; the `/meta` authority identifier, routing version
+and schema version; booking policy on resolved authorities, carrying
+`cross_authority_unsupported` through the closed sets and status mapping; the explicit `UserRef`
+ownership check on confirm and cancel (§5.5); and the normative document updates with their
+discriminating tests, each proved to fail without its property.
 
-**Two late additions are absorbed rather than added.** The ambiguous-request register (§5.7)
-sits inside PR3b's generator line, and the post-restoration replay pass inside PR3c's
-failure-isolation line. Both are small, and both make those two lines tight rather than
-comfortable; if either overruns, the plan's contingency covers it before anything is descoped.
+**PR3b** — the containerised two-authority topology with per-authority migration, reproducible
+from version control; generator organisation→endpoint routing and multi-organisation workloads;
+the multi-service manifest and certification requiring every unit's `/meta`, revision and schema
+to agree; and the authority-aware verifier.
 
-**The INV-21 discharge is explicitly not funded here.** Proving it needs a *deliberately timed*
-connection loss during `COMMIT`, which a generic authority shutdown does not produce. If the
-targeted fault-injection mechanism proves cheap it can be taken inside PR3c; if it does not, it
-is a contingency draw of about 0.5 days or it is left open, exactly as it has been since AG-M1.
-What PR3c must not do is claim the discharge from a generic shutdown.
+**PR3c** — multi-organisation seeding across authorities with at least two organisations
+colocated; the correctness matrix of the six cases in formal design §6; the failure-isolation
+experiment; and the report carrying per-authority verdicts and the organisation-to-authority
+distribution.
 
-**PR3a — 3.0 days allocated, 1.0 actual**
+**Two late additions were absorbed rather than added.** The ambiguous-request register (§5.7)
+sits inside PR3b's generator work, and the post-restoration replay pass inside PR3c's
+failure-isolation work.
 
-| Component | Days |
-|---|---:|
-| Placement map: type, config, validation, immutability, startup gate | 0.5 |
-| Shard-affine binding and server-side enforcement of the assigned organisation set | 0.5 |
-| `/meta` authority identifier, routing version, schema version | 0.5 |
-| Booking policy on resolved authorities, and `cross_authority_unsupported` through the closed sets and status mapping | 0.5 |
-| Explicit `UserRef` ownership check on confirm and cancel (§5.5) | 0.5 |
-| Normative doc updates and the discriminating tests, each proved to fail without its property | 0.5 |
-
-**PR3b — 2.5 days**
-
-| Component | Days |
-|---|---:|
-| Containerised two-authority topology, per-authority migration, reproducible from version control | 0.5 |
-| Generator org→endpoint routing and multi-organisation workloads | 0.5 |
-| Multi-service manifest and certification — every unit's `/meta`, revision and schema agreement | 0.5 |
-| Authority-aware verifier: placement input, per-authority loop, N scrape pairs, aggregated verdict | 1.0 |
-
-**PR3c — 2.0 days**
-
-| Component | Days |
-|---|---:|
-| Multi-organisation seeding across authorities, with at least two organisations colocated | 0.5 |
-| Correctness matrix — the six cases in formal design §6 | 0.5 |
-| Failure-isolation experiment: down, observe, restore, verify | 0.5 |
-| Report with per-authority verdicts and the organisation-to-authority distribution | 0.5 |
+**The INV-21 discharge is explicitly not part of this work.** Proving it needs a *deliberately
+timed* connection loss during `COMMIT`, which a generic authority shutdown does not produce. If
+the targeted fault-injection mechanism proves cheap it can be taken inside PR3c; otherwise it is
+left open, exactly as it has been since AG-M1. What PR3c must not do is claim the discharge from
+a generic shutdown.
 
 ## 5. Decisions taken
 
@@ -225,7 +207,7 @@ If PR3a–PR3c overrun, the difference comes out of the post-Iteration-B envelop
 
 See §3.2. This is a design choice with a budget consequence, not a descope.
 
-### 5.5 The three contract questions are settled, and one of them cost 0.5 days
+### 5.5 The three contract questions are settled, and one of them enlarged PR3a
 
 Raised against the formal design in
 [PR #12](https://github.com/nancysworld/alloca-go/pull/12) and settled by its revision of
@@ -246,8 +228,8 @@ the shape of the work rather than merely confirming it.
    resolve by reservation identifier alone, and the caller's `UserRef` only scopes idempotency,
    so a confirm carrying a wrong identity succeeds. Without the check, sharding would make that
    outcome depend on whether two organisations happen to be colocated. This is a deliberate
-   domain-contract correction, and it is the 0.5 days PR3a rose by — drawn from the plan's
-   contingency rather than from another PR (`ag-sept/milestone-plan.md` §2.1). It is not authentication:
+   domain-contract correction, and it is what PR3a grew by — funded without reducing another PR's
+   scope. It is not authentication:
    a caller who knows both the reservation identifier and its exact owner can still act as that
    owner.
 3. **An unavailable authority uses the existing infrastructure classifications** — `timeout_db`

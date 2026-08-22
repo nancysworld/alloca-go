@@ -2,17 +2,16 @@
 
 **Type:** Implementation record
 **Status:** Shipped and merged — every decision in §3 settled, exit gate discharged in §3.6
-**Budget:** 2 development days (scheduled under
-[`ag-sept-plan-v0.4.md`](../../planning/ag-sept-plan-v0.4.md) §14)
+**Scheduled under:** [`milestone-plan-v0.4.md`](../../planning/ag-sept/milestone-plan-v0.4.md) §14
 **Owner docs:** [`measurement-contract.md`](../../design/measurement-contract.md) — run manifest,
 reconciliation, and quotability levels — and
 [`ag-sept/milestone-validation.md`](../../planning/ag-sept/milestone-validation.md) — controlled
 workloads and negative controls — are normative for what this PR built. (PR1 was planned under
-`ag-sept-plan-v0.4.md` §6, which carried those rules before they were migrated to their durable
+`milestone-plan-v0.4.md` §6, which carried those rules before they were migrated to their durable
 owners.) This record covers only how PR1 discharged them and the choices settled along the way.
 
 **Reading the section references below.** A bare `§n` in this record refers to
-`ag-sept-plan-v0.4.md`, the plan in force when PR1 was written, unless another document is named
+`milestone-plan-v0.4.md`, the plan in force when PR1 was written, unless another document is named
 on the line. Those plan sections have since been migrated to the durable owners named above; the
 bare references are retained because this record is a dated account of what the work was measured
 against, not a current contract.
@@ -44,7 +43,7 @@ and a scope note that misquotes its own exit gate cannot be used to check the ga
 | 4 | Run manifest emitted with every run and **enforced**: every field the generator determines for itself, plus everything the service reports at `/meta`. The fields no endpoint reports stay operator-supplied and staged to PR2–PR4 | measurement-contract §11 |
 | 5 | Correctness reconciliation used by every later run | measurement-contract §12 |
 | 6 | Response-validation-active negative control | VAL-NEG-1, `measurement-contract.md` §5 item 5 |
-| 7 | One controlled local smoke run exercising all of the above | `ag-sept-plan-v0.4.md` §14 PR1 |
+| 7 | One controlled local smoke run exercising all of the above | `milestone-plan-v0.4.md` §14 PR1 |
 
 Deliverable 6 is mandatory and not descopable: `measurement-contract.md` §5 item 5 requires a
 control that **fails when response validation is silently disabled**, so a reported success
@@ -165,7 +164,7 @@ off, reporting the throughput and p99 delta. **PR1 does not do that, and does no
 §6.2 is discharged.** What PR1 discharges is the decision §6.2 gates — whether to build the
 asynchronous sink now — on the evidence that a healthy sink costs under 0.2% of a request.
 The end-to-end comparison belongs with the sweeps that can run it, and was scoped to PR2 in
-[`ag-sept-plan-v0.4.md`](../../planning/ag-sept-plan-v0.4.md) §14.
+[`milestone-plan-v0.4.md`](../../planning/ag-sept/milestone-plan-v0.4.md) §14.
 
 ### 3.4 Quotability is a level, not a boolean (settled 2026-08-03)
 
@@ -181,7 +180,7 @@ next level up and what blocks it. Both binaries take `-require` so the bar is de
 caller, who is the only one who knows what the number is for. The ladder and the per-level
 field lists are in
 [`docs/operations/load-harness.md`](../../operations/load-harness.md) §4; the staging they
-implement is the plan's staging — `ag-sept-plan-v0.4.md` §14 when this was written, and
+implement is the plan's staging — `milestone-plan-v0.4.md` §14 when this was written, and
 `ag-sept/milestone-plan.md` §4 now.
 
 Levels are named for the claim rather than for the PR that first reaches them. A report in

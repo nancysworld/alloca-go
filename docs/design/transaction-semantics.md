@@ -17,7 +17,7 @@ outcome taxonomy, and idempotent-replay behaviour. This is the design contract t
 - [`../decisions/0002-postgresql-transactional-authority.md`](../decisions/0002-postgresql-transactional-authority.md)
   — records the durable authority and technology choices that implement these
   semantics.
-- [`../planning/ag-m1-implementation-plan.md`](../planning/ag-m1-implementation-plan.md)
+- [`../planning/ag-m1/milestone-plan.md`](../planning/ag-m1/milestone-plan.md)
   — the PR split; this document is the normative form of that plan's §3 design spine.
 
 This document decides **semantics**, not implementation. Column types, SQL, and pool

@@ -7,18 +7,18 @@ was planned and split; not normative for any current work.
 **Reading the roadmap references below.** This plan was written against the pre-2026-08-10
 roadmap, which was a milestone master plan carrying theses, scope, gates and an AG-M0–M7 schedule.
 That document has since been rewritten as an **exploration roadmap**
-([`alloca-go-roadmap.md`](alloca-go-roadmap.md)) and no longer contains the sections cited here.
+([`alloca-go-roadmap.md`](../alloca-go-roadmap.md)) and no longer contains the sections cited here.
 The durable content moved to its owners: correctness gates and the authority model to
-[`../design/transaction-semantics.md`](../design/transaction-semantics.md), measurement vocabulary
-and outcome taxonomy to [`../design/measurement-contract.md`](../design/measurement-contract.md),
+[`../design/transaction-semantics.md`](../../design/transaction-semantics.md), measurement vocabulary
+and outcome taxonomy to [`../design/measurement-contract.md`](../../design/measurement-contract.md),
 and the monolith-first decision to
-[`../decisions/0001-modular-monolith-first.md`](../decisions/0001-modular-monolith-first.md). The
+[`../decisions/0001-modular-monolith-first.md`](../../decisions/0001-modular-monolith-first.md). The
 references are left as written because this is a dated record of what the work was planned
 against.
-**Governing contracts:** [`../design/measurement-contract.md`](../design/measurement-contract.md)
+**Governing contracts:** [`../design/measurement-contract.md`](../../design/measurement-contract.md)
 (outcome taxonomy §4, timeout budget §8/§8.1),
-[`../design/project-structure.md`](../design/project-structure.md) (dependency rules),
-[`../design/latency-timeouts-and-retries.md`](../design/latency-timeouts-and-retries.md)
+[`../design/project-structure.md`](../../design/project-structure.md) (dependency rules),
+[`../design/latency-timeouts-and-retries.md`](../../design/latency-timeouts-and-retries.md)
 (retry policy).
 
 This document is the **plan of work** for AG-M1: how the milestone is split into
@@ -58,10 +58,10 @@ split is built on.
 
 Several of these decisions were sharpened by reusing the design lessons (not code —
 it is Python) of the RuntimeIQ-Alloca predecessor prototype
-([high-level design](../design/high-level-design.md) §1.1): the domain model,
+([high-level design](../../design/high-level-design.md) §1.1): the domain model,
 invariants, schema shape, expiry-settlement strategy, and fault-vs-refusal error
 taxonomy. All are reframed synthetically; see
-[`../public-disclosure-policy.md`](../public-disclosure-policy.md).
+[`../public-disclosure-policy.md`](../../public-disclosure-policy.md).
 
 ### 3.1 Domain-model decisions (decided)
 
@@ -161,7 +161,7 @@ during the milestone for the reason recorded below.
 | 2 | Domain core + services + idempotency | `internal/domain` (entities, invariants, ports, outcome types), `internal/idempotency`, `internal/service`, in-memory repository, `transaction-semantics.md`, ADR-0002, measurement-contract §4 `invalid_request` amendment; full unit + race tests | no | **Merged #4** |
 | 3 | PostgreSQL adapter | `internal/postgres` (transactional repo, `SELECT … FOR UPDATE`, per-txn `lock_timeout`/`statement_timeout`, error→outcome mapping), schema + migrations, transaction-owned authoritative time (`Tx.Now`, retiring the service `Clock`), `cmd/alloca-migrate`, CI Postgres integration tests | yes | **Merged #5** |
 | 4 | User schedule non-overlap invariant + composite slot identity | `user_time_claims` relation (`btree_gist`, exclusion constraint), identity-scoped claim settlement, `ReasonScheduleConflict`, claim lifecycle across reserve/confirm/cancel/expiry; slot identity becomes `(slot_organisation_id, slot_id)` with `domain.SlotRef`/`domain.UserRef` and `contract_version` v2; schema consolidated into the `00001_init.sql` baseline; transaction-semantics §1.1/§1.2/§2.2/§4; PostgreSQL gates + negative controls | yes | **Merged #6** |
-| 5 | Expiry worker + HTTP API + telemetry | `internal/worker` (expiry that cannot release confirmed capacity), `internal/httpapi` booking endpoints + informational `GET /v1/slots` (idempotency-key handling, total outcome→HTTP mapping), `internal/telemetry` observation boundary, `internal/ids`, `Service.SettleSlot`, `cmd` wiring, readiness gated on the DB and bounded by `ReadinessTimeout`; [`api-surface.md`](../design/api-surface.md) and [`observability.md`](../design/observability.md); vertical PostgreSQL-backed HTTP tests | yes | **In review #7** |
+| 5 | Expiry worker + HTTP API + telemetry | `internal/worker` (expiry that cannot release confirmed capacity), `internal/httpapi` booking endpoints + informational `GET /v1/slots` (idempotency-key handling, total outcome→HTTP mapping), `internal/telemetry` observation boundary, `internal/ids`, `Service.SettleSlot`, `cmd` wiring, readiness gated on the DB and bounded by `ReadinessTimeout`; [`api-surface.md`](../../design/api-surface.md) and [`observability.md`](../../design/observability.md); vertical PostgreSQL-backed HTTP tests | yes | **In review #7** |
 
 **Why this order.** PR1 is DB-free and discharges the §8.1 obligation, giving later
 PRs a validated budget. PR2 proves every correctness gate expressible above the SQL
@@ -171,7 +171,7 @@ real concurrent transactions needs a real PostgreSQL. PR5 closes the loop with t
 worker, transport, and telemetry once the authoritative repository exists.
 
 **Why PR4 was inserted.** The user schedule non-overlap invariant
-([design note](../design-notes/user-schedule-non-overlap.md)) was identified after this
+([design note](../../design-notes/user-schedule-non-overlap.md)) was identified after this
 plan was written. It is a *correctness* invariant of the transactional core: one
 identity can currently hold two overlapping bookings on different slots, because those
 transactions lock different slot rows and never contend. Shipping AG-M1 — the milestone
@@ -227,7 +227,7 @@ realised by the §3.3 taxonomy and validated across PR2–PR5.
 ## 6. Tooling decisions (recorded — ADR-0002)
 
 Recorded (status **Accepted** on PR2's merge, 2026-07-25) in
-[`../decisions/0002-postgresql-transactional-authority.md`](../decisions/0002-postgresql-transactional-authority.md):
+[`../decisions/0002-postgresql-transactional-authority.md`](../../decisions/0002-postgresql-transactional-authority.md):
 
 - **Migrations:** `pressly/goose` with embedded plain-SQL migrations, run through a
   dedicated command/step — not automatically by every serving replica.
@@ -245,4 +245,4 @@ No AG-M1 PR introduces a `[MEASURED]` capacity, latency, or cost number — thos
 AG-M2+. Timeout and SLO values remain `[HYPOTHESIS]` (measurement-contract §7–§8).
 All examples are synthetic; the plan records no confidential, private, recruitment,
 or design-prompt-origin content (see
-[`../public-disclosure-policy.md`](../public-disclosure-policy.md)).
+[`../public-disclosure-policy.md`](../../public-disclosure-policy.md)).

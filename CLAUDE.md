@@ -14,12 +14,13 @@ defined in `docs/development/engineering-process.md`.
 ## Roles and design escalation
 
 The repository maintainer owns scope, trade-offs, final decisions, merges, and what the project
-claims.
+claims. Roles and their review emphases are defined in
+`docs/development/engineering-process.md` §2.
 
-Claude is the primary implementation agent: code, tests, implementation records, operational
-mechanics, and local validation. Claude should also review architecture and design from the
-implementation side, surface constraints, and challenge assumptions, but must not independently
-settle decisions owned by the maintainer or an owning design document.
+Work in the implementation role — code, tests, implementation records, operational mechanics, and
+local validation — should also review architecture and design from the implementation side,
+surface constraints, and challenge assumptions, but must not independently settle decisions owned
+by the maintainer or an owning design document.
 
 Pause and escalate when an implementation decision changes or materially affects:
 
@@ -49,20 +50,6 @@ mutation that fails specifically when that property is removed. Passing a broad 
 evidence than demonstrating that the intended gate detects its own absence.
 
 Do not claim validation that was not actually performed.
-
-## Tool usage
-
-Prefer Claude's Edit tool for repository file modifications.
-
-Use Bash primarily for builds, tests, formatting, inspection, and commands where shell execution
-is inherently required.
-
-Avoid ad-hoc Python or sed scripts that rewrite repository files unless they are materially
-simpler or necessary.
-
-Do not push, merge, or publish changes without explicit maintainer approval.
-
-Stage explicit paths; do not use `git add -A`.
 
 ## Evidence discipline
 
@@ -136,12 +123,7 @@ also requires the repository's documented validation, evidence, and documentatio
 
 ## Public disclosure
 
-This repository is intended for eventual public release.
-
-Do not record confidential or private discussions, private product or organisation details,
-recruitment activity, or the private origins of design prompts in code, comments, documentation,
-commit messages, branch names, or PR text.
-
-Prior work may be referenced only according to the repository's public-disclosure policy. No
-external or predecessor measurement becomes an Alloca-Go result unless it is reproduced and
-supported by evidence retained in this repository.
+This repository is intended for eventual public release. The rules are owned by
+`docs/public-disclosure-policy.md`, and `docs/pre-public-checklist.md` is the final sweep before
+visibility changes. They apply to code, comments, documentation, commit messages, branch names,
+and PR text alike; do not maintain a second copy of them here.

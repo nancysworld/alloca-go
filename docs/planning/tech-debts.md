@@ -681,9 +681,9 @@ No document currently cites a "delivers" row as evidence that something shipped.
   own scope note" for quoting a range that matched neither its table nor its artifact. Both are
   accurate about the review round of 2026-08-03. Rewriting them to say "record" would falsify
   the history these documents exist to keep.
-- **Estimates stay labelled as estimates.** Turning "2.5 days budgeted" into "2.5 days spent"
-  without evidence would manufacture a measurement, which is the one thing this repository
-  must not do to itself.
+- **Estimates stay labelled as estimates.** Where a record states an intended quantity, turning it
+  into an achieved one without evidence would manufacture a measurement, which is the one thing
+  this repository must not do to itself.
 
 ### Options, none decided
 
@@ -725,11 +725,10 @@ currently rests on the weaker statement.
 
 ### Why it is this way
 
-Budget. PR4b was allocated 1.0 day, drawn from contingency, and had spent it. The maintainer's
-decision on 2026-08-19 was to stop execution rather than draw further: establish `G4`, withhold the
-`G1`/`G2`-derived efficiencies, document the limitation, and leave the mechanism explicitly
-unproven. That was the right call — the alternative buys a mechanism for a local result that is not
-the milestone's target evidence anyway.
+PR4b's scheduled time was exhausted. The maintainer's decision on 2026-08-19 was to stop execution
+rather than extend it: establish `G4`, withhold the `G1`/`G2`-derived efficiencies, document the
+limitation, and leave the mechanism explicitly unproven. That was the right call — the alternative
+buys a mechanism for a local result that is not the milestone's target evidence anyway.
 
 ### Why it is acceptable today
 

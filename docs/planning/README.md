@@ -1,6 +1,6 @@
 # Planning documents
 
-**This directory owns planning:** priority, budget, sequence, work-unit split, contingency,
+**This directory owns planning:** priority, sequence, work-unit split, active schedule constraints,
 descope order, the history of how an order was reached, and — per milestone — the validation
 intent that scheduled work must establish. Durable goals, problems, and requirements live in
 [`../requirements/`](../requirements/); system shape and contracts in
@@ -24,9 +24,13 @@ meaning ([`../development/engineering-process.md`](../development/engineering-pr
     intent and `VAL-*` status;
   - [`ag-sept/milestone-validation-pr4c-aws-probe.md`](ag-sept/milestone-validation-pr4c-aws-probe.md)
     — fixed-per-unit independent probe method; PR4c produced no performance cell and Iteration C
-    remains open pending an equivalent independent environment.
-- [`ag-sept-plan-v0.4.md`](ag-sept-plan-v0.4.md) — archived v0.4 snapshot, superseded 5 August 2026. Retained at its historical filename because PR1 and PR2 were planned and reported under it and cite its section numbers.
-- [`ag-m1-implementation-plan.md`](ag-m1-implementation-plan.md) — AG-M1 PR split and correctness gates.
+    remains open pending an equivalent independent environment;
+  - [`ag-sept/milestone-plan-v0.4.md`](ag-sept/milestone-plan-v0.4.md) — the archived v0.4 plan,
+    superseded 5 August 2026 and non-normative. Retained publicly because PR1 and PR2 were planned
+    and reported under it, and their records cite its section numbers.
+- [`ag-m1/`](ag-m1/) — the completed AG-M1 milestone:
+  - [`ag-m1/milestone-plan.md`](ag-m1/milestone-plan.md) — AG-M1 PR split and correctness gates;
+    historical, not normative for current work.
 - [`release-shaping-experiment.md`](release-shaping-experiment.md) — synthetic AG-M2/AG-M5 experiment plan comparing synchronized, rolling, clustered, and hot-slot release shapes.
 - [`tech-debts.md`](tech-debts.md) — the `DEBT-n` register: deliberate gaps, why each was accepted, and the trigger that ends the acceptance.
 

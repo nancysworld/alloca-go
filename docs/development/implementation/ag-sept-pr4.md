@@ -4,10 +4,10 @@
 **Status:** PR4a in progress. The local multi-group topology and workload machinery are being
 exercised and the measurement procedure qualified before any metered AWS capacity attempt; AWS
 capacity evidence remains conditional on sufficient quota within the milestone timebox.
-**Budget:** 4.0 development days ([AG-Sept plan](../../planning/ag-sept/milestone-plan.md) §2, a scheduling
-fact), now a **shared PR4a/PR4b envelope**. The original 1.5-day PR4a / up-to-2.5-day PR4b split was
-retired by maintainer decision on 2026-08-14; PR4a may consume more of the envelope for local
-measurement qualification and PR4b correspondingly becomes a smaller bounded AWS execution pass.
+**Scheduled under:** [AG-Sept plan](../../planning/ag-sept/milestone-plan.md) §2, as a shared
+PR4a/PR4b envelope. The original fixed PR4a/PR4b split was retired by maintainer decision on
+2026-08-14, so PR4a may take more of the envelope for local measurement qualification and PR4b
+correspondingly becomes a smaller bounded AWS execution pass.
 **Owner docs:** [`deployment-architecture.md`](../../design/deployment-architecture.md) §13 owns
 the capacity environment; [`horizontal-scaling.md`](../../design/horizontal-scaling.md) §12–§13
 owns the capacity-unit model; `REQ-SCALE-4` and `REQ-EVID-2`
@@ -973,12 +973,10 @@ regimes, then decide from evidence whether PostgreSQL-side instrumentation such 
 The local generator-headroom control follows once a high-useful-demand point is stable enough for
 that comparison to mean something.
 
-**Scheduling consequence.** The existing **4.0 development days for PR4 remain unchanged**, but
-the original 1.5-day PR4a / up-to-2.5-day PR4b split is no longer binding. The workstation has
-proved a useful, repeatable, unmetered diagnostic environment while AWS quota approval is slower
-than planned, so PR4a may consume more of the shared envelope and PR4b correspondingly shrinks into
-a bounded cloud execution pass. Contingency is not touched unless the combined PR4 work exceeds its
-4.0-day allocation.
+**Scheduling consequence.** PR4's overall allocation is unchanged, but the original fixed
+PR4a/PR4b split is no longer binding. The workstation has proved a useful, repeatable, unmetered
+diagnostic environment while AWS quota approval is slower than planned, so PR4a may take more of
+the shared envelope and PR4b correspondingly shrinks into a bounded cloud execution pass.
 
 This is not a new Iteration C Problem. It is evidence from implementation exposing a blocker to
 answering the existing Problem reliably, which is exactly when the schedule is expected to follow
@@ -1991,8 +1989,8 @@ storage path's variability reaches `G1`'s throughput is consistent with every me
 is not proven. The killing test — driving `G1` with its data directory off the VHDX and observing
 whether the spread collapses — was deliberately **not** run.
 
-**Maintainer decision, 2026-08-19: stop experiment execution.** No further PR4b capacity runs, no
-additional contingency draw. Preserve the drift control, document the storage-path limitation,
+**Maintainer decision, 2026-08-19: stop experiment execution.** No further PR4b capacity runs and
+no further schedule spent on them. Preserve the drift control, document the storage-path limitation,
 establish `G4` only, withhold the `G1`/`G2`-derived efficiencies, and mark `VAL-SCALE-6` unresolved
 and not discharged.
 
@@ -2207,8 +2205,6 @@ AG-Sept timebox, PR4 records the AWS blocker, leaves aggregate capacity scaling 
 explicitly unproven, and proceeds to PR5. Neither the shared-workstation result nor a partial AWS
 topology is promoted as a substitute for it.
 
-**Budget consequence at the time: none.** The shared 4.0-day PR4a/PR4b envelope this refers to no
-longer exists — PR4a consumed it and PR4b is funded by a 1.0-day contingency draw
-([`ag-sept/milestone-plan.md`](../../planning/ag-sept/milestone-plan.md) §2.1.3) — but the substantive point holds: the
-denial changed the probability and likely size of the cloud pass, not the milestone budget or the
-validation rule. PR4c remains unbudgeted.
+**Schedule consequence at the time: none.** The shared PR4a/PR4b envelope this refers to no longer
+exists, but the substantive point holds: the denial changed the probability and likely size of the
+cloud pass, not the milestone's scope or the validation rule.

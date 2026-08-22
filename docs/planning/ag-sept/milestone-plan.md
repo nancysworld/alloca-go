@@ -3,7 +3,7 @@
 **Status:** Living — August publication checkpoint in progress; Iteration C remains open  
 **Delivery window:** August 2026 for the public-release checkpoint; Iteration C resumes when its independent-capacity environment is available  
 **Predecessor:** AG-M1 — correct transactional core and end-to-end service path  
-**Supersedes:** [`../ag-sept-plan-v0.4.md`](../ag-sept-plan-v0.4.md), retained as the archived plan used by PR1 and PR2.
+**Supersedes:** [`milestone-plan-v0.4.md`](milestone-plan-v0.4.md), retained as the archived plan used by PR1 and PR2.
 
 ## What this document owns
 

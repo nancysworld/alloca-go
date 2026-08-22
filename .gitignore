@@ -25,17 +25,11 @@ go.work.sum
 !.env.example
 *.local
 
-# Claude Code's project directory, ignored whole. `settings.local.json` is personal and
-# already excluded globally; `settings.json` is nominally the shareable file, but its
-# entries accrete from whichever permission prompts were approved in a session, so it
-# lands in a commit by accident rather than by decision — which is how it reached this
-# branch in the first place.
-#
-# The directory can also hold hand-authored tooling (slash commands, subagents, skills,
-# hook scripts). Nancy's call, 2026-08-06: none of it belongs in this repo for now, so
-# the whole directory is ignored rather than the settings files named individually. If
-# that changes, `git add -f` the specific file — and note the ignore means a new one
-# will not show up in `git status` to remind you.
+# Local AI-assistant tooling and settings, ignored as a whole directory rather than
+# file by file: its contents accrete from local sessions, so individual files land in a
+# commit by accident rather than by decision. Use `git add -f` for a specific file that
+# is genuinely meant to be shared — the ignore means a new one will not appear in
+# `git status` to remind you.
 /.claude/
 
 # IDE and editor files

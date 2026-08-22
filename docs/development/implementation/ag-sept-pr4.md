@@ -2182,7 +2182,7 @@ Alloca's architecture, capacity, or the validity of the Iteration C experiment. 
 Tier 2: the validation plan requires the complete independently provisioned G4 measurement
 environment to exist before Tier 2 can be considered.
 
-**Maintainer decision:** do not spend the current PR4a budget on another immediate appeal. Continue
+**Maintainer decision:** do not make another immediate appeal. Continue
 the local measurement-qualification work, which is unmetered and has already exposed material
 experiment defects and the degraded-regime ambiguity. A bounded AWS bootstrap may still use the
 quota already available if it removes AWS-specific uncertainty, but any such bootstrap is

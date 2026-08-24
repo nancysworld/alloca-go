@@ -73,14 +73,13 @@ real traffic or architecture.
 Prometheus/Grafana observability is built into Alloca as part of the experimental workflow, not just
 for operations. During performance work, the dashboard is used alongside retained measurement
 artifacts to compare demand, latency, service/database behaviour, and host-resource signals. These
-views help turn unexpected results into narrower questions and better-controlled experiments.
+signals help turn unexpected results into narrower questions and better-controlled experiments.
 
 ![Grafana observability view spanning four repeated local G1 runs](docs/images/observability-g1-repeated-runs.png)
 
-*Representative Grafana view spanning four repeated local G1 runs from 2026-08-19. The screenshot is illustrative; retained measurement artifacts remain the evidence source.*
-
-*Example: repeated local G1 runs viewed across the same Grafana time window. The dashboard is an
-illustrative view; retained artifacts and reports own the measured results and conclusions.*
+*Representative Grafana view spanning four repeated local G1 runs from 2026-08-19. See the
+[retained G1 reproducibility evidence](docs/measurements/pr4b-drift-g1/README.md) for the measured
+results and interpretation.*
 
 ## Evidence so far
 

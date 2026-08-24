@@ -143,13 +143,26 @@ func (r *SlogRecorder) RecordRequest(ctx context.Context, obs RequestObservation
 // RecordExpiry emits the worker observation. A failed iteration is still info-level
 // here: the worker logs the error itself separately with its diagnostic context, and
 // duplicating it at error level would double-count the same event in a log-based alert.
+//
+// `failed` appears only when the iteration failed, and absence is the healthy reading.
+// The worker ticks every few seconds for the life of the process, so a boolean carried on
+// the healthy path prints the word "failed" in front of whoever is watching the service
+// several times a minute while nothing is wrong — which is read as an incident before it
+// is read as a field, by the people most likely to be watching a service they have just
+// started. This is a readability property of the *log* only: the countable form of both
+// outcomes is alloca_expiry_iterations_total{failed} in the metrics recorder, which is
+// unchanged and still carries a series for each, so nothing that counts failures depends
+// on the healthy line saying so.
 func (r *SlogRecorder) RecordExpiry(ctx context.Context, obs ExpiryObservation) {
-	r.logger.LogAttrs(ctx, slog.LevelInfo, "expiry_iteration",
+	attrs := []slog.Attr{
 		slog.Int("slots", obs.Slots),
 		slog.Int("expired", obs.Expired),
-		slog.Bool("failed", obs.Failed),
 		slog.Float64("duration_ms", msFloat(obs.Duration)),
-	)
+	}
+	if obs.Failed {
+		attrs = append(attrs, slog.Bool("failed", true))
+	}
+	r.logger.LogAttrs(ctx, slog.LevelInfo, "expiry_iteration", attrs...)
 }
 
 func msFloat(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }

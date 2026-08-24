@@ -68,6 +68,20 @@ worth investigating. More concrete unresolved questions are kept in
 All workloads are synthetic engineering models. They are not descriptions of any organisation's
 real traffic or architecture.
 
+## Observability in practice
+
+Prometheus/Grafana observability is built into Alloca as part of the experimental workflow, not just
+for operations. During performance work, the dashboard is used alongside retained measurement
+artifacts to compare demand, latency, service/database behaviour, and host-resource signals. These
+views help turn unexpected results into narrower questions and better-controlled experiments.
+
+<!-- 2C-SCREENSHOT: docs/images/observability-g1-repeated-runs.png
+     Representative Grafana view spanning the four repeated local G1 runs from 2026-08-19.
+     Keep this illustrative rather than using the image itself as measurement evidence. -->
+
+*Example: repeated local G1 runs viewed across the same Grafana time window. The dashboard is an
+illustrative view; retained artifacts and reports own the measured results and conclusions.*
+
 ## Evidence so far
 
 | Area | What the retained evidence establishes | Boundary / open question |

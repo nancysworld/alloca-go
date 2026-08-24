@@ -9,16 +9,16 @@ roadmap, which was a milestone master plan carrying theses, scope, gates and an 
 That document has since been rewritten as an **exploration roadmap**
 ([`alloca-go-roadmap.md`](../alloca-go-roadmap.md)) and no longer contains the sections cited here.
 The durable content moved to its owners: correctness gates and the authority model to
-[`../design/transaction-semantics.md`](../../design/transaction-semantics.md), measurement vocabulary
-and outcome taxonomy to [`../design/measurement-contract.md`](../../design/measurement-contract.md),
+[`../../design/transaction-semantics.md`](../../design/transaction-semantics.md), measurement vocabulary
+and outcome taxonomy to [`../../design/measurement-contract.md`](../../design/measurement-contract.md),
 and the monolith-first decision to
-[`../decisions/0001-modular-monolith-first.md`](../../decisions/0001-modular-monolith-first.md). The
+[`../../decisions/0001-modular-monolith-first.md`](../../decisions/0001-modular-monolith-first.md). The
 references are left as written because this is a dated record of what the work was planned
 against.
-**Governing contracts:** [`../design/measurement-contract.md`](../../design/measurement-contract.md)
+**Governing contracts:** [`../../design/measurement-contract.md`](../../design/measurement-contract.md)
 (outcome taxonomy §4, timeout budget §8/§8.1),
-[`../design/project-structure.md`](../../design/project-structure.md) (dependency rules),
-[`../design/latency-timeouts-and-retries.md`](../../design/latency-timeouts-and-retries.md)
+[`../../design/project-structure.md`](../../design/project-structure.md) (dependency rules),
+[`../../design/latency-timeouts-and-retries.md`](../../design/latency-timeouts-and-retries.md)
 (retry policy).
 
 This document is the **plan of work** for AG-M1: how the milestone is split into
@@ -61,7 +61,7 @@ it is Python) of the RuntimeIQ-Alloca predecessor prototype
 ([high-level design](../../design/high-level-design.md) §1.1): the domain model,
 invariants, schema shape, expiry-settlement strategy, and fault-vs-refusal error
 taxonomy. All are reframed synthetically; see
-[`../public-disclosure-policy.md`](../../public-disclosure-policy.md).
+[`../../public-disclosure-policy.md`](../../public-disclosure-policy.md).
 
 ### 3.1 Domain-model decisions (decided)
 
@@ -227,7 +227,7 @@ realised by the §3.3 taxonomy and validated across PR2–PR5.
 ## 6. Tooling decisions (recorded — ADR-0002)
 
 Recorded (status **Accepted** on PR2's merge, 2026-07-25) in
-[`../decisions/0002-postgresql-transactional-authority.md`](../../decisions/0002-postgresql-transactional-authority.md):
+[`../../decisions/0002-postgresql-transactional-authority.md`](../../decisions/0002-postgresql-transactional-authority.md):
 
 - **Migrations:** `pressly/goose` with embedded plain-SQL migrations, run through a
   dedicated command/step — not automatically by every serving replica.
@@ -245,4 +245,4 @@ No AG-M1 PR introduces a `[MEASURED]` capacity, latency, or cost number — thos
 AG-M2+. Timeout and SLO values remain `[HYPOTHESIS]` (measurement-contract §7–§8).
 All examples are synthetic; the plan records no confidential, private, recruitment,
 or design-prompt-origin content (see
-[`../public-disclosure-policy.md`](../../public-disclosure-policy.md)).
+[`../../public-disclosure-policy.md`](../../public-disclosure-policy.md)).

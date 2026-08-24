@@ -161,8 +161,10 @@ const (
 		`"org-c":"authority-3","org-d":"authority-4"}}`
 )
 
-// This is the test `ag-sept/milestone-plan.md` §3 asks PR4a for: proof that the request-pair semantics
-// do not change with topology.
+// Proof that the request-pair semantics do not change with topology, which is the property
+// `workload-catalog.md` requires of `WL-MUT-DISP-4` under "Demand shape": same-organisation
+// user/slot pairing for every request, independent of how those organisations are placed onto
+// database authorities.
 //
 // Without it, `E2 = G2 / (2 × G1)` silently measures two things at once — the architecture,
 // and whatever the generator did differently at each topology — and nothing downstream could

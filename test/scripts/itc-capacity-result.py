@@ -156,8 +156,8 @@ def decide(runs):
     h1, h2 = runs["h"]["rate"], runs["h-confirm"]["rate"]
     notes = []
 
-    # **Both S and the deciding H must reproduce** (ag-sept/milestone-plan.md §3, PR4b). A point that does not
-    # reproduce cannot decide anything, and averaging the disagreement would hide it.
+    # **Both S and the deciding H must reproduce** (§4.6.5). A point that does not reproduce
+    # cannot decide anything, and averaging the disagreement would hide it.
     s_ok = reproduces(s1, s2)
     h_ok = reproduces(h1, h2)
     notes.append(f"S reproduces: {'yes' if s_ok else 'NO'} "

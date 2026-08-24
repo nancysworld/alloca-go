@@ -75,9 +75,9 @@ for operations. During performance work, the dashboard is used alongside retaine
 artifacts to compare demand, latency, service/database behaviour, and host-resource signals. These
 views help turn unexpected results into narrower questions and better-controlled experiments.
 
-<!-- 2C-SCREENSHOT: docs/images/observability-g1-repeated-runs.png
-     Representative Grafana view spanning the four repeated local G1 runs from 2026-08-19.
-     Keep this illustrative rather than using the image itself as measurement evidence. -->
+![Grafana observability view spanning four repeated local G1 runs](docs/images/observability-g1-repeated-runs.png)
+
+*Representative Grafana view spanning four repeated local G1 runs from 2026-08-19. The screenshot is illustrative; retained measurement artifacts remain the evidence source.*
 
 *Example: repeated local G1 runs viewed across the same Grafana time window. The dashboard is an
 illustrative view; retained artifacts and reports own the measured results and conclusions.*

@@ -432,7 +432,7 @@ itc-capacity-result-check:
 itc-capacity-bracket-check:
 	@./test/scripts/itc-capacity-bracket-test.sh
 
-## image: build the production-shaped service image, tagged with the current commit
+## image: build the production-oriented service image, tagged with the current commit
 #
 # The build context includes .git on purpose: `go build` stamps the VCS revision into the
 # binary, /meta reports it, and the load harness records it as the identity of the code under

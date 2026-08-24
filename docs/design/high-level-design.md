@@ -17,7 +17,7 @@ the domain rules, or the package rules: those live once, in their owning documen
 
 ## 1. What Alloca-Go is
 
-Alloca-Go is a production-shaped distributed reservation system in Go, exploring
+Alloca-Go is a production-oriented distributed booking service in Go, exploring
 correctness, contention, scalability, overload behaviour, and capacity economics.
 
 Its central lens is that a booking system of this kind is not mainly a CRUD service. It

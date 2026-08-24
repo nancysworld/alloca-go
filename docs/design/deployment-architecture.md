@@ -2,7 +2,7 @@
 
 **Status:** Accepted — normative deployment design for the current Alloca-Go system.  
 **Scope:** durable properties a deployment must preserve regardless of whether the current
-mechanism is Docker Compose, a later orchestrator, or another production-shaped runtime.  
+mechanism is Docker Compose, a later orchestrator, or another production-oriented runtime.  
 **Operational procedure:** [`../operations/container-topology.md`](../operations/container-topology.md).  
 **Artifact identity decision:**
 [`../decisions/0003-deployed-artifact-identity.md`](../decisions/0003-deployed-artifact-identity.md).
@@ -160,7 +160,7 @@ homogeneous service.
 
 ## 10. Runtime artifact properties
 
-The serving runtime should be production-shaped: it requires only the runtime assets needed to
+The serving runtime should be production-oriented: it requires only the runtime assets needed to
 execute the service role and should not depend on development tooling being present in order to
 serve traffic.
 

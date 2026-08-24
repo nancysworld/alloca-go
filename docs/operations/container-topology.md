@@ -1,6 +1,6 @@
 # Building and running the container topology
 
-How to build the production-shaped image, raise the two-authority deployment on your own
+How to build the production-oriented image, raise the two-authority deployment on your own
 machine, check it is actually serving what it claims, and tear it down again.
 
 **This document owns the procedure, not the design.** Why the topology has two independent

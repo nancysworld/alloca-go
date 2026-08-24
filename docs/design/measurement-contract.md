@@ -477,7 +477,7 @@ remains unproven:
    serialization ceiling is never presented as a system-wide scaling result. When capacity/resource
    economics is selected by a validation, it is reported as a separate derived layer rather than
    folded into the scaling result.
-7. **Production-shaped validation.** The relevant conclusions are repeated through the
+7. **Production-oriented validation.** The relevant conclusions are repeated through the
    deployed network path with multiple API instances, PostgreSQL, load balancer,
    external load generation, migrations, and production-oriented telemetry.
 8. **Reproducibility and provenance.** Every material claim identifies the commands and

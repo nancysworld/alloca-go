@@ -269,6 +269,51 @@ units used in one comparison must therefore be equivalent enough that a measured
 interpreted as composition of the architecture rather than as a change of instance class, CPU
 share, memory budget, storage class, database configuration, service build, or connection policy.
 
+The distinction between logical shard-group composition and independent capacity composition is:
+
+```mermaid
+flowchart TB
+    subgraph shared["Shared-host G4 example"]
+        direction TB
+        host["One physical host / resource path<br/>shared CPU · memory · kernel · storage"]
+        subgraph logical["4 logical shard groups"]
+            direction LR
+            s1["SG 1"]
+            s2["SG 2"]
+            s3["SG 3"]
+            s4["SG 4"]
+        end
+        host --- s1
+        host --- s2
+        host --- s3
+        host --- s4
+    end
+
+    rule["Capacity-composition claim:<br/>added shard groups must add controlled resources"]
+    host -.-> rule
+
+    generator["Load generator<br/>separate compute"]
+
+    subgraph independent["Independent-capacity G4 example"]
+        direction LR
+        u1["Envelope A<br/>SG 1"]
+        u2["Envelope B<br/>SG 2"]
+        u3["Envelope C<br/>SG 3"]
+        u4["Envelope D<br/>SG 4"]
+    end
+
+    rule --> generator
+    generator --> u1
+    generator --> u2
+    generator --> u3
+    generator --> u4
+```
+
+The left-hand topology can establish logical composition while the shard groups remain physically
+coupled. The right-hand topology is the capacity experiment: each shard group has its own controlled
+resource envelope, and the generator sits outside those envelopes. The same rule gives `G1` one
+capacity unit, `G2` two equivalent units, and `G4` four equivalent units.
+
 For the selected workload, let:
 
 ```text

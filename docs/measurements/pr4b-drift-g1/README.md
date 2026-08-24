@@ -75,6 +75,18 @@ latency, storage-stack behaviour, or something else — remains open.
 The full evidence and its consequence for `VAL-SCALE-6` are in
 [`../pr4b-capacity/README.md`](../pr4b-capacity/README.md); this directory measures the spread itself.
 
+## Consequence for further capacity measurement
+
+The local scheduler-partitioned environment remains useful for proving that the topology, workload,
+observability, and measurement machinery work together before a more expensive experiment. It is
+not accepted as the environment for deriving the next capacity denominator: the service and database
+units still share host-level resources through WSL2/Docker Desktop, and the repeated G1 controls show
+material variation that the retained signals do not explain.
+
+Further capacity work therefore moves to an **independently provisioned cloud environment**, with the
+load generator on separate compute. The next step is to establish a reproducible single-authority G1
+frontier there before using that unit as the denominator for G2/G4 capacity composition.
+
 ## Reading a run
 
 Layout matches the retained comparison: `run.json`, `phases.txt`, `slices.txt`, `fixture.txt`,

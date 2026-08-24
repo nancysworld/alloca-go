@@ -26,6 +26,9 @@ meaning ([`../development/engineering-process.md`](../development/engineering-pr
 - [`alloca-go-roadmap.md`](alloca-go-roadmap.md) — the **exploration roadmap**: areas and
   questions that may be worth exploring. Directional, non-normative, unscheduled, and upstream of
   Goal selection — it says where the project *might* go, never what it has committed to.
+- [`open-questions.md`](open-questions.md) — specific engineering questions exposed by design or
+  evidence that remain unresolved but are not currently scheduled Problems; a narrower bridge
+  between the broad roadmap and active engineering work.
 - [`ag-sept/`](ag-sept/) — the current AG-Sept milestone:
   - [`ag-sept/milestone-plan.md`](ag-sept/milestone-plan.md) — current schedule, budget,
     work-unit status, August publication checkpoint, and the pending Iteration C continuation;

@@ -1,126 +1,137 @@
 # Alloca-Go — Project Journey
 
-**Status:** Living — narrative orientation for the project.  
-**Scope:** explain how Alloca-Go arrived at its current architecture and evidence boundary, and how the style of investigation is evolving.  
-**Does not own:** requirements, accepted design, validation obligations, schedules, or measured results. Those remain in their authoritative documents and reports.
+I did not start Alloca-Go with a final architecture in mind.
 
-Alloca-Go is not the implementation of a predetermined architecture. It is an engineering project built around a recurring pattern:
+It grew out of an earlier booking prototype and one question that I had not answered properly: as concurrency increased, response time got worse until timeouts appeared — but why?
 
-> **Ask a systems question, gather enough evidence to narrow it, then choose the next question deliberately.**
+I wanted a system where I could investigate questions like that without compromising correctness just to make the benchmark easier. A booking service turned out to be a useful playground: under contention, capacity, retries, timeouts, idempotency and overlapping reservations all start interacting with each other.
 
-The booking domain provides a stable stateful system in which correctness, performance, reliability, and scaling questions can be investigated without changing the subject every time the architecture changes.
+So I started again in Go.
 
-This document tells that story. For current system shape, start with [`design/high-level-design.md`](design/high-level-design.md). For possible future directions, see the [`exploration roadmap`](planning/alloca-go-roadmap.md). For the engineering loop itself, see [`development/engineering-process.md`](development/engineering-process.md).
+## Correctness first
 
-## 1. A booking prototype left an unanswered systems question
+The first phase was not about scale. It was about making the state trustworthy.
 
-Alloca-Go has a predecessor: **RuntimeIQ-Alloca**, the booking prototype from the earlier RuntimeIQ project. Alloca-Go is a new implementation in Go rather than a port. Domain knowledge, questions, and design lessons carried forward; code and quantitative results did not.
+Who owns slot capacity? How do I stop the same user booking overlapping sessions? What happens when a request times out after the database may already have committed it? How should retries behave?
 
-The predecessor had already exposed the interesting shape of the problem. Under concurrency, response time grew until timeouts became visible, but the prototype had not isolated why. That made the next useful step less about adding product features and more about building a system in which the behaviour could be investigated cleanly.
+PostgreSQL became the authority for those decisions, and I kept the application as a modular monolith. I did not want to split it into services simply because distributed systems were one of the things I wanted to explore.
 
-The booking domain is useful for that purpose because it is not merely CRUD. It is an **allocation problem under contention**: multiple requests compete for scarce units while holds expire, users retry, outcomes may be ambiguous, and correctness must survive concurrent mutation. A performance result is not useful if the experiment allows oversell, duplicate logical mutations, or invalid schedule overlap.
+The rule was: find a real boundary first, then decide whether it deserves to be distributed.
 
-The project therefore began with two commitments that still shape it:
+That decision became important later.
 
-- treat the workload as a synthetic engineering model rather than a claim about any real organisation's traffic or architecture; and
-- keep prior observations as hypotheses or context until this repository reproduces them under its own evidence rules.
+## Finding the first limit
 
-That boundary is recorded in [`design/high-level-design.md`](design/high-level-design.md) §1.1 and [`design/measurement-contract.md`](design/measurement-contract.md).
+Once the transactional core was solid enough, I could ask a much more interesting question:
 
-## 2. Correctness had to come before scale
+> What actually limits this system first?
 
-AG-M1 deliberately built the smallest correct authoritative booking system before trying to distribute it or claim capacity.
+I did not know whether the answer would be Go, the database, the connection pool, telemetry, the load generator or something else.
 
-That meant making the hard state questions explicit first: which row or relation owns each correctness decision, how slot capacity is serialized, how one user's schedule is protected from overlapping bookings, how idempotency turns retries into one logical mutation, how authoritative time is chosen, and how ambiguous outcomes remain safe to replay.
+The first sustained experiment reached roughly 4,300 booking requests per second on my workstation. Beyond that point, adding concurrency mostly increased latency.
 
-PostgreSQL became the transactional authority for those guarantees. The service remained a **modular monolith** with enforced internal boundaries rather than being split into services in advance. The architectural rule was simple: decomposition would follow evidence of an independent ownership, scaling, or failure boundary rather than presentation value.
+What surprised me was how little CPU the Go service needed.
 
-This order matters to the rest of the journey. Later scaling work does not ask how to make a weaker booking system faster. It asks which work can proceed independently **without weakening the transaction semantics already established**.
+The first real limit was PostgreSQL.
 
-The normative model is in [`design/transaction-semantics.md`](design/transaction-semantics.md); the monolith-first decision is [`decisions/0001-modular-monolith-first.md`](decisions/0001-modular-monolith-first.md).
+I could see some clues about what was happening inside PostgreSQL, but not enough to claim that I understood the exact mechanism. That distinction became important to the project: knowing which subsystem is limiting is not the same as knowing precisely why.
 
-## 3. Measure before deciding what to distribute
+More importantly, the result changed what I wanted to do next.
 
-Once the correctness substrate existed, the next question was deliberately open:
+Adding more Go service instances against the same database suddenly looked much less interesting. If the writer was already the constraint, I wanted to know whether the writable authority itself could be divided.
 
-> **What actually limits a correct single-authority system first?**
+## From one database to several
 
-The candidate answers included application compute, PostgreSQL, the database connection pool, a hot logical authority, telemetry, the load generator, or the shared development environment. The point of the experiment was diagnosis rather than validation of a preselected scaling technique.
+That led to the next phase.
 
-Iteration A produced the first load-bearing performance result. On the retained developer-workstation experiment, throughput plateaued at roughly **4,300 booking requests per second** while the Go service still had substantial compute headroom. Increasing concurrency added latency and queueing rather than useful work. The limiting subsystem was **PostgreSQL, not the Go service**.
+Independent organisations seemed like natural candidates for independent database authorities. But there was an immediate complication: a booking involves both the slot and the user's schedule.
 
-The exact PostgreSQL sub-mechanism was less certain than the subsystem conclusion, and the report keeps that distinction explicit. The number is also a bounded workstation result, not a production capacity claim.
+If those belong to different databases, one PostgreSQL transaction can no longer protect the whole operation.
 
-The more important outcome was what the evidence ruled out as the immediate next move. Adding more stateless service replicas against the same saturated writer might change behaviour below the frontier, but it could not answer how end-to-end writable capacity should scale.
+I decided not to solve that problem yet.
 
-That conclusion is retained in [`measurements/reports/ag-sept-pr2-single-instance-frontier.md`](measurements/reports/ag-sept-pr2-single-instance-frontier.md), with the resulting Analyse & Review in [`requirements/ag-sept.md`](requirements/ag-sept.md) §1.
+Instead, the first distributed version only supported bookings that stayed inside one database authority. Cross-authority bookings were explicitly refused.
 
-## 4. Scale the authority the evidence identified
+I preferred a clearly unsupported case to implementing two independent database commits and pretending they had the same semantics as one transaction.
 
-Iteration A changed the next problem from "how do we scale the service?" to a more specific question:
+This gave Alloca the idea of a **shard group**: a writable PostgreSQL authority with the service instances that use it.
 
-> **How can independent organisation work use independently writable PostgreSQL authorities while preserving the accepted correctness model?**
+The next experiments showed that two such authorities could operate independently, preserve the existing correctness rules, and isolate failures from each other.
 
-That is harder than simply starting a second database. Reserve operations involve two ownership axes: slot capacity and the user's schedule. If those axes live in different writable transaction domains, one local PostgreSQL transaction can no longer coordinate the whole operation.
+That was a useful distributed-systems result.
 
-Iteration B therefore introduced explicit organisation placement and independently writable database authorities, but kept the first distributed design intentionally narrow. Supported Phase 1 mutations stay inside one writable authority. A reserve whose user and slot resolve to different authorities is **explicitly refused** rather than implemented as two local commits and described as atomic.
+But it still was not a scaling result, because both databases were running on the same machine.
 
-The resulting unit is a **shard group**: one database authority plus compatible stateless service replicas bound to it. Service-compute scaling inside a shard group and adding another writable authority are treated as two different axes.
+## Trying to measure scaling
 
-PR3c then tested whether that boundary composed correctly. Two writable authorities served their own organisation work, cross-authority requests were refused without partial mutation, misrouting was rejected, reconciliation held, and failure of one authority remained contained while the healthy peer continued. Restoration did not require compensating writes on an unrelated authority.
+The obvious next question was whether shard groups were not only correctness boundaries, but also useful **capacity units**.
 
-Just as important, the experiment made **no throughput multiplier claim**. Both authorities still shared one workstation resource envelope. The result established a correctness- and failure-isolation boundary, not independent capacity.
+I built an experiment comparing one, two and four groups.
 
-The accepted architecture is owned by [`design/horizontal-scaling.md`](design/horizontal-scaling.md) and [`design/horizontal-database-authority.md`](design/horizontal-database-authority.md). The retained correctness evidence is [`measurements/reports/ag-sept-pr3c-phase1-correctness.md`](measurements/reports/ag-sept-pr3c-phase1-correctness.md).
+This is where things became more interesting than expected.
 
-## 5. Correctness proof is not a capacity proof
+The four-group measurement was reasonably stable. The one- and two-group measurements were not. Identical runs could produce surprisingly different throughput.
 
-Iteration B made the shard group a **candidate capacity unit**. It did not prove that adding shard groups adds useful capacity.
+Without a trustworthy G1 baseline, calculating a scaling efficiency would have been misleading, so I did not calculate one.
 
-That distinction became the next Problem:
+The extra observations pointed towards something in the shared write path rather than the Go service itself. But again, they did not tell me exactly what mechanism underneath the storage stack was responsible.
 
-> **How does aggregate mutation capacity behave as independently provisioned shard groups are added for independent organisation workloads, and what limits that scaling?**
+Eventually I realised that I was no longer just measuring Alloca.
 
-Iteration C fixes the workload and compares 1, 2, and 4 shard groups. The intended result is numeric capacity and scale efficiency under controlled, independently growing resource envelopes. There is deliberately no preselected efficiency threshold to optimise toward; a sub-linear result is useful if it is trustworthy and its limiting mechanism is identified or conservatively bounded.
+I was measuring Alloca **plus my workstation**.
 
-The first implementation of that experiment was local. PR4a qualified the sustained measurement method, including workload invariance, conditioning, generator controls, provenance, reconciliation, and a fixed measurement horizon. PR4b then executed the full G1/G2/G4 comparison with scheduler partitioning on one workstation.
+CPU partitioning could isolate some resources, but the databases still shared the machine, Docker Desktop, the kernel, memory hierarchy and storage path.
 
-Only `G4_local` resolved. `G1` and `G2` did not reproduce tightly enough to become accepted capacity quantities, so the derived efficiencies were withheld rather than estimated.
+The test environment itself had become part of the question.
 
-That refusal to manufacture a denominator is part of the result. The experiment had enough instrumentation to show that material variation tracked the workstation's shared write path while mutation work per written MiB remained comparatively stable. It therefore localised the problem away from the Go service, but did **not** prove the deeper storage mechanism.
+## Knowing when to stop
 
-The retained analysis is [`measurements/reports/ag-sept-pr4-scheduler-partitioned-capacity.md`](measurements/reports/ag-sept-pr4-scheduler-partitioned-capacity.md).
+The next plan was to repeat the experiment using independently provisioned cloud instances.
 
-## 6. The experiment found the limit of its own environment
+I prepared the experiment, but the AWS quota available at the time was not enough to provision the complete topology.
 
-Scheduler partitioning removed one known confound: generator and serving groups no longer competed for the same assigned logical CPUs. It did not turn one workstation into independently growing capacity units.
+So I stopped there.
 
-The shard groups still shared the host kernel, memory hierarchy, Docker Desktop environment, storage path, and higher-level I/O behaviour. The observed G1/G2 variation was large enough that the local denominator could not support the independent-capacity conclusion Iteration C was designed to make.
+There is no hidden AWS result and no estimated scaling number. The experiment simply remains unfinished.
 
-PR4c therefore refined an independently provisioned probe rather than treating the local topology as good enough. That probe was not executed. The available EC2 quota could not provision the complete environment, so there is **no AWS performance cell**, no independent `G1/G2/G4` result, and `VAL-SCALE-5` remains unproven.
+I now think there is also a better step before returning to the multi-instance scaling test.
 
-Stopping there is part of the engineering record. The work unit ended; the Problem did not.
+First, I want to establish a reliable **single-authority capacity frontier** on an independent cloud instance, with the load generator elsewhere. I want to understand what limits that single unit and why the previous results varied as much as they did.
 
-Iteration C remains open until an equivalent independently provisioned environment is available. AWS is one possible implementation of that environment, not an architectural requirement. Another provider or environment is acceptable if it preserves the experiment's resource-independence and provenance requirements.
+Only when G1 is something I trust does it make sense to use it as the denominator for G2 and G4.
 
-This checkpoint is intentionally not an Analyse & Review closure. The current evidence boundary and continuation condition are recorded in the PR4 checkpoint report and [`requirements/ag-sept.md`](requirements/ag-sept.md) §3.
+So the sequence has become:
 
-## 7. A new phase: methodology-informed investigation
+> **Understand one capacity unit first. Then ask how several of them compose.**
 
-Alloca-Go’s work so far has been guided by engineering experience, measurement, iterative hypotheses, and the results of each experiment. That approach established the correctness substrate, identified PostgreSQL as the first measured frontier, led to the writable-authority design, and exposed the limits of the local experimental environment.
+That feels much stronger than treating G1 as merely the first row in a benchmark table.
 
-The next phase adds another input: **established systems-performance methodology**.
+## A new phase
 
-Brendan Gregg’s *Systems Performance* is a useful starting point. The plan is to study its methods, compare them with the approaches already used in Alloca, identify useful gaps or refinements, and apply selected techniques where they improve a real investigation. The aim is not to adopt a fixed recipe, but to combine established methodology with the project’s existing engineering process.
+This is also where the direction of Alloca is changing.
 
-This also changes the pace of the project. Future progress does not need to mean immediately building another mechanism or launching another benchmark. Time can instead go into studying methodology, revisiting retained evidence, improving workload characterisation or observation, and designing smaller, more discriminating experiments.
+So far, the project has been driven by engineering experience, measurements, hypotheses and what each experiment revealed. That has taken it a long way.
 
-The working principle becomes:
+Recently I started reading Brendan Gregg's *Systems Performance*, and it immediately felt familiar.
+
+For many years I have worked on performance problems using experience, instinct, measurements and experiments. Some of the techniques in the book may turn out to be things I have already been doing in another form. Others may give me better ways to reason about problems I have struggled to isolate.
+
+That makes the next phase particularly interesting to me.
+
+I want to slow the building down for a while, study established systems-performance methodology, compare it with how I have approached Alloca so far, and see what I can learn from it.
+
+Then I can apply the useful parts selectively.
+
+The next progress in Alloca may therefore not be another feature or even another big benchmark. It might be understanding a methodology, looking at an old result differently, adding one missing measurement, or designing a smaller experiment that tells me which of two explanations is more likely.
+
+The principle I want to carry forward is:
 
 > **Methodology informs the investigation. Evidence decides the conclusion. Engineering judgement chooses the next useful question.**
 
-Alloca-Go therefore remains open-ended and evidence-led, but future work can draw more deliberately on established systems-performance practice. The [`exploration roadmap`](planning/alloca-go-roadmap.md) continues to record possible directions; the [`engineering process`](development/engineering-process.md) selects one worthwhile problem at a time.
+I still do not know exactly where Alloca will end up.
 
-The longer-term direction is:
+It may lead deeper into PostgreSQL, Linux performance, workload modelling, scaling, failure behaviour, distributed coordination — or something I have not thought of yet.
 
-> **Use a real stateful backend as a systems-engineering laboratory: learn established methods, apply them selectively, and let evidence determine what the system needs next.**
+But I now have a clearer idea of what the project is for.
+
+> **Alloca is a real stateful system I can use to learn how systems behave — combining experience, established methodology and experiments, and letting the evidence decide what is worth exploring next.**

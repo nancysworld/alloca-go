@@ -87,13 +87,16 @@ answered; the project will not infer that result from the co-resident workstatio
 
 ## Quick start
 
-The repository pins Go **1.26.5** and uses Docker for the local PostgreSQL environment.
+Requires Go **1.26.5** (the pinned toolchain) and Docker, including the Compose plugin that
+`make ci` renders the container topology through. `make smoke` additionally needs `curl`, `psql`
+and `python3` on the host, because it seeds and removes its own rows with SQL.
 
 ```sh
 make dev
 ```
 
-This starts PostgreSQL, applies migrations, and runs the service on `:8080`. In another terminal:
+This starts PostgreSQL in Docker, applies migrations, and runs the service on `:8080`. It holds the
+terminal, so run the smoke test in another one:
 
 ```sh
 make smoke

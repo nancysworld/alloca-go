@@ -45,6 +45,33 @@ position 2. G2's monotonic appearance in the comparison was coincidence.
 operationalises "materially" as. The 15.6% disagreement that left G1's knee unresolved is comfortably
 inside it, so that knee was never resolvable at this margin, by any run order.
 
+## Visual comparison
+
+A single Grafana time range spanning all four runs makes the reproducibility problem visible without
+selecting only the slowest and fastest examples. Use the four-run window on **2026-08-19 UTC**
+(approximately **13:28–14:20**) for each panel so the run gaps and the relative trajectories stay
+aligned.
+
+<!-- 2C-SCREENSHOT: screenshots/g1-drift-throughput-goodput.png
+     Panel: Throughput and goodput (req/s)
+     Capture: all four identical G1 runs in one 2026-08-19 UTC window. -->
+
+<!-- 2C-SCREENSHOT: screenshots/g1-drift-host-disk-written.png
+     Panel: Host disk written
+     Capture: the same four-run UTC window. -->
+
+<!-- 2C-SCREENSHOT: screenshots/g1-drift-host-disk-queue.png
+     Panel: Host disk average queue depth
+     Capture: the same four-run UTC window. -->
+
+<!-- 2C-SCREENSHOT: screenshots/g1-drift-process-cpu.png
+     Panel: Process CPU
+     Capture: the same four-run UTC window. -->
+
+These screenshots are illustrative views of the retained experiment, not primary evidence. The run
+artifacts in this directory remain authoritative for the rates above; the recovered disk evidence
+and its provenance caveat are retained under [`disk-io-backfill/`](disk-io-backfill/).
+
 ## What it is not
 
 **Not a capacity result, and it selects nothing.** Identical runs describe the measurement

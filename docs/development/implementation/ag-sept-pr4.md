@@ -1,9 +1,15 @@
 # AG-Sept PR4 — Independently provisioned shard-group capacity
 
-**Type:** Implementation record, spanning PR4a/PR4b
-**Status:** PR4a in progress. The local multi-group topology and workload machinery are being
-exercised and the measurement procedure qualified before any metered AWS capacity attempt; AWS
-capacity evidence remains conditional on sufficient quota within the milestone timebox.
+**Type:** Implementation record, spanning PR4a/PR4b/PR4c
+**Status:** **All three work units are merged** — PR4a (#19), PR4b (#20), PR4c (#21). PR4a
+completed method qualification; PR4b retained the local scheduler-partitioned `G1`/`G2`/`G4`
+comparison, in which `G4` resolved while `G1` and `G2` did not, so `VAL-SCALE-6` is **not
+discharged**; PR4c stopped at provisioning and produced no performance cell, so `VAL-SCALE-5`
+remains **unproven**. That closes the PR4c work unit, not the Iteration C Problem, which stays open
+pending an equivalent independently provisioned environment. The evidence boundary is summarised in
+[`ag-sept-pr4-scheduler-partitioned-capacity.md`](../../measurements/reports/ag-sept-pr4-scheduler-partitioned-capacity.md);
+the sections below are the implementation history and are **not** re-baselined to that outcome —
+where one conflicts, §3.20–§3.23, §4's re-baseline note and the owner documents win.
 **Scheduled under:** [AG-Sept plan](../../planning/ag-sept/milestone-plan.md) §2.
 **Owner docs:** [`deployment-architecture.md`](../../design/deployment-architecture.md) §13 owns
 the capacity environment; [`horizontal-scaling.md`](../../design/horizontal-scaling.md) §12–§13

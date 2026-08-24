@@ -158,14 +158,28 @@ co-resident authorities.
 
 ## Current iteration
 
-AG-Sept Iteration C now asks how aggregate mutation capacity behaves when the correctness-proven
-shard-group boundary receives **independently growing resource envelopes**.
+AG-Sept Iteration C asks how aggregate mutation capacity behaves when the correctness-proven
+shard-group boundary receives **independently growing resource envelopes**. It is **open**.
 
 The fixed validation uses reusable workload `WL-MUT-DISP-4` — synthetic organisations A/B/C/D — at
-1, 2, and 4 shard groups. The capacity baseline and scale-out points use equivalent AWS EC2
-capacity-unit hosts plus separate generator compute; AWS is measurement infrastructure for this
-question, not a production-architecture commitment. The experiment will obtain numeric `G1`, `G2`,
-`G4` and derived scale efficiencies rather than optimise toward a preselected efficiency threshold.
+1, 2, and 4 shard groups. Its intended output is numeric `G1`, `G2`, `G4` and derived scale
+efficiencies, rather than a verdict against a preselected efficiency threshold.
+
+What has run so far is local. PR4a qualified the sustained measurement method, and PR4b executed the
+complete comparison on one scheduler-partitioned workstation: `G4` resolved, `G1` and `G2` did not,
+so the derived efficiencies are withheld and `VAL-SCALE-6` is **not discharged**. What that evidence
+establishes, and why the workstation's shared write path rather than `alloca-go` bounds it, is the
+[scheduler-partitioned capacity checkpoint](docs/measurements/reports/ag-sept-pr4-scheduler-partitioned-capacity.md).
+
+PR4c then attempted the independently provisioned comparison on equivalent AWS EC2 capacity-unit
+hosts plus separate generator compute — AWS is measurement infrastructure for this question, not a
+production-architecture commitment. It **stopped at provisioning**: the available EC2 vCPU quota
+could not instantiate the complete environment, so PR4c produced no performance cell and
+`VAL-SCALE-5` remains unproven ([provisioning evidence](docs/measurements/pr4c-quota/)).
+
+That closed the PR4c work unit, not the Problem. Iteration C resumes when an equivalent
+independently provisioned environment can be created; AWS after quota approval is one such
+environment, not a requirement of the validation.
 
 Requirements and current Problem:
 [`docs/requirements/ag-sept.md`](docs/requirements/ag-sept.md).  
@@ -206,5 +220,6 @@ presentation value.
 
 AG-M0 (foundation and measurement contract) and AG-M1 (correct transactional core) are complete.
 AG-Sept is in progress: Iteration A identified the first mutation frontier, Iteration B established
-the horizontally composable writable-authority boundary, and Iteration C is preparing the first
-independently provisioned shard-group capacity comparison.
+the horizontally composable writable-authority boundary, and Iteration C remains open — its local
+scheduler-partitioned evidence is retained and its independently provisioned capacity comparison has
+not yet been made.

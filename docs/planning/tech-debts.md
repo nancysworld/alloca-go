@@ -696,10 +696,11 @@ No document currently cites a "delivers" row as evidence that something shipped.
 
 ### Related
 
-[`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md)
-is now a pointer with no inbound references left outside its own directory. It can be deleted
-whenever link stability for external bookmarks stops mattering — the same class of transitional
-artifact, kept deliberately rather than forgotten.
+The `horizontal-database-authority` design note was the same class of transitional artifact, kept
+deliberately rather than forgotten: promoted into formal design, held for a time as a pointer stub
+so existing links resolved, and removed once no inbound reference to it remained. The design is
+owned by
+[`../design/horizontal-database-authority.md`](../design/horizontal-database-authority.md).
 
 ### Evidence
 

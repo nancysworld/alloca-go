@@ -1,4 +1,4 @@
-# AG-M1 implementation plan — Correct transactional core
+# AG-M1 milestone plan — Correct transactional core
 
 **Status:** Historical — AG-M1 completed 30 July 2026. Retained as the record of how the milestone
 was planned and split; not normative for any current work.

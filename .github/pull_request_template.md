@@ -13,7 +13,7 @@
 2. **How was it validated?**
 3. **What remains unproven?**
 4. **Is anything here unsuitable for eventual public release?** (see the disclosure
-   checklist below; the [pre-public checklist](https://github.com/nancysworld/alloca-go/blob/main/docs/pre-public-checklist.md)
+   checklist below; the [pre-public checklist](../blob/main/docs/pre-public-checklist.md)
    is the history/metadata backstop at visibility-flip time)
 
 ## Benchmark or architecture PRs also answer
@@ -25,7 +25,7 @@
 
 - [ ] Change is scoped and reviewable.
 - [ ] Tests / measurements included where applicable.
-- [ ] Reviewed against [`docs/public-disclosure-policy.md`](https://github.com/nancysworld/alloca-go/blob/main/docs/public-disclosure-policy.md):
+- [ ] Reviewed against [`docs/public-disclosure-policy.md`](../blob/main/docs/public-disclosure-policy.md):
       no confidential discussions, private product or organisation details,
       recruitment activity, or private design-prompt origins appear in the diff,
       commit messages, branch name, or PR text.

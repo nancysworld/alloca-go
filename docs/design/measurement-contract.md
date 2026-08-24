@@ -547,11 +547,12 @@ Secrets and private endpoints must not be committed.
 
 **No run may be quoted as a capacity claim while a field its topology requires is
 unpopulated.** A generator is an HTTP client and cannot discover the service's shape for
-itself, so which fields a given milestone's runs can populate is a **scheduling** question,
-answered by the plan
-([`../planning/ag-sept/milestone-plan.md`](../planning/ag-sept/milestone-plan.md), *Manifest and reconciliation
-staging*). The rule above is not staged: it holds against whatever the topology of the moment
-requires. What a run may claim once its fields are populated is §13.
+itself, so whether a particular harness can populate a given field is an implementation and
+validation fact about the topology that ran — recorded by the milestone validation and the
+implementation record that own it — and never a licence to quote a run whose required fields are
+missing. Admissibility is not staged and inherits nothing from a schedule: the rule above holds
+against whatever the topology of the moment requires. What a run may claim once its fields are
+populated is §13.
 
 **Multi-service runs need one further rule.** When several service units serve one run, the
 manifest records every unit's `/meta`, and the run is uncertifiable if the units disagree on

@@ -1,8 +1,8 @@
 # AG-Sept PR3 — Horizontal database authority, Phase 1
 
 **Type:** Implementation record, spanning PR3a/3b/3c
-**Status:** PR3a is merged (#13); PR3b is merged (#14, `57f501d`); **PR3c is complete and under
-review (#16)** — harness, two measured passes and the report, with nothing mandatory
+**Status:** **All three work units are merged** — PR3a (#13, `aa1e3a5`), PR3b (#14, `57f501d`) and
+PR3c (#16, `4b0c684`): harness, two measured passes and the report, with nothing mandatory
 outstanding. §6a records what remains opportunistic. The
 design was accepted before implementation began (formal design §8), and §6 holds no blocker —
 its one remaining item is a starting fixture, not a contract.

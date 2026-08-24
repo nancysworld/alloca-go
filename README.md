@@ -1,6 +1,6 @@
 # Alloca-Go
 
-Alloca-Go is a Go/PostgreSQL systems-engineering project that uses a production-shaped reservation
+Alloca-Go is a Go/PostgreSQL systems-engineering project that uses a production-oriented booking
 service to explore **correctness under contention, performance, failure behaviour, and horizontal
 scaling** with explicit invariants and retained evidence.
 
@@ -14,29 +14,32 @@ architecture and questions evolved.
 ## Architecture at a glance
 
 ```mermaid
-flowchart LR
+flowchart TB
     client[Clients / external load generator]
     placement[Versioned organisation placement]
 
+    client --> placement
+
     subgraph sg1[Shard group 1]
+        direction LR
         svc1[Stateless Go replicas]
         db1[(PostgreSQL authority 1)]
         svc1 --> db1
     end
 
     subgraph sg2[Shard group 2]
+        direction LR
         svc2[Stateless Go replicas]
         db2[(PostgreSQL authority 2)]
         svc2 --> db2
     end
 
-    obs[Telemetry / measurement]
-
-    client --> placement
     placement --> svc1
     placement --> svc2
-    svc1 --> obs
-    svc2 --> obs
+
+    obs[Telemetry / measurement]
+    svc1 -.-> obs
+    svc2 -.-> obs
 ```
 
 A **shard group** is one independently writable PostgreSQL authority plus compatible stateless

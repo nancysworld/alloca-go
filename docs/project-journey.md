@@ -105,28 +105,22 @@ Iteration C remains open until an equivalent independently provisioned environme
 
 This checkpoint is intentionally not an Analyse & Review closure. The current evidence boundary and continuation condition are recorded in the PR4 checkpoint report and [`requirements/ag-sept.md`](requirements/ag-sept.md) §3.
 
-## 7. A new phase: from experimentation to disciplined investigation
+## 7. A new phase: methodology-informed investigation
 
-The first phase of Alloca-Go was strongly build-and-experiment driven. That was productive: it established the correctness substrate, created a measurement contract, found the first real frontier, followed that evidence into a writable-authority design, and then discovered where the local experimental environment itself became the limiting factor.
+Alloca-Go’s work so far has been guided by engineering experience, measurement, iterative hypotheses, and the results of each experiment. That approach established the correctness substrate, identified PostgreSQL as the first measured frontier, led to the writable-authority design, and exposed the limits of the local experimental environment.
 
-It also exposed a broader lesson. Systems-performance investigation is an established engineering discipline. There is little value in rediscovering its methods from scratch by running increasingly elaborate experiments without first learning the investigative frameworks that already exist.
+The next phase adds another input: **established systems-performance methodology**.
 
-The project is therefore entering a different phase.
+Brendan Gregg’s *Systems Performance* is a useful starting point. The plan is to study its methods, compare them with the approaches already used in Alloca, identify useful gaps or refinements, and apply selected techniques where they improve a real investigation. The aim is not to adopt a fixed recipe, but to combine established methodology with the project’s existing engineering process.
 
-Future progress does not need to mean continuously adding implementation or immediately designing the next benchmark. The pace of building can slow while more time is spent learning established performance-engineering methodology and applying it selectively to the questions Alloca exposes.
+This also changes the pace of the project. Future progress does not need to mean immediately building another mechanism or launching another benchmark. Time can instead go into studying methodology, revisiting retained evidence, improving workload characterisation or observation, and designing smaller, more discriminating experiments.
 
-Brendan Gregg's *Systems Performance* is one useful reference point for that phase: workload characterisation, utilisation and saturation analysis, latency distributions, systematic resource analysis, controlled benchmarking, hypothesis-driven investigation, and observing whether a bottleneck moves when a capacity variable changes. These are not rules to copy mechanically. They are methods to understand, exercise, and test for applicability in the context of this system.
+The working principle becomes:
 
-The refined model is:
+> **Methodology informs the investigation. Evidence decides the conclusion. Engineering judgement chooses the next useful question.**
 
-> **Methodology guides the investigation. Evidence decides the conclusion. Engineering judgement chooses the next useful question.**
+Alloca-Go therefore remains open-ended and evidence-led, but future work can draw more deliberately on established systems-performance practice. The [`exploration roadmap`](planning/alloca-go-roadmap.md) continues to record possible directions; the [`engineering process`](development/engineering-process.md) selects one worthwhile problem at a time.
 
-That changes what counts as progress. A future iteration may begin with study, re-analysis of retained evidence, better workload characterisation, improved observation, or one small discriminating experiment. New implementation is justified when the investigation shows that a mechanism, boundary, workload, or environment is actually needed.
+The longer-term direction is:
 
-Alloca-Go therefore remains open-ended, but not directionless. The [`exploration roadmap`](planning/alloca-go-roadmap.md) records candidate areas such as correctness, reliability, performance, scalability, and elasticity without scheduling them. The [`engineering process`](development/engineering-process.md) turns one worthwhile question at a time into Problem → Requirements → Design → Validation → implementation → evidence → Analyse & Review.
-
-The project may eventually explore different scaling boundaries, overload behaviour, state placement, recovery, coordination, or questions that are not obvious yet. None of those is a predetermined destination.
-
-The durable direction is narrower and stronger:
-
-> **Use a real stateful backend as a systems-engineering laboratory: learn established methods, apply them deliberately, retain evidence carefully, and change the architecture only when the next question justifies it.**
+> **Use a real stateful backend as a systems-engineering laboratory: learn established methods, apply them selectively, and let evidence determine what the system needs next.**

@@ -275,7 +275,7 @@ The distinction between logical shard-group composition and independent capacity
 flowchart TB
     subgraph shared["Shared-host G4 example"]
         direction TB
-        host["One physical host / resource path<br/>shared CPU · memory · kernel · storage"]
+        host["One physical host<br/>shared CPU / memory<br/>shared kernel / storage"]
         subgraph logical["4 logical shard groups"]
             direction LR
             s1["SG 1"]
@@ -289,7 +289,7 @@ flowchart TB
         host --- s4
     end
 
-    rule["Capacity-composition claim:<br/>added shard groups must add controlled resources"]
+    rule["Capacity scaling requires<br/>added shard groups<br/>to add controlled resources"]
     host -.-> rule
 
     generator["Load generator<br/>separate compute"]

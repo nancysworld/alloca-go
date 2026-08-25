@@ -41,6 +41,11 @@ generator and the telemetry stack share one 10-vCPU allocation
 capacity multiplier from this machine, and PR2's unexplained ~2× excursions remain open, so any
 single reading carries a ±2× caveat. **PR3 is correctness-first by design, not by descope.**
 
+**Report:**
+[`ag-sept-pr3c-phase1-correctness.md`](../../measurements/reports/ag-sept-pr3c-phase1-correctness.md)
+owns the correctness matrix, the per-authority verdicts and the failure-isolation result. Retained
+artifacts are in [`pr3c-phase1/`](../../measurements/pr3c-phase1/).
+
 ## 3. What the existing code made cheap, and what it did not
 
 Reconciliation was already organisation-scoped, so authority-aware verification was an extension

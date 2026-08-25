@@ -16,7 +16,8 @@ run manifest, reconciliation and the quotability ladder;
 [`load-harness.md`](../../operations/load-harness.md) §4 owns the operator-facing ladder and its
 per-level field lists;
 [`ag-sept/milestone-validation.md`](../../planning/ag-sept/milestone-validation.md) owns the
-controlled workloads and negative controls.
+controlled workloads and negative controls. Where this record disagrees with an owning document,
+the owning document wins.
 
 **Reading the section references below.** A bare `§n` refers to
 [`milestone-plan-v0.4.md`](../../planning/ag-sept/milestone-plan-v0.4.md), the plan in force when
@@ -50,6 +51,11 @@ rather than a shortfall.
 **What this run is not.** A smoke run of 60 requests on one host with the generator co-resident.
 It proves the substrate works end to end; it establishes no capacity, and no number in it may be
 quoted as one.
+
+**Report:** none, and deliberately so — PR1 established no result to report. Its evidence is the
+retained artifacts, [`pr1-smoke-run/`](../../measurements/pr1-smoke-run/) and
+[`pr1-telemetry-overhead/`](../../measurements/pr1-telemetry-overhead/). The first report is PR2's,
+which is the first work unit that measured something quotable.
 
 ## 2. Implementation decisions that mattered
 

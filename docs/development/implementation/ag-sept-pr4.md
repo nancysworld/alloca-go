@@ -41,6 +41,16 @@ Local rehearsal and sustained numbers are diagnostic evidence about the method. 
 discharge `VAL-SCALE-5`, never become Tier 2, and are never mixed with independently provisioned
 points to derive an efficiency (§2.14).
 
+**Report:**
+[`ag-sept-pr4-scheduler-partitioned-capacity.md`](../../measurements/reports/ag-sept-pr4-scheduler-partitioned-capacity.md)
+owns `G4_local`, the withheld quantities and the evidence boundary. Retained artifacts are in
+[`pr4a-rehearsal/`](../../measurements/pr4a-rehearsal/),
+[`pr4a-sustained/`](../../measurements/pr4a-sustained/),
+[`pr4b-recon/`](../../measurements/pr4b-recon/),
+[`pr4b-capacity/`](../../measurements/pr4b-capacity/),
+[`pr4b-drift-g1/`](../../measurements/pr4b-drift-g1/) and
+[`pr4c-quota/`](../../measurements/pr4c-quota/).
+
 ## 2. Implementation decisions that mattered
 
 ### 2.1 `VAL-NEG-7`'s host sensor is `node_exporter` on the existing PR2 substrate

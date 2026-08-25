@@ -14,7 +14,8 @@ remains the referent for the bare `§n` references in this record.
 **Owner documents.** [`measurement-contract.md`](../../design/measurement-contract.md) §3 and §6
 own the capacity vocabulary and the required indicators; VAL-NEG-2 in
 [`ag-sept/milestone-validation.md`](../../planning/ag-sept/milestone-validation.md) owns the
-generator control; [`dashboards.md`](../../operations/dashboards.md) owns the panel set.
+generator control; [`dashboards.md`](../../operations/dashboards.md) owns the panel set. Where this
+record disagrees with an owning document, the owning document wins.
 
 **Reading the section references below.** A bare `§n` refers to
 [`milestone-plan-v0.4.md`](../../planning/ag-sept/milestone-plan-v0.4.md), the plan in force when
@@ -37,6 +38,11 @@ the environment moved throughput by ~2× for reasons outside the harness.
 **What PR2 may not claim, whatever it measures.** The generator shares a host with the service for
 the whole of AG-Sept, so every figure is a *bounded local* result, and that limitation travels with
 each number rather than sitting in a footnote.
+
+**Report:**
+[`ag-sept-pr2-single-instance-frontier.md`](../../measurements/reports/ag-sept-pr2-single-instance-frontier.md)
+owns the measured frontier, the limiting mechanism and the reported variance. Retained artifacts
+are in [`pr2-frontier/`](../../measurements/pr2-frontier/).
 
 ## 3. What PR1 changed about PR2's scope
 

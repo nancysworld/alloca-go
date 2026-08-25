@@ -120,7 +120,7 @@ fixture-bound result.
 > would have passed identically had the hole been a genuine generator limit.
 >
 > `control-generator.sh` now requires **every** rung within the band and reports `INCONCLUSIVE`
-> otherwise, alongside the admissibility gates of ChatGPT's P1 (every requested rung present,
+> otherwise, alongside the admissibility gates review raised as P1 (every requested rung present,
 > sound, response-validated, free of timeouts and unknown outcomes, at or above `-require`, and
 > sharing one service identity). The table above is the re-run under the hardened script, which
 > exits zero. The refused first pass is not retained: it was superseded rather than explanatory,

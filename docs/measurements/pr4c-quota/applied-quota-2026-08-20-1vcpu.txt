@@ -1,8 +1,14 @@
 Re-run of the same probe script on 2026-08-20. The terminal echo below is visibly interleaved —
 an artifact of pasting a multi-line command into the shell — but the commands are the same four as
-in applied-quota-earlier-5vcpu.txt and executed normally. Retained verbatim rather than tidied.
+in applied-quota-earlier-5vcpu.txt and executed normally. Retained rather than tidied.
 
-REDACTED_PROMPT: echo "=== Availability zones ==="
+ALTERED CAPTURE. The shell prompt is replaced by <user>@<host> wherever it appeared, under
+public-disclosure-policy.md, which does not permit hosts. Nothing else is changed: no
+reformatting, no trimming, no reordering, no elision of rows. The default VPC, subnet and
+CIDR values below are retained deliberately -- they identify nothing without credentials,
+and pre-public-checklist.md records that as a judgement rather than a removal rule.
+
+<user>@<host>:~/projects/alloca-go$ echo "=== Availability zones ==="
 aws ec2 describe-availability-zones \      echo "=== Availability zones ==="
 aws ec2 describe-availability-zones \
   --region eu-west-2 \yZones[?State==`available`].[ZoneName,State]' \

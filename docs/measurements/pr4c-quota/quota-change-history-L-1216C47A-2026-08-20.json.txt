@@ -1,6 +1,7 @@
 ALTERED CAPTURE. Every occurrence of the 12-digit AWS account identifier is replaced by
 <account-id> -- twice inside the escaped Requester string and once in QuotaArn, per record --
-under public-disclosure-policy.md. Nothing else is changed. Kept with a .txt extension because the
+under public-disclosure-policy.md, and the shell prompt is replaced by <user>@<host>, which the
+same policy requires. Nothing else is changed. Kept with a .txt extension because the
 file carries this header and is therefore no longer parseable JSON; the payload below is verbatim.
 
 This is the quota-scoped output returned for L-1216C47A on 2026-08-20. It contains the two
@@ -8,7 +9,7 @@ Service Quotas increase-request cases returned by the command. It is complete fo
 command response; it is not an assertion that this API records decrease requests, every support
 exchange, or unlimited account history.
 
-REDACTED_PROMPT: aws service-quotas list-requested-service-quota-change-history-by-quota \
+<user>@<host>:~/projects/alloca-go$ aws service-quotas list-requested-service-quota-change-history-by-quota \
   --region eu-west-2 \
   --service-code ec2 \
   --quota-code L-1216C47A \

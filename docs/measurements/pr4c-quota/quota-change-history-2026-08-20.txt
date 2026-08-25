@@ -1,10 +1,11 @@
 ALTERED CAPTURE. The 12-digit AWS account identifier is replaced by twelve asterisks wherever it
 appeared -- once in QuotaArn and twice in Requester, per row -- under public-disclosure-policy.md.
-The substitute is exactly the same width, so the column alignment below is the original. Nothing
+The substitute is exactly the same width, so the column alignment below is the original. The
+shell prompt is likewise replaced by <user>@<host>, which the same policy requires. Nothing
 else is changed: no reformatting, no trimming, no reordering, no elision of rows. Support case IDs
 are kept; ag-sept-pr4.md section 5 already records one in prose.
 
-REDACTED_PROMPT: aws service-quotas list-requested-service-quota-change-history \
+<user>@<host>:~/projects/alloca-go$ aws service-quotas list-requested-service-quota-change-history \
   --region eu-west-2 \
   --service-code ec2 \
   --output table

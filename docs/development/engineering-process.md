@@ -166,6 +166,25 @@ transient discoveries are normally removed unless they materially change interpr
 future decision. Review affected records during PR review and perform a broader compression pass
 at the end of each development cycle.
 
+### 1.7 References between code and documentation
+
+Code comments and tests may reference documentation when the reference preserves
+important context, such as a design contract, invariant, operational procedure,
+or other durable knowledge.
+
+Prefer references to durable owners of knowledge rather than transient
+implementation history. Code should not unnecessarily depend on implementation
+records, PR histories, or section numbers that may change as historical records
+are compressed or reorganised.
+
+Implementation records exist to preserve how and why changes happened. They
+may be cited when provenance or historical reasoning is itself valuable, but
+they should not become the normal source of rules that code must follow.
+
+When a comment grows into a substantial explanation of a design decision,
+alternatives, experiment evidence, or historical context, move the explanation
+to the owning document and leave a concise comment with a durable reference.
+
 ## 2. Roles and decision ownership
 
 The roles below describe responsibility and review emphasis, not permissions. One participant may

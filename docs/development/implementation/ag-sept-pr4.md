@@ -666,10 +666,13 @@ targets as a glob — a postgres target beside them would be scraped as a servic
 gate would refuse every cell over a foreign entry it was correct to report.
 
 **The whole section is plotted, a departure from "panel narrowly" — maintainer decision,
-2026-08-17.** With checkpoints and autovacuum both refuted and no candidate left, the next degraded
-cell has to be read *without* a hypothesis to test, and §3.13.1's precedent says an unplotted series
-is recoverable, not that it is noticed. **Recovery works when you know what to look for; this is the
-case where nobody does.**
+2026-08-17.** The dashboard graph bound went to 16 first, for the wait-event graph alone, on
+§3.14's reading that the snapshot makes an unplotted series recoverable; it is now 20, the
+remaining four plotted rather than left recoverable-in-principle. With checkpoints and autovacuum
+both refuted and no candidate left, the next degraded cell has to be read *without* a hypothesis to
+test, and §3.13.1's precedent says an unplotted series is recoverable, not that it is noticed.
+**Recovery works when you know what to look for; this is the case where nobody does.** The bound
+stays a bound, and the graph after these is another decision recorded in the test that enforces it.
 
 The series wrapper now waits for both jobs before driving cell 1: the exporters are discovered on
 the same refresh, so they are *usually* healthy at the same moment — **and usually is not a

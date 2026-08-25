@@ -110,7 +110,14 @@ read the same query source, so the panel you looked at and the number you quoted
 
 ### 5.4 Warm-up is a separate phase, and the fixture is reset without restarting the service
 
-Maintainer decision, 2026-08-03. Warm-up traffic never reaches reconciliation, because the reset
+Maintainer decision, 2026-08-03. The cell sequence is:
+
+```text
+seed  →  start/restart service  →  warm up  →  reset fixture (service keeps running)
+      →  measured load  →  export  →  verify
+```
+
+Warm-up traffic never reaches reconciliation, because the reset
 clears the rows it created before the measured phase begins — the cheaper of the two mechanisms,
 since the alternative carried per-cell warm-up totals through to the verifier and changed the
 schema every retained artifact is read with.

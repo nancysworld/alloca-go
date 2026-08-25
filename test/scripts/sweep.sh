@@ -2,8 +2,8 @@
 #
 # Run one bounded sweep of AG-Sept PR2 cells, one artifact directory each.
 #
-# A cell is not just "run the load generator". ag-sept-pr2.md §5.4 fixes the sequence,
-# and every step in it exists because of a failure the harness has already met:
+# A cell is not just "run the load generator". Every step in the sequence below exists
+# because of a failure the harness has already met:
 #
 #   seed -> restart service -> warm up -> reset fixture (service keeps running)
 #        -> baseline scrape -> measured load -> after scrape -> export -> verify
@@ -12,7 +12,7 @@
 #     process; the fixture reset in the middle is what keeps warm-up traffic out of
 #     reconciliation without discarding the warm pool a restart would;
 #   * the two scrapes bracket the measured phase, because counters are cumulative and the
-#     service is deliberately still warm — alloca-verify compares the delta (§5.4);
+#     service is deliberately still warm — alloca-verify compares the delta;
 #   * seeding happens twice per cell, which is cheap (150k units in ~2.3s) and is the only
 #     thing standing between a warmed cell and a reconciliation failure on a correct service.
 #
@@ -115,7 +115,7 @@ takeover_port() {
 
 # slots_for sizes the fixture to the cell rather than to a constant.
 #
-# This is the trap §5.5 records: a duration-bounded cell exhausts any fixture not sized to
+# This is the trap a duration bound sets: a cell exhausts any fixture not sized to
 # window x throughput, and once it does, the rest of the window measures refusal throughput
 # while every correctness check still passes. Over-provision generously — seeding is cheap and
 # a too-small fixture silently changes what the cell measured.
@@ -208,7 +208,7 @@ for workload in $WORKLOADS; do
         -org "$ORG" -out "$cell/verdict.json" > "$cell/verify.log" 2>&1 \
         && verify_ok=yes || verify_ok=no
 
-      # The plateau check of §5.5. A cell whose goodput equals the fixture's capacity spent
+      # The plateau check. A cell whose goodput equals the fixture's capacity spent
       # part of its window measuring refusals, and nothing else in the pipeline notices —
       # every correctness check passes, because a refusal is a valid domain answer.
       python3 - "$cell" "$slots" "$CAPACITY" "$load_ok" "$verify_ok" "$export_ok" "$warmup_ok" <<'PY'
@@ -260,7 +260,7 @@ if export_ok == "yes":
         #
         # `pool_total`, not `pool_max`: the maximum was dropped from panels.json in PR4a because
         # a per-unit constant plotted beside occupancy is what invited reading a ceiling as a
-        # population (§3.13.1). The population itself is the better gate anyway — it is present
+        # population. The population itself is the better gate anyway — it is present
         # whenever the pool exists, and unlike a configured constant it is evidence that the pool
         # was actually observed rather than merely described.
         #

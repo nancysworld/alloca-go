@@ -197,7 +197,7 @@
       "title": "Host disk written",
       "unit": "Bps",
       "range": "30s",
-      "_note": "The term PR4b's result turned on, and the one no panel exported until it did (ag-sept-pr4.md \u00a73.30). Goodput tracks delivered write bandwidth at 65-79 mutations per MiB across every topology, and within G1 it does so run by run. `--collector.diskstats` was already enabled, so the series existed and was reachable in Prometheus while being absent from every retained cell \u2014 which is how a load-bearing number came to be quoted from a live query rather than from an artifact. JOB-SCOPED and RANGE 30s for the same reasons as host_cpu_busy.",
+      "_note": "The term PR4b's result turned on, and the one no panel exported until it did (ag-sept-pr4.md \u00a73.30). Goodput tracks delivered write bandwidth at 65.2-72.7 mutations per MiB across every topology, and within G1 it does so run by run. `--collector.diskstats` was already enabled, so the series existed and was reachable in Prometheus while being absent from every retained cell \u2014 which is how a load-bearing number came to be quoted from a live query rather than from an artifact. JOB-SCOPED and RANGE 30s for the same reasons as host_cpu_busy.",
       "expr": "sum(rate(node_disk_written_bytes_total{job=\"node\"}[$RANGE]))"
     },
     {

@@ -192,7 +192,7 @@ func TestIncompleteManifestCannotBeCertified(t *testing.T) {
 			mention: "routing_version",
 		},
 		{
-			// Codex's finding: with no disagreement recorded, nothing else in the ladder
+			// Review finding: with no disagreement recorded, nothing else in the ladder
 			// looked at the topology, so a two-unit run could be promoted to capacity
 			// without naming a single authority it reached.
 			name:    "multi-authority run naming no authorities stops at local",

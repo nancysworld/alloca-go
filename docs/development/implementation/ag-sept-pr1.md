@@ -16,9 +16,14 @@ controlled workloads and negative controls.
 [`milestone-plan-v0.4.md`](../../planning/ag-sept/milestone-plan-v0.4.md), the plan in force when
 PR1 was written, unless another document is named on the line.
 
-## 1. Exit gate, and what discharged it
+## 1. Outcome
 
-From the plan, unchanged:
+PR1 built the measurement substrate every later run depends on: the external load generator, the
+run manifest and its provenance fields, the reconciling verifier, and the negative control that
+makes a reported success mean something. The exit gate is discharged, and PR1's runs certify at
+`local`.
+
+**The exit gate, from the plan, unchanged:**
 
 > One controlled local run produces reconcilable machine-readable client, server, and
 > persisted-state totals; the mandatory response-validation control passes; the manifest

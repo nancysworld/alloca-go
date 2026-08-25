@@ -5,6 +5,10 @@
 [`ag-sept-pr3c-phase1-correctness.md`](../../measurements/reports/ag-sept-pr3c-phase1-correctness.md),
 with artifacts in [`pr3c-phase1/`](../../measurements/pr3c-phase1/).
 
+**Scheduled under:** [`ag-sept/milestone-plan.md`](../../planning/ag-sept/milestone-plan.md) §3,
+work unit *PR3a–PR3c + Iteration B A&R — database-authority composition*. That is a scheduling and
+historical citation only; what this work had to satisfy is owned by the documents below.
+
 **Owner documents.**
 [`horizontal-database-authority.md`](../../design/horizontal-database-authority.md) and
 [`deployment-architecture.md`](../../design/deployment-architecture.md) own the Phase 1 model;

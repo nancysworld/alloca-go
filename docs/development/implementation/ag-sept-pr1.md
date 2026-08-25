@@ -5,6 +5,12 @@
 [`pr1-smoke-run/`](../../measurements/pr1-smoke-run/) and
 [`pr1-telemetry-overhead/`](../../measurements/pr1-telemetry-overhead/).
 
+**Scheduled under:** [`ag-sept/milestone-plan.md`](../../planning/ag-sept/milestone-plan.md) §3,
+work unit *PR1–PR2 — measurement substrate and first frontier*. That is a scheduling and historical
+citation only; what this work had to satisfy is owned by the documents below. PR1 was planned under
+the superseded [`milestone-plan-v0.4.md`](../../planning/ag-sept/milestone-plan-v0.4.md) §14, which
+remains the referent for the bare `§n` references in this record.
+
 **Owner documents.** [`measurement-contract.md`](../../design/measurement-contract.md) owns the
 run manifest, reconciliation and the quotability ladder;
 [`load-harness.md`](../../operations/load-harness.md) §4 owns the operator-facing ladder and its

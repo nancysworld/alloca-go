@@ -3,6 +3,11 @@
 **Type:** Implementation record, spanning PR4a/PR4b/PR4c
 **Status:** merged — PR4a (#19), PR4b (#20), PR4c (#21).
 
+**Scheduled under:** [`ag-sept/milestone-plan.md`](../../planning/ag-sept/milestone-plan.md) §3,
+work units *PR4a — method qualification*, *PR4b — scheduler-partitioned evidence* and *PR4c —
+independent probe attempt*. That is a scheduling and historical citation only; what this work had
+to satisfy is owned by the documents below.
+
 **Owner documents.** [`deployment-architecture.md`](../../design/deployment-architecture.md) §13
 owns the capacity environment; [`horizontal-scaling.md`](../../design/horizontal-scaling.md)
 §12–§13 owns the capacity-unit model; `REQ-SCALE-4` and `REQ-EVID-2`

@@ -5,6 +5,12 @@
 [`ag-sept-pr2-single-instance-frontier.md`](../../measurements/reports/ag-sept-pr2-single-instance-frontier.md),
 with artifacts in [`pr2-frontier/`](../../measurements/pr2-frontier/).
 
+**Scheduled under:** [`ag-sept/milestone-plan.md`](../../planning/ag-sept/milestone-plan.md) §3,
+work unit *PR1–PR2 — measurement substrate and first frontier*. That is a scheduling and historical
+citation only; what this work had to satisfy is owned by the documents below. PR2 was planned under
+the superseded [`milestone-plan-v0.4.md`](../../planning/ag-sept/milestone-plan-v0.4.md) §14, which
+remains the referent for the bare `§n` references in this record.
+
 **Owner documents.** [`measurement-contract.md`](../../design/measurement-contract.md) §3 and §6
 own the capacity vocabulary and the required indicators; VAL-NEG-2 in
 [`ag-sept/milestone-validation.md`](../../planning/ag-sept/milestone-validation.md) owns the

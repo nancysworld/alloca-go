@@ -95,11 +95,16 @@ The sequence below records purpose and status only. Detailed implementation deci
 PR1 established the load/measurement substrate. PR2 used it to identify PostgreSQL, rather than
 `alloca-go`, as the first measured mutation frontier.
 
+Records: [`ag-sept-pr1.md`](../../development/implementation/ag-sept-pr1.md),
+[`ag-sept-pr2.md`](../../development/implementation/ag-sept-pr2.md).
+
 ### PR3a–PR3c + Iteration B A&R — database-authority composition — complete
 
 These work units established the Phase 1 authority model, multi-authority execution/reconciliation,
 correctness and failure isolation. The result is a correctness/composition result, not a capacity
 multiplier.
+
+Record: [`ag-sept-pr3.md`](../../development/implementation/ag-sept-pr3.md).
 
 ### PR #18 — Iteration C planning — complete
 
@@ -111,6 +116,9 @@ than a pass threshold, and the independent-resource requirement.
 Qualified the sustained experiment: independent per-group demand, explicit conditioning,
 state-preserving pool recycle, fixed pool policy, fixture headroom, retained 600 s runs,
 resource/provenance evidence, and the controls required before interpreting a topology comparison.
+
+Record: [`ag-sept-pr4.md`](../../development/implementation/ag-sept-pr4.md), which spans PR4a, PR4b
+and PR4c.
 
 ### PR4b — scheduler-partitioned evidence — complete
 
@@ -125,7 +133,9 @@ The reusable method is owned by
 [`milestone-validation-pr4c-aws-probe.md`](milestone-validation-pr4c-aws-probe.md); provisioning
 state is retained under [`../../measurements/pr4c-quota/`](../../measurements/pr4c-quota/).
 
-`STOP / DEFER` applies to this work unit, not to the Iteration C Problem.
+`STOP / DEFER` applies to this work unit, not to the Iteration C Problem. PR4c has no implementation
+record of its own because no cell ran; [`ag-sept-pr4.md`](../../development/implementation/ag-sept-pr4.md)
+§5 records the provisioning blocker.
 
 ### PR5 — evidence checkpoint + publication readiness — in progress
 

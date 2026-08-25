@@ -25,12 +25,9 @@ go.work.sum
 !.env.example
 *.local
 
-# Local AI-assistant tooling and settings, ignored as a whole directory rather than
-# file by file: its contents accrete from local sessions, so individual files land in a
-# commit by accident rather than by decision. Use `git add -f` for a specific file that
-# is genuinely meant to be shared — the ignore means a new one will not appear in
-# `git status` to remind you.
-/.claude/
+# Claude Code local configuration and sandbox artefacts
+.claude/
+.mcp.json
 
 # IDE and editor files
 .vscode/

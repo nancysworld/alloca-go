@@ -769,6 +769,7 @@ second". Measured admission is 17–68, so it over-provisions by roughly 48×; a
 `alloca-seed` for a 122,980-slot fixture and the seed times out
 (`plateau/dispersed-c256-pool40/seed.log`, retained). **Concurrency above 128 is therefore
 currently unreachable**, which is why §2.2's plateau is demonstrated between c=64 and c=128
-rather than across a wider span. The over-provisioning is deliberate — §5.5 of the scope note
-explains why a too-small fixture fails silently — but the constant needs to come down or the
-sizing needs to use a measured rate.
+rather than across a wider span. The over-provisioning is deliberate —
+[`ag-sept-pr2.md`](../../development/implementation/ag-sept-pr2.md) §5.5 explains why a too-small
+fixture fails silently — but the constant needs to come down or the sizing needs to use a measured
+rate.

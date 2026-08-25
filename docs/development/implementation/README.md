@@ -2,38 +2,66 @@
 
 This directory holds the durable implementation record for scoped engineering work.
 
-An implementation record begins from intended scope, then evolves with the work. Unlike a
-forward-looking plan, it may record:
+## What a public implementation record is for
 
-- the concrete mechanism selected to satisfy an accepted design;
-- implementation-specific trade-offs and rejected local alternatives;
-- discoveries made while coding or testing;
-- review findings and how they were resolved or deliberately deferred;
-- discriminating tests and validation performed;
-- scope movement between PRs;
-- what actually shipped and what remains open.
+> **A public implementation record preserves implementation-specific engineering lessons; it does
+> not reconstruct the entire PR.**
 
-It does **not** become the normative home for architecture merely because implementation exposed
-the issue. When a finding changes an invariant, authority boundary, trust boundary, evidence
-contract, or other durable system property, update the owning design or ADR and link back to it.
+Requirements own required behaviour. Design documents own accepted system shape and invariants.
+ADRs own consequential architectural decisions. Validation owns what must be demonstrated.
+Measurement reports and retained artifacts own empirical results. An implementation record keeps
+only what remains useful once those owners exist, and normally answers four questions:
 
-The boundary is:
+1. **What changed?** — the shipped capability or experiment, in a short outcome summary.
+2. **Which implementation decisions mattered?** — mechanisms, local trade-offs and rejected
+   alternatives that materially affected the result and are not obvious from the durable design.
+3. **What went wrong or changed our method?** — failures, bugs, benchmark defects, review findings
+   or surprises that changed implementation, architecture or validation.
+4. **What did this work establish, and where is the authoritative evidence?** — the evidence
+   boundary, unresolved items, and links to the owning requirement, design, ADR, validation item or
+   report.
+
+### Keep
+
+The implemented outcome; a technically significant implementation decision or rejected alternative;
+a failure or defect that materially changed the design, implementation, benchmark or validation
+method; an evidence limitation or unresolved question needed to interpret the work correctly; an
+implementation-specific detail still legitimately cited by code, tests, configuration or evidence;
+and concise links to the documents that now own the full semantics.
+
+### Remove rather than polish
+
+Obsolete forward-looking scope; task breakdowns, checklists and day-by-day chronology; requirement,
+design, ADR or validation explanations already owned elsewhere; duplicated result tables already
+owned by measurement reports and artifacts; repeated ownership and process explanation; review and
+handoff conversation; estimates that never became measured results; and personal-name attribution
+where the role is sufficient.
+
+Do not preserve a paragraph merely because it is technically correct. **If the same truth has a
+better durable owner, link to that owner and delete the duplicate prose.**
+
+### Section anchors are a compatibility surface
+
+Code, tests, configuration and evidence directories cite these records by section number. Preserve
+a cited heading as a compact named subsection rather than recreating the chronology around it, and
+repoint a citation to a durable owner only as a deliberate change with its references repaired in
+the same batch. **Never renumber an existing section.**
+
+## Relationship to plans, designs and ADRs
+
+An implementation record does **not** become the normative home for architecture merely because
+implementation exposed the issue. When a finding changes an invariant, authority boundary, trust
+boundary, evidence contract or other durable system property, update the owning design or ADR and
+link back to it.
 
 > Plans say what we intend to do. Designs say what the system must preserve. ADRs say why a
-> consequential architectural choice was made. Implementation records say how a scoped change
-> was actually built and what was learned while building it.
+> consequential architectural choice was made. Implementation records say how a scoped change was
+> actually built and what was learned while building it.
 
 ## Naming
 
-Use a stable work-unit name rather than a transient branch name, for example:
-
-```text
-ag-sept-pr3.md
-ag-sept-pr4.md
-```
-
-A single implementation record may span several PRs when they implement one coherent scoped
-change and the document benefits from preserving their shared history.
+Use a stable work-unit name rather than a transient branch name, for example `ag-sept-pr3.md`. A
+single record may span several PRs when they implement one coherent scoped change.
 
 ## Records
 
@@ -48,14 +76,6 @@ PR4c has no implementation record because no AWS cell ran. Its reusable method i
 [design](../../design/independent-capacity-probe.md) and
 [validation plan](../../planning/ag-sept/milestone-validation-pr4c-aws-probe.md); the external blocker is
 retained under [`../../measurements/pr4c-quota/`](../../measurements/pr4c-quota/).
-
-The first three began as `docs/planning/ag-sept-pr*-scope.md` and moved here once the directory
-existed. They are named for the work unit, not the branch, and PR3's and PR4's records each span
-several PRs because they implement one coherent scoped change.
-
-Those three still read as scope notes in places, because that is what they were written as. Sections
-that state intent rather than what was built are the parts to revise as each is next materially
-updated — not a reason to rewrite their history.
 
 The repository-wide process and role boundaries are defined in
 [`../engineering-process.md`](../engineering-process.md).

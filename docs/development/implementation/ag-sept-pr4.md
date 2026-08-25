@@ -864,7 +864,7 @@ working set stationary and a *mature-state* fixture is the appropriate benchmark
 different experiments and different meanings for a sustained number, and choosing between them is a
 requirements and workload-envelope decision rather than an implementation one.
 
-**Its methodological half is settled** (validation plan §4.6.5): because the trajectory is not
+**Its methodological half is settled** (`ag-sept/milestone-validation.md` §4.6.5): because the trajectory is not
 stationary within the window, the comparison quantity is the full-600 s horizon average from the
 same fixed conditioned starting state, so every arm is read the same way and the slices describe
 evolution rather than select a plateau — **which is what would otherwise let the choice of
@@ -1025,7 +1025,8 @@ deciding higher point that reproduces to 1.0% and does not beat it. **`G1` and `
 unresolved**, so `G1_local` and `G2_local` are withheld and, because `G1_local` is the denominator
 of both, `E2_local` and `E4_local` with them. `G1` fails on `H`'s reproducibility and on the
 upper-side test; `G2` fails on both points' reproducibility *and* the upper-side test. The
-upper-side figures are §4.6.5's pairwise comparison, `max(H)` against `min(S)`, which §3.32 records
+upper-side figures are `ag-sept/milestone-validation.md` §4.6.5's pairwise comparison, `max(H)`
+against `min(S)`, which §3.32 records
 as a correction to an implementation that compared extreme against extreme; neither topology's
 disposition changes, because both were already unresolved on reproducibility.
 
@@ -1185,8 +1186,9 @@ environment failed the admissibility gate, and the rule withheld a number rather
 it could not support.
 
 **The common bracket was a maintainer decision the validation plan did not own.** §3.27 recorded it
-while §4.6.4 still said reconnaissance selects per topology, so for `G2` the claim that the defined
-method ran end to end was not literally true. §4.6.4 now owns the exception, with three conditions
+while `ag-sept/milestone-validation.md` §4.6.4 still said reconnaissance selects per topology, so
+for `G2` the claim that the defined method ran end to end was not literally true. §4.6.4 now owns
+the exception, with three conditions
 the stage already enforced and a fourth it did not: the comparison must *record* that it ran at a
 common bracket, which `common-bracket.txt` now does beside the runs. Two smaller findings: the
 storage wording was stronger in the plan and status table than the mechanism paragraph it
@@ -1214,7 +1216,8 @@ and `VAL-SCALE-6`'s status is owned by
 Still open at the close of PR4:
 
 - **What the benchmark should represent** when transactional state grows without bound (§3.21).
-  §4.6.5 fixes the comparison quantity so the arms are comparable; it does not settle whether an
+  `ag-sept/milestone-validation.md` §4.6.5 fixes the comparison quantity so the arms are
+  comparable; it does not settle whether an
   indefinitely growing dataset is the right thing to measure. Carried to Analyse & Review.
 - **A validated fix for the cached-plan fixture artefact** (§3.20). The root cause is demonstrated;
   the candidate treatments change what the fixture measures and are maintainer decisions.

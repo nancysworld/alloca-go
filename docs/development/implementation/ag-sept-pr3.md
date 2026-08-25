@@ -110,6 +110,10 @@ counter: **a 400 that is really a misconfiguration should not hide among client 
 
 ### 5.7 Resolving `unknown_replayable` is a post-run pass, not a load control
 
+`measurement-contract.md` §12 requires ambiguous mutations to be resolved by replaying their own
+keys after an authority is restored, so the generator retains those keys during the run and
+reissues them afterwards.
+
 **This is deliberately not a retry-on-timeout control**: that shapes load *during* a run — timeout,
 retry, amplification — and remains unassigned. Conflating them is how unfunded scope creeps into a
 PR that cannot fund it.
@@ -187,8 +191,8 @@ itself is not fresh. **The mutation is real and the summary would say it never h
 Discharged in PR3c as one contract rather than four patches: resolution traffic incorporated into
 request and server accounting; a logical mutation counted **once as fresh** when the replay proves
 the original committed; counted **once** when resolution performs it; anything still ambiguous
-rejected outright. The measured fields are untouched by construction, which is the property §12
-turns on.
+rejected outright. The measured fields are untouched by construction, which is the property
+`measurement-contract.md` §12 turns on.
 
 **Why not in PR3b.** The shape of this contract depends on how the pass is actually driven, and **a
 summary contract guessed at before its only caller exists is one PR3c would have had to redesign
@@ -260,7 +264,7 @@ That case is now refused by name.
 
 **The resolution pass is deliberately not behind a flag**, for the same reason the deployment record
 is not excused by `-require`: a healthy run registers nothing and the pass is a no-op, so the only
-runs it touches are the ones §12 requires it for — while **an operator who forgot the flag would
+runs it touches are the ones `measurement-contract.md` §12 requires it for — while **an operator who forgot the flag would
 hold an unreconcilable artifact whose register had already died with the process.**
 
 **What blocked the experiments for half a day, because the shape recurs.** The harness was finished

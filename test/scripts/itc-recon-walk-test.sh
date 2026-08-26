@@ -3,7 +3,7 @@
 # Exercise the PR4b reconnaissance walk against synthetic rate curves.
 #
 # **Why this exists.** The walk in `itc-local-experiment.sh recon` decides which two worker levels
-# receive four retained 600 s runs each (ag-sept-validation-plan.md §4.6.4-§4.6.5). It runs
+# receive four retained 600 s runs each (ag-sept/milestone-validation.md §4.6.4-§4.6.5). It runs
 # unattended for the better part of an hour, and a defect in it costs that hour and then hands back
 # the wrong bracket — the expensive kind of wrong, because the retained runs are sound and describe
 # the wrong place. Reasoning about a two-directional search with two end refusals is not evidence

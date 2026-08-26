@@ -67,6 +67,21 @@ jobs:
       - name: build context (docker provenance gate)
         run: ./test/scripts/check-build-context.sh
 
+      # Bounds one class only: a Go declaration written as a single long line. gofmt has no
+      # opinion on where a line wraps, so without this a signature grows until a reviewer
+      # happens to notice — which is how `commit` reached 205 columns and `lockByReservation`
+      # 258 (tech-debts.md DEBT-5). Deliberately not a general line-length linter: measured at
+      # the same bound, every remaining long line was an error string, help text or SQL, which
+      # DEBT-5 records must not be split. Pure text over tracked files, so no daemon.
+      - name: Go declaration length
+        run: ./test/scripts/check-declaration-length.sh
+
+      # Guards the check above, which is bash and therefore invisible to the Go suite. Its cases
+      # fail against both ways that check can rot: dropping the length comparison, and dropping
+      # the `func` anchor that keeps error strings out of scope.
+      - name: Go declaration length check tests
+        run: ./test/scripts/check-declaration-length-test.sh
+
       # Guards the Iteration C rehearsal's CPU layout check, which is what refuses a bad
       # partition before an image build and four database containers. It is bash, so the Go
       # suite says nothing about it, and its comments once described four properties its code
@@ -95,7 +110,7 @@ jobs:
       # drives no cell and needs no daemon. It exists because the search runs unattended for the
       # better part of an hour and a defect returns a wrong bracket full of sound runs — and
       # because mutation testing on it found one assertion passing for the wrong reason
-      # (ag-sept-validation-plan.md §4.6.4).
+      # (ag-sept/milestone-validation.md §4.6.4).
       - name: iteration C reconnaissance walk
         run: ./test/scripts/itc-recon-walk-test.sh
 
@@ -103,7 +118,7 @@ jobs:
       # unresolved, and the efficiencies derived from it. The cases write the manifests the analysis
       # reads, so no cell is driven. It exists because a defect in the rule yields a plausible
       # efficiency rather than an obviously wrong one — the number a report is most likely to quote
-      # (ag-sept-validation-plan.md §4.6.5, §4.6.7).
+      # (ag-sept/milestone-validation.md §4.6.5, §4.6.7).
       - name: iteration C capacity result rule
         run: ./test/scripts/itc-capacity-result-test.sh
 

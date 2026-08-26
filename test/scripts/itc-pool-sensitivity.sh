@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# The bounded G1 pool-sensitivity preflight (ag-sept-validation-plan.md §4.6.3).
+# The bounded G1 pool-sensitivity preflight (ag-sept/milestone-validation.md §4.6.3).
 #
 # **What it is for.** Before G1/G2/G4 are compared, one thing has to be ruled out: that the
 # connection ceiling, rather than the shard group, is what the comparison measures. If the pool is

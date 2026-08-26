@@ -28,7 +28,7 @@ type ConditioningDeclaration struct {
 	SlotsPerOrganisation int `json:"slots_per_organisation"`
 	// TargetMutationsPerOrganisation is the predeclared state target. It is per organisation
 	// rather than per run so that a faster topology and a slower one begin measurement at the
-	// same logical state instead of the same elapsed time (ag-sept-validation-plan.md §4.6.2).
+	// same logical state instead of the same elapsed time (ag-sept/milestone-validation.md §4.6.2).
 	TargetMutationsPerOrganisation int `json:"target_mutations_per_organisation"`
 	// Organisations is how many the target was applied to, so the run total can be checked
 	// without re-deriving it from the placement.
@@ -43,7 +43,7 @@ type ConditioningDeclaration struct {
 	// PoolRecycled records the deterministic state-preserving transition between the two
 	// phases. Without it the measured connections may still be carrying execution plans
 	// prepared against empty mutation tables, which is the regime conditioning exists to
-	// remove (ag-sept-validation-plan.md §4.6.2).
+	// remove (ag-sept/milestone-validation.md §4.6.2).
 	PoolRecycled bool `json:"pool_recycled"`
 }
 

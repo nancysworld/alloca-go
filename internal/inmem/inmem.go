@@ -1,7 +1,7 @@
 // Package inmem is the in-memory reference implementation of domain.Repository and
 // domain.Tx. It is a permanent test double — not a production adapter — used to prove
 // every AG-M1 correctness gate that is expressible above the SQL layer
-// (docs/planning/ag-m1-implementation-plan.md, PR2). The authoritative PostgreSQL
+// (docs/planning/ag-m1/milestone-plan.md, PR2). The authoritative PostgreSQL
 // adapter (PR3) implements the same domain interfaces.
 //
 // Concurrency model: a single process-wide lock is held for the whole of each

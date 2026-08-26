@@ -24,8 +24,8 @@ Use the document whose purpose matches the question:
 |---|---|
 | What worthwhile outcome are we trying to achieve, what durable problem currently blocks it, and what must be true? | [`../requirements/`](../requirements/) |
 | What system shape or contract satisfies it? | [`../design/`](../design/) |
-| How will we prove or falsify the requirement/design claims? | [`../test/validation-plan/`](../test/validation-plan/) |
-| What do we intend to do now, and in what order/budget? | [`../planning/`](../planning/) |
+| How will we prove or falsify the requirement/design claims? | `../planning/<milestone>/milestone-validation.md`, currently [`../planning/ag-sept/milestone-validation.md`](../planning/ag-sept/milestone-validation.md) |
+| What do we intend to do now, and in what order/budget? | [`../planning/`](../planning/), and `../planning/<milestone>/milestone-plan.md` for a specific milestone |
 | Why was a consequential architectural choice made? | [`../decisions/`](../decisions/) |
 | How was a scoped change actually implemented, reviewed, and refined? | [`implementation/`](implementation/) |
 | How should the system be run or operated? | [`../operations/`](../operations/) |

@@ -4,7 +4,7 @@ Twelve retained 600 s runs, driven 2026-08-19 through
 [`test/scripts/itc-local-experiment.sh`](../../../test/scripts/itc-local-experiment.sh) on the
 scheduler-partitioned workstation: four per topology at G1, G2 and G4 — the selected point, the
 deciding higher point, and each again as an independent confirmation
-(`ag-sept-validation-plan.md` §4.6.5).
+(`ag-sept/milestone-validation.md` §4.6.5).
 
 ## What this is, and what it is not
 

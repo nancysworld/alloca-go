@@ -38,9 +38,9 @@ code comment or a PR description can cite one and still be right in a year.
 | [**DEBT-2**](#4-debt-2--no-retention-policy-for-durable-rows) | No durable row is ever deleted and no retention policy exists; `idempotency_records` is the instance with no product reason to keep it | data lifecycle | 2026-08-02, AG-Sept PR1 | open |
 | [**DEBT-3**](#5-debt-3--service-identity-is-sampled-only-before-a-run) | The load harness records service provenance before load starts but does not prove the same service identity remained behind the target for the whole run | measurement provenance | 2026-08-03, AG-Sept PR1 | open |
 | [**DEBT-4**](#6-debt-4--lockbyreservation-returns-a-six-value-maybe-answered-protocol) | The shared confirm/cancel prologue returns six values, three of which encode "I may already have answered"; a caller that mishandles them proceeds on zero values | service orchestration | 2026-08-05, AG-Sept PR3a | open |
-| [**DEBT-5**](#7-debt-5--no-automated-line-length-guardrail) | Nothing in CI bounds line length, so declarations grow until a human notices; ~104 code lines exceed 110 columns, the longest at 205 | tooling, readability | 2026-08-05, AG-Sept PR3a | open |
+| [**DEBT-5**](#7-debt-5--no-automated-line-length-guardrail--resolved) | Nothing in CI bounds line length, so declarations grow until a human notices; the longest reached 205 columns | tooling, readability | 2026-08-05, AG-Sept PR3a | **resolved 2026-08-26** |
 | [**DEBT-6**](#8-debt-6--res-denotes-three-unrelated-types) | `res` names a Reservation, a Result and a Response in different files, and the obvious mechanical rename is wrong in three separate ways | naming, readability | 2026-08-05, AG-Sept PR3a | open |
-| [**DEBT-7**](#9-debt-7--implementation-records-that-still-read-as-scope-notes) | The three per-PR records were moved and re-headed, not rewritten; they still present planned scope in a form indistinguishable from a record of what shipped | documentation taxonomy | 2026-08-07, AG-Sept PR3b | open |
+| [**DEBT-7**](#9-debt-7--implementation-records-that-read-as-scope-notes--resolved) | The per-PR records were moved and re-headed, not rewritten, so they presented planned scope in a form indistinguishable from a record of what shipped | documentation taxonomy | 2026-08-07, AG-Sept PR3b | **resolved 2026-08-25** |
 | [**DEBT-8**](#10-debt-8--the-storage-path-behind-an-unresolved-knee-is-localised-not-proven) | PR4b localised `G1`'s 25.1% irreproducibility to the shared write path but did not run the test that would prove it, so a mechanism sits in the record supported by correlation only | measurement environment | 2026-08-19, AG-Sept PR4b | open |
 
 ## 3. DEBT-1 — no reaper for abandoned schedule claims
@@ -425,11 +425,16 @@ not make it good, and the length was the symptom rather than the debt. PR3a made
 marginally worse by one parameter and one path, which is what moved it from a shape someone
 might tidy to one worth recording.
 
-## 7. DEBT-5 — no automated line-length guardrail
+## 7. DEBT-5 — no automated line-length guardrail — RESOLVED
 
-### What it is
+**Status: resolved 2026-08-26**, at the "before the repository goes public" trigger below, by a
+bounded readability pass over seven declarations plus a targeted guardrail. The entry is kept
+rather than deleted: the register records what a trade-off cost and when the bill came due, and
+this one came due and was paid. The ID stays stable, per §1.
 
-Nothing in `make ci` bounds line length. **gofmt does not do this and never will** — it
+### What it was
+
+Nothing in `make ci` bounded line length. **gofmt does not do this and never will** — it
 normalises indentation, alignment and spacing, and has no opinion on where a line wraps, by
 deliberate Go design. `.golangci.yml` enables the standard bundle plus the gofmt formatter, and
 no length linter (`lll`, `golines`) is configured.
@@ -473,7 +478,7 @@ an incremental addition; it is a repo-wide reformat wearing a linter's clothes, 
 in whichever PR happened to enable it — exactly the "silently blocks unrelated work" the config
 warns against.
 
-### Why it is acceptable today
+### Why it was acceptable until publication
 
 - Nothing about it can produce a wrong answer. Every invariant is pinned by tests that do not
   care how the source is wrapped.
@@ -482,7 +487,7 @@ warns against.
 - The distribution is not pathological: the median over-limit line is 122 columns, which is long
   but readable. It is the tail that is the problem, not the shape of the whole.
 
-### Trigger — when it stops being acceptable
+### Trigger — when it stopped being acceptable
 
 Any one of:
 
@@ -507,19 +512,45 @@ Any one of:
 - **No automatic rewriter in CI.** `golines` can reformat mechanically, but a tool that rewraps
   signatures unattended will produce diffs nobody reviewed in files nobody touched.
 
-### Options, none decided
+### How it was resolved
 
-1. **`lll` at 120**, with the existing ~104 lines fixed in the enabling PR. Clean end state; the
-   enabling PR is large and touches almost every package.
-2. **`lll` at 120 with `nolint` on the pre-existing lines**, worked down opportunistically.
-   Small enabling PR, but the exclusions are a second register to maintain and tend to become
-   permanent.
-3. **Limit new and changed lines only**, via a review-time check rather than a linter — the
-   check this session performed by hand: diff added lines against the branch point and flag
-   anything beyond the repo's existing maximum. Catches the regression without a reformat, and
-   is the cheapest thing that would have caught both instances above.
-4. **Leave it to review and record the convention** in the contributing notes, so it is at least
-   written down once rather than transmitted by correction.
+Re-measured first, because the PR3a snapshot had drifted: 148 non-comment lines over 110 columns
+against the 104 recorded above, and a longest line of 224. The general count was not the useful
+one. Measured over the class the debt actually names — a declaration written as a single line —
+the distribution was 39 over 110, 17 over 120, **7 over 130**, 3 over 140, 1 over 150.
+
+**The bound is 130 because that is where the measured tail begins**, not because it is a round
+number: p99.9 of every Go line in the repository was 129. Choosing from the distribution is what
+kept the repair small and left the 120–130 band legal.
+
+Seven declarations were wrapped one parameter per line, across five files — four of them in
+`internal/service/service.go`, including `commit` at 205 columns, the worst case this debt was
+raised on. No behaviour changed and no error string was touched.
+
+The guardrail is [`../../test/scripts/check-declaration-length.sh`](../../test/scripts/check-declaration-length.sh),
+in `make ci` with a discriminating test sibling. It bounds declarations and nothing else.
+
+### Why a general line-length linter was not adopted
+
+This is the part worth carrying forward, because the measurement settled an argument the "Options"
+list above could only guess at.
+
+After the seven repairs, **22 lines still exceeded 130 columns and not one of them was a
+declaration.** They were error strings, Prometheus help text, struct literals and a SQL
+`TRUNCATE`. `lll` or `golines` at the same bound would therefore have reported 22 findings to fix
+7 real ones, and every one of the 22 falls under "error strings must stay greppable" above — the
+constraint a fix was required to preserve. A gate whose findings are mostly things you have
+already decided not to change is a gate that gets disabled.
+
+So the check is anchored on `func` at the head of a line. Its test sibling fails against both ways
+that can rot: drop the length comparison and the wrapped-declaration cases fail; drop the `func`
+anchor and the error-string, SQL and comment cases fail. Both mutations were run.
+
+**What it deliberately does not do:** it does not parse Go, so a `func` literal at the head of a
+line inside a raw string would be reported rather than skipped; it says nothing about interface
+method signatures, which carry no `func` keyword and were not part of the measured problem; and it
+bounds no line that is not a declaration. Each of those is a place to extend it if evidence ever
+says so, not a defect to fix pre-emptively.
 
 ### Evidence
 
@@ -529,6 +560,11 @@ second find is the one that made it a debt rather than an incident: the first co
 carelessness in a single PR, but two in one review is the absence of a guardrail. `commit` itself
 is pre-existing and untouched by PR3a — it is cited as the current worst case, not as something
 that PR introduced.
+
+Resolved in AG-Sept PR5, 2026-08-26, at the publication trigger. The measurements above were taken
+on the branch immediately before the repair; they are reproducible with the command in "What it
+was" and with the check itself, which prints its own bound and file count. Scope was held to
+publication readiness: no unrelated refactor or naming change rode along.
 
 ## 8. DEBT-6 — `res` denotes three unrelated types
 
@@ -629,84 +665,85 @@ seeing the survey** — the right call: what looked like renaming one variable i
 156 occurrences across 15 files with three different correct answers. Recorded so the next
 person to reach for the regex finds the survey rather than repeating it.
 
-## 9. DEBT-7 — implementation records that still read as scope notes
+## 9. DEBT-7 — implementation records that read as scope notes — RESOLVED
 
-### What it is
+**Status: resolved 2026-08-25**, by the Pass 2D compression of all four AG-Sept implementation
+records. The entry is kept rather than deleted: the register records what a trade-off cost and
+when the bill came due, and this one came due and was paid. The ID stays stable, per §1.
 
-The three documents under [`../development/implementation/`](../development/implementation/)
-were moved out of `docs/planning/` and re-headed on 2026-08-07. They were not rewritten. They
-still carry the shape of the scope notes they were: §1 quotes the plan's exit gates forward as
-intent, the "What PR-n delivers" tables list what was *planned*, and budgets appear as
-estimates. Only §6d of [`ag-sept-pr3.md`](../development/implementation/ag-sept-pr3.md) was
-written as a record of what was built.
+### What it was
 
-Residual wording elsewhere still calls them scope notes: the PR2 frontier report. The plan's own
-references were corrected when it was slimmed to a schedule on 2026-08-09, and
-[`horizontal-database-authority.md`](../design/horizontal-database-authority.md) §9 with it.
+The documents under [`../development/implementation/`](../development/implementation/) were moved
+out of `docs/planning/` and re-headed on 2026-08-07 but not rewritten. They still carried the shape
+of the scope notes they had been: §1 quoted the plan's exit gates forward as intent, and the
+"What PR-n delivers" tables listed what was *planned*. **In a directory named `implementation/`, a
+table of planned deliverables is indistinguishable in form from a record of built ones** — which
+was the actual failure mode, not the untidiness.
 
-### Why it is this way
+### Why it was this way
 
-The directory convention arrived after the work it classifies. Moving the files cost one commit
-and fixed the taxonomy immediately; rewriting three documents covering several merged PRs and one
-not yet started is a different job, and doing it inside an open review would have churned the
-branch the review was reading.
+The directory convention arrived after the work it classifies. Moving the files cost one commit and
+fixed the taxonomy immediately; rewriting several documents covering merged PRs and one not yet
+started was a different job, and doing it inside an open review would have churned the branch the
+review was reading.
 
-### Why it is acceptable today
+### How it was resolved
 
-PR1 and PR2 are merged, and their conclusions live where a reader looks for conclusions — the
-measurement reports and the plan's own per-PR entries — not in these records. The
-forward-looking sections are visibly forward-looking: they quote the plan verbatim and say so.
-No document currently cites a "delivers" row as evidence that something shipped.
+All four records were rewritten into a single shape — outcome, the implementation decisions that
+mattered, the findings that changed the implementation or method, and the evidence boundary. The
+forward-looking material the debt names is gone: the "What PR-n delivers" tables, the proposed
+sweep matrix, the resolved open-questions lists, and the per-PR work split with its estimates.
+Each §1 now states what the work produced rather than what it intended, and each cites the
+measurement report that owns its results.
 
-### Trigger — when it stops being acceptable
+The three constraints this entry set were met rather than worked around:
 
-- When one is next materially updated. This is the convention's own rule, already stated in
-  [`../development/implementation/README.md`](../development/implementation/README.md).
-- When PR3c closes and `ag-sept-pr3.md` has to state outcomes for three PRs rather than a
-  delivery plan for two.
-- **Immediately, if anyone cites a "What PR-n delivers" row as evidence that something
-  shipped.** That is the actual failure mode: in a directory named `implementation/`, a table
-  of planned deliverables is indistinguishable in form from a record of built ones.
+- **Section numbers held.** Every anchor cited from outside survives — 121 inbound section
+  citations resolve, and none needed repointing. Two corrections belong with that number: this
+  entry's own inventory was wrong, naming `ag-sept-pr3.md` §6a and §6d as incoming citations from
+  `container-topology.md` and ADR-0003 when neither cites them by section, and two dangling
+  citations to sections that never existed were found and repaired.
+- **The historical statements were preserved.** `ag-sept-pr1.md` §1 still records the revision that
+  misquoted its own exit gate, and `ag-sept-pr2.md` §5.8 still cites "PR1's own scope note" for
+  quoting a range matching neither its table nor its artifact.
+- **Estimates stayed labelled as estimates**, and unmeasured quantities stayed `[HYPOTHESIS]`.
 
-### What a fix must preserve
+The residual wording this entry names is also gone: the PR2 frontier report called the record "the
+scope note" and now cites it by name.
 
-- **Section numbers**, because other documents cite *into* these records by section. The
-  incoming citations are: `ag-sept-pr2.md` §5.6 and §5.6.1 (from the plan and the PR2 frontier
-  report), `ag-sept-pr2.md` §5.4 (from `test/scripts/sweep.sh`), and `ag-sept-pr3.md` §6a, §6b
-  and §6d (from [`container-topology.md`](../operations/container-topology.md) and
-  [ADR-0003](../decisions/0003-deployed-artifact-identity.md)). Renumbering silently invalidates
-  a shell comment that nothing tests.
-- **The historical statements about what these documents were.** `ag-sept-pr1.md` §1 records
-  that an earlier revision misquoted its own exit gate, and `ag-sept-pr2.md` §5.8 cites "PR1's
-  own scope note" for quoting a range that matched neither its table nor its artifact. Both are
-  accurate about the review round of 2026-08-03. Rewriting them to say "record" would falsify
-  the history these documents exist to keep.
-- **Estimates stay labelled as estimates.** Turning "2.5 days budgeted" into "2.5 days spent"
-  without evidence would manufacture a measurement, which is the one thing this repository
-  must not do to itself.
+**What the compression is not.** It is not a deletion of history. A byte-identical snapshot of all
+five files as they stood before the rewrite is retained outside this repository, which is what made
+aggressive removal safe; no public document depends on it, and none needs to.
 
-### Options, none decided
+### What it cost, recorded because the next compression will want it
 
-1. **Opportunistically, per record, as each is next materially updated** — the convention's
-   stated rule. Cheapest, no churn, but leaves mixed state for as long as it takes.
-2. **One pass over all three when PR3c closes**, when PR3's outcomes are finally knowable and
-   PR1/PR2 have been stable long enough that rewriting them is bounded.
-3. **Leave them, and let the `Type:` header carry the distinction.** Does nothing for a reader
-   who opens §2 and reads a plan as a result.
+Rewriting shorter does not compress — the records reached 44–58% of their original size only once
+whole passages whose meaning a named owner already carried were deleted rather than tightened. The
+floor is set by the anchor count, not by verbosity: a section cited from code, config or another
+document has to keep enough substance to justify its own citation, which is why `ag-sept-pr4.md`
+compresses least of the four.
+
+Two failure modes appeared that no link checker can see, and both are reasons to prefer fewer
+citations from code into these records:
+
+- a citation whose **anchor still resolves while the target no longer says what the citation
+  claims** — twice, where compression removed the cited content;
+- a **bare `§n` in a code comment**, which names no document and is therefore attributable to none,
+  so it escapes an inbound audit entirely. One such reference pointed at a section that has never
+  existed.
 
 ### Related
 
-[`../design-notes/horizontal-database-authority.md`](../design-notes/horizontal-database-authority.md)
-is now a pointer with no inbound references left outside its own directory. It can be deleted
-whenever link stability for external bookmarks stops mattering — the same class of transitional
-artifact, kept deliberately rather than forgotten.
+The `horizontal-database-authority` design note was the same class of transitional artifact, kept
+deliberately rather than forgotten: promoted into formal design, held for a time as a pointer stub
+so existing links resolved, and removed once no inbound reference to it remained.
 
 ### Evidence
 
 Raised 2026-08-07 during AG-Sept PR3b review, in the change that moved the records out of
-`docs/planning/`. The move was mechanical and verified by resolving every relative link in
-`docs/`; the conversion was deliberately not attempted in the same change, and this entry
-records that as a decision rather than leaving it to be rediscovered as an inconsistency.
+`docs/planning/`; the conversion was deliberately not attempted in the same change, and the entry
+recorded that as a decision rather than leaving it to be rediscovered as an inconsistency.
+Discharged 2026-08-25 during AG-Sept PR5.
 
 ## 10. DEBT-8 — the storage path behind an unresolved knee is localised, not proven
 
@@ -725,11 +762,11 @@ currently rests on the weaker statement.
 
 ### Why it is this way
 
-Budget. PR4b was allocated 1.0 day, drawn from contingency, and had spent it. The maintainer's
-decision on 2026-08-19 was to stop execution rather than draw further: establish `G4`, withhold the
-`G1`/`G2`-derived efficiencies, document the limitation, and leave the mechanism explicitly
-unproven. That was the right call — the alternative buys a mechanism for a local result that is not
-the milestone's target evidence anyway.
+The extra local diagnostic was deliberately deferred. Establishing the mechanism means extending a
+local investigation, and the result it would explain is not the evidence Iteration C targets: the
+milestone needs an independently provisioned comparison, which no amount of further work on this
+shared write path produces. So execution stopped with `G4` established, the `G1`/`G2`-derived
+efficiencies withheld, the limitation documented, and the mechanism explicitly unproven.
 
 ### Why it is acceptable today
 

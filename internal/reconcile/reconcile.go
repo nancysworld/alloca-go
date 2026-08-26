@@ -227,7 +227,7 @@ func idempotencyCheck(ctx context.Context, q Querier, org domain.OrganisationID,
 	// performed the mutation §4.2 says it must not.
 	//
 	// Equality is only assertable because alloca-seed refuses to start against a fixture
-	// holding records (ag-sept-validation-plan.md §3.3). Before that assertion existed, a leftover record was
+	// holding records (ag-sept/milestone-validation.md §3.3). Before that assertion existed, a leftover record was
 	// the commoner explanation and this comparison would have failed correct services.
 	if records > fresh {
 		c.Detail = fmt.Sprintf("%d idempotency records for %d fresh mutations: %d record(s) "+

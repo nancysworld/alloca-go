@@ -3,7 +3,7 @@
 
 This answers one question, and it is the question the conditioning procedure exists to settle:
 **does the measured interval still execute the Seq Scan that was cached against empty mutation
-tables?** (ag-sept-pr4.md §3.20, ag-sept-validation-plan.md §4.6.2.)
+tables?** (ag-sept-pr4.md §3.20, ag-sept/milestone-validation.md §4.6.2.)
 
 Two sources, because neither is sufficient alone and the pair is what made the original diagnosis
 possible:

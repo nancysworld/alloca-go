@@ -217,7 +217,7 @@ def grafana_expr(panel: dict) -> str:
     single `timeInterval` — which is 1s here, matching the service job. The host job scrapes at
     5s, so the macro resolves shorter than two of *its* scrape intervals and rate() over it
     returns nothing at all: the panel renders "No data" while the series is present and healthy
-    (ag-sept-pr4.md §2.4, §3.14.1). A panel whose series is scraped on a different cadence
+    (ag-sept-pr4.md §2.4, §3.14). A panel whose series is scraped on a different cadence
     declares its own window.
     """
     return panel["expr"].replace("$RANGE", panel.get("range", "$__rate_interval"))

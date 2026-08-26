@@ -21,7 +21,7 @@
 #     assign it any organisation, so a typo here fails at boot rather than serving nothing.
 #
 # **Group count is a profile, and the placement document is a variable.** Iteration C compares
-# the same workload at one, two and four shard groups (ag-sept-validation-plan.md §4.6), so the
+# the same workload at one, two and four shard groups (ag-sept/milestone-validation.md §4.6), so the
 # file has to raise all three shapes without becoming three files that drift apart. Authority 1
 # is unconditional; 2 joins under the `g2` and `g4` profiles and 3/4 under `g4`, which makes the
 # group count the only thing a caller chooses. `make topo-up` passes `--profile g2` so the PR3b
@@ -43,7 +43,7 @@ name: alloca-topology
 # 16, and baking either number in here would silently change what an existing recipe measures.
 #
 # It exists for the bounded G1 pool-sensitivity preflight PR4a owes before the retained
-# comparisons begin (ag-sept-validation-plan.md §4.6.3): the check has to vary the connection
+# comparisons begin (ag-sept/milestone-validation.md §4.6.3): the check has to vary the connection
 # ceiling deliberately, and `ALTER SYSTEM` or a hand-edited URL would leave no record in the
 # run's own artifacts of which ceiling it drove. Once the policy is chosen it is frozen — set
 # identically for G1, G2 and G4 — and the value the service actually opened is observable at

@@ -1,7 +1,7 @@
 # PR4b saturation reconnaissance
 
 Short adaptive `workers_per_group` probes driven 2026-08-19 to bracket saturation at G1, G2 and G4
-(`ag-sept-validation-plan.md` §4.6.4).
+(`ag-sept/milestone-validation.md` §4.6.4).
 
 ## Evidence class: reconnaissance, and nothing more
 
@@ -33,7 +33,7 @@ found.
 Each report prints `margin 5% (twice the 2.6% agreement of ten identical healthy G4 cells…)`. That
 rationale was **corrected after review on 2026-08-19**: 5% is a *preselected engineering materiality
 margin*, not a bound on this environment's noise, and materiality and reproducibility are separate
-gates (`ag-sept-validation-plan.md` §4.6.5, which owns the definition).
+gates (`ag-sept/milestone-validation.md` §4.6.5, which owns the definition).
 
 The files are left exactly as the stage produced them. They are retained artifacts, and editing one
 to match a later understanding would make it a record of something that did not happen. The

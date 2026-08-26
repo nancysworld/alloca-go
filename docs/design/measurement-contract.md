@@ -477,7 +477,7 @@ remains unproven:
    serialization ceiling is never presented as a system-wide scaling result. When capacity/resource
    economics is selected by a validation, it is reported as a separate derived layer rather than
    folded into the scaling result.
-7. **Production-shaped validation.** The relevant conclusions are repeated through the
+7. **Production-oriented validation.** The relevant conclusions are repeated through the
    deployed network path with multiple API instances, PostgreSQL, load balancer,
    external load generation, migrations, and production-oriented telemetry.
 8. **Reproducibility and provenance.** Every material claim identifies the commands and
@@ -547,11 +547,12 @@ Secrets and private endpoints must not be committed.
 
 **No run may be quoted as a capacity claim while a field its topology requires is
 unpopulated.** A generator is an HTTP client and cannot discover the service's shape for
-itself, so which fields a given milestone's runs can populate is a **scheduling** question,
-answered by the plan
-([`../planning/ag-sept-plan.md`](../planning/ag-sept-plan.md), *Manifest and reconciliation
-staging*). The rule above is not staged: it holds against whatever the topology of the moment
-requires. What a run may claim once its fields are populated is §13.
+itself, so whether a particular harness can populate a given field is an implementation and
+validation fact about the topology that ran — recorded by the milestone validation and the
+implementation record that own it — and never a licence to quote a run whose required fields are
+missing. Admissibility is not staged and inherits nothing from a schedule: the rule above holds
+against whatever the topology of the moment requires. What a run may claim once its fields are
+populated is §13.
 
 **Multi-service runs need one further rule.** When several service units serve one run, the
 manifest records every unit's `/meta`, and the run is uncertifiable if the units disagree on

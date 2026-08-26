@@ -23,7 +23,7 @@ import (
 // Telemetry modes, selected by ALLOCA_TELEMETRY.
 //
 // Three rather than two, because the two questions an experiment asks are different.
-// The VAL-NEG-3 telemetry-overhead control (ag-sept-validation-plan.md) asks what *emission*
+// The VAL-NEG-3 telemetry-overhead control (ag-sept/milestone-validation.md) asks what *emission*
 // costs on the request path, and PR1 measured that
 // almost all of it is the synchronous log write (1793ns for the Tee against a real file; 136ns
 // for the Prometheus recorder alone) — so TelemetryMetricsOnly is the arm that isolates the
@@ -154,7 +154,7 @@ func serveMetrics(addr string, reg *prometheus.Registry, logger *slog.Logger) fu
 
 // poolCollector reports pgxpool state as gauges.
 //
-// Pool acquisition is one of the candidate limiting mechanisms ag-sept-validation-plan.md §7
+// Pool acquisition is one of the candidate limiting mechanisms ag-sept/milestone-validation.md §7
 // lists, and it is invisible from the request path alone: a request waiting on a
 // connection looks exactly like a slow query until this is on the page.
 type poolCollector struct {

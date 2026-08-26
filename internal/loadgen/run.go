@@ -20,7 +20,7 @@ type Options struct {
 	// historical sweeps and their retained artifacts mean by it.
 	Concurrency int
 	// WorkersPerGroup is Iteration C's experiment variable: the closed-loop workers assigned
-	// to each active shard group (ag-sept-validation-plan.md §4.6.1). It is not a PostgreSQL
+	// to each active shard group (ag-sept/milestone-validation.md §4.6.1). It is not a PostgreSQL
 	// connection count and is not constrained to a multiple of `pool_max_conns`.
 	//
 	// It is a separate field from Concurrency rather than a reinterpretation of it because

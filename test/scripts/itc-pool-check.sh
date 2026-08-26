@@ -7,7 +7,7 @@
 # the override is the dangerous shape: the run raises, every unit is healthy, routing passes,
 # certification is clean, and the pool-sensitivity comparison silently contains one authority
 # still on the default ceiling — an experiment about connection admission in which a quarter of
-# the topology did not receive the treatment (ag-sept-validation-plan.md §4.6.3).
+# the topology did not receive the treatment (ag-sept/milestone-validation.md §4.6.3).
 #
 # The inert-by-default half matters just as much. Every recipe committed before the override
 # existed must render byte-identically without it, or the variable would have quietly changed

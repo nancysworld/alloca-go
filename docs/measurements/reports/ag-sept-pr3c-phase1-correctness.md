@@ -395,7 +395,7 @@ register still says so.
 
 ### 7.4 The refusal's same-key replay is not exercised by these runs
 
-[`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) §3.5 asks the
+[`ag-sept/milestone-validation.md`](../../planning/ag-sept/milestone-validation.md) §3.5 asks the
 refusal control to establish four things: the normative refusal, **same-key replay**, absence of
 reservation/booking/claim/slot-side mutation, and absence of a remote slot-authority participant
 call. Three are established here — the refusal by §3 and §2's control, the absence of mutation by
@@ -425,7 +425,7 @@ stack — a small addition to the control rather than a new experiment.
 > [`../pr3c-phase1/controls-replay/`](../pr3c-phase1/controls-replay/). The runs this report
 > describes still drive distinct keys throughout and still report `replayed_mutations: 0`, so every
 > reading above stands as written. VAL-COR-4's current status is tracked by
-> [`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) §9, which
+> [`ag-sept/milestone-validation.md`](../../planning/ag-sept/milestone-validation.md) §9, which
 > owns it — not here.
 
 ## 8. Reproducing this

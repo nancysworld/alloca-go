@@ -9,7 +9,7 @@ cross-authority refusal is marked as a replay: ok (409, "replay":true)
 ```
 
 That is the observation the two retained passes do not contain. It was produced by the Iteration B
-Analyse & Review, which found that `ag-sept-validation-plan.md` §3.5's **same-key replay** clause
+Analyse & Review, which found that `ag-sept/milestone-validation.md` §3.5's **same-key replay** clause
 was the one clause of four that nothing on the deployed topology exercised — the refusal cell
 drives 2,000 distinct keys and reposts none of them, so what it establishes is a persisted record.
 Replay itself was proven a layer below the stack, by `TestCrossAuthorityRefusalIsReplayable` at the
@@ -65,6 +65,6 @@ service that answered every cross-authority post from a record.
 The mutation was reverted; nothing in this directory was produced by a mutated script.
 
 The status of the validation itself is in
-[`../../../test/validation-plan/ag-sept-validation-plan.md`](../../../test/validation-plan/ag-sept-validation-plan.md)
+[`../../../planning/ag-sept/milestone-validation.md`](../../../planning/ag-sept/milestone-validation.md)
 §9, and the closure that commissioned it is in
 [`../../../requirements/ag-sept.md`](../../../requirements/ag-sept.md).

@@ -9,7 +9,7 @@ import (
 )
 
 // TestIdempotencyRecordsSurviveAnEmptyClaimTable is the evidence for the second half of the
-// clean-start assertion (ag-sept-validation-plan.md §3.3), and the reason the first half is
+// clean-start assertion (ag-sept/milestone-validation.md §3.3), and the reason the first half is
 // not enough.
 //
 // The trap it pins: a fixture can hold zero live claims — every hold cancelled, expired or

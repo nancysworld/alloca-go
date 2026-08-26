@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# VAL-NEG-2 (ag-sept-validation-plan.md §8), mandatory: deliberately constrain the generator
+# VAL-NEG-2 (ag-sept/milestone-validation.md §8), mandatory: deliberately constrain the generator
 # and show how the apparent frontier changes.
 #
 # The control exists because a closed-loop harness cannot tell you, from its own numbers,

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Report a sustained run as ten contiguous 60 s slices, not as one average.
 
-`ag-sept-validation-plan.md` §4.6.5 requires a 600 s run to be analysed as ten contiguous 60 s
+`ag-sept/milestone-validation.md` §4.6.5 requires a 600 s run to be analysed as ten contiguous 60 s
 slices, and is explicit about what they are: **observations of one trajectory, not ten
 independent samples**. Nothing here averages them, compares them as repeats, or computes a
 statistic across them — they are printed in order so a reader can see the shape.

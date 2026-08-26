@@ -69,7 +69,7 @@ type PlacementMeta struct {
 // DatabaseMeta is what the service can say about its own authority without asking the
 // operator. Both fields can change a measurement — the server version decides planner
 // behaviour, and the pool ceiling is one of the candidate limiting mechanisms
-// ag-sept-validation-plan.md §7 lists — which is the bar measurement-contract.md §11 sets for
+// ag-sept/milestone-validation.md §7 lists — which is the bar measurement-contract.md §11 sets for
 // inclusion.
 type DatabaseMeta struct {
 	// Version is PostgreSQL's own `server_version`, empty when it could not be read.
@@ -87,7 +87,13 @@ type DatabaseMeta struct {
 }
 
 // handleMeta returns runtime metadata and the resolved timing configuration as JSON.
-func handleMeta(source func() buildinfo.Info, cfg config.Config, db DatabaseMeta, telemetry string, guard placementGuard) http.HandlerFunc {
+func handleMeta(
+	source func() buildinfo.Info,
+	cfg config.Config,
+	db DatabaseMeta,
+	telemetry string,
+	guard placementGuard,
+) http.HandlerFunc {
 	placement := PlacementMeta{
 		AuthorityID:    string(guard.authority),
 		RoutingVersion: guard.placement.Version(),

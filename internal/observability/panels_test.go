@@ -215,12 +215,12 @@ func TestDashboardIsDeliberatelySmall(t *testing.T) {
 	//
 	// 8 -> 9: Iteration C made the pool the object of study rather than a background indicator.
 	// Occupancy, lifecycle, acquire duration and *mean* acquire duration are four separate
-	// questions, and §3.13.1's finding is legible only in the last — a per-acquire cost that rose
+	// questions, and the finding that mattered is legible only in the last — a per-acquire cost that rose
 	// 16x, three orders of magnitude below the aggregate rate it would otherwise share an axis
 	// with.
 	//
-	// 9 -> 13: node_exporter arrives as VAL-NEG-7's host sensor (§2.1), and the host quantities
-	// that answer §3.12 are small next to the ones that do not. CPU steal against total busy is a
+	// 9 -> 13: node_exporter arrives as VAL-NEG-7's host sensor, and the host quantities that
+	// answer the degraded-cell question are small next to the ones that do not. CPU steal against total busy is a
 	// rounding error on a shared axis, and steal is the series that would say whether the host was
 	// descheduled — the candidate PR2 named and could not test. Memory is bytes and may not share
 	// an axis at all.
@@ -232,7 +232,7 @@ func TestDashboardIsDeliberatelySmall(t *testing.T) {
 	//
 	// The panel set stays narrower than the collector set on purpose: diskstats, netdev and
 	// filesystem are scraped and not plotted, because the snapshot retains everything scraped and
-	// §3.13.1 is the worked example of recovering a series nobody thought to plot.
+	// the pool-population question was answered from a retained snapshot without re-running a cell.
 	//
 	// The bound stays a bound. It exists so that adding a panel is a decision someone makes and
 	// records, which is what this comment is.
@@ -244,24 +244,24 @@ func TestDashboardIsDeliberatelySmall(t *testing.T) {
 			graphs++
 		}
 	}
-	// Raised 15 -> 20 for the PostgreSQL section (ag-sept-pr4.md §3.16). **Maintainer decision,
+	// Raised 15 -> 20 for the PostgreSQL section. **Maintainer decision,
 	// 2026-08-17**, which is the form this bound is meant to take: it was first raised to 16 for
 	// the wait-event graph alone, on the "collect broadly, panel narrowly" reading, and the
 	// maintainer chose to plot the remaining four rather than leave them recoverable-in-principle
 	// from the snapshot.
 	//
 	// The reasoning is specific to this diagnosis rather than general. Checkpoints and autovacuum
-	// were both refuted with no candidate left (§3.15), so the next degraded cell has to be read
+	// were both refuted with no candidate left, so the next degraded cell has to be read
 	// without a hypothesis to test — and a series nobody plots is a series nobody looks at when
-	// they do not yet know what they are looking for. §3.13.1's precedent says an unplotted series
+	// they do not yet know what they are looking for. The earlier precedent says an unplotted series
 	// is *recoverable*; it does not say it is noticed. The bound stays a bound, and the next graph
 	// after these is a decision someone makes and records here, exactly as this one was.
 	//
 	// Raised 20 -> 22 for the two host disk graphs. **Maintainer decision, 2026-08-19**, and it is
-	// the §3.16 argument arriving a second time with the evidence to settle it. PR4b's local
+	// the same argument arriving a second time with the evidence to settle it. PR4b's local
 	// capacity result turned on delivered write bandwidth; diskstats was collected throughout and
 	// plotted nowhere, so no cell retained the series and the numbers behind the conclusion were
-	// quoted from a live Prometheus query instead of from an artifact (ag-sept-pr4.md §3.31).
+	// quoted from a live Prometheus query instead of from an artifact.
 	//
 	// Defining the panels fixes the retention half by itself — `display: false` would have been
 	// enough for that, and was the state this landed in first. What it would not fix is the half
@@ -404,7 +404,7 @@ func TestFannedOutPanelsCarryTheirLabelInTheLegend(t *testing.T) {
 // other way, which is invisible in the expression: a query that simply does not aggregate returns
 // one series per scraped target. Under PR2's single target that never showed. Iteration C scrapes
 // one per shard group, and every such panel became four identically-labelled lines — the pool
-// occupancy graph was a dozen of them, present and useless (ag-sept-pr4.md §3).
+// occupancy graph was a dozen of them, present and useless.
 //
 // The property is read from each panel's `per_authority` flag rather than inferred from its
 // PromQL. Inferring it needs a parser that is wrong at the edges — `histogram_quantile` over
@@ -495,7 +495,7 @@ func TestPopulatedSeriesGateNamesPanelsThatExist(t *testing.T) {
 // rate() needs at least two samples inside its window. Grafana computes $__rate_interval from the
 // datasource's single `timeInterval`, which is 1s here to match the service job — but the host job
 // scrapes at 5s, so the macro resolves shorter than two host scrapes and the query returns nothing
-// at all. Both host rate() panels shipped that way (§3.14.1): the CSV export had data, because the
+// at all. Both host rate() panels shipped that way: the CSV export had data, because the
 // exporter substitutes a literal window, and only the dashboard was blank.
 //
 // Nothing else notices. The query succeeds, the panel exists, the populated-series gate reads the
@@ -603,7 +603,7 @@ func jobSelectorIn(expr string) string {
 // A panel dropped from the dashboard must keep producing a CSV, because the two sets answer
 // different questions: the dashboard is what an operator reads at a glance, and the export is what
 // a report is checked against. `pool_idle` is the case — redundant on screen, since it is exactly
-// `total - acquired`, and load-bearing in the record, since §3.13.1's reading is "idle stayed at
+// `total - acquired`, and load-bearing in the record, whose reading is "idle stayed at
 // 6-9 while acquire cost rose".
 //
 // If the exporter ever learned to skip these, nothing would fail: the dashboard would look right,

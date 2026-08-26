@@ -7,7 +7,7 @@
 # `ITC_GROUPS=1` after `ITC_GROUPS=4` leaves three service + PostgreSQL pairs alive. Each keeps a
 # connection pool, a page cache and an expiry loop, and all of it competes for the envelope the
 # one-group point is supposed to be measured in — which is `VAL-NEG-7`'s subject and feeds
-# straight into `E2`/`E4` (ag-sept-validation-plan.md §4.6).
+# straight into `E2`/`E4` (ag-sept/milestone-validation.md §4.6).
 #
 # Nothing downstream catches it. `alloca-load` reads `/meta` only from the units it addresses, so
 # a G1 run never looks at the leftovers and `topology_disagreement` stays empty. The run reports a
@@ -29,7 +29,7 @@ ITC_GROUPS="${ITC_GROUPS:-4}"
 
 case "$ITC_GROUPS" in
   1|2|4) ;;
-  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept-validation-plan.md §4.6); got '$ITC_GROUPS'" >&2; exit 1 ;;
+  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept/milestone-validation.md §4.6); got '$ITC_GROUPS'" >&2; exit 1 ;;
 esac
 
 if ! command -v docker >/dev/null 2>&1; then

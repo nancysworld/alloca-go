@@ -1,7 +1,8 @@
 # The build context deliberately *includes* .git: `go build` reads the VCS revision from it
 # and stamps it into the binary, which is what /meta reports and what makes a run
-# certifiable (ag-sept-plan-new.md §6.4). An image built without it serves an unstamped
-# binary and every run against it is uncertifiable — the failure looks like a harness bug.
+# certifiable (docs/design/measurement-contract.md §11 and §13). An image built without it
+# serves an unstamped binary and every run against it is uncertifiable — the failure looks
+# like a harness bug.
 #
 # **The rule that follows from that: this file may exclude only paths git already ignores.**
 #
@@ -10,7 +11,7 @@
 # check — it makes git report the file as deleted, so the context reads as a modified tree
 # and the binary is stamped `modified=true` even when the host checkout is spotless. The
 # manifest refuses `service_source_modified` at `local`, the floor of the ladder, so the
-# effect is not a cosmetic flag: it makes the production-shaped image uncertifiable by
+# effect is not a cosmetic flag: it makes the production-oriented image uncertifiable by
 # construction, and every run against it unquotable at any level.
 #
 # That is not hypothetical — an earlier version of this file excluded `docs/`, `test/`,

@@ -1,6 +1,6 @@
 # Building and running the container topology
 
-How to build the production-shaped image, raise the two-authority deployment on your own
+How to build the production-oriented image, raise the two-authority deployment on your own
 machine, check it is actually serving what it claims, and tear it down again.
 
 **This document owns the procedure, not the design.** Why the topology has two independent
@@ -252,7 +252,7 @@ make topo-ps
 
 `make topo-up` raises the two-authority PR3b topology and its `pr3b-v1` map, which is what
 every earlier report reproduces against. Iteration C compares the *same* workload at one, two
-and four shard groups ([`ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md)
+and four shard groups ([`ag-sept/milestone-validation.md`](../planning/ag-sept/milestone-validation.md)
 §4.6), so it has its own target:
 
 ```sh
@@ -538,7 +538,7 @@ Swap in `-duration 60s` and the run does roughly 300,000 requests at this concur
 pass — refusals are legitimate completed outcomes and `measurement_sound` stays true — but 97% of
 the run is a sold-out fixture, and its throughput and latency describe capacity exhaustion rather
 than booking. That is precisely the failure
-[`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md)
+[`../planning/ag-sept/milestone-validation.md`](../planning/ag-sept/milestone-validation.md)
 §3.1 requires the dispersed workload to avoid, and it is the same shape as the seeding bug in §10:
 a plausible result that measures something other than what the reader thinks.
 

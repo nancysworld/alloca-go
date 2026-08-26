@@ -42,7 +42,7 @@ ITC_GROUPS="${ITC_GROUPS:-4}"
 # itc-topology-check.sh and itc-seed.sh admit the same three rungs; all three must agree.
 case "$ITC_GROUPS" in
   1|2|4) ;;
-  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept-validation-plan.md §4.6); got '$ITC_GROUPS'" >&2
+  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept/milestone-validation.md §4.6); got '$ITC_GROUPS'" >&2
      exit 1 ;;
 esac
 

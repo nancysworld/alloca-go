@@ -1,6 +1,7 @@
-# Production-shaped image for alloca-go, to the container gate in ag-sept-plan-new.md §9.1:
-# environment-driven configuration, health probes, graceful termination, and no
-# development-only tooling in the runtime layer.
+# Production-oriented image for alloca-go, to the runtime-artifact properties owned by
+# docs/design/deployment-architecture.md §10, with §6, §7 and §8 owning the rest of what the
+# image must preserve: environment-driven configuration, health probes, graceful termination,
+# and no development-only tooling in the runtime layer.
 #
 # Two stages. The builder carries the Go toolchain and the module cache; the runtime carries
 # the binary and nothing else — no shell, no package manager, no compiler. A runtime layer
@@ -16,7 +17,7 @@ FROM golang:1.26.5-alpine AS builder
 # git is needed at *build* time only: `go build` reads the VCS revision from the repository
 # and stamps it into the binary, which is what /meta reports and what the load harness records
 # as the identity of the code under test. Without it every run would be uncertifiable
-# (ag-sept-plan-new.md §6.4).
+# (docs/design/measurement-contract.md §11 and §13).
 RUN apk add --no-cache git
 
 WORKDIR /src

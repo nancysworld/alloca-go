@@ -1,210 +1,151 @@
 # Alloca-Go
 
-Alloca-Go is an experimental Go project for exploring **distributed and data-intensive systems**
-through a production-shaped reservation service with explicit correctness invariants, measurement
-contracts, and retained evidence.
+Alloca-Go is a Go/PostgreSQL systems-engineering project that uses a production-oriented booking
+service to explore **correctness under contention, performance, failure behaviour, and horizontal
+scaling** with explicit invariants and retained evidence.
 
-The booking domain is deliberately stable enough that architecture can change while correctness
-and experimental results remain comparable. The project is not intended to converge quickly on one
-final architecture; implementation, measurement, failure experiments, and Analyse & Review are used
-to decide which problem is worth pursuing next.
+The project does not start from a predetermined distributed architecture. It keeps the booking
+problem and synthetic workloads stable, measures where the real boundaries are, and changes the
+system when the evidence gives a reason to do so.
+
+**New here?** Read the [Project Journey](docs/project-journey.md) for the short story of how the
+architecture and questions evolved.
+
+## Architecture at a glance
+
+```mermaid
+flowchart TB
+    client[Clients / external load generator]
+    placement[Versioned organisation placement]
+
+    client --> placement
+
+    subgraph sg1[Shard group 1]
+        direction LR
+        svc1[Stateless Go replicas]
+        db1[(PostgreSQL authority 1)]
+        svc1 --> db1
+    end
+
+    subgraph sg2[Shard group 2]
+        direction LR
+        svc2[Stateless Go replicas]
+        db2[(PostgreSQL authority 2)]
+        svc2 --> db2
+    end
+
+    placement --> svc1
+    placement --> svc2
+
+    obs[Telemetry / measurement]
+    svc1 -.-> obs
+    svc2 -.-> obs
+```
+
+A **shard group** is one independently writable PostgreSQL authority plus compatible stateless
+service replicas bound to it. Adding service replicas and adding writable database authorities are
+treated as separate scaling axes.
+
+The current Phase 1 design keeps each supported mutation inside one writable transaction domain.
+Cross-database-authority booking is explicitly refused rather than approximated with unrelated
+local commits.
+
+The accepted architecture is described in
+[`docs/design/high-level-design.md`](docs/design/high-level-design.md) and
+[`docs/design/horizontal-scaling.md`](docs/design/horizontal-scaling.md).
 
 ## What the project explores
 
-The long-running exploration has five related areas:
+Alloca uses a stateful booking system as a reusable test bed for transaction correctness,
+idempotency and ambiguous outcomes, contention and workload shape, latency and saturation,
+failure containment, writable-state scaling, and eventually elasticity. Observability and evidence
+are part of the experiment rather than an afterthought.
 
-- **correctness and consistency** — mutable-state ownership, serialization, transaction boundaries,
-  replay/ambiguity, and what must remain atomic as the system becomes distributed;
-- **load and performance** — workload shape, contention/skew, throughput, response time, queueing,
-  utilisation, saturation, and the resource that actually sets a frontier;
-- **reliability and failure** — failure containment, bounded outcomes, recovery, retries,
-  backpressure, overload, and ambiguity resolution;
-- **scalability** — finding boundaries across which independent work can use additional service or
-  writable-state resources without weakening correctness;
-- **elasticity** — eventually asking not only whether resources can add useful capacity, but whether
-  provisioned compute and state placement can change safely as demand changes.
-
-**Observability and evidence are the experimental foundation across all five.** Quantitative claims
-must be reproducible from retained artifacts, and techniques such as sharding, microservices,
-caching, queues, Kubernetes, or cloud infrastructure are mechanisms to investigate only when an
-evidence-backed problem justifies them.
-
-The exploration roadmap is
-[`docs/planning/alloca-go-roadmap.md`](docs/planning/alloca-go-roadmap.md). It is directional rather
-than a milestone list: an experiment may expose a problem in any area.
-
-## Current system shape
-
-The service began as a modular monolith with a stateless Go API and PostgreSQL transactional
-authority. AG-M1 established the transaction semantics and correctness substrate. AG-Sept then
-measured the first mutation frontier, found PostgreSQL limiting before available Go service compute,
-and introduced shard-affine independently writable PostgreSQL authorities where organisation work
-can proceed independently.
-
-The accepted Phase 1 architecture keeps each supported mutation local to one writable authority.
-Cross-authority reserve is explicitly refused rather than disguised as two unrelated local commits.
-Service replicas remain stateless for correctness and belong to one shard group/database authority.
-
-The current design entry points are:
-
-- [`docs/design/horizontal-scaling.md`](docs/design/horizontal-scaling.md) — service/database scaling
-  axes, shard groups, capacity composition, and their evidence boundaries;
-- [`docs/design/horizontal-database-authority.md`](docs/design/horizontal-database-authority.md) —
-  placement and writable-authority semantics;
-- [`docs/design/transaction-semantics.md`](docs/design/transaction-semantics.md) — transactional
-  invariant and outcome model;
-- [`docs/design/deployment-architecture.md`](docs/design/deployment-architecture.md) — deployment
-  units, provenance, failure boundaries, and the current capacity-environment design;
-- [`docs/design/measurement-contract.md`](docs/design/measurement-contract.md) — evidence labels,
-  workload/result vocabulary, admissibility, reconciliation, and claim levels.
-
-## Workloads as reusable test cases
-
-Architecture changes should not force the workload to change with it. Stable synthetic workloads
-are therefore catalogued in [`docs/test/workload-catalog.md`](docs/test/workload-catalog.md), while
-validation plans decide how a selected workload is placed onto a topology.
-
-This lets later experiments apply the same demand to a different database technique, placement
-model, service topology, or elasticity mechanism and compare the resulting evidence. New workloads
-are added when a genuinely different question needs one rather than expanding one benchmark until
-it tests everything at once.
+The [exploration roadmap](docs/planning/alloca-go-roadmap.md) records broader areas that may be
+worth investigating. More concrete unresolved questions are kept in
+[`docs/planning/open-questions.md`](docs/planning/open-questions.md).
 
 All workloads are synthetic engineering models. They are not descriptions of any organisation's
-internal architecture, traffic, or product implementation.
+real traffic or architecture.
 
-## Predecessor
+## Observability in practice
 
-Alloca-Go succeeds **RuntimeIQ-Alloca**, the booking prototype of the author's earlier RuntimeIQ
-project. It is a new implementation rather than a port: domain knowledge, open questions, and prior
-evidence carry over; code does not, and no prior result becomes an Alloca-Go result without being
-reproduced here. Every prototype figure is labelled `[PRIOR-UNREPRODUCED]` until an experiment in
-this repository reproduces it. See
-[`docs/design/high-level-design.md`](docs/design/high-level-design.md) §1.1.
+Prometheus/Grafana observability is built into Alloca as part of the experimental workflow, not just
+for operations. During performance work, the dashboard is used alongside retained measurement
+artifacts to compare demand, latency, service/database behaviour, and host-resource signals. These
+signals help turn unexpected results into narrower questions and better-controlled experiments.
 
-## Building and testing
+![Grafana observability view spanning four repeated local G1 runs](docs/images/observability-g1-repeated-runs.png)
 
-`make ci` is the full local gate and mirrors CI exactly: formatting, `go vet`, `golangci-lint` at a
-pinned version, build, tests, and tests under the race detector.
+*Representative Grafana view spanning four repeated local G1 runs from 2026-08-19. See the
+[retained G1 reproducibility evidence](docs/measurements/pr4b-drift-g1/README.md) for the measured
+results and interpretation.*
 
-Tests come in two tiers. The default gate is hermetic and needs no services. The **integration**
-tier proves properties that only exist against a real PostgreSQL — capacity safety under genuinely
-concurrent transactions, the post-lock decision timestamp, the idempotency-key race, and the
-assembled HTTP-to-database path — so it is behind the `integration` build tag and requires a
-database:
+## Evidence so far
 
-```sh
-make db-up             # start a local PostgreSQL in Docker
-make test-integration  # run the integration tier under -race
-make db-down
-```
+| Area | What the retained evidence establishes | Boundary / open question |
+|---|---|---|
+| **Single-authority frontier** | On the retained developer-workstation run, throughput reached roughly **4,300 booking req/s** and PostgreSQL, not available Go service compute, set the first measured frontier. | Workstation result only. The exact PostgreSQL limiting mechanism and the source of large run-to-run variance remain open. |
+| **Multiple writable authorities** | Two authorities can serve independent organisation work while preserving the accepted transaction semantics and containing authority failure. | This is a correctness and failure-isolation result, **not** a throughput multiplier claim. |
+| **Independent capacity scaling** | The local scheduler-partitioned G1/G2/G4 experiment produced useful diagnostic evidence, but G1 and G2 did not reproduce tightly enough for scale efficiency to be accepted. | Independently provisioned scaling remains unproven. PR4c stopped at cloud provisioning and produced no performance cell. |
 
-## Running the service
+The corresponding reports are:
 
-From cold — starts a local PostgreSQL, migrates it, then serves:
+- [single-instance frontier](docs/measurements/reports/ag-sept-pr2-single-instance-frontier.md);
+- [Phase 1 multi-authority correctness](docs/measurements/reports/ag-sept-pr3c-phase1-correctness.md);
+- [scheduler-partitioned capacity checkpoint](docs/measurements/reports/ag-sept-pr4-scheduler-partitioned-capacity.md).
+
+AG-Sept Iteration C remains open. Its independently provisioned capacity question has not yet been
+answered; the project will not infer that result from the co-resident workstation experiment.
+
+## Quick start
+
+Requires Go **1.26.5** (the pinned toolchain) and Docker, including the Compose plugin that
+`make ci` renders the container topology through. `make smoke` additionally needs `curl`, `psql`
+and `python3` on the host, because it seeds and removes its own rows with SQL.
 
 ```sh
 make dev
 ```
 
-The steps are also available individually, and `make run` deliberately does **not** migrate.
-Migrations are applied by a separate binary, never by a serving replica, so replicas never race the
-same DDL on startup
-([ADR-0002](docs/decisions/0002-postgresql-transactional-authority.md)):
+This starts PostgreSQL in Docker, applies migrations, and runs the service on `:8080`. It holds the
+terminal, so run the smoke test in another one:
 
 ```sh
-make db-up     # local PostgreSQL on port 15432
-make migrate   # once, before a new version serves traffic
-make run       # serves on :8080
-make db-down
+make smoke
 ```
 
-Every target defaults `DATABASE_URL` to the local container and accepts an override, so the same
-commands work against another database:
+Run the normal local validation gate with:
 
 ```sh
-make run DATABASE_URL='postgres://user:pass@host:5432/alloca?sslmode=require'
+make ci
 ```
 
-### Smoke-testing a running service
+The load-generation and measurement procedure is documented in
+[`docs/operations/load-harness.md`](docs/operations/load-harness.md). Retained measurement reports
+and artifacts live under [`docs/measurements/`](docs/measurements/).
 
-```sh
-make dev      # in one terminal
-make smoke    # in another
-```
+## Documentation map
 
-`make smoke` drives the running binary over a real socket: operational endpoints, the read route,
-reserve, an idempotent replay, each refusal shape, then confirm and cancel. It seeds its own slot
-with SQL because AG-M1 has no slot-creation endpoint and removes its rows afterwards. `BASE`
-overrides the target service; `MAX_TIME` controls curl's own deadline and can be raised when the
-service is paused in a debugger.
+- **[Project Journey](docs/project-journey.md)** — the short narrative: where the project started,
+  what the experiments changed, and the direction of future investigation.
+- **[High-level design](docs/design/high-level-design.md)** — current architecture, design
+  principles, and links to the documents that own each design concern.
+- **[Requirements](docs/requirements/)** — durable requirements and the current engineering
+  Problem.
+- **[Transaction semantics](docs/design/transaction-semantics.md)** — correctness invariants,
+  locking, idempotency, replay, and outcomes.
+- **[Measurement contract](docs/design/measurement-contract.md)** — evidence labels, workload/result
+  vocabulary, reconciliation, SLIs, and admissibility rules.
+- **[Architecture decisions](docs/decisions/)** — durable ADRs.
+- **[Planning](docs/planning/)** — milestone plans and validation, the exploration roadmap, and open
+  engineering questions.
+- **[Measurements](docs/measurements/)** — retained reports and evidence artifacts.
+- **[Operations](docs/operations/)** — running, load generation, and experiment procedures.
+- **[Engineering process](docs/development/engineering-process.md)** — the Problem → Requirements →
+  Design → Validation → implementation → Evidence → Analyse & Review loop.
 
-### Running a measurement run
+## Working principle
 
-`make smoke` checks that the service works. The AG-Sept load harness measures it: a seeded fixture,
-an external generator holding no database credentials, and reconciliation of client, server, and
-persisted-state totals. The procedure is in
-[`docs/operations/load-harness.md`](docs/operations/load-harness.md).
-
-Measured conclusions live in [`docs/measurements/`](docs/measurements/), next to the retained
-artifacts from which each figure is re-derived. The first load-bearing AG-Sept result is the
-[single-instance frontier](docs/measurements/reports/ag-sept-pr2-single-instance-frontier.md): on
-the retained developer-workstation experiment the service reached roughly 4,300 booking req/s and
-**PostgreSQL, not the Go service, set the frontier**. Read that report's **§5.5 before quoting the
-number**: it is a workstation result against an untuned container, not a production capacity claim.
-
-Iteration B subsequently established that the shard-group/database-authority boundary composes
-correctly and contains authority failure, but deliberately made no throughput multiplier claim from
-co-resident authorities.
-
-## Current iteration
-
-AG-Sept Iteration C now asks how aggregate mutation capacity behaves when the correctness-proven
-shard-group boundary receives **independently growing resource envelopes**.
-
-The fixed validation uses reusable workload `WL-MUT-DISP-4` — synthetic organisations A/B/C/D — at
-1, 2, and 4 shard groups. The capacity baseline and scale-out points use equivalent AWS EC2
-capacity-unit hosts plus separate generator compute; AWS is measurement infrastructure for this
-question, not a production-architecture commitment. The experiment will obtain numeric `G1`, `G2`,
-`G4` and derived scale efficiencies rather than optimise toward a preselected efficiency threshold.
-
-Requirements and current Problem:
-[`docs/requirements/ag-sept.md`](docs/requirements/ag-sept.md).  
-Validation:
-[`docs/test/validation-plan/ag-sept-validation-plan.md`](docs/test/validation-plan/ag-sept-validation-plan.md).  
-Schedule:
-[`docs/planning/ag-sept-plan.md`](docs/planning/ag-sept-plan.md).
-
-## Engineering process
-
-Work proceeds as a durable Goal above repeated:
-
-```text
-Problem -> Requirements -> Design -> Validation -> Schedule
-       -> Implement -> Evidence -> Analyse & Review
-```
-
-The process is defined in
-[`docs/development/engineering-process.md`](docs/development/engineering-process.md). Analyse &
-Review is a real engineering stage: it may close an iteration, send it back to discharge a missed
-validation gate, or select the next evidence-backed Problem.
-
-## Public-disclosure policy
-
-This repository is intended to be safe for eventual public release. Rules for what must never be
-recorded, and the checks required before changing visibility, live in
-[`docs/public-disclosure-policy.md`](docs/public-disclosure-policy.md) and
-[`docs/pre-public-checklist.md`](docs/pre-public-checklist.md).
-
-## Core principle
-
-> Evidence -> problem -> requirements -> design -> technique.
-
-Scale the boundary that evidence identifies; do not accumulate distributed-systems machinery for
-presentation value.
-
-## Status
-
-AG-M0 (foundation and measurement contract) and AG-M1 (correct transactional core) are complete.
-AG-Sept is in progress: Iteration A identified the first mutation frontier, Iteration B established
-the horizontally composable writable-authority boundary, and Iteration C is preparing the first
-independently provisioned shard-group capacity comparison.
+> **Methodology informs the investigation. Evidence decides the conclusion. Engineering judgement
+> chooses the next useful question.**

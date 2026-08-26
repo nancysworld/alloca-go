@@ -39,7 +39,7 @@ usage() {
   cat >&2 <<'EOF'
 usage: ./test/scripts/itc-series.sh <groups> [repeats]
 
-  groups   1, 2 or 4 — the shard-group count (ag-sept-validation-plan.md §4.6)
+  groups   1, 2 or 4 — the shard-group count (ag-sept/milestone-validation.md §4.6)
   repeats  cells in the series (default 10)
 
 Every other knob is an environment variable passed through to itc-repeat.sh and
@@ -55,7 +55,7 @@ REPEATS="${2:-${REPEATS:-10}}"
 
 case "$ITC_GROUPS" in
   1|2|4) ;;
-  *) echo "groups must be 1, 2 or 4 (ag-sept-validation-plan.md §4.6); got '$ITC_GROUPS'" >&2
+  *) echo "groups must be 1, 2 or 4 (ag-sept/milestone-validation.md §4.6); got '$ITC_GROUPS'" >&2
      usage ;;
 esac
 

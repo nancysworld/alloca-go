@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Decide the Iteration C knee from retained runs, and derive the local scale efficiencies.
 
-`ag-sept-validation-plan.md` §4.6.5 defines the comparison quantity as the **full-600 s horizon
+`ag-sept/milestone-validation.md` §4.6.5 defines the comparison quantity as the **full-600 s horizon
 average** of fresh-mutation Goodput from a fixed conditioned start, and §4.6.7 derives
 
     E2_local = G2_local / (2 x G1_local)
@@ -156,8 +156,8 @@ def decide(runs):
     h1, h2 = runs["h"]["rate"], runs["h-confirm"]["rate"]
     notes = []
 
-    # **Both S and the deciding H must reproduce** (ag-sept-plan.md §3, PR4b). A point that does not
-    # reproduce cannot decide anything, and averaging the disagreement would hide it.
+    # **Both S and the deciding H must reproduce** (§4.6.5). A point that does not reproduce
+    # cannot decide anything, and averaging the disagreement would hide it.
     s_ok = reproduces(s1, s2)
     h_ok = reproduces(h1, h2)
     notes.append(f"S reproduces: {'yes' if s_ok else 'NO'} "
@@ -202,7 +202,7 @@ def main():
         sys.exit(f"{root} is not a directory")
 
     print(f"Iteration C local capacity result, from {root}")
-    print(f"comparison quantity: full-measured-interval Goodput, ag-sept-validation-plan.md §4.6.5")
+    print(f"comparison quantity: full-measured-interval Goodput, ag-sept/milestone-validation.md §4.6.5")
     print(f"margin for 'materially': {MARGIN*100:.0f}% — a preselected engineering materiality")
     print("margin, not a noise floor; reproducibility is a separate gate (§4.6.5)")
     print()

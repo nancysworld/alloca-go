@@ -556,7 +556,7 @@ slot-identity gates fail at *setup* — two organisations can no longer own a sl
 same identifier — and on a database that already holds such a pair, PostgreSQL refuses to
 create the key at all. The old schema cannot represent the state the gates require.
 
-**5. Decide from the pre-wait instant.** Review (Codex, P1) showed that a claim insert can
+**5. Decide from the pre-wait instant.** Review (P1) showed that a claim insert can
 block on a conflicting uncommitted claim and then *succeed* when that transaction rolls
 back, leaving every check made from the slot-lock instant stale by up to `lock_timeout`.
 Ignoring the returned post-acquisition instant makes `TestClaimWaitRevalidatesTheSlotWindow`
@@ -564,7 +564,7 @@ admit a hold on a slot that closed during the wait — `admitted_success`, with 
 provisional claim left behind — and `TestClaimWaitRecomputesTheHoldTTL` stamp the hold
 1ms after the pre-wait instant instead of 2s. Both gates stay in the suite.
 
-**6. Restore claim deletion to slot-scoped settlement.** Review (Codex, P2) showed the
+**6. Restore claim deletion to slot-scoped settlement.** Review (P2) showed the
 two-statement shape can deadlock. This one is recorded honestly: the service-level gate
 `TestConcurrentSettlementOfOneUserDoesNotDeadlock` passes either way, because the window
 between the two statements is microseconds and cannot be forced through the service API.
@@ -587,7 +587,7 @@ Controls 1, 5 and part of 6 remain in the suite; 2, 3, 4 and 7 were executed and
 reverted.
 
 A fifth control was written and then removed with the thing it guarded. Review raised
-(Codex, P1) that a claim table added to a database holding live reservations would exempt
+(P1) that a claim table added to a database holding live reservations would exempt
 every one of them, and the migration gained a backfill plus two tests. Consolidating the
 schema into a single baseline (below) dissolved the problem rather than fixing it: the
 claim table and the reservations table are now created by the same migration, so a

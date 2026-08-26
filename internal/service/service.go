@@ -476,7 +476,10 @@ func (s *Service) lockByReservation(
 // resolves its own authoritative timestamp; only the committed attempt's value
 // becomes durable. Time is per attempt, not per request, precisely because the
 // second attempt serializes later than the first.
-func (s *Service) run(ctx context.Context, fn func(ctx context.Context, tx domain.Tx) (domain.Result, error)) (domain.Result, error) {
+func (s *Service) run(
+	ctx context.Context,
+	fn func(ctx context.Context, tx domain.Tx) (domain.Result, error),
+) (domain.Result, error) {
 	const maxAttempts = 2
 	var last error
 	for range maxAttempts {
@@ -506,7 +509,12 @@ func (s *Service) run(ctx context.Context, fn func(ctx context.Context, tx domai
 // lookup applies the resolution algorithm's replay/conflict steps against an existing
 // record (transaction-semantics §5.3 steps 2–3). done=false means no record was
 // found and the operation should proceed.
-func (s *Service) lookup(ctx context.Context, tx domain.Tx, scope domain.ScopeKey, hash string) (result domain.Result, done bool, err error) {
+func (s *Service) lookup(
+	ctx context.Context,
+	tx domain.Tx,
+	scope domain.ScopeKey,
+	hash string,
+) (result domain.Result, done bool, err error) {
 	rec, err := tx.FindRecord(ctx, scope)
 	if errors.Is(err, domain.ErrNotFound) {
 		return domain.Result{}, false, nil
@@ -611,7 +619,12 @@ func (s *Service) SettleSlot(ctx context.Context, ref domain.SlotRef) (expired i
 // returns the slot's consumed capacity derived from settled state (held reservations
 // plus active bookings) and how many holds it expired
 // (transaction-semantics §1.7, §2.1).
-func (s *Service) settle(ctx context.Context, tx domain.Tx, ref domain.SlotRef, now time.Time) (consumed, expired int, err error) {
+func (s *Service) settle(
+	ctx context.Context,
+	tx domain.Tx,
+	ref domain.SlotRef,
+	now time.Time,
+) (consumed, expired int, err error) {
 	held, err := tx.HeldReservations(ctx, ref)
 	if err != nil {
 		return 0, 0, err
@@ -652,7 +665,15 @@ func (s *Service) settle(ctx context.Context, tx domain.Tx, ref domain.SlotRef, 
 // a replay would return a success referencing a reservation or booking that was never
 // written — a durable, silent P1. A violation is a programming error on the fault
 // line (§4), never a domain outcome, so it aborts the transaction.
-func (s *Service) commit(ctx context.Context, tx domain.Tx, scope domain.ScopeKey, hash string, result domain.Result, now time.Time, persist func(context.Context, domain.Tx) error) (domain.Result, error) {
+func (s *Service) commit(
+	ctx context.Context,
+	tx domain.Tx,
+	scope domain.ScopeKey,
+	hash string,
+	result domain.Result,
+	now time.Time,
+	persist func(context.Context, domain.Tx) error,
+) (domain.Result, error) {
 	if mutates := result.Outcome == domain.OutcomeAdmittedSuccess; mutates != (persist != nil) {
 		return domain.Result{}, fmt.Errorf("service: commit invariant violated: outcome %q with persist!=nil==%t", result.Outcome, persist != nil)
 	}

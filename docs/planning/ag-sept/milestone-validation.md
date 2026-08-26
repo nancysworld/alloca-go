@@ -1,11 +1,12 @@
-# AG-Sept validation plan
+# AG-Sept milestone validation
 
 **Status:** Living — validation intent for the current AG-Sept iterations.  
 **Scope:** controlled workloads, topology families, correctness/failure validations, negative
 controls, and accept/reject conditions used to answer AG-Sept's scaling problems.  
-**Does not own:** PR order, budget, priority, or dates; those remain in `docs/planning/`.
+**Does not own:** PR order, budget, priority, or dates; those belong to
+[`milestone-plan.md`](milestone-plan.md).
 
-This plan is governed by:
+This document is governed by:
 
 - [`../../requirements/system-requirements.md`](../../requirements/system-requirements.md) —
   what the system must preserve;
@@ -17,8 +18,8 @@ This plan is governed by:
   service/database scaling model;
 - [`../../design/horizontal-database-authority.md`](../../design/horizontal-database-authority.md)
   — database-authority placement and Phase 1 booking semantics;
-- [`../workload-catalog.md`](../workload-catalog.md) — stable named workloads reused while topology
-  and implementation change.
+- [`../../design/workload-catalog.md`](../../design/workload-catalog.md) — stable named workloads
+  reused while topology and implementation change.
 
 Commands, container startup, seeding, and run procedure belong in `docs/operations/`. Executed
 results belong in `docs/measurements/`.
@@ -133,7 +134,7 @@ active.
 
 ## 3. Controlled workloads
 
-Stable workload definitions are now owned by [`../workload-catalog.md`](../workload-catalog.md).
+Stable workload definitions are now owned by [`../../design/workload-catalog.md`](../../design/workload-catalog.md).
 The descriptions below retain the validation vocabulary used by earlier AG-Sept evidence; new or
 reused workloads should cite a catalog identifier when their semantics need to remain stable across
 architectures.
@@ -270,7 +271,7 @@ across both topologies would multiply measurement time without producing a new c
 composed run shows the two axes together.
 
 Which of these are scheduled, in what order, and with what budget is owned by
-`docs/planning/ag-sept-plan.md`. A row here is a validation's meaning, not a commitment to run it
+`milestone-plan.md`. A row here is a validation's meaning, not a commitment to run it
 in a particular milestone.
 
 ### 4.6 Iteration C capacity method

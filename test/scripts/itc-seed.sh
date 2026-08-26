@@ -45,7 +45,7 @@ CAPACITY="${CAPACITY:-20}"
 
 case "$ITC_GROUPS" in
   1|2|4) ;;
-  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept-validation-plan.md §4.6); got '$ITC_GROUPS'" >&2; exit 1 ;;
+  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept/milestone-validation.md §4.6); got '$ITC_GROUPS'" >&2; exit 1 ;;
 esac
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

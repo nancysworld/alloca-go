@@ -55,17 +55,37 @@ remains withheld rather than being estimated from this population — averaging 
 Each run certifies `capacity` on the provenance ladder, which as elsewhere is a statement about what
 the run can say about itself and not about what was measured.
 
-## Where the variance comes from
+## What the variance does and does not tell us
 
-Not from the host: CPU busy 2.37–2.43 cores (of 16), memory available within 0.8%, run queue
-7.44–7.83, active backends 4.39–4.79, wait events 1.74–1.90, pool acquire wait 3.79–3.83 ms — all
-flat across the four. The slow run used *less* service CPU (0.40 vs 0.43–0.47 cores) and did less
-database write work, which is the signature of a downstream stall rather than a service limit.
+The retained CPU, memory, run-queue, backend, wait-event, and pool-acquire signals do not explain the
+25.1% spread: CPU busy is 2.37–2.43 cores (of 16), memory available stays within 0.8%, run queue is
+7.44–7.83, active backends 4.39–4.79, wait events 1.74–1.90, and pool acquire wait 3.79–3.83 ms. The
+slow run also uses less service CPU (0.40 versus 0.43–0.47 cores), so the evidence does not support a
+Go compute limit.
 
-It comes from the storage path. Reads are ~0, writes are 15.53–19.17 MiB/s, and Goodput tracks
-delivered write bandwidth. The full evidence and its consequence for `VAL-SCALE-6` are in
-[`../pr4b-capacity/README.md`](../pr4b-capacity/README.md); this directory is the measurement of the
-spread itself.
+The strongest remaining covariance is on the shared write path. Reads are approximately zero,
+writes vary from 15.53 to 19.17 MiB/s, and Goodput moves with delivered write bandwidth at broadly
+stable work per written MiB. That localises the unexplained variation to the write-side path more
+strongly than to the service or the retained CPU/memory signals, but it does **not** establish the
+causal bottleneck. Lower write throughput can be a consequence of completing fewer mutations as
+well as a cause of doing so, and the same host/storage stack delivers substantially more aggregate
+write bandwidth in the G2/G4 runs. The exact mechanism — PostgreSQL write-path serialization,
+latency, storage-stack behaviour, or something else — remains open.
+
+The full evidence and its consequence for `VAL-SCALE-6` are in
+[`../pr4b-capacity/README.md`](../pr4b-capacity/README.md); this directory measures the spread itself.
+
+## Consequence for further capacity measurement
+
+The local scheduler-partitioned environment remains useful for proving that the topology, workload,
+observability, and measurement machinery work together before a more expensive experiment. It is
+not accepted as the environment for deriving the next capacity denominator: the service and database
+units still share host-level resources through WSL2/Docker Desktop, and the repeated G1 controls show
+material variation that the retained signals do not explain.
+
+Further capacity work therefore moves to an **independently provisioned cloud environment**, with the
+load generator on separate compute. The next step is to establish a reproducible single-authority G1
+frontier there before using that unit as the denominator for G2/G4 capacity composition.
 
 ## Reading a run
 

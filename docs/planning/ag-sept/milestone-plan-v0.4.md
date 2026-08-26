@@ -1,14 +1,14 @@
 # AG-Sept — Measured scale-out and distributed authority
 
 **Status: ARCHIVED SNAPSHOT — superseded on 5 August 2026 by
-[`ag-sept-plan.md`](ag-sept-plan.md).**
+[`ag-sept/milestone-plan.md`](milestone-plan.md).**
 
 Retained unchanged as a frozen v0.4 snapshot, because PR1 and PR2 were planned, executed, and
 reported under it, and their implementation records and measurement reports cite its section
 numbers. **It is not normative for any remaining work**, and nothing new should cite it except as
-a historical scheduling fact. What changed and why is in `ag-sept-plan.md` §6.2; the AWS topology
-and matrix it carries (§10, §11) are withdrawn from AG-Sept but readable here for whichever
-milestone picks them up.
+a historical scheduling fact. What changed and why is in `ag-sept/milestone-plan.md` §6.2; the AWS
+topology and matrix it carries (§10, §11) are withdrawn from AG-Sept but readable here for
+whichever milestone picks them up.
 
 **Status:** Draft v0.4  
 **Created:** 31 July 2026  
@@ -87,7 +87,7 @@ AG-Sept therefore reports scale efficiency separately for:
 - one hot slot authority;
 - one hot identity authority or a mixed-identity workload.
 
-The normative capacity and scale-efficiency definitions remain owned by [measurement-contract.md](../design/measurement-contract.md) §3 and §3.1. For one indivisible hot authority, efficiency approaching `1/N` at `N` replicas is the expected serialization ceiling, not evidence that the whole system fails to scale.
+The normative capacity and scale-efficiency definitions remain owned by [measurement-contract.md](../../design/measurement-contract.md) §3 and §3.1. For one indivisible hot authority, efficiency approaching `1/N` at `N` replicas is the expected serialization ceiling, not evidence that the whole system fails to scale.
 
 No single headline number may be presented as "Alloca scales by X" across these different mechanisms.
 
@@ -108,7 +108,7 @@ Implementation PRs should choose the smallest mechanism that satisfies the relev
 
 ### 3.5 Evidence labels for plan parameters
 
-All proposed workload sizes, replica matrices, durations, and resource values in this plan are `[HYPOTHESIS]` until measured, unless they are explicitly identified as a fixed planning budget or required test shape. Implementation reports must replace or retain that label according to the evidence convention in [measurement-contract.md](../design/measurement-contract.md) §2.
+All proposed workload sizes, replica matrices, durations, and resource values in this plan are `[HYPOTHESIS]` until measured, unless they are explicitly identified as a fixed planning budget or required test shape. Implementation reports must replace or retain that label according to the evidence convention in [measurement-contract.md](../../design/measurement-contract.md) §2.
 
 ## 4. Time budget and priority
 
@@ -180,9 +180,9 @@ A possible `[HYPOTHESIS]` minimal shape is:
 - synchronized reserve attempts;
 - one unique idempotency key per logical request.
 
-The run must distinguish admitted reservations, expected `no_capacity` refusals, timeouts, and internal failures using the closed outcome model in [measurement-contract.md](../design/measurement-contract.md) §4. `replay` is an orthogonal flag and must be reported without modelling it as a peer terminal outcome.
+The run must distinguish admitted reservations, expected `no_capacity` refusals, timeouts, and internal failures using the closed outcome model in [measurement-contract.md](../../design/measurement-contract.md) §4. `replay` is an orthogonal flag and must be reported without modelling it as a peer terminal outcome.
 
-Expected business refusals are valid completed outcomes but are not counted as successful reservation goodput. Goodput follows [observability.md](../design/observability.md) §3.1 and covers the mutation surface rather than informational reads such as `list_slots`.
+Expected business refusals are valid completed outcomes but are not counted as successful reservation goodput. Goodput follows [observability.md](../../design/observability.md) §3.1 and covers the mutation surface rather than informational reads such as `list_slots`.
 
 ### 5.3 Hot-identity control
 
@@ -309,7 +309,7 @@ Required outputs include:
 
 - offered requests;
 - completed throughput;
-- successful goodput as defined by [observability.md](../design/observability.md) §3.1;
+- successful goodput as defined by [observability.md](../../design/observability.md) §3.1;
 - expected business refusals;
 - p50, p95, and p99 latency;
 - timeout, unknown, and internal-failure rates;
@@ -317,7 +317,7 @@ Required outputs include:
 - generator utilisation;
 - correctness reconciliation.
 
-Peak observed throughput, SLO-safe capacity, recommended operating capacity, and scale efficiency use the normative definitions in [measurement-contract.md](../design/measurement-contract.md) §3 and §3.1 rather than local restatements.
+Peak observed throughput, SLO-safe capacity, recommended operating capacity, and scale efficiency use the normative definitions in [measurement-contract.md](../../design/measurement-contract.md) §3 and §3.1 rather than local restatements.
 
 The provisional SLO values may be challenged, but the capacity definitions must remain stable.
 
@@ -425,7 +425,7 @@ Each result must state the believed limiting mechanism and supporting evidence. 
 
 Deliberately supply an invalid HTTP-status and domain-outcome combination and prove that the load harness rejects the response and invalidates the run.
 
-This control is required by [measurement-contract.md](../design/measurement-contract.md) §5 and is not descopable. It proves that response validation is active before goodput or capacity can be quoted.
+This control is required by [measurement-contract.md](../../design/measurement-contract.md) §5 and is not descopable. It proves that response validation is active before goodput or capacity can be quoted.
 
 ### 12.2 Generator bottleneck control — mandatory
 
@@ -521,8 +521,8 @@ This section assigns the requirements above to implementation PRs. The earlier s
 **Scope:**
 
 - build the reproducible production-shaped image required by §9.1;
-- **report the recommended operating capacity PR2 deferred.** §3 of `measurement-contract.md` defines it as reserving headroom for variance, rolling deployment, and loss of one unit; at one replica only the first is meaningful, so PR2 deferred the number with that as its evidence and reported measured variance as a named component. PR3 is the first PR where a second replica makes the other two computable. See [`ag-sept-pr2.md`](../development/implementation/ag-sept-pr2.md) §5.6 and §5.6.1 for what PR2 hands over;
-- **test PR2's falsifiable scale-out prediction as a first-class result, not as a by-product of the replica matrix.** PR2 measured this machine's ceiling at ~4,300 req/s and found the limiting subsystem to be PostgreSQL rather than alloca-go, which still had substantial compute headroom (about 1.2 CPU cores within a 10-vCPU allocation) while the connection pool had stopped binding. Its pool ladder is a scale-out experiment in disguise — from the database's side, two replicas at pool 10 resemble one replica at pool 20 — and it therefore predicts **2 replicas × pool 10 ≈ 3,060 req/s, not 2 × 2,074**. Measure it, state whether the prediction held, and if it did not, say what the pool ladder got wrong. See [`../measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../measurements/reports/ag-sept-pr2-single-instance-frontier.md) §5.4;
+- **report the recommended operating capacity PR2 deferred.** §3 of `measurement-contract.md` defines it as reserving headroom for variance, rolling deployment, and loss of one unit; at one replica only the first is meaningful, so PR2 deferred the number with that as its evidence and reported measured variance as a named component. PR3 is the first PR where a second replica makes the other two computable. See [`ag-sept-pr2.md`](../../development/implementation/ag-sept-pr2.md) §5.6 and §5.6.1 for what PR2 hands over;
+- **test PR2's falsifiable scale-out prediction as a first-class result, not as a by-product of the replica matrix.** PR2 measured this machine's ceiling at ~4,300 req/s and found the limiting subsystem to be PostgreSQL rather than alloca-go, which still had substantial compute headroom (about 1.2 CPU cores within a 10-vCPU allocation) while the connection pool had stopped binding. Its pool ladder is a scale-out experiment in disguise — from the database's side, two replicas at pool 10 resemble one replica at pool 20 — and it therefore predicts **2 replicas × pool 10 ≈ 3,060 req/s, not 2 × 2,074**. Measure it, state whether the prediction held, and if it did not, say what the pool ladder got wrong. See [`../../measurements/reports/ag-sept-pr2-single-instance-frontier.md`](../../measurements/reports/ag-sept-pr2-single-instance-frontier.md) §5.4;
 - **add a PostgreSQL exporter, and treat it as required rather than desirable.** PR2 could name the bottleneck only from hand-driven `pg_stat_activity` sampling retained as diagnostic evidence, and the scale-efficiency line below cannot be honestly computed while the shared authority is the one component with no instrumentation. A node exporter is worth the same day's work: PR2's unexplained ~2× excursions slow the service, the database *and* the generator together, which no per-process exporter can see;
 - populate the §6.4 topology and image-identity fields that first become meaningful here: replica count, deployment topology, image tag, and a build-stamped commit SHA;
 - provide the smallest reproducible local load-balancing or orchestration path for one, two, and four replicas against one PostgreSQL authority;
@@ -672,7 +672,7 @@ the primary instrument.
 - **Node exporter.** The only instrument that could see PR2's unexplained ~2× excursions. They
   slow the service, the database *and* the generator together, and everything on this
   workstation shares one 10-vCPU WSL2 allocation
-  ([`../measurements/environment.md`](../measurements/environment.md)), so no per-process
+  ([`../../measurements/environment.md`](../../measurements/environment.md)), so no per-process
   exporter can distinguish shared-CPU contention from anything else. Until this exists, every
   figure from this machine carries a ±2× caveat.
 

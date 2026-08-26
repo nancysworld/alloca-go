@@ -36,7 +36,7 @@
 # **What this script's numbers are.** Every group shares one workstation, one WSL kernel, one
 # storage path and one page cache, so the partition bounds CPU and nothing else. Rehearsal
 # Goodput is diagnostic evidence: it cannot discharge `VAL-SCALE-5`, cannot become a Tier-2
-# result, and is never mixed with AWS points (ag-sept-validation-plan.md §4.6). What it *can*
+# result, and is never mixed with AWS points (ag-sept/milestone-validation.md §4.6). What it *can*
 # do is prove the machinery — placement, fixtures, declaration, provenance, certification —
 # before any of it is exercised on metered infrastructure.
 
@@ -46,7 +46,7 @@ ITC_GROUPS="${ITC_GROUPS:-4}"
 
 case "$ITC_GROUPS" in
   1|2|4) ;;
-  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept-validation-plan.md §4.6); got '$ITC_GROUPS'" >&2
+  *) echo "ITC_GROUPS must be 1, 2 or 4 (ag-sept/milestone-validation.md §4.6); got '$ITC_GROUPS'" >&2
      exit 1 ;;
 esac
 
@@ -72,7 +72,7 @@ WINDOW="${WINDOW:-60s}"
 SLOTS="${SLOTS:-3200}"
 CAPACITY="${CAPACITY:-20}"
 
-# --- conditioning (ag-sept-validation-plan.md §4.6.2) ------------------------------------------
+# --- conditioning (ag-sept/milestone-validation.md §4.6.2) ------------------------------------------
 #
 # `TRUNCATE -> immediate peak load` opens the measured window against empty mutation tables, so
 # the pool's connections prepare their lookups against a relation with no pages and PostgreSQL
@@ -418,7 +418,7 @@ if [ "$ANALYZE_AFTER_SEED" = "1" ]; then
   } > "$OUT/planner-stats.txt"
 fi
 
-# **The state-preserving recycle** (ag-sept-validation-plan.md §4.6.2 step 4).
+# **The state-preserving recycle** (ag-sept/milestone-validation.md §4.6.2 step 4).
 #
 # A restart of the service units, and nothing else. The databases keep running and nothing is
 # reseeded or truncated, so the state conditioning established survives exactly as declared —
@@ -654,7 +654,7 @@ measured_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # carry a timestamp and nothing else says which phase of the cell they fell in. Until now these
 # instants were written only when `PG_STAT_STATEMENTS=1` happened to be set, so a cell driven
 # without that flag could not answer "was this executed before or after the pool recycle?" —
-# which is the whole question conditioning exists to settle (ag-sept-validation-plan.md §4.6.2).
+# which is the whole question conditioning exists to settle (ag-sept/milestone-validation.md §4.6.2).
 cat > "$OUT/phases.txt" <<EOF
 conditioning_start=$conditioning_start
 conditioning_end=$conditioning_end

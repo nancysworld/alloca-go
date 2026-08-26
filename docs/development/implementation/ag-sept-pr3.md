@@ -1,687 +1,365 @@
 # AG-Sept PR3 — Horizontal database authority, Phase 1
 
 **Type:** Implementation record, spanning PR3a/3b/3c
-**Status:** PR3a is merged (#13); PR3b is merged (#14, `57f501d`); **PR3c is complete and under
-review (#16)** — harness, two measured passes and the report, with nothing mandatory
-outstanding. §6a records what remains opportunistic. The
-design was accepted before implementation began (formal design §8), and §6 holds no blocker —
-its one remaining item is a starting fixture, not a contract.
-**Budget:** 7.5 development days across three PRs ([AG-Sept plan](../../planning/ag-sept-plan.md) §2) —
-3.0 for PR3a, 2.5 for PR3b, 2.0 for PR3c. **PR3a came in at 1.0**; the 2.0 difference went
-to the plan's contingency, not to PR3b or PR3c.
-**Owner docs:**
+**Status:** merged — PR3a (#13), PR3b (#14), PR3c (#16). Results are owned by
+[`ag-sept-pr3c-phase1-correctness.md`](../../measurements/reports/ag-sept-pr3c-phase1-correctness.md),
+with artifacts in [`pr3c-phase1/`](../../measurements/pr3c-phase1/).
+
+**Scheduled under:** [`ag-sept/milestone-plan.md`](../../planning/ag-sept/milestone-plan.md) §3,
+work unit *PR3a–PR3c + Iteration B A&R — database-authority composition*. That is a scheduling and
+historical citation only; what this work had to satisfy is owned by the documents below.
+
+**Owner documents.**
 [`horizontal-database-authority.md`](../../design/horizontal-database-authority.md) and
 [`deployment-architecture.md`](../../design/deployment-architecture.md) own the Phase 1 model;
 REQ-ROUTE-1 and REQ-FAIL-1 own what must be true;
-[measurement-contract.md](../../design/measurement-contract.md) §11–§12 owns run provenance and
-reconciliation; and
-[`ag-sept-validation-plan.md`](../../test/validation-plan/ag-sept-validation-plan.md) owns the
-validations. This record covers only how PR3 discharges them and the choices made along the way.
-**Design input:**
-[`../../design/horizontal-database-authority.md`](../../design/horizontal-database-authority.md)
-owns the design. It was frozen for this work as the design note at `a6e4c21` (indexed by
-`5017fed`) and promoted to formal design afterwards, retaining its section numbering. Its §8
-lists the settled Phase 1 contracts and the mechanics left to implementation. This record does
-not restate the design, and where the two disagree the formal design wins.
+[`measurement-contract.md`](../../design/measurement-contract.md) §11–§12 owns run provenance and
+reconciliation; [ADR-0003](../../decisions/0003-deployed-artifact-identity.md) owns deployed
+artifact identity; [`api-surface.md`](../../design/api-surface.md) owns the API behaviour;
+[`container-topology.md`](../../operations/container-topology.md) owns the operating procedure;
+[`ag-sept/milestone-validation.md`](../../planning/ag-sept/milestone-validation.md) owns the
+validations. Where this record disagrees with an owning document, the owning document wins.
 
-## 1. Exit gates
+Section numbers are preserved because other documents cite into them; the gaps at §2 and §4 are
+sections removed during the 2D compression pass.
 
-PR3 is three PRs because it has three separable exit gates, each of which can fail on its own.
-From the plan ([`ag-sept-plan.md`](../../planning/ag-sept-plan.md) §3), verbatim:
+## 1. Outcome
 
-> **PR3a:** a service unit cannot be started against an inconsistent placement map or an
-> incompatible schema; a misrouted request is refused rather than written; the booking policy is
-> one named outcome across every closed set that must know about it; a wrong `UserRef` gets the
-> same answer whether or not the organisations are colocated; and no accepted AG-M1
-> invariant has been weakened to make any of it fit.
+Three separable exit gates, one per work unit — placement and misrouting refusal (PR3a); a
+reproducible multi-authority run refused certification when units disagree (PR3b); Phase 1
+correctness and failure isolation on independent writable authorities (PR3c). All three are
+discharged.
 
-> **PR3b:** a multi-authority run is reproducible from a version-controlled topology, produces
-> an aggregated correctness verdict naming every authority it read, and is refused certification
-> when the units disagree.
-
-> **PR3c:** Phase 1 correctness and failure isolation are demonstrated on independent writable
-> authorities; every accepted transaction semantic on the supported path is unchanged; and no
-> result claims a throughput multiplier from this workstation.
-
-The clause that decides whether PR3 succeeds honestly is PR3a's last one. Phase 1 is only worth
-building if the local transaction path it composes is the *same* path AG-M1 proved. A Phase 1
-that reached its topology by relaxing an invariant would have moved the problem, not scaled it.
+**The clause that decides whether PR3 succeeds honestly is PR3a's last one** — that no accepted
+AG-M1 invariant was weakened to make the topology fit. Phase 1 is only worth building if the local
+transaction path it composes is the *same* path AG-M1 proved; **a Phase 1 that reached its topology
+by relaxing an invariant would have moved the problem, not scaled it.**
 
 **What PR3 may not claim, whatever it measures.** Both authorities, both service units, the
-generator, and the telemetry stack share one 10-vCPU WSL2 allocation
-([`docs/measurements/environment.md`](../../measurements/environment.md)). Authority composition
-cannot be quoted as a capacity multiplier from this machine, and PR2's unexplained ~2×
-excursions are still open, so any single reading carries a ±2× caveat — which a node
-exporter does not discharge merely by existing, only by explaining, excluding, or bounding the
-excursion. PR3 is correctness-first by design, not by descope.
+generator and the telemetry stack share one 10-vCPU allocation
+([`environment.md`](../../measurements/environment.md)). Authority composition cannot be quoted as a
+capacity multiplier from this machine, and PR2's unexplained ~2× excursions remain open, so any
+single reading carries a ±2× caveat. **PR3 is correctness-first by design, not by descope.**
 
-## 2. What PR3 delivers
+**Report:**
+[`ag-sept-pr3c-phase1-correctness.md`](../../measurements/reports/ag-sept-pr3c-phase1-correctness.md)
+owns the correctness matrix, the per-authority verdicts and the failure-isolation result. Retained
+artifacts are in [`pr3c-phase1/`](../../measurements/pr3c-phase1/).
 
-| # | Deliverable | PR | Reference |
-|---|---|---|---|
-| 1 | Versioned placement map: loading, validation, immutability for a run, startup gate | 3a | `deployment-architecture.md` §4 |
-| 2 | Shard-affine service units — one authority, one pool, readiness bound to it | 3a | `deployment-architecture.md` §3, §6 |
-| 3 | Server-side placement enforcement, with the misrouting control | 3a | REQ-ROUTE-1; VAL-COR-5; `api-surface.md` §2.6 |
-| 4 | Booking policy on resolved authorities, and `cross_authority_unsupported` through every closed set it touches | 3a | `horizontal-database-authority.md` §4 |
-| 5 | Explicit `UserRef` ownership check on confirm and cancel | 3a | `api-surface.md` §2.6; VAL-COR-3 |
-| 6 | `/meta` extended with authority identifier, routing version, schema version | 3a | measurement-contract §11 |
-| 7 | Placement invariants in the register, each with a discriminating test | 3a | `transaction-semantics.md` (`INV-*`); REQ-COR-1 |
-| 8 | Containerised two-authority topology, per-authority migration | 3b | `deployment-architecture.md` §5, §9–§11 |
-| 9 | Generator routes mutations by user organisation and reads by slot organisation; multi-organisation, one-hot-organisation, and cross-authority-refusal workloads | 3b | `horizontal-scaling.md` §3; validation plan §3.4–§3.6 |
-| 10 | Placement, authority count, and assignment in the manifest; multi-service certification | 3b | measurement-contract §11 |
-| 11 | Authority-aware verifier with one aggregated verdict | 3b | measurement-contract §12 |
-| 12 | Phase 1 correctness experiments and per-authority verdicts | 3c | VAL-COR-1..5; validation plan §4.5 |
-| 13 | Failure-isolation experiment — one authority down, ambiguous mutations replayed, then restored | 3c | REQ-FAIL-1; VAL-FAIL-1, VAL-COR-6 |
-| 14 | Ambiguous-request register and `ResolveAmbiguous` (§5.7) | 3b | measurement-contract §12 |
-| 15 | `classifyCommit` ambiguity fix and the INV-21 terminated-session fault test | 3b, early | `transaction-semantics.md` INV-21 |
+## 3. What the existing code made cheap, and what it did not
 
-## 3. What the existing code makes cheap, and what it does not
-
-Recorded so the estimates in §4 are auditable rather than asserted, and so the work is not
-rediscovered.
-
-### 3.1 Reconciliation is already organisation-scoped — the largest saving
-
-`reconcile.Run(ctx, q Querier, org domain.OrganisationID, r loadgen.Report, scrapes Scrapes)`
-takes an organisation, and `capacityCheck`, `idempotencyCheck`, and `claimsCheck` each take it
-in turn (`internal/reconcile/reconcile.go`). The checks are already local to one organisation's
-rows, which is exactly the granularity Phase 1 places on one authority.
-
-So the measurement-contract §12 contract — local safety invariants per authority, then
-aggregate persisted
-and server totals compared once against global client totals — lands close to the existing
-shape, and authority-aware verification is an extension rather than a rewrite.
-`cmd/alloca-verify` needs the placement map in place of its single `--database-url` and `--org`
-flags.
-
-**This is an observation about cost, not a design.** Whether PR3b loops the existing entry point
-per organisation, refactors the checks behind an authority-scoped querier, or restructures them
-another way is PR3b's to choose. The normative requirement is the measurement-contract §12
-contract, and in
-particular that one organisation's persisted rows are never compared against the run's
-unpartitioned global summary.
+Reconciliation was already organisation-scoped, so authority-aware verification was an extension
+rather than a rewrite — the requirement being that **one organisation's persisted rows are never
+compared against the run's unpartitioned global summary**. The generator, by contrast, was
+single-authority throughout, so routing by organisation was the bulk of PR3b's cost. The new refusal
+was a closed-set change rather than a constant, touching the domain set, the HTTP mapping, the
+invariant register, the outcome taxonomy and the metric label allowlist — **which is why PR3a was
+not the smallest of the three.**
 
 ### 3.2 Per-authority attribution comes free from per-service scrapes
 
-Client-side totals carry no organisation or authority dimension: `loadgen.Total` is
-`{Operation, Outcome, Reason, Replay, Count}` (`internal/loadgen/run.go:311`). Adding one would
-touch the report schema, the manifest, and every artifact that reads them.
+Client-side totals carry no authority dimension, and adding one would touch the report schema, the
+manifest, and every artifact that reads them. It is not needed: every service unit is shard-affine,
+so **a unit's own scrape *is* its authority's traffic**. Per-authority client-side attribution would
+be a second, weaker source for a fact the topology already supplies.
 
-It is not needed. `deployment-architecture.md` §3 makes every service unit shard-affine, so a unit's own Prometheus scrape
-*is* its authority's traffic. Per-authority work is read from per-service scrapes, and
-`serverTotalsCheck` sums across them. This is why the plan lists per-authority client-side
-attribution under "not in PR3b" rather than as a cut — it would be a second, weaker source for
-a fact the topology already supplies.
-
-One consequence to implement carefully: `Scrapes` is a single `{Baseline, After}` pair
-(`internal/reconcile/servertotals.go:129`) whose `measured()` detects a restarted process. With
-N units, each unit's pair must be differenced *separately* and then summed — differencing the
-sums would mask one unit restarting mid-run.
-
-### 3.3 The generator is single-authority throughout
-
-`loadgen.Client` holds one `baseURL` (`internal/loadgen/client.go:76`) and each workload
-generator holds one `Org` (`internal/loadgen/workload.go:47,77,129`). Routing by organisation
-means an org→endpoint map in the client and a multi-organisation dataset in the workloads. This
-is the bulk of PR3b's generator cost.
-
-### 3.4 `/meta` reports nothing about placement or schema
-
-`metaResponse` inlines `buildinfo.Info` plus timing configuration and a database block
-(`internal/httpapi/meta.go`, `internal/buildinfo/buildinfo.go`). There is no authority
-identifier, routing version, or schema version. §5.1 of the formal design gates setup on schema
-compatibility, and §5.2 on reporting authority identity — both are new fields, and both flow
-into `loadgen/servicemeta.go`, which is what makes a run certifiable.
-
-Migrations are applied by `cmd/alloca-migrate` as a deliberate separate step (ADR-0002), so
-per-authority migration is a loop over DSNs, not a design change.
-
-### 3.5 The refusal is a closed-set change, not a constant
-
-`domain.Reason` is a closed set with a membership map (`internal/domain/outcome.go:49-57` and
-`:120-128`), and the HTTP mapping is keyed by outcome and total over the contract
-(`api-surface.md` §2.3). A new reason touches the domain set, the mapping, `api-surface.md`, the
-invariant register, the `measurement-contract.md` §4 taxonomy, and the metric label allowlist.
-The formal design names it `cross_authority_unsupported` and states the same list. Priced into
-PR3a at 0.5 days, and part of why PR3a is not the smallest of the three.
-
-## 4. Budget, by component
-
-Estimates, not measurements. Recorded per component so an overrun is attributable to something.
-
-**Half a day is the unit.** Finer granularity would be false precision: nothing here is
-estimated well enough to distinguish 0.3 from 0.4, and a plan that pretends otherwise invites
-its own overrun. Nancy's call, 2026-08-05.
-
-**Two late additions are absorbed rather than added.** The ambiguous-request register (§5.7)
-sits inside PR3b's generator line, and the post-restoration replay pass inside PR3c's
-failure-isolation line. Both are small, and both make those two lines tight rather than
-comfortable; if either overruns, the plan's contingency covers it before anything is descoped.
-
-**The INV-21 discharge is explicitly not funded here.** Proving it needs a *deliberately timed*
-connection loss during `COMMIT`, which a generic authority shutdown does not produce. If the
-targeted fault-injection mechanism proves cheap it can be taken inside PR3c; if it does not, it
-is a contingency draw of about 0.5 days or it is left open, exactly as it has been since AG-M1.
-What PR3c must not do is claim the discharge from a generic shutdown.
-
-**PR3a — 3.0 days allocated, 1.0 actual**
-
-| Component | Days |
-|---|---:|
-| Placement map: type, config, validation, immutability, startup gate | 0.5 |
-| Shard-affine binding and server-side enforcement of the assigned organisation set | 0.5 |
-| `/meta` authority identifier, routing version, schema version | 0.5 |
-| Booking policy on resolved authorities, and `cross_authority_unsupported` through the closed sets and status mapping | 0.5 |
-| Explicit `UserRef` ownership check on confirm and cancel (§5.5) | 0.5 |
-| Normative doc updates and the discriminating tests, each proved to fail without its property | 0.5 |
-
-**PR3b — 2.5 days**
-
-| Component | Days |
-|---|---:|
-| Containerised two-authority topology, per-authority migration, reproducible from version control | 0.5 |
-| Generator org→endpoint routing and multi-organisation workloads | 0.5 |
-| Multi-service manifest and certification — every unit's `/meta`, revision and schema agreement | 0.5 |
-| Authority-aware verifier: placement input, per-authority loop, N scrape pairs, aggregated verdict | 1.0 |
-
-**PR3c — 2.0 days**
-
-| Component | Days |
-|---|---:|
-| Multi-organisation seeding across authorities, with at least two organisations colocated | 0.5 |
-| Correctness matrix — the six cases in formal design §6 | 0.5 |
-| Failure-isolation experiment: down, observe, restore, verify | 0.5 |
-| Report with per-authority verdicts and the organisation-to-authority distribution | 0.5 |
+**One consequence has to be implemented carefully.** With N units, **each unit's baseline/after
+scrape pair must be differenced separately and then summed — differencing the sums would mask one
+unit restarting mid-run.**
 
 ## 5. Decisions taken
 
 ### 5.1 Three PRs, not one
 
-The three exit gates fail independently, and the first is a contract change to a system with a
-merged, tested invariant register. Bundling them would mean the first review of a placement
-model arrives alongside a topology and a measurement run, which is how a contract error reaches
-evidence. PR3a can also merge and sit: with the policy comparing resolved authorities (§5.5),
-its booking half is inert in a single-authority deployment, where every organisation is
-colocated and nothing is refused that is not refused today.
+The three gates fail independently, and the first is a contract change to a system with a merged,
+tested invariant register. Bundling them would mean **the first review of a placement model arrives
+alongside a topology and a measurement run, which is how a contract error reaches evidence.**
 
 ### 5.2 Routing lives in the generator *and* is enforced by the service
 
-The formal design §4.1 allows static routing to live in the generator for the first experiment,
-which is right — a production routing gateway is not needed to prove authority composition. But
-if the generator is the *only* router, then "no supported request reached the wrong authority"
-is a property of the generator's routing table, not of Alloca, and the placement invariant is
-untested by construction.
+Static routing in the generator is enough for the first experiment. But **if the generator is the
+only router, then "no supported request reached the wrong authority" is a property of the
+generator's routing table, not of Alloca, and the placement invariant is untested by
+construction.** Both, therefore: the generator routes, and each unit refuses what it does not own.
+That is why the misrouting control is mandatory rather than desirable.
 
-Both, therefore: the generator routes, and each unit refuses what it does not own. The VAL-COR-5
-misrouting control is what makes the second half real, and it is why that control is mandatory
-rather than desirable.
+### 5.5 Three contract questions settled, and one enlarged PR3a
 
-### 5.3 Correctness evidence is not a source of budget
-
-If PR3a–PR3c overrun, the difference comes out of the post-Iteration-B envelope through the plan's
-§16 descope order, not out of the gates that make a run admissible. Nancy's call, 2026-08-05.
-
-### 5.4 Per-authority attribution is read from per-service scrapes
-
-See §3.2. This is a design choice with a budget consequence, not a descope.
-
-### 5.5 The three contract questions are settled, and one of them cost 0.5 days
-
-Raised against the formal design in
-[PR #12](https://github.com/nancysworld/alloca-go/pull/12) and settled by its revision of
-2026-08-05. Recorded here because each decides what PR3a builds, and because two of them changed
-the shape of the work rather than merely confirming it.
+Settled against the formal design, 2026-08-05, which owns the decisions. Two changed the shape of
+the work rather than confirming it, and the reasons are implementation's:
 
 1. **The booking policy compares resolved authorities, not organisation identifiers.**
-   `authority(slot_organisation_id) == authority(user_organisation_id)`, deliberately weaker
-   than identifier equality. Cross-organisation booking is shipped, tested behaviour — INV-13,
-   and `user-schedule-non-overlap.md` §3.3 records that its test exists precisely to stop a
-   later change disabling it — so an unconditional same-organisation policy would have regressed
-   the current one-authority deployment. It now survives wherever the two organisations are
-   colocated, which also keeps INV-13 exercised end to end. **PR3c must therefore cover
-   colocated cross-organisation booking as a success case, not only as a refusal.**
-2. **Confirm and cancel gain an explicit `UserRef` ownership check**, returning the existing
-   `unknown_target` on mismatch. The service has no such check today: `lockByReservation`
-   (`internal/service/service.go:392`) and `tx.Reservation` (`internal/postgres/tx.go:178`)
-   resolve by reservation identifier alone, and the caller's `UserRef` only scopes idempotency,
-   so a confirm carrying a wrong identity succeeds. Without the check, sharding would make that
-   outcome depend on whether two organisations happen to be colocated. This is a deliberate
-   domain-contract correction, and it is the 0.5 days PR3a rose by — drawn from the plan's
-   contingency rather than from another PR (`ag-sept-plan.md` §2.1). It is not authentication:
-   a caller who knows both the reservation identifier and its exact owner can still act as that
-   owner.
-3. **An unavailable authority uses the existing infrastructure classifications** — `timeout_db`
-   when a database bound fires, `internal_failure` for another definite fault. No new generic
-   unavailable outcome is added to the closed set. The consequence lands on the evidence
-   contract rather than the domain: failure-isolation runs report affected and unaffected
-   populations separately and are not judged against the aggregate SLO gates that govern a
-   healthy capacity run (formal design §6.1 and §7.7, plan §14 PR3c).
+   Cross-organisation booking is shipped, tested behaviour, so an unconditional same-organisation
+   policy **would have regressed the current one-authority deployment.** Comparing authorities keeps
+   it alive wherever the two organisations are colocated — so colocated cross-organisation booking
+   is a success case in the matrix, not only a refusal.
+2. **Confirm and cancel gained an explicit `UserRef` ownership check.** The service had none: both
+   paths resolved by reservation identifier alone and the caller's `UserRef` only scoped
+   idempotency, so a confirm carrying a wrong identity succeeded. Without the check, **sharding
+   would have made that outcome depend on whether two organisations happen to be colocated.** It is
+   not authentication: a caller who knows both the reservation identifier and its exact owner can
+   still act as that owner.
+3. **An unavailable authority uses the existing infrastructure classifications**, so the consequence
+   lands on the evidence contract rather than the domain: failure-isolation runs report affected and
+   unaffected populations separately and are **not judged against the aggregate SLO gates that
+   govern a healthy capacity run.**
 
 ### 5.6 A misrouted request is `invalid_request` at the edge, with its own counter
 
-Design note §5.2 classes a request arriving at a unit that does not own its user organisation as
-a routing or deployment fault rather than the `cross_authority_unsupported` business policy, and
-delegates the edge classification here. Within the closed outcome set the honest candidates are
-`invalid_request` (400) and `internal_failure` (500). **PR3a uses `invalid_request`**, for two
-reasons:
-
-- the note forbids recording it as the user's durable domain outcome on the wrong authority, and
-  `invalid_request` is precisely the outcome INV-7 exempts from the recording rule — it is
-  rejected at the transport edge and may carry no scope to record against;
-- routing identity is caller-asserted until authentication exists (formal design §7.6), so
-  `internal_failure` would let a client drive the service's internal-failure rate, which is an
-  SLO-relevant signal.
-
-The deployment fault must still be visible to an operator, so the refusal increments a dedicated
-bounded counter and logs the unit's authority and the requested organisation. A 400 that is
-really a misconfiguration should not hide among client errors. The VAL-COR-5 misrouting control
-asserts both the outcome and the counter.
+Within the closed outcome set the honest candidates were `invalid_request` (400) and
+`internal_failure` (500). `invalid_request` wins because it is precisely the outcome INV-7 exempts
+from the recording rule, and because **routing identity is caller-asserted until authentication
+exists, so `internal_failure` would let a client drive the service's internal-failure rate** — an
+SLO-relevant signal. The fault must still be visible, so the refusal increments a dedicated bounded
+counter: **a 400 that is really a misconfiguration should not hide among client errors.**
 
 ### 5.7 Resolving `unknown_replayable` is a post-run pass, not a load control
 
-Measurement-contract §12 requires ambiguous mutations to be resolved by replaying their own
-keys after an authority is restored. That needs the generator to retain the keys of
-`unknown_replayable` responses during the run and reissue them afterwards.
+`measurement-contract.md` §12 requires ambiguous mutations to be resolved by replaying their own
+keys after an authority is restored, so the generator retains those keys during the run and
+reissues them afterwards.
 
-The machinery is close to hand: keys are already derived deterministically per workload
-(`key(name, seq, op)` in `internal/loadgen/workload.go`), and the `Replay` workload already
-issues a second request under the same key and checks the response against §4.2. What is missing
-is that `Response` and `Total` retain no key, so PR3b adds a small register of ambiguous
-requests and PR3c adds the resolution pass.
+**This is deliberately not a retry-on-timeout control**: that shapes load *during* a run — timeout,
+retry, amplification — and remains unassigned. Conflating them is how unfunded scope creeps into a
+PR that cannot fund it.
 
-**This is deliberately not group A's retry-on-timeout control.** That control shapes load during
-a run — timeout, retry, amplification — and remains unassigned (`ag-sept-plan.md` §6.4). This
-is a bounded post-restoration pass whose only purpose is to collapse ambiguity before the
-correctness verdict. Conflating them is how group A creeps into a PR that cannot fund it.
-
-## 6. Settled by the freeze, and the one thing left open
+## 6. Settled by the freeze, and what implementation found
 
 ### 6.1 The ownership correction is an accepted API behaviour change
 
-PR3a's booking half is inert in the current one-authority deployment, where every organisation
-is colocated (§5.1). Its **ownership half is not**: today a caller holding a reservation
-identifier can confirm or cancel it while asserting a different `UserRef`, and after PR3a that
-returns `404 unknown_target`.
-
-That is a live behaviour change on a merged contract rather than new functionality, so it was
-raised for an explicit decision rather than allowed to arrive as a side effect of sharding. It
-is **accepted** as part of the design freeze (formal design §8, decision 5; Nancy, 2026-08-05).
-PR3a therefore carries its normative consequences with it: a line in the invariant register, the
-behaviour stated in [`api-surface.md`](../../design/api-surface.md), and a discriminating test that
-fails without the comparison.
+PR3a's booking half is inert in a single-authority deployment; **its ownership half is not** — a
+caller holding a reservation identifier could previously confirm or cancel it while asserting a
+different `UserRef`, and after PR3a that returns `404 unknown_target`. A live behaviour change on a
+merged contract rather than new functionality, so it was raised for an explicit decision **rather
+than allowed to arrive as a side effect of sharding.**
 
 ### 6.2 Organisation count and skew — a starting fixture, not a contract
 
-The formal design's map is now four organisations across two authorities (§5.1 of the formal design).
-`[HYPOTHESIS]`: 2:2 by count and deliberately unequal by load, so the one-hot-organisation
-workload and the distribution reporting of validation plan §3.4 and §3.6 have something to show. It stays a
-run parameter that implementation may change on evidence, not an architectural commitment —
-recorded only so the fixture is chosen rather than defaulted into.
+`[HYPOTHESIS]`: four organisations across two authorities, 2:2 by count and deliberately unequal by
+load so the one-hot-organisation workload has something to show. A run parameter implementation may
+change on evidence, not an architectural commitment — recorded only so the fixture is chosen rather
+than defaulted into.
 
-### 6a. What PR3b carries early, and what stays PR3c
+### 6a. What PR3b carried early
 
-Nancy's call, 2026-08-05, after PR3a merged: rather than hold finished work on a branch of
-its own, PR3b took everything that already existed and PR3c keeps only what still has to be
-built. Fewer branches, one review, and nothing parked where it cannot be seen.
+Maintainer decision, 2026-08-05. Two items were nominally PR3c's and travelled with PR3b because
+they were *done*, and because the fix is a correctness change to merged code that should not wait on
+a measurement PR: the **`classifyCommit` ambiguity fix** — operator-intervention and
+connection-exception SQLSTATEs are the session ending, not the server answering the `COMMIT`, so
+they are `unknown_replayable` rather than definite failures — and the **INV-21 terminated-session
+fault test** that found it. **Consequence, accepted rather than overlooked: `main` misclassified a
+terminated session under `COMMIT` as a definite failure until PR3b merged.**
 
-**Carried by PR3b and merged with it** (`57f501d`):
-
-- the generator's **ambiguous-request register** and `ResolveAmbiguous`. The register was
-  always PR3b's — the plan asks PR3b to retain the idempotency keys of any
-  `unknown_replayable` response so PR3c can replay them (`ag-sept-plan.md` §3) — and the
-  replay mechanism was built alongside it rather than split across two PRs for the sake of
-  the boundary;
-- the **`classifyCommit` ambiguity fix**: class 57 (operator intervention) and class 08
-  (connection exception) SQLSTATEs are the session ending, not the server answering the
-  `COMMIT`, so they are now `unknown_replayable` rather than definite failures;
-- the **INV-21 terminated-session fault test** that found that defect, and INV-21's revised
-  register entry. **It is deliberately not named for connection loss mid-`COMMIT`:** the
-  session is destroyed with the transaction's work done and `COMMIT` not yet sent, so what
-  is proven is that a commit attempted on a dead session is classified conservatively.
-  Nothing interposes between the client sending `COMMIT` and the server acting on it, and
-  the *acknowledgement-lost* half stays PR3c's, unproven.
-
-The last two were nominally PR3c's and explicitly unfunded (§4). They travelled with PR3b
-because they were *done*, and because the fix is a correctness change to merged code that
-should not wait on a measurement PR. **Consequence, accepted rather than overlooked at the
-time:** `main` misclassified a terminated session under `COMMIT` as a definite failure until
-PR3b merged. Low risk — no production deployment exists, and the experiment that would
-deliberately trigger it is PR3c's, which lands after. The window is now closed.
-
-**Was PR3c's to build, and is now built** (§6e records what each one cost and what it found):
-
-0. **wiring `RunTopology` into `cmd/alloca-verify`.** The flags it needs — a placement
-   document and one DSN and scrape per authority — were left to the PR that first had a run
-   to drive rather than guessed at in PR3b;
-1. the **post-restoration resolution pass**, driven by `alloca-load` after the measured
-   interval and before the report is written, with the summary accounting §6c asked for.
-
-**Was PR3c's to run, and is now run** — twice each, reported in
-[`ag-sept-pr3c-phase1-correctness.md`](../../measurements/reports/ag-sept-pr3c-phase1-correctness.md)
-with artifacts in [`pr3c-phase1/`](../../measurements/pr3c-phase1/):
-
-2. the **failure-isolation experiment**, with affected and unaffected populations reported
-   separately and the injected failure mode named — a *stopped* container, which is why §6b
-   matters;
-3. the **Phase 1 correctness matrix** and per-authority verdicts.
-
-**Still PR3c's, and still outstanding — opportunistic, and unfunded:**
-
-4. **INV-21's remaining half.** The *commit-landed-but-acknowledgement-lost* case is still
-   unproven and needs a proxy that drops the reply; the register says so, and PR3c must not
-   claim the whole invariant on the strength of the half that is tested. The one live
-   `unknown_replayable` the experiments produced does **not** discharge it: it resolved
-   `replay=false`, meaning the original had never committed. The outstanding case is the
-   opposite one, `replay=true` — a commit that landed while its acknowledgement was lost.
+**INV-21 is deliberately not claimed whole.** The test destroys the session with the transaction's
+work done and `COMMIT` not yet sent, so what is proven is that a commit attempted on a dead session
+is classified conservatively. The *acknowledgement-lost* half needs something interposed between
+client and server and remains unproven. The one live `unknown_replayable` the experiments produced
+does **not** discharge it: it resolved `replay=false`, meaning the original had never committed,
+which is the opposite case.
 
 ### 6b. The unavailable-authority outcome depends on *how* the authority is unavailable
 
-Observed on the containerised topology while validating it (PR3b), and recorded here because
-it changes what PR3c's expected-outcome set may assert.
+**The assumption going in** was that an unavailable authority produces one of three outcomes, and
+this record previously attributed that enumeration to the formal design. **It is not there.** The
+design fixes *containment* and the standing of `unknown_replayable`; it does not fix a closed outcome
+set. The three-outcome expectation was implementation's, and stating it as the design's was an
+over-attribution.
 
-**The assumption going in.** PR3's planning expected an unavailable authority to produce one of
-three outcomes — `internal_failure`, `timeout_db`, or `unknown_replayable` — and this record
-previously attributed that enumeration to the formal design. **It is not there.**
-[`horizontal-database-authority.md`](../../design/horizontal-database-authority.md) §7.7 owns
-authority failure and ambiguity, and what it fixes is *containment* and the standing of
-`unknown_replayable` as an unresolved commit fact; it does not fix a closed outcome set for an
-unavailable authority. The three-outcome expectation was implementation's, and stating it as the
-design's was an over-attribution.
+**What was observed.** Stopping an authority's container produced **`timeout_server` (504)** — a
+fourth classification. `/readyz` correctly reported 503 throughout and the healthy authority kept
+serving its own organisations, so failure *isolation* held exactly as designed.
 
-**What was observed.** Stopping an authority's container and issuing a request to its unit
-produced **`timeout_server` (504)** — a fourth classification. The unit's `/readyz` correctly
-reported 503 throughout, and the healthy authority continued serving its own organisations, so
-failure *isolation* held exactly as designed.
+**The refinement: the outcome is a property of the failure mode injected, not of authority
+unavailability as such.** A *stopped* container drops packets rather than refusing them, so the
+connection attempt hangs instead of failing fast and the per-request server deadline is the first
+bound to fire; a *killed* container would classify differently. The durable claim is containment
+plus the bounded outcome model; the specific outcome is an experiment parameter.
 
-**The refinement.** The outcome is a property of the **failure mode injected**, not of authority
-unavailability as such. The durable claim is containment plus the bounded outcome model
-(`measurement-contract.md` §4); the specific outcome is an experiment parameter. That is why the
-consequence below is "name the failure mode" rather than "correct the outcome set".
+Two consequences: **the experiment must name its failure mode**, because an expected-outcome set
+fixed in advance and then met by a different outcome **reads as a defect when it is really a
+different experiment**; and **`db_acquire_cap` did not bound this wait** — a ~5 s server deadline
+elapsed where a 500 ms acquisition cap might have fired first. That diagnosis is *not* established.
+§6e gives it a better lead.
 
-The reason matters: a **stopped** container drops packets rather than refusing them, so the
-connection attempt hangs instead of failing fast, and the per-request server deadline is the
-first bound to fire. A container that is *killed*, or a database that refuses connections,
-would fail immediately and classify differently.
+### 6c. Resolution accounting is PR3c's, and PR3b stopped short of it deliberately
 
-Two consequences for PR3c:
+Ambiguity resolution replays each ambiguous mutation, and **those replays are real HTTP requests
+PR3b accounted for nowhere**. So after a resolution pass the server's counters include the replay
+traffic while the client totals still describe only the original run, and three-way reconciliation
+over that state cannot be correct.
 
-1. **The experiment must name its failure mode** — stopped, killed, network-partitioned,
-   or process-crashed — because they do not produce the same outcome mix. An expected-outcome
-   set fixed in advance and then met by a different outcome reads as a defect when it is
-   really a different experiment (VAL-FAIL-1).
-2. **`db_acquire_cap` did not bound this wait**, and it is worth understanding before the
-   experiment quotes anything. The observation is that a ~5 s server deadline elapsed where a
-   500 ms acquisition cap might have been expected to fire first; the diagnosis is *not*
-   established, and it may be that the cap does not cover establishing a new connection. This
-   is adjacent to the PR2 deferral register's standing item that the timeout budget has never
-   been observed doing its job under load (`ag-sept-plan.md` §6.4, group A). Investigate
-   before asserting, and do not fix it on the strength of one observation.
+**The acknowledgement-lost branch is the sharp end.** A resolution proving the original mutation
+committed means the database holds one fresh logical mutation — but appending the replay's response
+to the totals would leave fresh-mutation count at zero for that logical request, because the replay
+itself is not fresh. **The mutation is real and the summary would say it never happened.**
 
-### 6c. Resolution accounting is PR3c's, and PR3b stops short of it deliberately
+Discharged in PR3c as one contract rather than four patches: resolution traffic incorporated into
+request and server accounting; a logical mutation counted **once as fresh** when the replay proves
+the original committed; counted **once** when resolution performs it; anything still ambiguous
+rejected outright. The measured fields are untouched by construction, which is the property
+`measurement-contract.md` §12 turns on.
 
-Raised in review of PR3b (ChatGPT, 2026-08-06) and deferred with Nancy's agreement. Recorded
-here so PR3c inherits the problem stated rather than discovers it.
-
-`ResolveAmbiguous` replays each ambiguous mutation and returns `[]Resolution`. Those replays
-are **real HTTP requests that PR3b does not account for anywhere**: they happen outside
-`Runner`, they are not folded into `Report.Summary`, and `RunTopology` takes no resolution
-input. So after a resolution pass the server's counters include the replay traffic while the
-client totals still describe only the original run, and three-way reconciliation over that
-state cannot be correct.
-
-The *acknowledgement-lost* branch is the sharp end. A resolution returning `Replay=true`
-proves the original mutation committed — the database holds one fresh logical mutation — but
-appending the replay's response to the totals would leave `FreshMutations()` at zero for that
-logical request, because the replay itself is not fresh. The mutation is real and the summary
-would say it never happened.
-
-**What PR3c must define**, as one contract rather than as four separate patches:
-
-- resolution HTTP traffic incorporated into request and server accounting, so the scrape
-  comparison is over the same population as the client totals;
-- a logical mutation counted **once as fresh** when the replay proves the original committed;
-- counted **once** when resolution performs it with `Replay=false`;
-- anything still ambiguous rejected outright — `Unresolved` already reports it, and a run
-  carrying any is not reconcilable.
-
-It needs end-to-end tests on both branches: original committed then replayed, and original
-rolled back then performed during resolution.
-
-**Why not in PR3b.** The same reasoning that left `RunTopology`'s CLI flags to PR3c: the
-shape of this contract depends on how the resolution pass is actually driven, and a summary
-contract guessed at before its only caller exists is one PR3c would have to redesign while
-also producing the experiment. The register's own defect — a failed replay re-registering
-itself and growing the outstanding work on every pass — was a live bug in shipped code and
-**was** fixed in PR3b; deduplication does not solve the accounting problem, and is not
-claimed to.
-
-**Discharged in PR3c**, as `Summary.WithResolutions` and the two derivations it feeds:
-`ReconciliationTotals`/`ReconciliationCompleted` for the scrape comparison, and
-`FreshAdmittedFor`/`FreshMutations` for final logical state. The measured fields are untouched
-by construction, which is the property `measurement-contract.md` §12 turns on and which
-VAL-COR-6's tests assert in both directions. Writing it surfaced a fourth case the four bullets
-above do not name — a replay that never reaches the service settles nothing either — recorded
-in §6e.
+**Why not in PR3b.** The shape of this contract depends on how the pass is actually driven, and **a
+summary contract guessed at before its only caller exists is one PR3c would have had to redesign
+while also producing the experiment.** The register's own defect — a failed replay re-registering
+itself and growing the outstanding work on every pass — *was* fixed in PR3b; deduplication does not
+solve the accounting problem and is not claimed to.
 
 ### 6d. The deployed artifact is bound to the routed units, and checked before load
 
-The architectural decision is [ADR-0003](../../decisions/0003-deployed-artifact-identity.md):
-code identity and deployed-artifact identity are separate provenance facts, and the second
-must be observed from outside the measured process rather than reported by it. What the ADR
-deliberately does not fix is the mechanism, which is recorded here because two parts of it
-were wrong in a way that read as correct.
+ADR-0003 fixes that code identity and deployed-artifact identity are separate provenance facts and
+the second must be observed from outside the measured process. What it deliberately does not fix is
+the mechanism — and four parts of it were wrong in a way that read as correct.
 
-**Observation alone is unbound evidence.** A record proving that some containers on this host
-share an image says nothing about the units a run addressed. A stack raised yesterday, a
-second stack on other ports, or a unit nothing routes to would all satisfy it. So each
-observation now also carries the address its container publishes, read from the port binding
-rather than assumed from the compose file, and the run requires an exact one-to-one
-correspondence with the targets it is about to drive. Both directions fail for their own
-reason: a routed unit nobody observed is an artifact the run cannot name — the whole gap measurement-contract §11
-exists to close — while an observed unit nothing routes to means the record describes a
-different topology, and a record wrong about the unit set is not evidence that its image
-identity is right either.
+**Observation alone is unbound evidence.** A record proving that some containers on this host share
+an image says nothing about the units a run addressed: a stack raised yesterday, a second stack on
+other ports, or a unit nothing routes to would all satisfy it. Each observation now carries the
+address its container publishes, **read from the port binding rather than assumed from the compose
+file**, and the run requires exact one-to-one correspondence with the targets it is about to drive.
+An observed unit nothing routes to means the record describes a different topology — **and a record
+wrong about the unit set is not evidence that its image identity is right either.**
 
-**Ordering is the other half.** The check previously ran after `Runner.Run`, where it could
-only annotate numbers that already existed: the operator discovered the mismatch once the
-measurement had been taken. It now runs before any measured request, ahead even of the `/meta`
-reads, so a wrong record costs a re-record rather than a run. That property is easy to lose in
-a later refactor and is held by a test that asserts the units served **zero** requests when the
-preflight refuses; moving the call back after the workload fails it with four requests per
-unit rather than failing on the error text.
+**Ordering is the second half.** The check previously ran *after* the workload, where it could only
+annotate numbers that already existed. It now runs before any measured request, so a wrong record
+costs a re-record rather than a run — a property held by a test asserting the units served **zero**
+requests when the preflight refuses.
 
-**Why the requirement keys on the topology, not on a flag.** The certification gate refuses a
-containerised run whose `image_id` is empty, but it is armed by `container_deployment`, which
-the record itself sets. Omitting the record therefore also disarmed the gate, and the run
-reported a clean lower-provenance result whose missing artifact identity looked like a choice.
-A run that reaches more than one unit is the containerised topology whatever the operator
-remembered to pass, so that is what the requirement keys on.
+**The gate was armed by the record it was gating.** It refuses a containerised run whose `image_id`
+is empty, but it was armed by a field the record itself sets, so **omitting the record also disarmed
+the gate**, and the run reported a clean lower-provenance result whose missing artifact identity
+looked like a choice.
 
-**Why `-require` is not the exception it looks like.** The requirement first exempted
-`-require none`, on the reading that a run declaring it supports no claim has nothing for
-artifact identity to qualify. That reading is wrong about the flag. `-require` is the floor a
-run must clear to exit zero, not a ceiling on what its report claims: certification always
-computes the highest level the manifest and summary actually reach, so a stamped binary
-passing `-require none` exits zero *and* writes a report certified at `local` or above —
-naming no artifact. The exemption reopened exactly the bypass the requirement was added to
-close, and under the phrasing an operator is most likely to reach for. There is no level at
-which skipping the record is safe, so there is now no exception. A genuine
-no-evidence mode would have to cap certification, which `-require` does not do; it can be
-built when something needs it.
+**`-require` is not the exception it looks like.** The requirement first exempted `-require none`,
+on the reading that a run declaring it supports no claim has nothing for artifact identity to
+qualify. **That reading is wrong about the flag.** `-require` is the floor a run must clear to exit
+zero, not a ceiling on what its report claims: certification always computes the highest level the
+manifest actually reaches, so a stamped binary passing `-require none` exits zero *and* writes a
+report certified at `local` or above, naming no artifact. **The exemption reopened exactly the
+bypass the requirement was added to close, under the phrasing an operator is most likely to reach
+for.** There is now no exception.
 
-**What was deliberately not built.** No per-unit map in the manifest: once the preflight has
-established full coverage and one common artifact, the per-unit observations are validation
-evidence, and copying them into the report would be a second representation of what the single
-`image_id` already states. No general `source | container` deployment-mode abstraction either;
-making the one known containerised evidence path non-bypassable is what PR3b needed, and an
-abstraction invented before a second caller exists is one the second caller redesigns.
-
-The record schema, the flag, the matching rules, and the tests live in
-`internal/loadgen/deployment.go`, `cmd/alloca-load/main.go` and
-`test/scripts/record-deployment.sh`; the operating procedure is
-[`../../operations/container-topology.md`](../../operations/container-topology.md) §6. None of
-that is restated here.
+**What was deliberately not built:** no per-unit map in the manifest, since once the preflight
+establishes full coverage and one common artifact the per-unit observations are validation evidence
+rather than a second representation of what `image_id` already states; and no general
+deployment-mode abstraction, because **an abstraction invented before a second caller exists is one
+the second caller redesigns.**
 
 ### 6e. What building and running PR3c found
 
-The two mechanics §6a left to this PR are built, and the matrix has been driven twice. What
-they cost is not interesting; what they found is, because in three cases the code was already
-wrong in a way no test then held.
+In three cases the code was already wrong in a way no test then held.
 
-**A replay that never reached the service was recorded as a resolution.** `ResolveAmbiguous`
-asked whether the replay returned `unknown_replayable` and treated everything else as settled.
-But a replay against an authority that is still down fails at the transport, and the client
-classifies that as a timeout — so the entry was retired, `Unresolved` reported nothing
-outstanding, and the run went on to certify over a key whose commit state nobody had
-established. It was also irreversible: only a parsed `unknown_replayable` re-enters the
-register, so retiring on a transport failure destroyed the only record that the mutation
-needed replaying. The predicate is now whether a **definite domain answer** came back, which is
-what `measurement-contract.md` §12 means by a key that remains ambiguous. **Operational
-consequence, and it belongs in the experiment design rather than in the code:** the
-failure-isolation run must restore the authority *before the run ends*, because that is when
-the pass runs.
+**A replay that never reached the service was recorded as a resolution.** Resolution asked whether
+the replay returned `unknown_replayable` and treated everything else as settled — but a replay
+against an authority still down fails at the transport and classifies as a timeout, so the entry was
+retired, nothing was reported outstanding, and the run certified over a key whose commit state
+nobody had established. **It was also irreversible**: only a parsed `unknown_replayable` re-enters
+the register, so retiring on a transport failure destroyed the only record that the mutation needed
+replaying. The predicate is now whether a **definite domain answer** came back. *Operational
+consequence, belonging in the experiment design rather than the code:* the failure-isolation run
+must restore the authority **before the run ends**, because that is when the pass runs.
 
-**Resolution responses were not validated.** They are real responses from the service and they
-were reaching no check at all, on the accident that they happen after the measured interval. A
-replay answered outside the outcome contract now makes the run unsound and keeps the complaint
-on its resolution record. The measured `Invalid` count is deliberately left alone: that field
-describes the measured interval, and post-run traffic does not belong in it.
+**Resolution responses were not validated at all**, on the accident that they happen after the
+measured interval. A replay answered outside the outcome contract now makes the run unsound. The
+measured invalid count is deliberately left alone: that field describes the measured interval.
 
-**A partially scraped topology was reported as a service defect.** Server totals are summed
-across units after each unit's own pair is differenced, so a unit whose scrape is missing simply
-lowers the total — arithmetically identical to a service that dropped requests, and the message
-sent the operator looking for the defect in a service that had behaved correctly. `RunTopology`
-now refuses that case by name. No scrape at all stays a different and honest state: no
-server-side count participates and the run is refused for lacking one of §12's three counts.
+**A partially scraped topology was reported as a service defect.** A unit whose scrape is missing
+simply lowers the summed total — **arithmetically identical to a service that dropped requests** —
+and the message sent the operator looking for a defect in a service that had behaved correctly.
+That case is now refused by name.
 
-**The resolution pass is not behind a flag**, for the same reason the deployment record is not
-excused by `-require` (§6d): a healthy run registers nothing and the pass is a no-op, so the
-only runs it touches are the ones §12 requires it for — while an operator who forgot the flag
-would hold an unreconcilable artifact whose register had already died with the process.
+**The resolution pass is deliberately not behind a flag**, for the same reason the deployment record
+is not excused by `-require`: a healthy run registers nothing and the pass is a no-op, so the only
+runs it touches are the ones `measurement-contract.md` §12 requires it for — while **an operator who forgot the flag would
+hold an unreconcilable artifact whose register had already died with the process.**
 
-**What blocked the experiments for half a day, because the shape recurs.** The harness was
-finished and validated against the live topology long before any of it could be *evidence*: two
-provenance stamps were false for unrelated reasons, and neither announces itself until a verdict
-reads `level: none`. The service was built through a Docker client that read the build context
-through a Windows filesystem view, so every file arrived mode 0755 against an index of 0644 and
-`go build` stamped the binary `vcs.modified=true` from a spotless checkout — and the operations
-page was recommending that client. The generator was built inside a sandbox whose view of the
-repository is not the repository's. Both are environment defects, both are now recorded where
-they will be met ([`container-topology.md`](../../operations/container-topology.md) §2), and the
-lesson is the ordering: **check the two stamps before driving anything**, which is why
-`pr3c-experiments.sh` refuses to start without them.
+**What blocked the experiments for half a day, because the shape recurs.** The harness was finished
+and validated against the live topology long before any of it could be *evidence*: two provenance
+stamps were false for unrelated reasons, and **neither announces itself until a verdict reads
+`level: none`.** One was a Docker client reading the build context through a Windows filesystem
+view, so every file arrived mode 0755 against an index of 0644 and `go build` stamped
+`vcs.modified=true` from a spotless checkout. The lesson is the ordering: **check the two stamps
+before driving anything.**
 
 Three things the validation runs established for the experiment design, none of them a result:
-
-- **the fixture must be sized against the run, not the reverse.** A sold-out fixture turns a
-  correctness run into a measurement of capacity exhaustion, which is the trap
-  `container-topology.md` §6 records for `-duration`. The matrix seeds 1,200 slots per
-  organisation — 96,000 units — against runs that consumed at most 36,000;
-- **verify promptly.** Unconfirmed holds expire on the reservation TTL, so live reservations
-  decay after a run while idempotency records and claims remain. The reconciliation check
-  tolerates fewer reservations than admitted mutations — that is what expiry looks like — but a
-  verdict taken long afterwards is evidence about expiry rather than about the run;
-- **`alloca-seed -reset` can deadlock against the running service.** `TRUNCATE` takes
-  ACCESS EXCLUSIVE on every booking table while the expiry worker sweeps the same tables on its
-  own schedule, and the two deadlocked once in roughly ten seeds (40P01, killing a matrix at its
-  last cell). The script now retries once and says so in its log; a second failure stops the
-  run, because a fixture in an unknown state makes every cell below it meaningless.
+**size the fixture against the run, not the reverse**, since a sold-out fixture turns a correctness
+run into a measurement of capacity exhaustion; **verify promptly**, because unconfirmed holds expire
+on the reservation TTL, so a verdict taken long afterwards is evidence about expiry rather than about
+the run; and **`-reset` can deadlock against the running service**, since `TRUNCATE` takes ACCESS
+EXCLUSIVE on every booking table while the expiry worker sweeps the same tables — observed once in
+roughly ten seeds. The script retries once and says so; a second failure stops the run, because **a
+fixture in an unknown state makes every cell below it meaningless.**
 
 The `db_acquire_cap` question §6b leaves open is **not** settled, but the experiments give it a
-better lead than §6b had: across both retained passes the worst client-observed latency during
-the outage was ~503 ms against a 5 s server deadline and a 500 ms acquisition cap. That points
-the opposite way from §6b's single observation of a ~5 s wait, and the plausible reconciliation
-— warm pool versus a new connection — is a hypothesis to test, not a diagnosis to act on.
+better lead: across both retained passes the worst client-observed latency during the outage was
+~503 ms against a 5 s server deadline and a 500 ms cap. That points the opposite way from §6b's
+single observation, and the plausible reconciliation — warm pool versus a new connection — **is a
+hypothesis to test, not a diagnosis to act on.**
 
-### 6f. What the experiments established, and the one thing that surprised them
+### 6f. What producing the evidence taught, as distinct from what it says
 
-The reading is [`ag-sept-pr3c-phase1-correctness.md`](../../measurements/reports/ag-sept-pr3c-phase1-correctness.md)
-and is not restated here. Three things belong in this record rather than in the report, because
-they are about how the evidence was produced rather than what it says.
+**The `unknown_replayable` case arrived once, unbidden, and only once.** The validation plan says the
+experiment need not manufacture one, and this is why that was the right call: **the fault produces it
+stochastically, so an experiment *required* to produce one would have been tuned until it did.** Its
+accounting is the whole §6c contract holding on a live fault.
 
-**The `unknown_replayable` case arrived once, unbidden, and only once across the retained
-runs.** The plan and the
-validation plan both say the failure-isolation experiment need not manufacture one, and this is
-why that was the right call: the fault produces it stochastically, so an experiment *required*
-to produce one would have been tuned until it did. The run that produced it is retained beside
-the two passes rather than substituted for one of them, and the report states it as a single
-observation. Its accounting is the whole §6c contract holding on a live fault — measured and
-reconciliation populations differing by exactly one replay — which is worth more than the two
-clean passes it sits next to.
+**A number that does not move is worth as much as one that does.** `timeout_server` was exactly 304
+in all three retained failure runs while `internal_failure` moved and volume moved by 4.2%. It held
+in unretained runs too and was different when the fault was hand-timed — a lead worth writing down,
+but one whose runs are not retained, so it is labelled as such rather than counted as evidence.
 
-**A number that does not move is worth as much as one that does.** `timeout_server` was exactly
-304 in all three retained failure runs, while `internal_failure` moved across them (493, 433,
-508) and volume by 4.2%. It held in the unretained harness-validation runs too and was different
-when the fault was hand-timed — a lead worth writing down, but one whose runs are not retained,
-so the report labels it as such rather than counting it as evidence. Nothing explains the
-figure yet, and it is recorded as an open lead rather than smoothed over.
-
-**Evidence was regenerated several times over artifact hygiene, not over results.** Once because
-the retained transcripts were named `*.log`, which `.gitignore` excludes — a report citing files
-the repository does not carry is an assertion — once because the per-authority row census
-belonged in the script rather than in an operator's shell history, and finally after the review
-below. The rule that came out of it: **the artifact set and the script that produces it must
-match exactly**, or reproduction instructions describe a run nobody can repeat.
-
-**Retained artifacts are tracked files, and that has an ordering consequence.** Copying a run
-into `docs/measurements/` dirties the working tree, so a `make image` *after* retaining stamps
-the binary `vcs.modified=true` from what looks like a clean checkout — the same failure as the
-Docker client above, reached from the opposite direction. Build, run, retain, commit, in that
-order. The harness catches the mistake, which is the argument for the preflight rather than for
-remembering.
+**Evidence was regenerated several times over artifact hygiene, not over results** — once because
+retained transcripts were named `*.log`, which `.gitignore` excludes, and **a report citing files the
+repository does not carry is an assertion.** The rule: **the artifact set and the script that
+produces it must match exactly**, or reproduction instructions describe a run nobody can repeat.
+Relatedly, retained artifacts are tracked files, so copying a run into `docs/measurements/` dirties
+the tree and a later image build stamps `vcs.modified=true` from what looks like a clean checkout.
+**Build, run, retain, commit, in that order.**
 
 ### 6g. The review round, and why every finding was the same defect
 
-Four P1s (Codex ×2, Nancy ×2) on the experiment harness, and they share one shape: **a gate that
-reported success while the thing it gated had not happened** — the pattern PR2's review named,
-and which this record should have been checked against before asking for review.
+Four P1s on the experiment harness, sharing one shape: **a gate that reported success while the thing
+it gated had not happened.**
 
-- **the cell passed at `quotability.level: none`**, because `verify` ran with `-require none`.
-  Reconciliation checks compare the numbers a run produced; certification decides whether they
-  may be quoted at all, and the two disagree exactly when a run is unsound, unresolved or
-  drifted. The comment defending `none` claimed a real floor would cost the diagnostic
-  artifact — **wrong about the verifier**, which writes the verdict before enforcing the level.
-  A wrong justification in a comment is worse than none, because it answers the reviewer's
-  question before they ask it;
-- **the readiness codes during the fault were recorded, not checked.** `printf` succeeds
-  whatever `curl` returns, so the artifact could contradict the containment claim while the cell
-  passed on the strength of recovering afterwards;
-- **the verifier's provenance was never established.** The generator's stamp is carried into the
-  report and refused at `local`; the verifier's is carried nowhere, so a stale or modified
-  verifier could certify the whole matrix silently. Asymmetries like that are where a
-  provenance chain breaks;
-- **the row census was an artifact, not a gate**, and reconciliation cannot cover for it:
-  `RunTopology` counts each authority only over the organisations placement gives it, so a stray
-  row on the wrong writer sits outside every scoped count while the aggregate still balances.
+- **The cell passed at `quotability.level: none`**, because verification ran with `-require none`.
+  Reconciliation compares the numbers a run produced; certification decides whether they may be
+  quoted at all, and **the two disagree exactly when a run is unsound, unresolved or drifted.** The
+  comment defending `none` claimed a real floor would cost the diagnostic artifact — wrong about the
+  verifier, which writes the verdict before enforcing the level. **A wrong justification in a comment
+  is worse than none, because it answers the reviewer's question before they ask it.**
+- **The readiness codes during the fault were recorded, not checked.** `printf` succeeds whatever
+  `curl` returns, so the artifact could contradict the containment claim while the cell passed.
+- **The verifier's provenance was never established.** The generator's stamp is carried into the
+  report and refused at `local`; the verifier's is carried nowhere, so a stale or modified verifier
+  could certify the whole matrix silently. **Asymmetries like that are where a provenance chain
+  breaks.**
+- **The row census was an artifact, not a gate**, and reconciliation cannot cover for it: each
+  authority is counted only over the organisations placement gives it, so **a stray row on the wrong
+  writer sits outside every scoped count while the aggregate still balances.**
 
-**Writing the discriminating tests found two more defects**, which is the argument for writing
-them rather than reasoning about them: the isolation assertion hardcoded which unit was expected
-to fail while the container it stops is a variable, and a failed cell left the topology
-mid-fault, so one failed assertion cost a manual repair before anything else could run. Each
-gate was then proven by removing its property — a floor the run cannot reach, a fault that never
-happens, a fault that reaches both authorities, a modified verifier, and an injected `org-b` row
-on `authority-1`.
+**Writing the discriminating tests found two more defects**, which is the argument for writing them
+rather than reasoning about them: the isolation assertion hardcoded which unit was expected to fail
+while the container it stops is a variable, and a failed cell left the topology mid-fault. Each gate
+was then proven by removing its property.
 
 ## 7. Not in PR3
 
-- cross-authority booking, distributed commit, or any saga (formal design §10, plan §15);
+- cross-authority booking, distributed commit, or any saga;
 - splitting one organisation across authorities;
 - online rebalancing, dual-write migration, or a placement change during a run;
 - a production routing gateway or dynamic shard catalogue;
 - a shared global workflow database;
-- replica scaling, exporters, dashboards, or the connection-budget control — all held in the
-  post-Iteration-B envelope;
+- replica scaling, exporters, dashboards, or the connection-budget control;
 - any capacity or throughput-multiplier claim;
-- per-authority client-side attribution (§3.2, §5.4);
-- authentication, which §7.6 of the formal design correctly identifies as the real fix for
-  caller-asserted routing identity and which no part of AG-Sept delivers.
+- per-authority client-side attribution (§3.2);
+- **targeted mid-`COMMIT` fault injection**, so INV-21's acknowledgement-lost half stays unproven
+  (§6a) — stopping an authority proves containment, not that case, and a generic shutdown must not
+  be reported as proof of it;
+- authentication, which the formal design identifies as the real fix for caller-asserted routing
+  identity and which no part of AG-Sept delivers.
 
 ## 8. Evidence labels
 
-Every figure in PR3's report carries the `[HYPOTHESIS]`, `[MEASURED]`, `[DERIVED]`, or
-`[PRIOR-UNREPRODUCED]` label required by
-[`measurement-contract.md`](../../design/measurement-contract.md) §2. Organisation counts,
-authority counts, and the placement map in this record are `[HYPOTHESIS]` until a run uses them.
-
-Correctness verdicts are not measurements and carry no label: a gate passes or the run is not
+Every figure in PR3's report carries its `measurement-contract.md` §2 label. Organisation counts,
+authority counts and the placement map in this record are `[HYPOTHESIS]` until a run uses them.
+Correctness verdicts are not measurements and carry no label: a gate passes, or the run is not
 admissible.

@@ -58,7 +58,7 @@ than `go run` (§3) are the same facts in both procedures.
 number may be quoted are owned by
 [`../design/measurement-contract.md`](../design/measurement-contract.md); which controlled
 workloads exist and what each proves is owned by
-[`../test/validation-plan/ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md);
+[`../planning/ag-sept/milestone-validation.md`](../planning/ag-sept/milestone-validation.md);
 what PR1 built against them is recorded in
 [`ag-sept-pr1.md`](../development/implementation/ag-sept-pr1.md), and what PR4a built in
 [`ag-sept-pr4.md`](../development/implementation/ag-sept-pr4.md). Where those disagree with
@@ -323,7 +323,7 @@ jq -r '.quotability | "\(.level)\t\(.blocked_because)"' test/results/manual/run.
 above `local` are the operator's account of the deployment, supplied by whichever work unit first
 has something to say about them — placement, authority identity, topology and image identity
 arrived with PR3b; replica count, aggregate pool capacity and environment are still to come. That
-sequencing is scheduling (`ag-sept-plan.md` §4), not a property of this harness. The report says
+sequencing is scheduling (`ag-sept/milestone-plan.md` §4), not a property of this harness. The report says
 so itself in `blocked_because`, naming each missing field, so an incomplete manifest reads as
 scheduled rather than broken.
 
@@ -567,7 +567,7 @@ one-instance frontier, but with the generator still on this machine, so its resu
 can be distorting it. A publishable capacity claim needs the generator on separate compute
 ([`../design/measurement-contract.md`](../design/measurement-contract.md) §13.1). That compute is
 no longer funded in AG-Sept — the deployment path that would have provided it is withdrawn
-(scheduling: [`../planning/ag-sept-plan.md`](../planning/ag-sept-plan.md) §6.3) — so **no AG-Sept
+(scheduling: [`../planning/ag-sept/milestone-plan.md`](../planning/ag-sept/milestone-plan.md) §6.3) — so **no AG-Sept
 run can reach `publishable`**, and the rule is honoured by labelling. Co-residency blocks that
 level only: a run here still reaches `capacity` once it records the deployment provenance §13.2
 asks for.
@@ -598,7 +598,7 @@ The containers underneath it are [`container-topology.md`](container-topology.md
 it exports are [`dashboards.md`](dashboards.md); the decisions and the findings are
 [`ag-sept-pr4.md`](../development/implementation/ag-sept-pr4.md); the 1/2/4 matrix and the
 result model are
-[`ag-sept-validation-plan.md`](../test/validation-plan/ag-sept-validation-plan.md) §4.6. This
+[`ag-sept/milestone-validation.md`](../planning/ag-sept/milestone-validation.md) §4.6. This
 section is only how to drive one.
 
 **Read the evidence class before the recipe.** Every group shares one workstation, one WSL

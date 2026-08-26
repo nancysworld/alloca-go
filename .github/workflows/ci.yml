@@ -67,6 +67,21 @@ jobs:
       - name: build context (docker provenance gate)
         run: ./test/scripts/check-build-context.sh
 
+      # Bounds one class only: a Go declaration written as a single long line. gofmt has no
+      # opinion on where a line wraps, so without this a signature grows until a reviewer
+      # happens to notice — which is how `commit` reached 205 columns and `lockByReservation`
+      # 258 (tech-debts.md DEBT-5). Deliberately not a general line-length linter: measured at
+      # the same bound, every remaining long line was an error string, help text or SQL, which
+      # DEBT-5 records must not be split. Pure text over tracked files, so no daemon.
+      - name: Go declaration length
+        run: ./test/scripts/check-declaration-length.sh
+
+      # Guards the check above, which is bash and therefore invisible to the Go suite. Its cases
+      # fail against both ways that check can rot: dropping the length comparison, and dropping
+      # the `func` anchor that keeps error strings out of scope.
+      - name: Go declaration length check tests
+        run: ./test/scripts/check-declaration-length-test.sh
+
       # Guards the Iteration C rehearsal's CPU layout check, which is what refuses a bad
       # partition before an image build and four database containers. It is bash, so the Go
       # suite says nothing about it, and its comments once described four properties its code

@@ -20,7 +20,8 @@ GOLANGCI_LINT_STAMP   := $(TOOLBIN)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 .PHONY: all ci fmt fmt-check vet lint build test test-race test-integration \
         db-up db-down migrate run dev dev-measured smoke obs-up obs-target obs-down tidy tools clean \
         image topo-up topo-down topo-ps itc-up itc-down itc-deployment \
-        itc-layout itc-layout-check itc-topology-check-test itc-conditioning-check itc-pool-check itc-obs-labels-check itc-rehearse obs-rehearse
+        itc-layout itc-layout-check itc-topology-check-test itc-conditioning-check itc-pool-check itc-obs-labels-check itc-rehearse obs-rehearse \
+        declaration-length-check declaration-length-check-test
 
 # Integration tests need a real PostgreSQL: the properties they prove (capacity safety
 # under concurrent transactions, post-lock decision time, the scoped-key race) do not
@@ -130,7 +131,7 @@ ITC_CPUS_GENERATOR ?= 8-11
 all: ci
 
 ## ci: run the full local gate, identical to CI (fmt, vet, lint, build, test, race)
-ci: fmt-check vet lint build test test-race build-context-check itc-layout-check itc-topology-check-test itc-conditioning-check itc-pool-check itc-obs-labels-check itc-recon-walk-check itc-capacity-result-check itc-capacity-bracket-check
+ci: fmt-check vet lint build test test-race build-context-check declaration-length-check declaration-length-check-test itc-layout-check itc-topology-check-test itc-conditioning-check itc-pool-check itc-obs-labels-check itc-recon-walk-check itc-capacity-result-check itc-capacity-bracket-check
 
 ## fmt: format all Go files
 fmt:
@@ -349,6 +350,28 @@ clean:
 # manifest refuses for reasons that look like a harness bug. Needs no Docker daemon.
 build-context-check:
 	@./test/scripts/check-build-context.sh
+
+## declaration-length-check: fail if a Go declaration is written as one excessively long line
+#
+# In `ci` for the same reason build-context-check is: the defect arrives by ordinary editing
+# and needs no daemon to detect. gofmt has no opinion on where a line wraps, so without this
+# a signature grows until a reviewer happens to notice — which is how `commit` reached 205
+# columns and `lockByReservation` 258 (tech-debts.md DEBT-5).
+#
+# Deliberately narrower than a general line-length linter: it bounds declarations only and
+# says nothing about error strings, SQL or comments. DEBT-5 records the measurement that
+# settled that scope.
+declaration-length-check:
+	@./test/scripts/check-declaration-length.sh
+
+## declaration-length-check-test: prove the declaration bound still refuses what it must
+#
+# The check is bash, so `go test ./...` says nothing about whether it still enforces
+# anything — the same reason itc-topology-check-test is in `ci`. Its cases fail against both
+# ways this check can rot: dropping the length comparison, and dropping the `func` anchor
+# that keeps error strings out of scope.
+declaration-length-check-test:
+	@./test/scripts/check-declaration-length-test.sh
 
 ## itc-layout-check: prove the rehearsal's CPU layout check still refuses a bad partition
 #

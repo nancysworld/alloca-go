@@ -87,7 +87,13 @@ type DatabaseMeta struct {
 }
 
 // handleMeta returns runtime metadata and the resolved timing configuration as JSON.
-func handleMeta(source func() buildinfo.Info, cfg config.Config, db DatabaseMeta, telemetry string, guard placementGuard) http.HandlerFunc {
+func handleMeta(
+	source func() buildinfo.Info,
+	cfg config.Config,
+	db DatabaseMeta,
+	telemetry string,
+	guard placementGuard,
+) http.HandlerFunc {
 	placement := PlacementMeta{
 		AuthorityID:    string(guard.authority),
 		RoutingVersion: guard.placement.Version(),

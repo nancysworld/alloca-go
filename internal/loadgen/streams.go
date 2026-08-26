@@ -151,7 +151,10 @@ func validateStreams(streams []Stream) error {
 // is the only way the two phases cannot disagree about where the boundary is. A caller that
 // derived each side separately would have two expressions that must stay equal, with nothing
 // tying them together.
-func SplitPopulationsForConditioning(populations []OrgPopulation, conditioningSlotsPerOrg int) (conditioning, measured []OrgPopulation, err error) {
+func SplitPopulationsForConditioning(
+	populations []OrgPopulation,
+	conditioningSlotsPerOrg int,
+) (conditioning, measured []OrgPopulation, err error) {
 	if conditioningSlotsPerOrg <= 0 {
 		return nil, nil, fmt.Errorf("loadgen: conditioning needs at least one slot per " +
 			"organisation; a phase with no population establishes no state")

@@ -38,7 +38,7 @@ code comment or a PR description can cite one and still be right in a year.
 | [**DEBT-2**](#4-debt-2--no-retention-policy-for-durable-rows) | No durable row is ever deleted and no retention policy exists; `idempotency_records` is the instance with no product reason to keep it | data lifecycle | 2026-08-02, AG-Sept PR1 | open |
 | [**DEBT-3**](#5-debt-3--service-identity-is-sampled-only-before-a-run) | The load harness records service provenance before load starts but does not prove the same service identity remained behind the target for the whole run | measurement provenance | 2026-08-03, AG-Sept PR1 | open |
 | [**DEBT-4**](#6-debt-4--lockbyreservation-returns-a-six-value-maybe-answered-protocol) | The shared confirm/cancel prologue returns six values, three of which encode "I may already have answered"; a caller that mishandles them proceeds on zero values | service orchestration | 2026-08-05, AG-Sept PR3a | open |
-| [**DEBT-5**](#7-debt-5--no-automated-line-length-guardrail) | Nothing in CI bounds line length, so declarations grow until a human notices; ~104 code lines exceed 110 columns, the longest at 205 | tooling, readability | 2026-08-05, AG-Sept PR3a | open |
+| [**DEBT-5**](#7-debt-5--no-automated-line-length-guardrail--resolved) | Nothing in CI bounds line length, so declarations grow until a human notices; the longest reached 205 columns | tooling, readability | 2026-08-05, AG-Sept PR3a | **resolved 2026-08-26** |
 | [**DEBT-6**](#8-debt-6--res-denotes-three-unrelated-types) | `res` names a Reservation, a Result and a Response in different files, and the obvious mechanical rename is wrong in three separate ways | naming, readability | 2026-08-05, AG-Sept PR3a | open |
 | [**DEBT-7**](#9-debt-7--implementation-records-that-read-as-scope-notes--resolved) | The per-PR records were moved and re-headed, not rewritten, so they presented planned scope in a form indistinguishable from a record of what shipped | documentation taxonomy | 2026-08-07, AG-Sept PR3b | **resolved 2026-08-25** |
 | [**DEBT-8**](#10-debt-8--the-storage-path-behind-an-unresolved-knee-is-localised-not-proven) | PR4b localised `G1`'s 25.1% irreproducibility to the shared write path but did not run the test that would prove it, so a mechanism sits in the record supported by correlation only | measurement environment | 2026-08-19, AG-Sept PR4b | open |
@@ -425,11 +425,16 @@ not make it good, and the length was the symptom rather than the debt. PR3a made
 marginally worse by one parameter and one path, which is what moved it from a shape someone
 might tidy to one worth recording.
 
-## 7. DEBT-5 — no automated line-length guardrail
+## 7. DEBT-5 — no automated line-length guardrail — RESOLVED
 
-### What it is
+**Status: resolved 2026-08-26**, at the "before the repository goes public" trigger below, by a
+bounded readability pass over seven declarations plus a targeted guardrail. The entry is kept
+rather than deleted: the register records what a trade-off cost and when the bill came due, and
+this one came due and was paid. The ID stays stable, per §1.
 
-Nothing in `make ci` bounds line length. **gofmt does not do this and never will** — it
+### What it was
+
+Nothing in `make ci` bounded line length. **gofmt does not do this and never will** — it
 normalises indentation, alignment and spacing, and has no opinion on where a line wraps, by
 deliberate Go design. `.golangci.yml` enables the standard bundle plus the gofmt formatter, and
 no length linter (`lll`, `golines`) is configured.
@@ -473,7 +478,7 @@ an incremental addition; it is a repo-wide reformat wearing a linter's clothes, 
 in whichever PR happened to enable it — exactly the "silently blocks unrelated work" the config
 warns against.
 
-### Why it is acceptable today
+### Why it was acceptable until publication
 
 - Nothing about it can produce a wrong answer. Every invariant is pinned by tests that do not
   care how the source is wrapped.
@@ -482,7 +487,7 @@ warns against.
 - The distribution is not pathological: the median over-limit line is 122 columns, which is long
   but readable. It is the tail that is the problem, not the shape of the whole.
 
-### Trigger — when it stops being acceptable
+### Trigger — when it stopped being acceptable
 
 Any one of:
 
@@ -507,19 +512,45 @@ Any one of:
 - **No automatic rewriter in CI.** `golines` can reformat mechanically, but a tool that rewraps
   signatures unattended will produce diffs nobody reviewed in files nobody touched.
 
-### Options, none decided
+### How it was resolved
 
-1. **`lll` at 120**, with the existing ~104 lines fixed in the enabling PR. Clean end state; the
-   enabling PR is large and touches almost every package.
-2. **`lll` at 120 with `nolint` on the pre-existing lines**, worked down opportunistically.
-   Small enabling PR, but the exclusions are a second register to maintain and tend to become
-   permanent.
-3. **Limit new and changed lines only**, via a review-time check rather than a linter — the
-   check this session performed by hand: diff added lines against the branch point and flag
-   anything beyond the repo's existing maximum. Catches the regression without a reformat, and
-   is the cheapest thing that would have caught both instances above.
-4. **Leave it to review and record the convention** in the contributing notes, so it is at least
-   written down once rather than transmitted by correction.
+Re-measured first, because the PR3a snapshot had drifted: 148 non-comment lines over 110 columns
+against the 104 recorded above, and a longest line of 224. The general count was not the useful
+one. Measured over the class the debt actually names — a declaration written as a single line —
+the distribution was 39 over 110, 17 over 120, **7 over 130**, 3 over 140, 1 over 150.
+
+**The bound is 130 because that is where the measured tail begins**, not because it is a round
+number: p99.9 of every Go line in the repository was 129. Choosing from the distribution is what
+kept the repair small and left the 120–130 band legal.
+
+Seven declarations were wrapped one parameter per line, across five files — four of them in
+`internal/service/service.go`, including `commit` at 205 columns, the worst case this debt was
+raised on. No behaviour changed and no error string was touched.
+
+The guardrail is [`../../test/scripts/check-declaration-length.sh`](../../test/scripts/check-declaration-length.sh),
+in `make ci` with a discriminating test sibling. It bounds declarations and nothing else.
+
+### Why a general line-length linter was not adopted
+
+This is the part worth carrying forward, because the measurement settled an argument the "Options"
+list above could only guess at.
+
+After the seven repairs, **22 lines still exceeded 130 columns and not one of them was a
+declaration.** They were error strings, Prometheus help text, struct literals and a SQL
+`TRUNCATE`. `lll` or `golines` at the same bound would therefore have reported 22 findings to fix
+7 real ones, and every one of the 22 falls under "error strings must stay greppable" above — the
+constraint a fix was required to preserve. A gate whose findings are mostly things you have
+already decided not to change is a gate that gets disabled.
+
+So the check is anchored on `func` at the head of a line. Its test sibling fails against both ways
+that can rot: drop the length comparison and the wrapped-declaration cases fail; drop the `func`
+anchor and the error-string, SQL and comment cases fail. Both mutations were run.
+
+**What it deliberately does not do:** it does not parse Go, so a `func` literal at the head of a
+line inside a raw string would be reported rather than skipped; it says nothing about interface
+method signatures, which carry no `func` keyword and were not part of the measured problem; and it
+bounds no line that is not a declaration. Each of those is a place to extend it if evidence ever
+says so, not a defect to fix pre-emptively.
 
 ### Evidence
 
@@ -529,6 +560,11 @@ second find is the one that made it a debt rather than an incident: the first co
 carelessness in a single PR, but two in one review is the absence of a guardrail. `commit` itself
 is pre-existing and untouched by PR3a — it is cited as the current worst case, not as something
 that PR introduced.
+
+Resolved in AG-Sept PR5, 2026-08-26, at the publication trigger. The measurements above were taken
+on the branch immediately before the repair; they are reproducible with the command in "What it
+was" and with the check itself, which prints its own bound and file count. Scope was held to
+publication readiness: no unrelated refactor or naming change rode along.
 
 ## 8. DEBT-6 — `res` denotes three unrelated types
 

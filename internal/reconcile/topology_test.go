@@ -261,7 +261,13 @@ func (q fakeQuerier) Query(context.Context, string, ...any) (pgx.Rows, error) {
 // served is this unit's own server-side count, supplied as an After scrape with no baseline:
 // measurement-contract §12 is a three-way agreement, and a topology test that omitted the
 // server's third would be exercising the weaker gate under the stronger gate's name.
-func scope(t *testing.T, authority domain.AuthorityID, orgs []domain.OrganisationID, perOrg counts, served int) reconcile.AuthorityScope {
+func scope(
+	t *testing.T,
+	authority domain.AuthorityID,
+	orgs []domain.OrganisationID,
+	perOrg counts,
+	served int,
+) reconcile.AuthorityScope {
 	t.Helper()
 	return reconcile.AuthorityScope{
 		Authority: authority,

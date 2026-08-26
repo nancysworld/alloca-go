@@ -156,13 +156,19 @@ implementation would use, so a query written against these logs translates direc
 ```
 
 ```json
-{"msg":"expiry_iteration","slots":3,"expired":4,"failed":false,"duration_ms":12.1}
+{"msg":"expiry_iteration","slots":3,"expired":4,"duration_ms":12.1}
 ```
 
 - Durations are reported in **milliseconds as a float**, so sub-millisecond requests do not
   all collapse to zero.
 - `request_id` appears only when present, as an omitted attribute rather than an empty
   string.
+- `failed` follows the same rule on the expiry line: it appears only when the iteration
+  failed, so absence is the healthy reading. The worker ticks for the life of the process,
+  and a `"failed":false` carried on the healthy path prints the word several times a minute
+  while nothing is wrong. The countable form of both outcomes stays in
+  `alloca_expiry_iterations_total{failed}`, so nothing that counts failures depends on the
+  healthy line saying so.
 - A failed expiry iteration is logged at **info** level here; the worker logs the error
   itself at error level with its diagnostic context. Emitting both at error level would
   double-count one event in a log-based alert.

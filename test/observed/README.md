@@ -7,7 +7,7 @@ inputs. The repository's committed counterparts are the **declared** documents �
 [`../../deploy/topology/`](../../deploy/topology/)'s placement and declaration files — which state
 what the operator intends. Keeping the two apart is what stops the weaker provenance class from
 inheriting the stronger one's credibility
-([`measurement-contract.md`](../../docs/design/measurement-contract.md) §6.4).
+([`measurement-contract.md`](../../docs/design/measurement-contract.md) §11).
 
 A committed observation would be worse than no observation. It goes stale the moment the system
 changes, and a run could then certify against a record describing something that is not under

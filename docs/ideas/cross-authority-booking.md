@@ -107,3 +107,10 @@ a crash or lost response after each durable transition.
 Retain the existing single-transaction path when both ownership axes resolve to
 the same database authority. For the cross-database path, compare possible
 protocols against the same invariants before selecting an implementation.
+
+## Related exploration
+
+[Dynamic placement and reclamation of booking state](dynamic-placement-and-reclamation.md)
+extends this idea to placement below organisation granularity, allocation of new
+slots and user homes, and retirement of inactive slots, memberships, and past
+schedule claims. It remains exploratory and unscheduled.

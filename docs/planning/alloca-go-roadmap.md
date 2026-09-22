@@ -275,6 +275,9 @@ The broad areas above can generate many concrete questions. Current examples inc
 - overload, admission control, fairness, backpressure, and open-loop arrival behaviour;
 - deliberate acknowledgement-loss fault injection and other targeted ambiguity/recovery faults;
 - cross-authority booking and the cost of durable distributed coordination;
+- [dynamic placement and reclamation of booking state](../ideas/dynamic-placement-and-reclamation.md):
+  placing new slots and user homes below organisation granularity, reusing capacity as work
+  retires, and separating active schedule claims from retained history;
 - online placement change, state migration, rebalancing, and scale-in/scale-out of writable
   authorities;
 - managed/cloud infrastructure when network, failure, or independent-resource boundaries require

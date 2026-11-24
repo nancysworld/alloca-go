@@ -153,30 +153,34 @@ func run(logger *slog.Logger) error {
 		serveErr <- nil
 	}()
 
+	var serveErrResult error
+
 	select {
-	case err := <-serveErr:
-		// Serving failed on its own. Stop the worker before returning, or the process
-		// would exit with it still mid-transaction.
+	case serveErrResult = <-serveErr:
+		// The HTTP serving loop has stopped unexpectedly.
+		// Cancel the application context to stop the worker.
 		stop()
-		_ = shutdownMetrics(context.Background())
-		workers.Wait()
-		return err
+		logger.Info("HTTP serving loop exited; initiating cleanup",
+			slog.Any("error", serveErrResult))
 	case <-ctx.Done():
-		logger.Info("shutdown signal received, draining", slog.Duration("grace", cfg.ShutdownGrace))
+		logger.Info("shutdown signal received, draining",
+			slog.Duration("grace", cfg.ShutdownGrace))
 	}
 
-	// Shutdown order matters: stop accepting and drain in-flight requests first, then
-	// wait for the worker. The worker's context is already cancelled by the signal, so
-	// it stops at its next tick or returns from the iteration it is in.
+	// Common graceful shutdown path.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownGrace)
 	defer cancel()
 	shutdownErr := httpServer.Shutdown(shutdownCtx)
 	// The metrics listener drains last: a scrape taken during the drain is exactly the
 	// observation an experiment wants of a shutting-down replica.
-	_ = shutdownMetrics(shutdownCtx)
+	metricsErr := shutdownMetrics(shutdownCtx)
 	workers.Wait()
-	if shutdownErr != nil {
-		return shutdownErr
+	logger.Info("shutdown cleanup finished",
+		slog.Any("http_shutdown_error", shutdownErr),
+		slog.Any("metrics_shutdown_error", metricsErr))
+
+	if err := errors.Join(serveErrResult, shutdownErr); err != nil {
+		return err
 	}
 	logger.Info("shutdown complete")
 	return nil
